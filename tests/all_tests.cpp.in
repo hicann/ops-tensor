@@ -13,7 +13,7 @@
  * @brief 自动生成的所有算子测试入口（由 CMake 生成）
  */
 
-#include "common/tests/test_common.h"
+#include "test_common.h"
 
 // 自动包含所有算子测试头文件
 @TEST_INCLUDES@

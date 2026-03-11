@@ -11,7 +11,7 @@
 
 #pragma once
 
-#include "common/tests/test_common.h"
+#include "test_common.h"
 
 namespace AddTest {
     void run_all_tests(aclrtStream stream, OpsTensorTest::TestStats& stats);

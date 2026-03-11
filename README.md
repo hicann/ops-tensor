@@ -1,52 +1,55 @@
 # ops-tensor
 
-## 项目简介
+## 🔥 最新动态
+- [2026/03] 完成项目基础架构搭建，支持 Add 算子实现和测试，支持一键编译、测试和打包。
+- [2026/03] 建立完整的测试框架，支持单元测试、超时控制和自动化测试统计。
+- [2026/03] 实现标准化的打包流程，生成 .run 安装包，支持 install/uninstall/upgrade 完整生命周期管理。
 
-ops-tensor 是一个轻量级的算子库项目，提供基本的张量操作算子实现。本项目采用模块化设计，支持灵活地添加和管理算子。
+## 🚀 概述
 
-## 主要特性
+ops-tensor 是 [CANN](https://hiascend.com/software/cann) （Compute Architecture for Neural Networks）算子库中提供张量类计算的基础算子库，采用模块化设计，支持灵活的算子开发和管理。
 
-- ✅ **模块化设计** - 支持动态添加算子模块
-- ✅ **标准 CMake 构建** - 跨平台编译支持
-- ✅ **完整测试体系** - 基于 CTest 的单元测试
-- ✅ **便捷打包** - 一键生成 .run 安装包
-- ✅ **企业级安装** - 支持 install/uninstall/upgrade
-- ✅ **版本管理** - 安装信息记录和版本追踪
+### 主要特性
 
----
+- ✅ **模块化设计** - 支持动态添加算子模块，每个算子独立开发、编译和测试
+- ✅ **标准 CMake 构建** - 跨平台编译支持，统一的构建流程
+- ✅ **完整测试体系** - 基于自定义测试框架，支持自动化测试和超时控制
+- ✅ **便捷打包** - 一键生成 .run 安装包，支持 install/uninstall/upgrade
+- ✅ **版本管理** - 安装信息记录和版本追踪，支持升级管理
+- ✅ **轻量高效** - 简洁的架构设计，避免过度工程化
 
-## 与 ops-math 的对比
+## 📝 版本配套
 
-| 功能 | ops-math | ops-tensor | 说明 |
-|------|----------|------------|------|
-| **基本功能** | | | |
-| 安装/卸载/升级 | ✅ | ✅ | 均支持完整的安装管理 |
-| 版本管理 | ✅ | ✅ | ascend_install.info 记录安装信息 |
-| 日志系统 | ✅ | ✅ | 结构化日志到文件 |
-| 错误码 | ✅ | ✅ | 标准化错误码定义 |
-| 权限处理 | ✅ | ✅ | root/用户自动适配 |
-| 静默模式 | ✅ | ✅ | --quiet 参数 |
-| **高级功能** | | | |
-| --full 分类安装 | ✅ | ❌ | ops-tensor 结构简单，不需要 |
-| Docker 支持 | ✅ | ❌ | 无 Docker 特殊文件 |
-| 异构安装 | ✅ | ❌ | 无跨架构需求 |
-| 预检查脚本 | ✅ | ❌ | 暂不需要 |
-| XML 配置 | 复杂（多文件） | 简单（单文件） | ops-tensor 更简洁 |
-| package.py | ✅ | ❌ | ops-tensor 使用 CMake 直接生成 |
-| **复杂度** | 企业级 | 简洁高效 | 各取所需 |
+本项目源码会跟随 CANN 软件版本发布，关于 CANN 软件版本与本项目标签的对应关系请参阅 [release 仓库](https://gitcode.com/cann/release-management) 中的相应版本说明。
 
-**设计理念：**
-- **ops-math** - 面向企业级复杂场景，支持多种部署模式和特殊需求
-- **ops-tensor** - 面向简单场景，够用即可，避免过度设计
+**当前版本：** v1.0.0 (2025-03-02)
 
----
+为确保您的源码定制开发顺利进行，请选择配套的 CANN 版本，使用 master 分支可能存在版本不匹配的风险。
 
-## 快速开始
+## ⚡️ 快速入门
 
-### 编译
+### 环境要求
+
+- CANN 8.0 及以上版本
+- 支持 Ascend950、Ascend910B、Ascend910_93、Ascend910、Ascend310P、Ascend310B 等 SoC
+- Linux x86_64/AArch64 平台
+
+### 环境配置
 
 ```bash
-# 编译所有算子
+# 设置 CANN 环境变量
+source /usr/local/Ascend/cann/set_env.sh
+
+# 验证环境
+echo $ASCEND_HOME_PATH
+```
+
+### 编译与测试
+
+详细的 build.sh 参数说明请参考 [build 参数说明](docs/zh/context/build.md)。
+
+```bash
+# 编译所有算子（默认 8 线程）
 ./build.sh
 
 # 编译指定算子
@@ -54,241 +57,194 @@ ops-tensor 是一个轻量级的算子库项目，提供基本的张量操作算
 
 # 编译并运行测试
 ./build.sh --run
-```
 
-### 打包
-
-```bash
 # 编译并打包成 .run 文件
 ./build.sh --pkg
 
-# 输出文件：build/cann-ops-tensor-1.0.0-linux-Ascend910B-x86_64.run
+# 查看完整帮助信息
+./build.sh --help
 ```
-
----
-
-## 安装与使用
 
 ### 安装
 
 ```bash
-# 标准安装（root）
+# 标准安装（需要 root 权限）
 sudo ./cann-ops-tensor-1.0.0-linux-*.run
 
-# 用户安装
-./cann-ops-tensor-1.0.0-linux-*.run
+# 查看安装包信息
+./cann-ops-tensor-1.0.0-linux-*.run --help
 
 # 安装到自定义路径
 sudo ./cann-ops-tensor-1.0.0-linux-*.run --install-path=/opt/ascend
+
+# 卸载
+sudo ./cann-ops-tensor-1.0.0-linux-*.run --uninstall
+
+# 升级
+sudo ./cann-ops-tensor-1.0.0-linux-*.run --upgrade
 ```
 
-### 卸载
+## 📖 项目说明
 
-```bash
-# 方式1：使用 .run 包
-sudo ./cann-ops-tensor-*.run --uninstall
+### 支持的算子
 
-# 方式2：直接运行卸载脚本
-sudo /usr/local/Ascend/cann/share/info/ops_tensor/scripts/uninstall.sh
-```
+当前支持的算子列表：
 
-### 升级
+| 算子名称 | 描述 | 状态 |
+|---------|------|------|
+| [Add](src/add/) | 张量加法运算 | ✅ 已实现 |
 
-```bash
-sudo ./cann-ops-tensor-*.run --upgrade
-```
+更多算子正在持续开发中...
 
----
+### SoC 支持矩阵
 
-## Run 包结构
+| SoC 型号 | SOC_VERSION | 支持状态 |
+|---------|-------------|---------|
+| Ascend950 | ascend950dt_9595 | ✅ 默认支持 |
+| Ascend910B | ascend910b3 | ✅ 支持 |
+| Ascend910_93 | ascend910_93 | ✅ 支持 |
+| Ascend910 | ascend910 | ✅ 支持 |
+| Ascend310P | ascend310p | ✅ 支持 |
+| Ascend310B | ascend310b | ✅ 支持 |
 
-### 内部结构（解压后）
-
-```
-cann-ops-tensor-1.0.0-linux-Ascend910B-x86_64.run
-    ↓ 解压（--noexec --target /tmp/extract）
-
-/tmp/extract/
-│
-├── lib/                                    # 库文件目录
-│   └── libops_tensor.so                    # ops-tensor 核心动态库
-│                                            # 功能：提供算子实现，供用户程序链接
-│
-├── include/                                # 头文件目录
-│   └── ops_tensor.h                        # 公共 API 头文件
-│                                            # 功能：声明接口，用户代码 include 使用
-│
-└── share/
-    └── info/
-        └── ops_tensor/                      # ops-tensor 信息目录
-            │
-            ├── version.info                # 版本信息文件
-            │   # Version=1.0.0
-            │   # ReleaseDate=2025-03-02
-            │   # 功能：记录包版本和发布信息
-            │
-            ├── scripts/                    # 脚本目录
-            │   │
-            │   ├── install.sh              # 安装脚本
-            │   │   # 功能：执行文件拷贝、权限设置、环境配置
-            │   │   # 参数：--install, --uninstall, --upgrade, --quiet, --install-path
-            │   │
-            │   ├── uninstall.sh            # 卸载脚本
-            │   │   # 功能：删除文件、清理目录、删除安装信息
-            │   │   # 参数：--install-path, --quiet
-            │   │
-            │   └── help.info               # 帮助信息
-            │       # 功能：显示使用方法和命令说明
-            │
-            └── ascend_install.info         # 安装信息文件（安装后生成）
-                # USERNAME=root
-                # OPS_TENSOR_INSTALL_PATH=/usr/local/Ascend/cann
-                # OPS_TENSOR_VERSION=1.0.0
-                # 功能：记录安装历史，供卸载/升级使用
-```
-
----
-
-## 安装后的路径结构
-
-### CANN 环境中的路径
-
-```
-/usr/local/Ascend/cann/                     # CANN 安装根目录（版本目录）
-│
-├── lib/                                    # 库文件目录
-│   └── libops_tensor.so                    # ✅ ops-tensor 动态库
-│   # 权限：550 (r-xr-x---)
-│   # 用途：用户程序链接时使用 -lops_tensor -L/usr/local/Ascend/cann/lib
-│
-├── include/                                # 头文件目录
-│   └── ops_tensor.h                        # ✅ 公共 API 头文件
-│   # 权限：440 (r--r-----)
-│   # 用途：用户代码中使用 #include "ops_tensor.h"
-│
-└── share/
-    └── info/
-        └── ops_tensor/                      # ops-tensor 信息目录
-            │
-            ├── version.info                # ✅ 版本信息
-            │
-            ├── scripts/                    # ✅ 脚本目录
-            │   ├── install.sh              # 权限：555 (r-xr-xr-x)
-            │   ├── uninstall.sh            # 权限：555 (r-xr-xr-x)
-            │   └── help.info               # 权限：444 (r--r--r--)
-            │
-            └── ascend_install.info         # ✅ 安装信息文件
-                # 权限：644 (rw-r--r--)
-                # 功能：记录安装元数据
-```
-
-### 与其他 CANN 组件共存
-
-```
-/usr/local/Ascend/cann/
-│
-├── lib/
-│   ├── libops_tensor.so                    # ✅ ops-tensor 库
-│   ├── libopapi_math.so                   # ops-math 库（如果安装）
-│   ├── libge_ir.so                        # 图执行器库
-│   └── ...                                 # 其他 CANN 库
-│
-├── include/
-│   ├── ops_tensor.h                        # ✅ ops-tensor 头文件
-│   ├── aclnnop/                            # ops-math 头文件
-│   ├── graph/                              # 图相关头文件
-│   └── ...                                 # 其他头文件
-│
-└── share/info/
-    ├── ops_tensor/                         # ✅ ops-tensor 信息
-    ├── ops_math/                           # ops-math 信息
-    └── ...                                 # 其他组件信息
-```
-
----
-
-## 文件权限说明
-
-| 文件类型 | 权限 | 属主 | 说明 |
-|---------|------|------|------|
-| 动态库 (.so) | 550 | root:root | 用户可读可执行 |
-| 头文件 (.h) | 440 | root:root | 用户可读 |
-| 脚本 (.sh) | 555 | root:root | 所有人可读可执行 |
-| 版本信息 | 440 | root:root | 用户可读 |
-| 安装信息 | 644 | root:root | 可读写 |
-
----
-
-## 使用示例
-
-### 用户代码
-
-```cpp
-#include "ops_tensor.h"
-#include <iostream>
-
-int main() {
-    // 创建张量
-    Tensor* tensor = ops_tensor_create(/*...*/);
-
-    // 使用张量操作
-    // ...
-
-    // 销毁张量
-    ops_tensor_destroy(tensor);
-    return 0;
-}
-```
-
-### 编译链接
-
-```bash
-g++ -o my_app main.cpp \
-    -I/usr/local/Ascend/cann/include \
-    -L/usr/local/Ascend/cann/lib \
-    -lops_tensor
-```
-
-### 运行
-
-```bash
-export LD_LIBRARY_PATH=/usr/local/Ascend/cann/lib:$LD_LIBRARY_PATH
-./my_app
-```
-
----
-
-## 项目结构
+## 🔍 目录结构
 
 ```
 ops-tensor/
-├── include/                 # 公共头文件
-├── src/                     # 源代码
-│   ├── add/                # Add 算子
-│   └── ...
-├── tests/                   # 测试代码
-├── cmake/                   # CMake 配置
-│   ├── func.cmake          # 公共函数
-│   ├── package.cmake       # 打包配置
-│   └── run_package.cmake   # 打包脚本
-├── scripts/
-│   └── package/            # 打包相关
-│       └── ops_tensor/
-│           ├── ops_tensor.xml
-│           └── scripts/
-├── build.sh                 # 构建脚本
-├── version.info             # 版本信息
-└── README.md                # 本文件
+├── cmake/                      # CMake 配置文件
+│   ├── func.cmake             # 公共函数（算子注册等）
+│   ├── init_env.cmake         # 环境初始化
+│   ├── package.cmake          # 打包配置
+│   └── run_package.cmake      # 打包脚本
+├── include/                    # 公共头文件
+│   └── cann_ops_tensor.h      # API 头文件
+├── scripts/                    # 脚本目录
+│   └── package/               # 打包相关脚本
+├── src/                        # 源代码目录
+│   ├── add/                   # Add 算子实现
+│   │   ├── add_host.cpp       # Host 端实现
+│   │   ├── add_kernel.cpp     # Kernel 端实现
+│   │   ├── arch35/            # 架构特定代码
+│   │   │   └── add_struct.h   # 数据结构定义
+│   │   ├── tests/             # 算子测试
+│   │   │   ├── add_test.h
+│   │   │   └── add_test.cpp
+│   │   └── CMakeLists.txt
+│   └── CMakeLists.txt
+├── tests/                      # 测试框架
+│   ├── test_common.h          # 测试框架头文件
+│   ├── test_common.cpp        # 测试框架实现
+│   ├── all_tests.cpp.in       # 测试入口模板
+│   └── CMakeLists.txt
+├── build.sh                    # 编译脚本
+├── CMakeLists.txt              # 主 CMake 配置
+├── version.info                # 版本信息
+└── README.md                   # 本文件
 ```
 
----
+## 🛠️ 开发指南
 
-## 许可证
+### 添加新算子
 
-[待添加]
+1. **创建算子目录**
 
----
+```bash
+mkdir -p src/my_op/arch35
+mkdir -p src/my_op/tests
+```
 
-## 联系方式
+2. **编写算子实现**
 
-[待添加]
+在 `src/my_op/` 下创建算子的 Host 和 Kernel 实现：
+- `my_op_host.cpp` - Host 端 Tiling 实现
+- `my_op_kernel.cpp` - Kernel 端计算实现
+- `arch35/my_op_struct.h` - 数据结构定义
+
+3. **编写算子测试**
+
+在 `src/my_op/tests/` 下创建测试文件：
+- `my_op_test.h` - 测试声明
+- `my_op_test.cpp` - 测试实现
+
+4. **创建 CMakeLists.txt**
+
+```cmake
+register_operator(NAME my_op ARCH_DIR arch35)
+```
+
+5. **编译和测试**
+
+```bash
+# 编译新算子
+./build.sh --ops=my_op
+
+# 运行测试
+./build.sh --ops=my_op --run
+```
+
+详细开发指南请参考 ops-math 项目的[算子开发文档](https://gitcode.com/cann/ops-math/blob/master/docs/zh/develop/aicore_develop_guide.md)。
+
+### 编写测试
+
+ops-tensor 提供了轻量级、自动化的测试框架。详细的测试编写指南请参考 [测试编写指南](docs/zh/develop/test_writing_guide.md)，包括：
+
+- 测试框架特性
+- 测试文件结构
+- 核心宏和函数说明
+- 完整编写步骤和示例
+- 最佳实践和常见问题
+
+## 📦 打包说明
+
+### Run 包结构
+
+```
+cann-ops-tensor-1.0.0-linux-Ascend950-x86_64.run
+    ↓ 解压
+
+/tmp/extract/
+├── lib/
+│   └── libops_tensor.so           # 核心动态库
+├── include/
+│   └── cann_ops_tensor.h          # API 头文件
+└── share/
+    └── info/
+        └── ops_tensor/
+            ├── version.info       # 版本信息
+            ├── scripts/           # 管理脚本
+            │   ├── install.sh
+            │   ├── uninstall.sh
+            │   └── help.info
+            └── ascend_install.info # 安装信息（安装后生成）
+```
+
+### 安装后的路径
+
+```
+/usr/local/Ascend/cann/
+├── lib/
+│   └── libops_tensor.so
+├── include/
+│   └── cann_ops_tensor.h
+└── share/
+    └── info/
+        └── ops_tensor/
+            ├── version.info
+            ├── scripts/
+            └── ascend_install.info
+```
+
+## 💬 相关信息
+
+- **许可证**: [CANN Open Software License Agreement Version 2.0](LICENSE)
+- **安全声明**: [SECURITY.md](SECURITY.md)
+- **贡献指南**: [CONTRIBUTING.md](CONTRIBUTING.md)
+- **所属 SIG**: [CANN Community](https://gitcode.com/cann/community)
+
+## 🤝 联系我们
+
+本项目功能和文档正在持续更新和完善中，欢迎您关注最新版本。
+
+- **问题反馈**: 通过 [Issues](https://gitcode.com/cann/ops-tensor/issues) 提交问题
+- **社区互动**: 通过 [Discussions](https://gitcode.com/cann/ops-tensor/discussions) 参与交流
+- **技术专栏**: 通过 [Wiki](https://gitcode.com/cann/ops-tensor/wiki) 获取技术文章
