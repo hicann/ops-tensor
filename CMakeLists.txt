@@ -15,11 +15,6 @@ project(ops_tensor)
 set(OPS_TENSOR ops_tensor)
 set(PROJECT_VERSION "1.0.0")
 
-# 设置第三方库路径（已不再需要 opbase）
-if(NOT CANN_3RD_LIB_PATH)
-  set(CANN_3RD_LIB_PATH ${PROJECT_SOURCE_DIR}/third_party CACHE STRING "CANN third party lib path")
-endif()
-
 # 查找 ASC 编译器
 find_package(ASC REQUIRED)
 project(${OPS_TENSOR} VERSION ${PROJECT_VERSION} LANGUAGES ASC CXX)
