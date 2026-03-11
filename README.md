@@ -124,12 +124,13 @@ ops-tensor/
 │   ├── add/                   # Add 算子实现
 │   │   ├── add_host.cpp       # Host 端实现
 │   │   ├── add_kernel.cpp     # Kernel 端实现
-│   │   ├── arch35/            # 架构特定代码
-│   │   │   └── add_struct.h   # 数据结构定义
+│   │   ├── arch35/            # 架构特定代码（可选）
+│   │   │   └── add_struct.h   # 数据结构定义（也可定义在 .cpp 中）
 │   │   ├── tests/             # 算子测试
 │   │   │   ├── add_test.h
 │   │   │   └── add_test.cpp
 │   │   └── CMakeLists.txt
+│   ├── ...                    # 其他算子
 │   └── CMakeLists.txt
 ├── tests/                      # 测试框架
 │   ├── test_common.h          # 测试框架头文件
@@ -142,47 +143,50 @@ ops-tensor/
 └── README.md                   # 本文件
 ```
 
+**说明**：
+- Host 和 Kernel 可以合并为一个 `.cpp` 文件
+- TilingData 可以定义在 `.cpp` 文件中，也可以独立为 `_struct.h`
+- `arch35/` 目录是可选的，仅在需要区分不同 SOC 架构时使用
+- 测试文件强烈推荐，但不是必需的
+
 ## 🛠️ 开发指南
 
 ### 添加新算子
 
-1. **创建算子目录**
+详细的算子开发指南请参考 [算子开发指南](docs/zh/develop/operator_development_guide.md)，包括：
 
+- 完整的目录结构说明
+- Host + Kernel 实现模板
+- Tiling 数据结构定义
+- 完整开发流程
+
+**快速开始**：
+
+1. **创建目录**
 ```bash
-mkdir -p src/my_op/arch35
+mkdir -p src/my_op/arch35 (可选)
 mkdir -p src/my_op/tests
 ```
 
 2. **编写算子实现**
+创建 `src/my_op/my_op.cpp`，包含：
+- Host 部分：对外接口、Tiling 计算、内存管理
+- Kernel 部分：核函数实现
 
-在 `src/my_op/` 下创建算子的 Host 和 Kernel 实现：
-- `my_op_host.cpp` - Host 端 Tiling 实现
-- `my_op_kernel.cpp` - Kernel 端计算实现
-- `arch35/my_op_struct.h` - 数据结构定义
-
-3. **编写算子测试**
-
-在 `src/my_op/tests/` 下创建测试文件：
-- `my_op_test.h` - 测试声明
-- `my_op_test.cpp` - 测试实现
-
-4. **创建 CMakeLists.txt**
-
+3. **创建 CMakeLists.txt**
 ```cmake
 register_operator(NAME my_op ARCH_DIR arch35)
 ```
 
-5. **编译和测试**
+4. **编写测试**（推荐）
+参考 [测试编写指南](docs/zh/develop/test_writing_guide.md)
 
+5. **编译验证**
 ```bash
-# 编译新算子
-./build.sh --ops=my_op
-
-# 运行测试
 ./build.sh --ops=my_op --run
 ```
 
-详细开发指南请参考 ops-math 项目的[算子开发文档](https://gitcode.com/cann/ops-math/blob/master/docs/zh/develop/aicore_develop_guide.md)。
+完整示例参考 `src/add/` 目录。
 
 ### 编写测试
 
