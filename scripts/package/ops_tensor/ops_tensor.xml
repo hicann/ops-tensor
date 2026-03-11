@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<config name="ops_tensor" copy_type="delivery" src_path="lib/" dst_path="ops_tensor" install_type="all" install_mod="550" install_own="$username:$usergroup">
+    <package_info>
+        <product_name>cann</product_name>
+        <chip_name>Ascend910B</chip_name>
+        <func_name>ops-tensor</func_name>
+        <suffix>run</suffix>
+        <install_script>share/info/ops_tensor/scripts/install.sh</install_script>
+        <help>share/info/ops_tensor/scripts/help.info</help>
+        <uninstall_script>share/info/ops_tensor/scripts/uninstall.sh</uninstall_script>
+    </package_info>
+
+    <generate_info value="version.info" dst_path="share/info/ops_tensor" install_path="share/info/ops_tensor" install_mod="440"/>
+
+    <dir_info value="ops_tensor" install_path="${TARGET_ENV}" install_type="all">
+        <path value="lib" install_mod="755"/>
+        <path value="include" install_mod="755"/>
+        <path value="share/info/ops_tensor" install_mod="755"/>
+    </dir_info>
+
+    <file_info value="ops_tensor_lib" copy_type="delivery" src_path="" dst_path="lib/" install_path="${TARGET_ENV}/lib/">
+        <file value="libops_tensor.so" install_mod="550"/>
+    </file_info>
+
+    <file_info value="ops_tensor_include" copy_type="delivery" src_path="" dst_path="include/" install_path="${TARGET_ENV}/include/" install_type="all">
+        <file value="ops_tensor.h" install_mod="440"/>
+    </file_info>
+</config>

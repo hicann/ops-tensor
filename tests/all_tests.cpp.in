@@ -1,0 +1,58 @@
+/**
+ * Copyright (c) 2026 Huawei Technologies Co., Ltd.
+ * This program is free software; you can redistribute it and/or modify it under the terms and conditions of
+ * CANN Open Software License Agreement Version 2.0 (the "License").
+ * You should refer to the License for details. You may not use this file except in compliance with the License.
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+ * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+ * See LICENSE in the root of the software repository for the full text of the License.
+ */
+
+/**
+ * @file all_tests.cpp
+ * @brief 自动生成的所有算子测试入口（由 CMake 生成）
+ */
+
+#include "common/tests/test_common.h"
+
+// 自动包含所有算子测试头文件
+@TEST_INCLUDES@
+
+// 全局 stream
+aclrtStream g_stream = nullptr;
+
+int main() {
+    // 初始化 ACL
+    if (OpsTensorTest::ACLManager::init(g_stream) != 0) {
+        std::cerr << "Failed to initialize ACL" << std::endl;
+        return -1;
+    }
+
+    std::cout << "========================================" << std::endl;
+    std::cout << "       所有算子测试开始" << std::endl;
+    std::cout << "========================================" << std::endl;
+    std::cout << std::endl;
+
+    // 自动遍历所有注册的测试
+    for (const auto& entry : OpsTensorTest::TestRegistry::get_tests()) {
+        TEST_PRINT_HEADER(entry.name);
+        OpsTensorTest::TestStats op_stats;
+        entry.func(g_stream, op_stats);
+        TEST_PRINT_RESULT_NAME(entry.name, op_stats);
+    }
+
+    // 打印全局统计
+    TEST_PRINT_GLOBAL_RESULT();
+
+    // 清理 ACL
+    OpsTensorTest::ACLManager::finalize(g_stream);
+
+    // 返回结果
+    if (OpsTensorTest::g_global_stats.failed > 0) {
+        std::cout << "测试失败!" << std::endl;
+        return 1;
+    }
+
+    std::cout << "所有测试通过!" << std::endl;
+    return 0;
+}

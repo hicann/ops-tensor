@@ -1,0 +1,43 @@
+##############################################################################
+# ops-tensor Run Package Help
+##############################################################################
+
+NAME
+    cann-ops-tensor - ops-tensor operator library run package
+
+DESCRIPTION
+    This package installs the ops-tensor operator library for CANN.
+    The library provides tensor operation implementations for Ascend AI processors.
+
+INSTALLATION
+    To install this package, run:
+
+        ./cann-ops-tensor-<version>-<os>-<arch>.run
+
+    By default, files are installed to:
+        Library:  /usr/local/Ascend/lib/libops_tensor.so
+        Header:   /usr/local/Ascend/include/ops_tensor.h
+
+OPTIONS
+    --help          Show this help message
+    --uninstall     Uninstall the package
+    --noexec        Extract files without executing
+    --target <dir>  Extract to specified directory
+
+ENVIRONMENT VARIABLES
+    TARGET_ENV      Installation directory (default: /usr/local/Ascend)
+
+UNINSTALLATION
+    To uninstall the package, run:
+
+        ./cann-ops-tensor-<version>-<os>-<arch>.run --uninstall
+
+    Or use the uninstall script directly:
+
+        /usr/local/Ascend/share/info/ops_tensor/scripts/uninstall.sh
+
+VERSION INFORMATION
+    See version.info file in the package.
+
+SUPPORT
+    For issues and questions, please refer to the project documentation.
