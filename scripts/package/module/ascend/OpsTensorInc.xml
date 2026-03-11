@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<block name="OpsTensorInc" copy_type="delivery" src_path="" dst_path="" install_path="" install_own="$username:$usergroup" install_mod="550" install_type="devel">
+    <dir_info install_mod="550">
+        <path value="$(TARGET_ENV)/include"/>
+    </dir_info>
+    <file_info value="ops_tensor_inc" copy_type="delivery" src_path="" dst_path="include/" install_path="$(TARGET_ENV)/include/">
+        <file value="cann_ops_tensor.h" install_mod="550"/>
+    </file_info>
+</block>

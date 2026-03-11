@@ -82,15 +82,15 @@ message(STATUS "")
 # 安装规则
 ##############################################################################
 
-# 安装库文件
+# 安装库文件到 ops_tensor/lib64/
 install(TARGETS ${OPS_TENSOR}
-    LIBRARY DESTINATION lib
+    LIBRARY DESTINATION ${OPS_TENSOR_LIB_INSTALL_DIR}
     RUNTIME DESTINATION bin
 )
 
-# 安装公共头文件
+# 安装公共头文件到 ops_tensor/include/
 install(DIRECTORY ${CMAKE_SOURCE_DIR}/include/
-    DESTINATION include
+    DESTINATION ${OPS_TENSOR_INC_INSTALL_DIR}
     FILES_MATCHING PATTERN "*.h" PATTERN "*.hpp"
 )
 

@@ -11,6 +11,11 @@ cmake_minimum_required(VERSION 3.16)
 # 项目声明
 project(ops_tensor)
 
+# 包含变量和版本配置
+include(cmake/func.cmake)
+include(cmake/variables.cmake)
+include(${CMAKE_CURRENT_SOURCE_DIR}/version.cmake)
+
 # 设置项目变量
 set(OPS_TENSOR ops_tensor)
 set(PROJECT_VERSION "1.0.0")
@@ -41,10 +46,20 @@ if(BUILD_TESTING)
     add_subdirectory(tests)
 endif()
 
-# 3.4 打包（可选）
+# 3.4 打包配置
 option(ENABLE_PACKAGE "Enable package generation" OFF)
 if(ENABLE_PACKAGE)
+    # 设置第三方库路径
+    if(NOT CANN_3RD_LIB_PATH)
+        set(CANN_3RD_LIB_PATH ${PROJECT_SOURCE_DIR}/third_party CACHE STRING "CANN third party lib path")
+    endif()
+    # 检查构建依赖
+    check_pkg_build_deps(ops_tensor)
+    # 生成版本信息目标
+    add_version_info_targets()
+    # 打包
     include(cmake/package.cmake)
+    pack_built_in()
 endif()
 
 ##############################################################################
