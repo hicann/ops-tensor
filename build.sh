@@ -7,12 +7,13 @@
 #   ./build.sh [OPTIONS]
 #
 # 选项:
-#   --ops=OP_LIST    指定要编译的算子列表 (逗号分隔)
-#   --run            编译后执行测试
-#   --pkg            编译并打包成 .run 文件
-#   --soc=SOC        指定目标 SoC 型号 (当前仅支持: Ascend950, 支持小写输入)
-#   -j[N]            编译线程数，默认为 8，例如: -j16
-#   -h, --help       显示帮助信息
+#   --ops=OP_LIST       指定要编译的算子列表 (逗号分隔)
+#   --run               编译后执行测试
+#   --pkg               编译并打包成 .run 文件
+#   --soc=SOC           指定目标 SoC 型号 (当前仅支持: Ascend950, 支持小写输入)
+#   -j[N]               编译线程数，默认为 8，例如: -j16
+#   --test-timeout=N    测试超时时间（秒），默认为 300
+#   -h, --help          显示帮助信息
 #
 # 行为说明:
 #   无参数                编译所有算子，不执行测试
@@ -58,6 +59,7 @@ BUILD_DIR="build"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 THREAD_NUM=8  # 默认编译线程数
 CORE_NUMS=$(cat /proc/cpuinfo | grep "processor" | wc -l 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
+TEST_TIMEOUT=300  # 默认测试超时时间（秒）
 
 # 设置 _ASCEND_INSTALL_PATH（优先级：ASCEND_INSTALL_PATH > ASCEND_HOME_PATH > 默认值）
 if [ -n "$ASCEND_INSTALL_PATH" ]; then
@@ -182,12 +184,13 @@ show_help() {
 Usage: $(basename "$0") [OPTIONS]
 
 Options:
-  --ops=OP_LIST    Specify operators to build (comma-separated)
-  --run            Run tests after build
-  --pkg            Build package (.run file)
-  --soc=SOC        Target SoC model (default: Ascend950, case-insensitive)
-  -j[N]            Number of compile threads (default: 8), e.g., -j16
-  -h, --help       Show this help message
+  --ops=OP_LIST       Specify operators to build (comma-separated)
+  --run               Run tests after build
+  --pkg               Build package (.run file)
+  --soc=SOC           Target SoC model (default: Ascend950, case-insensitive)
+  -j[N]               Number of compile threads (default: 8), e.g., -j16
+  --test-timeout=N    Test timeout in seconds (default: 300)
+  -h, --help          Show this help message
 
 Supported SoC models:
   Ascend950    (dav-3101, default)
@@ -207,6 +210,7 @@ Examples:
   $(basename "$0") --ops=add --pkg          # Build 'add' and package
   $(basename "$0") --soc=Ascend950 --pkg    # Build package for Ascend950
   $(basename "$0") --soc=ascend950 --pkg    # Build package (lowercase also works)
+  $(basename "$0") --test-timeout=600 --run  # Run tests with 600s timeout
 
 EOF
 }
@@ -353,19 +357,35 @@ build_package() {
 
 # 运行测试
 run_tests() {
-    log_info "Running tests with ctest..."
+    log_info "Running tests (timeout: ${TEST_TIMEOUT}s)..."
 
-    cd "$BUILD_DIR"
+    cd "$BUILD_DIR" || {
+        log_error "Build directory not found: $BUILD_DIR"
+        exit 1
+    }
 
-    # 运行测试（all_ops_test 会自动运行所有已注册的测试）
-    ctest --verbose
+    # 检查测试可执行文件
+    if [ ! -f "./tests/all_ops_test" ]; then
+        log_error "Test executable not found: ./tests/all_ops_test"
+        log_error "Please build the project first with: ./build.sh --run"
+        exit 1
+    fi
 
-    local test_result=$?
+    log_info "Found test executable, starting..."
+
+    # 临时禁用 set -e，手动处理错误
+    set +e
+    timeout -k 1s ${TEST_TIMEOUT}s ./tests/all_ops_test 2>&1
+    test_result=$?
+    set -e
 
     cd "$SCRIPT_DIR"
 
-    if [ $test_result -ne 0 ]; then
-        log_error "Some tests failed"
+    if [ $test_result -ge 124 ]; then
+        log_error "Test timeout (${TEST_TIMEOUT}s exceeded)"
+        exit 1
+    elif [ $test_result -ne 0 ]; then
+        log_error "Some tests failed (exit code: $test_result)"
         exit 1
     else
         log_success "All tests passed"
@@ -406,6 +426,11 @@ parse_arguments() {
                     THREAD_NUM="${1#-j}"
                     shift
                 fi
+                ;;
+            --test-timeout=*)
+                # 提取测试超时时间
+                TEST_TIMEOUT="${1#*=}"
+                shift
                 ;;
             -h|--help)
                 show_help
@@ -456,6 +481,7 @@ main() {
 
     if [ "$RUN_TESTS" = true ]; then
         log_success "Run tests: YES"
+        log_info "Test timeout: ${TEST_TIMEOUT}s"
         if [ "$BUILD_OPERATORS" != "all" ]; then
             log_info "Test operators: ${BUILD_OPERATORS}"
         else

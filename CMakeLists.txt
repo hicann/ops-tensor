@@ -32,10 +32,6 @@ init_env()  # 发现算子
 
 # 3.1 编译测试（可选）
 option(BUILD_TESTING "Build tests" OFF)
-if(BUILD_TESTING)
-    enable_testing()
-    # 测试在 src/CMakeLists.txt 中配置
-endif()
 
 # 3.2 编译算子
 add_subdirectory(src)

@@ -63,9 +63,6 @@ if(BUILD_TESTING)
         ${ASCEND_HOME_PATH}/lib64/libacl_rt.so
     )
 
-    # 添加到 CTest
-    add_test(NAME all_ops_test COMMAND all_ops_test)
-
     message(STATUS "已配置测试目标: all_ops_test")
 
 endif()
