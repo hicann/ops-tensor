@@ -46,7 +46,7 @@ build.sh 支持多种功能，可通过 `--help` 参数查看所有选项：
 
 | SoC 型号 | SOC_VERSION（CANN 编译器） | 说明 |
 |---------|---------------------------|------|
-| Ascend950 | ascend950dt_9595 | 默认支持（dav-3101） |
+| Ascend950 | ascend950dt_9595 | 默认支持（dav-3510） |
 | Ascend910B | ascend910b3 | dav-2201 |
 | Ascend910_93 | ascend910_93 | dav-2201 |
 | Ascend910 | ascend910 | dav-2101 |
@@ -143,12 +143,12 @@ build/
 打包成功后，会在 `build/` 目录生成 .run 文件：
 
 ```
-build/cann-ops-tensor-1.0.0-linux-{SOC}-{ARCH}.run
+build_out/cann-{soc}-ops-tensor_{version}_linux-{arch}.run
 ```
 
 例如：
-- `cann-ops-tensor-1.0.0-linux-Ascend950-x86_64.run`
-- `cann-ops-tensor-1.0.0-linux-Ascend910B-aarch64.run`
+- `cann-950-ops-tensor_9.0.0_linux-x86_64.run`
+- `cann-910b-ops-tensor_9.0.0_linux-aarch64.run`
 
 ## 注意事项
 

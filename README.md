@@ -69,19 +69,19 @@ echo $ASCEND_HOME_PATH
 
 ```bash
 # 标准安装（需要 root 权限）
-sudo ./cann-ops-tensor-1.0.0-linux-*.run
+sudo ./cann-950-ops-tensor_9.0.0_linux-*.run
 
 # 查看安装包信息
-./cann-ops-tensor-1.0.0-linux-*.run --help
+./cann-950-ops-tensor_9.0.0_linux-*.run --help
 
 # 安装到自定义路径
-sudo ./cann-ops-tensor-1.0.0-linux-*.run --install-path=/opt/ascend
+sudo ./cann-950-ops-tensor_9.0.0_linux-*.run --install-path=/opt/ascend
 
 # 卸载
-sudo ./cann-ops-tensor-1.0.0-linux-*.run --uninstall
+sudo ./cann-950-ops-tensor_9.0.0_linux-*.run --uninstall
 
 # 升级
-sudo ./cann-ops-tensor-1.0.0-linux-*.run --upgrade
+sudo ./cann-950-ops-tensor_9.0.0_linux-*.run --upgrade
 ```
 
 ## 📖 项目说明
@@ -198,45 +198,7 @@ ops-tensor 提供了轻量级、自动化的测试框架。详细的测试编写
 - 完整编写步骤和示例
 - 最佳实践和常见问题
 
-## 📦 打包说明
 
-### Run 包结构
-
-```
-cann-ops-tensor-1.0.0-linux-Ascend950-x86_64.run
-    ↓ 解压
-
-/tmp/extract/
-├── lib/
-│   └── libops_tensor.so           # 核心动态库
-├── include/
-│   └── cann_ops_tensor.h          # API 头文件
-└── share/
-    └── info/
-        └── ops_tensor/
-            ├── version.info       # 版本信息
-            ├── scripts/           # 管理脚本
-            │   ├── install.sh
-            │   ├── uninstall.sh
-            │   └── help.info
-            └── ascend_install.info # 安装信息（安装后生成）
-```
-
-### 安装后的路径
-
-```
-/usr/local/Ascend/cann/
-├── lib/
-│   └── libops_tensor.so
-├── include/
-│   └── cann_ops_tensor.h
-└── share/
-    └── info/
-        └── ops_tensor/
-            ├── version.info
-            ├── scripts/
-            └── ascend_install.info
-```
 
 ## 💬 相关信息
 
