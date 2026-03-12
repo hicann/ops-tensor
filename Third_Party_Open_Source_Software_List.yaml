@@ -1,0 +1,6 @@
+
+
+makeself:
+  version: release-2.5.0-patch1
+  license: GPL-2.0-or-later
+  path: third_party/makeself
