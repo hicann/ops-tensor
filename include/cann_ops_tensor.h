@@ -10,13 +10,13 @@
 
 /*!
  * \file cann_ops_tensor.h
- * \brief ops-tensor 公共 API 头文件 - 提供 Add 算子的对外接口
+ * \brief ops-tensor 公共 API 头文件
  */
 
 #ifndef CANN_OPS_TENSOR_H
 #define CANN_OPS_TENSOR_H
 
-#include <stdint.h>
+#include "cann_ops_tensor_types.h"
 #include "acl/acl.h"
 
 /* 导出宏定义 */
@@ -30,20 +30,358 @@
 extern "C" {
 #endif
 
+/*============================================================================
+ *                        1. 句柄管理 (Handle Management)
+ *============================================================================*/
+
 /**
- * @brief Tensor Add operation: C = A + B (element-wise)
- *
- * @param x1    Input tensor A (device pointer, float type)
- * @param x2    Input tensor B (device pointer, float type)
- * @param y     Output tensor (device pointer, float type)
- * @param n     Number of elements in each tensor
- * @param stream ACL stream for execution
- * @return      0 (ACL_SUCCESS) on success, error code otherwise
+ * @brief 创建并初始化 ops-tensor 库句柄
+ * @param[out] handle  返回的句柄指针
+ * @return ACLTENSOR_STATUS_SUCCESS 成功，否则返回错误码
  */
-ACLTENSOR_API aclError acltensorAdd(float* x1, float* x2, float* y, int64_t n, void* stream);
+ACLTENSOR_API acltensorStatus_t acltensorCreate(acltensorHandle_t* handle);
+
+/**
+ * @brief 销毁 ops-tensor 库句柄
+ * @param[in] handle  要销毁的句柄
+ * @return ACLTENSOR_STATUS_SUCCESS 成功
+ */
+ACLTENSOR_API acltensorStatus_t acltensorDestroy(acltensorHandle_t handle);
+
+/* TODO: Phase 2 - PlanCache 相关接口 */
+ACLTENSOR_API acltensorStatus_t acltensorHandleResizePlanCache(
+    acltensorHandle_t handle, const uint32_t numEntries);
+
+ACLTENSOR_API acltensorStatus_t acltensorHandleWritePlanCacheToFile(
+    const acltensorHandle_t handle, const char fileName[]);
+
+ACLTENSOR_API acltensorStatus_t acltensorHandleReadPlanCacheFromFile(
+    acltensorHandle_t handle, const char fileName[], uint32_t* numCachelinesRead);
+
+/*============================================================================
+ *                        2. 张量描述符管理 (Tensor Descriptor)
+ *============================================================================*/
+
+/**
+ * @brief 创建张量描述符
+ * @param[in] handle                 库句柄
+ * @param[out] desc                 返回的张量描述符指针
+ * @param[in] numModes              维度数量
+ * @param[in] lens                  各维度长度数组
+ * @param[in] strides               各维度步长数组（NULL 表示连续内存）
+ * @param[in] dataType              数据类型
+ * @param[in] alignmentRequirement  内存对齐要求（字节）
+ * @return ACLTENSOR_STATUS_SUCCESS 成功
+ */
+ACLTENSOR_API acltensorStatus_t acltensorCreateTensorDescriptor(
+    const acltensorHandle_t      handle,
+    acltensorTensorDescriptor_t* desc,
+    const uint32_t               numModes,
+    const int64_t                lens[],
+    const int64_t                strides[],
+    acltensorDataType_t          dataType,
+    uint32_t                     alignmentRequirement);
+
+/**
+ * @brief 销毁张量描述符
+ * @param[in] desc  要销毁的张量描述符
+ * @return ACLTENSOR_STATUS_SUCCESS 成功
+ */
+ACLTENSOR_API acltensorStatus_t acltensorDestroyTensorDescriptor(acltensorTensorDescriptor_t desc);
+
+/*============================================================================
+ *                        3. 操作描述符管理 (Operation Descriptor)
+ *============================================================================*/
+
+/**
+ * @brief 创建 Elementwise Binary 操作描述符
+ *        D = opAC(alpha * opA(A), gamma * opC(C))
+ * @param[in] handle       库句柄
+ * @param[out] desc       返回的操作描述符指针
+ * @param[in] descA       输入张量 A 的描述符
+ * @param[in] modeA       输入张量 A 的模式数组
+ * @param[in] opA         对张量 A 的操作符
+ * @param[in] descC       输入张量 C 的描述符
+ * @param[in] modeC       输入张量 C 的模式数组
+ * @param[in] opC         对张量 C 的操作符
+ * @param[in] descD       输出张量 D 的描述符
+ * @param[in] modeD       输出张量 D 的模式数组
+ * @param[in] opAC        A 和 C 之间的二元操作符
+ * @param[in] descCompute 计算精度描述符
+ * @return ACLTENSOR_STATUS_SUCCESS 成功
+ */
+ACLTENSOR_API acltensorStatus_t acltensorCreateElementwiseBinary(
+    const acltensorHandle_t            handle,
+    acltensorOperationDescriptor_t*    desc,
+    const acltensorTensorDescriptor_t  descA,
+    const int32_t                      modeA[],
+    acltensorOperator_t                opA,
+    const acltensorTensorDescriptor_t  descC,
+    const int32_t                      modeC[],
+    acltensorOperator_t                opC,
+    const acltensorTensorDescriptor_t  descD,
+    const int32_t                      modeD[],
+    acltensorOperator_t                opAC,
+    const acltensorComputeDescriptor_t descCompute);
+
+/**
+ * @brief 销毁操作描述符
+ * @param[in] desc  要销毁的操作描述符
+ * @return ACLTENSOR_STATUS_SUCCESS 成功
+ */
+ACLTENSOR_API acltensorStatus_t acltensorDestroyOperationDescriptor(acltensorOperationDescriptor_t desc);
+
+/* TODO: Phase 2 - Elementwise Trinary */
+ACLTENSOR_API acltensorStatus_t acltensorCreateElementwiseTrinary(
+    const acltensorHandle_t            handle,
+    acltensorOperationDescriptor_t*    desc,
+    const acltensorTensorDescriptor_t  descA,
+    const int32_t                      modeA[],
+    acltensorOperator_t                opA,
+    const acltensorTensorDescriptor_t  descB,
+    const int32_t                      modeB[],
+    acltensorOperator_t                opB,
+    const acltensorTensorDescriptor_t  descC,
+    const int32_t                      modeC[],
+    acltensorOperator_t                opC,
+    const acltensorTensorDescriptor_t  descD,
+    const int32_t                      modeD[],
+    acltensorOperator_t                opAB,
+    acltensorOperator_t                opABC,
+    const acltensorComputeDescriptor_t descCompute);
+
+/* TODO: Phase 3 - Contraction */
+ACLTENSOR_API acltensorStatus_t acltensorCreateContraction(
+    const acltensorHandle_t            handle,
+    acltensorOperationDescriptor_t*    desc,
+    const acltensorTensorDescriptor_t  descA,
+    const int32_t                      modeA[],
+    acltensorOperator_t                opA,
+    const acltensorTensorDescriptor_t  descB,
+    const int32_t                      modeB[],
+    acltensorOperator_t                opB,
+    const acltensorTensorDescriptor_t  descC,
+    const int32_t                      modeC[],
+    acltensorOperator_t                opC,
+    const acltensorTensorDescriptor_t  descD,
+    const int32_t                      modeD[],
+    const acltensorComputeDescriptor_t descCompute);
+
+/* TODO: Phase 3 - Reduction */
+ACLTENSOR_API acltensorStatus_t acltensorCreateReduction(
+    const acltensorHandle_t            handle,
+    acltensorOperationDescriptor_t*    desc,
+    const acltensorTensorDescriptor_t  descA,
+    const int32_t                      modeA[],
+    acltensorOperator_t                opA,
+    const acltensorTensorDescriptor_t  descC,
+    const int32_t                      modeC[],
+    acltensorOperator_t                opC,
+    const acltensorTensorDescriptor_t  descD,
+    const int32_t                      modeD[],
+    acltensorOperator_t                opReduce,
+    const acltensorComputeDescriptor_t descCompute);
+
+/* TODO: Phase 4 - Permutation */
+ACLTENSOR_API acltensorStatus_t acltensorCreatePermutation(
+    const acltensorHandle_t            handle,
+    acltensorOperationDescriptor_t*    desc,
+    const acltensorTensorDescriptor_t  descA,
+    const int32_t                      modeA[],
+    acltensorOperator_t                opA,
+    const acltensorTensorDescriptor_t  descB,
+    const int32_t                      modeB[],
+    const acltensorComputeDescriptor_t descCompute);
+
+/* TODO: Phase 2 - 属性接口 */
+ACLTENSOR_API acltensorStatus_t acltensorOperationDescriptorSetAttribute(
+    const acltensorHandle_t                 handle,
+    acltensorOperationDescriptor_t          desc,
+    acltensorOperationDescriptorAttribute_t attr,
+    const void*                             buf,
+    size_t                                  sizeInBytes);
+
+ACLTENSOR_API acltensorStatus_t acltensorOperationDescriptorGetAttribute(
+    const acltensorHandle_t                 handle,
+    acltensorOperationDescriptor_t          desc,
+    acltensorOperationDescriptorAttribute_t attr,
+    void*                                   buf,
+    size_t                                  sizeInBytes);
+
+/*============================================================================
+ *                        4. Plan 和 PlanPreference 管理
+ *============================================================================*/
+
+/**
+ * @brief 创建 Plan 偏好
+ * @param[in] handle  库句柄
+ * @param[out] pref   返回的 Plan 偏好指针
+ * @param[in] algo    算法选择
+ * @return ACLTENSOR_STATUS_SUCCESS 成功
+ */
+ACLTENSOR_API acltensorStatus_t acltensorCreatePlanPreference(
+    const acltensorHandle_t    handle,
+    acltensorPlanPreference_t* pref,
+    acltensorAlgo_t            algo);
+
+/**
+ * @brief 销毁 Plan 偏好
+ * @param[in] pref  要销毁的 Plan 偏好
+ * @return ACLTENSOR_STATUS_SUCCESS 成功
+ */
+ACLTENSOR_API acltensorStatus_t acltensorDestroyPlanPreference(acltensorPlanPreference_t pref);
+
+/**
+ * @brief 创建 Plan
+ * @param[in] handle             库句柄
+ * @param[out] plan             返回的 Plan 指针
+ * @param[in] desc              操作描述符
+ * @param[in] pref              Plan 偏好
+ * @param[in] workspaceSizeLimit 工作空间大小限制
+ * @return ACLTENSOR_STATUS_SUCCESS 成功
+ */
+ACLTENSOR_API acltensorStatus_t acltensorCreatePlan(
+    const acltensorHandle_t              handle,
+    acltensorPlan_t*                     plan,
+    const acltensorOperationDescriptor_t desc,
+    const acltensorPlanPreference_t      pref,
+    uint64_t                             workspaceSizeLimit);
+
+/**
+ * @brief 销毁 Plan
+ * @param[in] plan  要销毁的 Plan
+ * @return ACLTENSOR_STATUS_SUCCESS 成功
+ */
+ACLTENSOR_API acltensorStatus_t acltensorDestroyPlan(acltensorPlan_t plan);
+
+/* TODO: Phase 2 */
+ACLTENSOR_API acltensorStatus_t acltensorPlanPreferenceSetAttribute(
+    const acltensorHandle_t            handle,
+    acltensorPlanPreference_t          pref,
+    acltensorPlanPreferenceAttribute_t attr,
+    const void*                        buf,
+    size_t                             sizeInBytes);
+
+ACLTENSOR_API acltensorStatus_t acltensorEstimateWorkspaceSize(
+    const acltensorHandle_t              handle,
+    const acltensorOperationDescriptor_t desc,
+    const acltensorPlanPreference_t      planPref,
+    const acltensorWorksizePreference_t  workspacePref,
+    uint64_t*                            workspaceSizeEstimate);
+
+ACLTENSOR_API acltensorStatus_t acltensorPlanGetAttribute(
+    const acltensorHandle_t  handle,
+    const acltensorPlan_t    plan,
+    acltensorPlanAttribute_t attr,
+    void*                    buf,
+    size_t                   sizeInBytes);
+
+/*============================================================================
+ *                        5. 执行函数 (Execution)
+ *============================================================================*/
+
+/**
+ * @brief 执行 Elementwise Binary 操作
+ *        D = opAC(alpha * opA(A), gamma * opC(C))
+ * @param[in] handle  库句柄
+ * @param[in] plan    执行计划
+ * @param[in] alpha   缩放因子 alpha
+ * @param[in] A       输入张量 A 的设备指针
+ * @param[in] gamma   缩放因子 gamma
+ * @param[in] C       输入张量 C 的设备指针
+ * @param[out] D      输出张量 D 的设备指针
+ * @param[in] stream  ACL 流
+ * @return ACLTENSOR_STATUS_SUCCESS 成功
+ */
+ACLTENSOR_API acltensorStatus_t acltensorElementwiseBinaryExecute(
+    const acltensorHandle_t handle,
+    const acltensorPlan_t   plan,
+    const void*             alpha,
+    const void*             A,
+    const void*             gamma,
+    const void*             C,
+    void*                   D,
+    aclrtStream             stream);
+
+/* TODO: Phase 2 - Elementwise Trinary */
+ACLTENSOR_API acltensorStatus_t acltensorElementwiseTrinaryExecute(
+    const acltensorHandle_t handle,
+    const acltensorPlan_t   plan,
+    const void*             alpha,
+    const void*             A,
+    const void*             beta,
+    const void*             B,
+    const void*             gamma,
+    const void*             C,
+    void*                   D,
+    aclrtStream             stream);
+
+/* TODO: Phase 3 - Contraction */
+ACLTENSOR_API acltensorStatus_t acltensorContract(
+    const acltensorHandle_t handle,
+    const acltensorPlan_t   plan,
+    const void*             alpha,
+    const void*             A,
+    const void*             B,
+    const void*             beta,
+    const void*             C,
+    void*                   D,
+    void*                   workspace,
+    uint64_t                workspaceSize,
+    aclrtStream             stream);
+
+/* TODO: Phase 3 - Reduction */
+ACLTENSOR_API acltensorStatus_t acltensorReduce(
+    const acltensorHandle_t handle,
+    const acltensorPlan_t   plan,
+    const void*             alpha,
+    const void*             A,
+    const void*             beta,
+    const void*             C,
+    void*                   D,
+    void*                   workspace,
+    uint64_t                workspaceSize,
+    aclrtStream             stream);
+
+/* TODO: Phase 4 - Permutation */
+ACLTENSOR_API acltensorStatus_t acltensorPermute(
+    const acltensorHandle_t handle,
+    const acltensorPlan_t   plan,
+    const void*             alpha,
+    const void*             A,
+    void*                   B,
+    aclrtStream             stream);
+
+/*============================================================================
+ *                        6. 辅助工具函数 (Utilities)
+ *============================================================================*/
+
+/**
+ * @brief 获取错误码对应的错误字符串
+ * @param[in] error  错误码
+ * @return 错误字符串
+ */
+ACLTENSOR_API const char* acltensorGetErrorString(const acltensorStatus_t error);
+
+/**
+ * @brief 获取库版本号
+ * @return 版本号
+ */
+ACLTENSOR_API size_t acltensorGetVersion(void);
+
+/*============================================================================
+ *                        7. 日志系统 (Logging) - TODO: Phase 2
+ *============================================================================*/
+
+ACLTENSOR_API acltensorStatus_t acltensorLoggerSetCallback(acltensorLoggerCallback_t callback);
+ACLTENSOR_API acltensorStatus_t acltensorLoggerSetFile(FILE* file);
+ACLTENSOR_API acltensorStatus_t acltensorLoggerOpenFile(const char* logFile);
+ACLTENSOR_API acltensorStatus_t acltensorLoggerSetLevel(acltensorLogLevel_t level);
+ACLTENSOR_API acltensorStatus_t acltensorLoggerSetMask(int32_t mask);
+ACLTENSOR_API acltensorStatus_t acltensorLoggerForceDisable(void);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif // CANN_OPS_TENSOR_H
+#endif /* CANN_OPS_TENSOR_H */
