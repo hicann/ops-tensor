@@ -34,6 +34,7 @@ V*_onnx_plugin_model.onnx
 *.pb.c
 
 # cann tmp
+lib/
 kernel_meta/
 
 # Jetbrain
