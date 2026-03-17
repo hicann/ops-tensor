@@ -71,11 +71,11 @@ extern TestStats g_global_stats;
     } while(0)
 
 // 精确数组比较宏（无容差，高效 - 使用 std::equal）
-#define TEST_ASSERT_ARRAY_EQ(local_stats, actual, expected, size, error_msg) \
+#define TEST_ASSERT_ARRAY_EQ(local_stats, actual, expected, length, error_msg) \
     do { \
-        bool all_match = std::equal((expected), (expected) + (size), (actual)); \
+        bool all_match = std::equal((expected), (expected) + (length), (actual)); \
         if (!all_match) { \
-            auto iter = std::mismatch((expected), (expected) + (size), (actual)); \
+            auto iter = std::mismatch((expected), (expected) + (length), (actual)); \
             size_t mismatch_idx = std::distance((expected), iter.first); \
             std::cerr << "  [ERROR] " << error_msg << " at index " << mismatch_idx << std::endl; \
         } \
@@ -83,19 +83,27 @@ extern TestStats g_global_stats;
     } while(0)
 
 // 容差数组比较宏（浮点数，带容差）
-#define TEST_ASSERT_ARRAY_NEAR(local_stats, actual, expected, size, tol, error_msg) \
+#define TEST_ASSERT_ARRAY_NEAR(local_stats, actual, expected, length, tol, error_msg) \
     do { \
         bool all_match = true; \
         size_t first_mismatch = 0; \
-        for (size_t _i = 0; _i < static_cast<size_t>(size); ++_i) { \
-            if (std::abs((actual)[_i] - (expected)[_i]) > (tol)) { \
-                all_match = false; \
-                first_mismatch = _i; \
-                break; \
+        if ((actual).size() != (expected).size()) { \
+            all_match = false; \
+            std::cerr << "  [ERROR] " << error_msg << ": actual.size() (" << (actual).size() \
+                      << ") != expected.size() (" << (expected).size() << ")" << std::endl; \
+        } else { \
+            for (size_t _i = 0; _i < static_cast<size_t>(length); ++_i) { \
+                if (std::abs((actual)[_i] - (expected)[_i]) > (tol)) { \
+                    all_match = false; \
+                    first_mismatch = _i; \
+                    break; \
+                } \
             } \
-        } \
-        if (!all_match) { \
-            std::cerr << "  [ERROR] " << error_msg << " at index " << first_mismatch << std::endl; \
+            if (!all_match) { \
+                std::cerr << "  [ERROR] " << error_msg << " at index " << first_mismatch \
+                          << ": actual=" << (actual)[first_mismatch] \
+                          << ", expected=" << (expected)[first_mismatch] << std::endl; \
+            } \
         } \
         TEST_ASSERT((local_stats), all_match, error_msg); \
     } while(0)
