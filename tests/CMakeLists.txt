@@ -45,6 +45,7 @@ if(BUILD_TESTING)
     add_executable(all_ops_test
         ${CMAKE_CURRENT_BINARY_DIR}/all_tests.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/test_common.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/test_elementwise.cpp
         ${TEST_SOURCES}
     )
 
@@ -52,6 +53,7 @@ if(BUILD_TESTING)
     target_include_directories(all_ops_test PRIVATE
         ${CMAKE_SOURCE_DIR}/include
         ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/lib
         ${CMAKE_CURRENT_SOURCE_DIR}
         ${ASCEND_HOME_PATH}/include
     )

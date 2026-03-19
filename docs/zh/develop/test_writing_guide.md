@@ -10,6 +10,8 @@ src/<op_name>/tests/
 └── <op_name>_test.cpp    # 实现文件（必需）
 ```
 
+**说明**：测试框架提供了 `ElementwiseBinaryTestConfig` 辅助类和 `ExecuteElementwiseBinaryTest` 通用函数，简化测试编写。
+
 ## 头文件（必需）
 
 **文件**：`<op_name>_test.h`
@@ -53,23 +55,27 @@ void test_xxx(aclrtStream stream, OpsTensorTest::TestStats& stats);
 **示例**：
 
 ```cpp
-void test_xxx(aclrtStream stream, OpsTensorTest::TestStats& stats) {
-    TEST_CASE_BEGIN("test_xxx");
+void test_<test_case_name>(aclrtStream stream, OpsTensorTest::TestStats& stats) {
+    TEST_CASE_BEGIN("test_<test_case_name>");
 
     // 准备数据
-    float input1[] = {1.0f, 2.0f};
-    float input2[] = {2.0f, 3.0f};
-    float expected[] = {3.0f, 5.0f};
-    float output[2];
+    std::vector<float> A{1.0f, 2.0f};
+    std::vector<float> C{2.0f, 3.0f};
+    std::vector<float> expected{3.0f, 5.0f};
+    std::vector<float> D(2);
 
-    // 调用算子
-    aclError result = acl<OpName>(input1, input2, output, 2, stream);
+    // 使用测试框架提供的配置类
+    ElementwiseBinaryTestConfig config(2);  // 一维，大小为2
+
+    // 调用通用测试函数（自动处理内存管理、数据拷贝等）
+    acltensorStatus_t result = ExecuteElementwiseBinaryTest(
+        A.data(), C.data(), D.data(), config, ACLTENSOR_OP_<OP_NAME>, stream);
 
     // 验证结果
-    TEST_ASSERT(stats, result == ACL_SUCCESS, "failed");
-    TEST_ASSERT_ARRAY_NEAR(stats, output, expected, 2, 1e-6f, "mismatch");
+    TEST_ASSERT(stats, result == ACLTENSOR_STATUS_SUCCESS, "failed");
+    TEST_ASSERT_ARRAY_NEAR(stats, D, expected, 2, 1e-6f, "mismatch");
 
-    TEST_CASE_PASS(stats, "test_xxx");
+    TEST_CASE_PASS(stats, "test_<test_case_name>");
 }
 ```
 
@@ -94,44 +100,47 @@ REGISTER_OP_TEST(<OpName>)
 
 ## 完整示例
 
-**my_op_test.h**
+**<op_name>_test.h**
 ```cpp
 #pragma once
 #include "test_common.h"
 
-namespace MyOpTest {
+namespace <OpName>Test {
     void run_all_tests(aclrtStream stream, OpsTensorTest::TestStats& stats);
 }
 ```
 
-**my_op_test.cpp**
+**<op_name>_test.cpp**
 ```cpp
 #include "cann_ops_tensor.h"
-#include "my_op_test.h"
+#include "<op_name>_test.h"
+#include <vector>
 
-void test_basic(aclrtStream stream, OpsTensorTest::TestStats& stats) {
-    TEST_CASE_BEGIN("test_basic");
+void test_<case_name>(aclrtStream stream, OpsTensorTest::TestStats& stats) {
+    TEST_CASE_BEGIN("test_<case_name>");
 
-    float x1[] = {1.0f, 2.0f};
-    float x2[] = {2.0f, 3.0f};
-    float expected[] = {3.0f, 5.0f};
-    float y[2];
+    std::vector<float> A{1.0f, 2.0f};
+    std::vector<float> C{2.0f, 3.0f};
+    std::vector<float> expected{3.0f, 5.0f};
+    std::vector<float> D(2);
 
-    aclError result = aclMyOp(x1, x2, y, 2, stream);
+    ElementwiseBinaryTestConfig config(2);
+    acltensorStatus_t result = ExecuteElementwiseBinaryTest(
+        A.data(), C.data(), D.data(), config, ACLTENSOR_OP_<OP_NAME>, stream);
 
-    TEST_ASSERT(stats, result == ACL_SUCCESS, "failed");
-    TEST_ASSERT_ARRAY_NEAR(stats, y, expected, 2, 1e-6f, "mismatch");
+    TEST_ASSERT(stats, result == ACLTENSOR_STATUS_SUCCESS, "failed");
+    TEST_ASSERT_ARRAY_NEAR(stats, D, expected, 2, 1e-6f, "mismatch");
 
-    TEST_CASE_PASS(stats, "test_basic");
+    TEST_CASE_PASS(stats, "test_<case_name>");
 }
 
-namespace MyOpTest {
+namespace <OpName>Test {
     void run_all_tests(aclrtStream stream, OpsTensorTest::TestStats& stats) {
-        test_basic(stream, stats);
+        test_<case_name>(stream, stats);
     }
 }
 
-REGISTER_OP_TEST(MyOp)
+REGISTER_OP_TEST(<op_name>)
 ```
 
 ---

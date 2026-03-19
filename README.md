@@ -122,7 +122,7 @@ ops-tensor/
 │   └── package/               # 打包相关脚本
 ├── src/                        # 源代码目录
 │   ├── add/                   # Add 算子实现
-│   │   ├── add_host.cpp       # Host 端实现
+│   │   ├── add_solution.cpp   # 解决方案实现（Tiling 计算、解决方案注册）
 │   │   ├── add_kernel.cpp     # Kernel 端实现
 │   │   ├── arch35/            # 架构特定代码（可选）
 │   │   │   └── add_struct.h   # 数据结构定义（也可定义在 .cpp 中）
@@ -144,8 +144,9 @@ ops-tensor/
 ```
 
 **说明**：
-- Host 和 Kernel 可以合并为一个 `.cpp` 文件
-- TilingData 可以定义在 `.cpp` 文件中，也可以独立为 `_struct.h`
+- `<op>_solution.cpp` - 解决方案实现（Tiling 计算、内存管理、解决方案注册）
+- `<op>_kernel.cpp` - Kernel 核函数实现
+- `arch35/<op>_struct.h` - Tiling 数据结构（可选，也可定义在 solution.cpp 中）
 - `arch35/` 目录是可选的，仅在需要区分不同 SOC 架构时使用
 - 测试文件强烈推荐，但不是必需的
 
@@ -156,8 +157,9 @@ ops-tensor/
 详细的算子开发指南请参考 [算子开发指南](docs/zh/develop/operator_development_guide.md)，包括：
 
 - 完整的目录结构说明
-- Host + Kernel 实现模板
+- 解决方案实现模板
 - Tiling 数据结构定义
+- 解决方案注册机制
 - 完整开发流程
 
 **快速开始**：
@@ -169,8 +171,8 @@ mkdir -p src/my_op/tests
 ```
 
 2. **编写算子实现**
-创建 `src/my_op/my_op.cpp`，包含：
-- Host 部分：对外接口、Tiling 计算、内存管理
+创建 `src/my_op/my_op_solution.cpp` 和 `src/my_op/my_op_kernel.cpp`，包含：
+- 解决方案部分：Tiling 计算、内存管理、解决方案注册
 - Kernel 部分：核函数实现
 
 3. **创建 CMakeLists.txt**

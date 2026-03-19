@@ -20,6 +20,9 @@
 #include <string>
 #include <vector>
 #include <cstdlib>
+#include "cann_ops_tensor_types.h"
+#include "cann_ops_tensor.h"
+#include "utils/type_utils.hpp"
 #include "acl/acl.h"
 
 namespace OpsTensorTest {
@@ -152,6 +155,110 @@ public:
     static int init(aclrtStream& stream);
     static void finalize(aclrtStream& stream);
 };
+
+/*============================================================================
+ *                        Elementwise 测试接口声明
+ *============================================================================*/
+
+/**
+ * @brief Elementwise 操作配置基类
+ *        包含所有 Elementwise 操作的公共配置
+ */
+struct ElementwiseTestConfigBase {
+    std::vector<int64_t> dimensions;      // 各维度长度，如 {2, 3} 表示 2x3 矩阵
+    acltensorDataType_t dataType = ACLTENSOR_R_32F;  // 数据类型（默认 float32）
+
+    // 构造函数
+    ElementwiseTestConfigBase(const std::vector<int64_t>& dims, acltensorDataType_t dt)
+        : dimensions(dims), dataType(dt) {}
+
+    // 获取总元素数量
+    int64_t numElements() const {
+        if (dimensions.empty()) return 0;
+        int64_t total = 1;
+        for (auto dim : dimensions) {
+            total *= dim;
+        }
+        return total;
+    }
+
+    // 获取维度数量
+    uint32_t numModes() const {
+        return static_cast<uint32_t>(dimensions.size());
+    }
+};
+
+/**
+ * @brief Elementwise Binary 操作测试配置（2个输入：A、C）
+ */
+struct ElementwiseBinaryTestConfig : public ElementwiseTestConfigBase {
+    std::vector<int32_t> modeA;           // 张量 A 的维度标签
+    std::vector<int32_t> modeC;           // 张量 C 的维度标签
+    std::vector<int32_t> modeD;           // 输出 D 的维度标签
+
+    // 便捷构造函数1：一维默认场景（mode={0}）
+    ElementwiseBinaryTestConfig(int64_t size, acltensorDataType_t dt = ACLTENSOR_R_32F)
+        : ElementwiseTestConfigBase(std::vector<int64_t>{size}, dt)
+        , modeA(1, 0)
+        , modeC(1, 0)
+        , modeD(1, 0) {}
+
+    // 通用构造函数2：支持自定义 dimensions 和 mode
+    ElementwiseBinaryTestConfig(
+        const std::vector<int64_t>& dims,
+        const std::vector<int32_t>& ma,
+        const std::vector<int32_t>& mc,
+        const std::vector<int32_t>& md,
+        acltensorDataType_t dt = ACLTENSOR_R_32F)
+        : ElementwiseTestConfigBase(dims, dt)
+        , modeA(ma)
+        , modeC(mc)
+        , modeD(md) {}
+};
+
+/**
+ * @brief Elementwise Trinary 操作测试配置（3个输入：A、B、C）
+ *        未来实现：D = op2(op1(A, B), C)
+ */
+struct ElementwiseTrinaryTestConfig : public ElementwiseTestConfigBase {
+    std::vector<int32_t> modeA;           // 张量 A 的维度标签
+    std::vector<int32_t> modeB;           // 张量 B 的维度标签
+    std::vector<int32_t> modeC;           // 张量 C 的维度标签
+    std::vector<int32_t> modeD;           // 输出 D 的维度标签
+};
+
+/**
+ * @brief 执行 Elementwise Binary 操作（通用测试函数）
+ *
+ * 支持的操作类型：ADD, SUB, MUL, DIV
+ * 支持任意维度、任意数据类型
+ *
+ * @param h_A         输入张量 A（主机内存）
+ * @param h_C         输入张量 C（主机内存）
+ * @param h_D         输出张量 D（主机内存）
+ * @param config      操作配置（包含维度、mode、数据类型等）
+ * @param opType      操作类型 (ACLTENSOR_OP_ADD/SUB/MUL/DIV)
+ * @param stream      ACL 流
+ * @return ACLTENSOR_STATUS_SUCCESS 成功，否则返回错误码
+ *
+ * 使用示例：
+ * @code
+ * // 简单一维场景
+ * float A[] = {1.0f, 2.0f, 3.0f};
+ * float C[] = {4.0f, 5.0f, 6.0f};
+ * float D[3];
+ *
+ * ElementwiseBinaryTestConfig config(3);  // 一维，大小为3
+ * ExecuteElementwiseBinaryTest(A, C, D, config, ACLTENSOR_OP_ADD, stream);
+ * @endcode
+ */
+acltensorStatus_t ExecuteElementwiseBinaryTest(
+    const void* h_A,
+    const void* h_C,
+    void* h_D,
+    const ElementwiseBinaryTestConfig& config,
+    acltensorOperator_t opType,
+    aclrtStream stream);
 
 // 测试函数类型
 using TestFunc = void(*)(aclrtStream, TestStats&);

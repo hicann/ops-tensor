@@ -57,21 +57,13 @@ function(register_operator)
     set(ALL_SOURCES ${CPP_SOURCES} ${ARCH_SOURCES})
 
     message(STATUS "  Registered operator: ${ARG_NAME}")
-    if(CPP_SOURCES)
-        message(STATUS "    C++ Sources: ${CPP_SOURCES}")
-    endif()
-    if(ARCH_SOURCES)
-        message(STATUS "    ASC Sources: ${ARCH_SOURCES}")
+    if(ALL_SOURCES)
+        message(STATUS "    Sources: ${ALL_SOURCES}")
     endif()
 
     # 一次性将所有源文件添加到 ops_tensor 库
     if(ALL_SOURCES)
         target_sources(${OPS_TENSOR} PRIVATE ${ALL_SOURCES})
-    endif()
-
-    # 设置架构目录下源文件的语言属性为 ASC
-    if(ARCH_SOURCES)
-        message(STATUS "    Set ASC language for: ${ARCH_SOURCES}")
     endif()
 
     # 添加算子特定的包含目录

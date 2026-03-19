@@ -6,7 +6,7 @@
 
 /*!
  * \file add_struct.h
- * \brief add struct - 非模板版本（参照stateless_random_uniform_v2）
+ * \brief add struct - 非模板版本
  */
 #ifndef ADD_STRUCT_H_
 #define ADD_STRUCT_H_
