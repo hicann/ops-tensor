@@ -60,6 +60,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 THREAD_NUM=8  # 默认编译线程数
 CORE_NUMS=$(cat /proc/cpuinfo | grep "processor" | wc -l 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
 TEST_TIMEOUT=300  # 默认测试超时时间（秒）
+BUILD_OUT_DIR=build_out
+VERBOSE=""
+CANN_3RD_LIB_PATH="${SCRIPT_DIR}/third_party"
 
 # 设置 _ASCEND_INSTALL_PATH（优先级：ASCEND_INSTALL_PATH > ASCEND_HOME_PATH > 默认值）
 if [ -n "$ASCEND_INSTALL_PATH" ]; then
@@ -74,7 +77,7 @@ fi
 normalize_soc_name() {
     local soc="$1"
     # 转换为小写，然后首字母大写
-    echo "${soc}" | sed 's/.*/\L&/; s/^./\U&/'
+    echo "${soc}" | sed 's/.*/\L&/; s/^./\U&/; s/.$/\U&/'
 }
 
 # SoC 名称映射到完整的 SOC_VERSION（CANN ASC 编译器要求的格式）
@@ -191,9 +194,11 @@ Options:
   -j[N]               Number of compile threads (default: 8), e.g., -j16
   --test-timeout=N    Test timeout in seconds (default: 300)
   -h, --help          Show this help message
+  -v, --verbose       Verbose output
+  --make_clean        Clean build artifacts"
 
 Supported SoC models:
-  Ascend950    (dav-3101, default)
+  Ascend950    (dav-3510, default)
   Ascend910B   (dav-2201)
   Ascend910_93 (dav-2201)
   Ascend910    (dav-2101)
@@ -211,6 +216,7 @@ Examples:
   $(basename "$0") --soc=Ascend950 --pkg    # Build package for Ascend950
   $(basename "$0") --soc=ascend950 --pkg    # Build package (lowercase also works)
   $(basename "$0") --test-timeout=600 --run  # Run tests with 600s timeout
+  $(basename "$0") --make_clean             # Clean build artifacts
 
 EOF
 }
@@ -259,12 +265,20 @@ validate_operators() {
 
 # 清理构建目录
 clean_build() {
-    log_info "Cleaning build directory..."
     if [ -d "$BUILD_DIR" ]; then
         rm -rf "$BUILD_DIR"
         log_success "Build directory cleaned"
     else
         log_warning "Build directory does not exist, nothing to clean"
+    fi
+}
+
+clean_build_out() {
+    if [ -d "${BUILD_OUT_DIR}" ]; then
+        rm -rf "${BUILD_OUT_DIR}"
+        log_success "build_out directory cleaned"
+    else
+        log_info "build_out directory does not exist, nothing to clean"
     fi
 }
 
@@ -314,11 +328,13 @@ build_project() {
     log_info "  -> ASCEND_SOC: ${SOC_NAME} (for NPU arch mapping)"
     log_info "ASCEND path: ${ASCEND_HOME_PATH}"
 
+    cmake_args+=(-DCANN_3RD_LIB_PATH="${CANN_3RD_LIB_PATH}")
+
     cmake "${cmake_args[@]}" ..
 
     # 编译
     log_info "Compiling with ${THREAD_NUM} threads..."
-    cmake --build . -j${THREAD_NUM}
+    cmake --build . -j${THREAD_NUM} ${VERBOSE}
 
     if [ $? -eq 0 ]; then
         log_success "Build succeeded"
@@ -419,12 +435,24 @@ parse_arguments() {
                 # 提取线程数
                 if [[ "$1" == "-j" ]]; then
                     # -j N 的形式
+                    if [[ -z "$2" ]]; then
+                        log_error "Missing thread number after -j"
+                        exit 1
+                    fi
+                    if [[ "$2" == -* ]]; then
+                        log_error "Invalid thread number: $2 (did you mean -j$N?)"
+                        exit 1
+                    fi
                     THREAD_NUM="$2"
                     shift 2
                 else
                     # -jN 的形式
                     THREAD_NUM="${1#-j}"
                     shift
+                fi
+                if [[ ! "$THREAD_NUM" =~ ^[0-9]+$ ]]; then
+                    log_error "non-integer argument:$THREAD_NUM"
+                    exit 1
                 fi
                 ;;
             --test-timeout=*)
@@ -436,6 +464,19 @@ parse_arguments() {
                 show_help
                 exit 0
                 ;;
+            --make_clean)
+                clean_build
+                clean_build_out
+                exit 0
+                ;;
+            -v|--verbose)
+                VERBOSE="-v"
+                shift
+                ;;
+            --cann_3rd_lib_path=*)
+                CANN_3RD_LIB_PATH="$(realpath ${1#*=})"
+                shift
+                ;;
             *)
                 log_error "Unknown option: $1"
                 echo ""
@@ -444,6 +485,70 @@ parse_arguments() {
                 ;;
         esac
     done
+}
+
+# 检查依赖项
+check_dependencies() {
+    log_info "Checking dependencies..."
+
+    local missing_deps=0
+
+    # 检查cmake
+    if ! command -v cmake &> /dev/null; then
+        log_error "cmake is not installed"
+        missing_deps=$((missing_deps + 1))
+    else
+        local cmake_version=$(cmake --version | head -n1 | awk '{print $3}')
+        log_success "cmake is installed (version: $cmake_version)"
+    fi
+
+    # 检查make
+    if ! command -v make &> /dev/null; then
+        log_warning "make is not installed, will use ninja or other generator"
+    else
+        local make_version=$(make --version | head -n1)
+        log_success "make is installed ($make_version)"
+    fi
+
+    # 检查编译器 (gcc/g++)
+    if ! command -v g++ &> /dev/null; then
+        log_error "g++ is not installed"
+        missing_deps=$((missing_deps + 1))
+    else
+        local gcc_version=$(g++ --version | head -n1)
+        log_success "g++ is installed ($gcc_version)"
+    fi
+
+    # 检查ASC编译器
+    if ! command -v bisheng &> /dev/null; then
+        log_error "bisheng compiler (bisheng) is not installed"
+        missing_deps=$((missing_deps + 1))
+    else
+        local asc_version=$(bisheng --version | head -n1)
+        log_success "bisheng compiler is installed ($asc_version)"
+    fi
+
+    # 检查Python (用于测试脚本)
+    if ! command -v python3 &> /dev/null && ! command -v python &> /dev/null; then
+        log_warning "Python is not installed, some test scripts may not run"
+    else
+        local python_cmd="python3"
+        if ! command -v python3 &> /dev/null; then
+            python_cmd="python"
+        fi
+        local python_version=$($python_cmd --version 2>&1)
+        log_success "Python is installed ($python_version)"
+    fi
+
+    if [ $missing_deps -gt 0 ]; then
+        log_error "Missing $missing_deps required dependencies, please install and retry"
+        exit 1
+    fi
+
+    # ASCEND 环境检查（强制要求）
+    check_ascend_env
+
+    log_success "All dependencies checked"
 }
 
 # 主函数
@@ -455,14 +560,14 @@ main() {
 
     parse_arguments "$@"
 
+    # 依赖检查
+    check_dependencies
+
     # 检查并调整线程数
     if [ "$THREAD_NUM" -gt "$CORE_NUMS" ]; then
         log_warning "Thread num $THREAD_NUM over core num $CORE_NUMS, adjust to $CORE_NUMS"
         THREAD_NUM=$CORE_NUMS
     fi
-
-    # ASCEND 环境检查（强制要求）
-    check_ascend_env
 
     # 验证算子
     if [ "$BUILD_OPERATORS" != "all" ]; then
