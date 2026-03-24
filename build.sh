@@ -199,10 +199,9 @@ Options:
 
 Supported SoC models:
   Ascend950    (dav-3510, default)
-  Ascend910B   (dav-2201)
-  Ascend910_93 (dav-2201)
-  Ascend910    (dav-2101)
-  Ascend310P   (dav-2101)
+
+Note: Other SoC models (Ascend910B, Ascend910_93, Ascend910, Ascend310P, Ascend310B, etc.)
+      are not supported in the current version. Support for more models will be added in future releases.
 
 Examples:
   $(basename "$0")                          # Build all operators (default 8 threads)

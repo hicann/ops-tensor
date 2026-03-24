@@ -20,7 +20,7 @@ src/
 **说明**：
 - Host 和 Kernel 可以合并为一个 `.cpp` 文件
 - TilingData 可以定义在 `.cpp` 文件中，也可以独立为 `_struct.h`
-- `arch35/` 目录仅在需要区分不同 SOC 架构时使用
+- `arch35/` 目录仅在需要区分不同 SOC 架构时使用（当前版本仅支持 Ascend950，即 arch35）
 - 测试文件强烈推荐，但不是必需的
 
 ---
@@ -219,7 +219,7 @@ struct <OpName>TilingData {
 ```cmake
 register_operator(
     NAME <op_name>
-    ARCH_DIR arch35    # 如果需要区分架构才加这个参数
+    ARCH_DIR arch35    # 当前版本仅支持 arch35 (Ascend950)
 )
 ```
 

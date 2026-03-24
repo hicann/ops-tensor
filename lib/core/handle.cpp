@@ -41,6 +41,7 @@ AscendDevice::AscendDevice()
     ascendcPlatform->GetCoreMemSize(platform_ascendc::CoreMemType::UB, ubSize_);
 
     // 获取 SoC 版本
+    // 注意：当前版本仅支持 Ascend950，其他 SoC 型号的代码保留用于未来扩展
     auto socVersion = ascendcPlatform->GetSocVersion();
     switch (socVersion)
     {

@@ -31,7 +31,7 @@ ops-tensor 是 [CANN](https://hiascend.com/software/cann) （Compute Architectur
 ### 环境要求
 
 - CANN 8.0 及以上版本
-- 支持 Ascend950、Ascend910B、Ascend910_93、Ascend910、Ascend310P、Ascend310B 等 SoC
+- 支持 Ascend950 SoC（**当前版本仅支持 Ascend950，其他 SoC 型号暂不支持**）
 - Linux x86_64/AArch64 平台
 
 ### 环境配置
@@ -101,11 +101,11 @@ sudo ./cann-950-ops-tensor_9.0.0_linux-*.run --upgrade
 | SoC 型号 | SOC_VERSION | 支持状态 |
 |---------|-------------|---------|
 | Ascend950 | ascend950dt_9595 | ✅ 默认支持 |
-| Ascend910B | ascend910b3 | ✅ 支持 |
-| Ascend910_93 | ascend910_93 | ✅ 支持 |
-| Ascend910 | ascend910 | ✅ 支持 |
-| Ascend310P | ascend310p | ✅ 支持 |
-| Ascend310B | ascend310b | ✅ 支持 |
+| Ascend910B | ascend910b3 | ❌ 暂不支持 |
+| Ascend910_93 | ascend910_93 | ❌ 暂不支持 |
+| Ascend910 | ascend910 | ❌ 暂不支持 |
+| Ascend310P | ascend310p | ❌ 暂不支持 |
+| Ascend310B | ascend310b | ❌ 暂不支持 |
 
 ## 🔍 目录结构
 

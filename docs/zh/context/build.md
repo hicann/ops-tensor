@@ -37,7 +37,7 @@ build.sh 支持多种功能，可通过 `--help` 参数查看所有选项：
 | `--ops=OP_LIST` | 可选 | 指定要编译的算子列表，多个算子用逗号分隔（如：`--ops=add,sub`）。不指定时编译所有算子。 |
 | `--run` | 可选 | 编译后执行测试。需要配合 `BUILD_TESTING=ON` 使用。 |
 | `--pkg` | 可选 | 编译并打包成 .run 安装包。 |
-| `--soc=SOC` | 可选 | 指定目标 SoC 型号，支持大小写不敏感输入（如：`--soc=ascend950` 或 `--soc=Ascend950`）。默认为 `Ascend950`。 |
+| `--soc=SOC` | 可选 | 指定目标 SoC 型号，支持大小写不敏感输入（如：`--soc=ascend950` 或 `--soc=Ascend950`）。默认为 `Ascend950`。**当前版本仅支持 Ascend950。** |
 | `-j[N]` | 可选 | 指定编译线程数，默认为 8（如：`-j16`）。若线程数超过 CPU 核心数，会自动调整为 CPU 核心数。 |
 | `--test-timeout=N` | 可选 | 指定测试超时时间（单位：秒），默认为 300。仅在 `--run` 模式下有效。 |
 | `-h, --help` | 可选 | 显示帮助信息。 |
@@ -47,11 +47,8 @@ build.sh 支持多种功能，可通过 `--help` 参数查看所有选项：
 | SoC 型号 | SOC_VERSION（CANN 编译器） | 说明 |
 |---------|---------------------------|------|
 | Ascend950 | ascend950dt_9595 | 默认支持（dav-3510） |
-| Ascend910B | ascend910b3 | dav-2201 |
-| Ascend910_93 | ascend910_93 | dav-2201 |
-| Ascend910 | ascend910 | dav-2101 |
-| Ascend310P | ascend310p | dav-2101 |
-| Ascend310B | ascend310b | dav-2101 |
+
+> **说明**：当前版本仅支持 **Ascend950**，其他 SoC 型号暂不支持。后续版本将逐步支持更多型号。
 
 ## 使用示例
 
@@ -93,11 +90,8 @@ build.sh 支持多种功能，可通过 `--help` 参数查看所有选项：
 # 编译指定算子并打包
 ./build.sh --ops=add --pkg
 
-# 为指定 SoC 打包
-./build.sh --soc=Ascend910B --pkg
-
-# 大小写不敏感
-./build.sh --soc=ascend910b --pkg
+# 大小写不敏感（当前仅支持 Ascend950）
+./build.sh --soc=ascend950 --pkg
 ```
 
 ### 组合使用
@@ -106,8 +100,8 @@ build.sh 支持多种功能，可通过 `--help` 参数查看所有选项：
 # 编译 add 算子、运行测试、使用 16 线程
 ./build.sh --ops=add --run -j16
 
-# 编译所有算子、打包、指定 SoC
-./build.sh --pkg --soc=Ascend910B -j16
+# 编译所有算子、打包（默认 SoC: Ascend950）
+./build.sh --pkg -j16
 ```
 
 ## 行为说明
@@ -122,7 +116,7 @@ build.sh 支持多种功能，可通过 `--help` 参数查看所有选项：
 | `--ops=add,sub --run` | 编译 add、sub 算子，并执行这些算子的测试 |
 | `--pkg` | 编译所有算子并打包成 .run 文件（默认 SoC: Ascend950） |
 | `--ops=add --pkg` | 编译 add 算子并打包成 .run 文件 |
-| `--soc=ascend950 --pkg` | 为 Ascend950 芯片打包（支持小写） |
+| `--soc=ascend950 --pkg` | 为 Ascend950 芯片打包（支持大小写不敏感） |
 
 ## 输出说明
 
@@ -148,7 +142,9 @@ build_out/cann-{soc}-ops-tensor_{version}_linux-{arch}.run
 
 例如：
 - `cann-950-ops-tensor_9.0.0_linux-x86_64.run`
-- `cann-910b-ops-tensor_9.0.0_linux-aarch64.run`
+- `cann-950-ops-tensor_9.0.0_linux-aarch64.run`
+
+> **说明**：`{soc}` 会根据指定的 SoC 型号自动替换（当前为 `950`）。
 
 ## 注意事项
 

@@ -32,6 +32,8 @@ endmacro()
 # 2. 设置 NPU 架构（SoC 映射）
 macro(_setup_npu_arch)
     # 映射表（注意：dav-3101 已改名为 dav-3510）
+    # 注意：当前版本仅支持 Ascend950，其他 SoC 型号暂不支持
+    #       映射表保留是为了未来扩展和代码兼容性
     set(SOC_TO_NPU_ARCH_MAP
         "Ascend950"     "dav-3510"
         "Ascend910B"    "dav-2201"
