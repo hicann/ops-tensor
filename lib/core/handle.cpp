@@ -14,10 +14,14 @@
  */
 
 #include "handle.hpp"
-#include "cann_ops_tensor.h"
+
+#include <cstring>
+#include "securec.h"
+
 #include "acl/acl.h"
 #include "tiling/platform/platform_ascendc.h"
-#include <cstring>
+
+#include "cann_ops_tensor.h"
 
 namespace acltensor {
 
@@ -41,29 +45,29 @@ AscendDevice::AscendDevice()
     ascendcPlatform->GetCoreMemSize(platform_ascendc::CoreMemType::UB, ubSize_);
 
     // 获取 SoC 版本
-    // 注意：当前版本仅支持 Ascend950，其他 SoC 型号的代码保留用于未来扩展
+    // 注意：当前版本仅支持 Ascend950
     auto socVersion = ascendcPlatform->GetSocVersion();
+    const char* socNameStr = nullptr;
     switch (socVersion)
     {
-        case platform_ascendc::SocVersion::ASCEND910B:
-            strncpy(socName_, "Ascend910B", sizeof(socName_) - 1);
-            socType_ = SocType::ASCEND910B;
-            break;
-        case platform_ascendc::SocVersion::ASCEND910_93:
-            strncpy(socName_, "Ascend910-93", sizeof(socName_) - 1);
-            socType_ = SocType::ASCEND910_93;
-            break;
+        // 其他 SoC 型号暂不支持，待后续版本扩展
         case platform_ascendc::SocVersion::ASCEND950:
-            strncpy(socName_, "Ascend950", sizeof(socName_) - 1);
+            socNameStr = "Ascend950";
             socType_ = SocType::ASCEND950;
             break;
         default:
-            strncpy(socName_, "Unknown", sizeof(socName_) - 1);
+            socNameStr = "Unknown";
             socType_ = SocType::UNKNOWN;
             break;
     }
 
-    socName_[sizeof(socName_) - 1] = '\0';
+    // 统一拷贝 SoC 名称
+    if (socNameStr != nullptr) {
+        int ret = memcpy_s(socName_, sizeof(socName_), socNameStr, strlen(socNameStr) + 1);
+        if (ret != EOK) {
+            socName_[0] = '\0';  // 复制失败时清空字符串
+        }
+    }
 }
 
 } // namespace acltensor
@@ -98,30 +102,7 @@ acltensorStatus_t acltensorDestroy(acltensorHandle_t handle)
     return ACLTENSOR_STATUS_SUCCESS;
 }
 
-/* Phase 2 - PlanCache 相关接口待实现 */
-/*
-acltensorStatus_t acltensorHandleResizePlanCache(
-    acltensorHandle_t handle, const uint32_t numEntries)
-{
-    (void)handle;
-    (void)numEntries;
-    return ACLTENSOR_STATUS_NOT_SUPPORTED;
-}
-
-acltensorStatus_t acltensorHandleWritePlanCacheToFile(
-    const acltensorHandle_t handle, const char fileName[])
-{
-    (void)handle;
-    (void)fileName;
-    return ACLTENSOR_STATUS_NOT_SUPPORTED;
-}
-
-acltensorStatus_t acltensorHandleReadPlanCacheFromFile(
-    acltensorHandle_t handle, const char fileName[], uint32_t* numCachelinesRead)
-{
-    (void)handle;
-    (void)fileName;
-    (void)numCachelinesRead;
-    return ACLTENSOR_STATUS_NOT_SUPPORTED;
-}
-*/
+// 以下接口待后续版本实现：
+// 计划缓存调整：acltensorHandleResizePlanCache
+// 计划缓存写入文件：acltensorHandleWritePlanCacheToFile
+// 计划缓存读取文件：acltensorHandleReadPlanCacheFromFile

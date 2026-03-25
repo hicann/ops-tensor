@@ -16,10 +16,11 @@
 #ifndef ACLTENSOR_LIB_CORE_PLAN_HPP
 #define ACLTENSOR_LIB_CORE_PLAN_HPP
 
+#include <memory>
+
 #include "cann_ops_tensor_types.h"
 #include "operation_descriptor.hpp"
 #include "plan_preference.hpp"
-#include <memory>
 
 /**
  * @brief Plan 结构体

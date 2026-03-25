@@ -13,11 +13,13 @@
  * @brief 操作描述符实现
  */
 
-#include "cann_ops_tensor.h"
 #include "operation_descriptor.hpp"
-#include "utils/validation.hpp"
+
 #include <cstring>
 #include <new>
+
+#include "cann_ops_tensor.h"
+#include "utils/validation.hpp"
 
 acltensorStatus_t acltensorCreateElementwiseBinary(
     const acltensorHandle_t            handle,
@@ -119,163 +121,10 @@ acltensorStatus_t acltensorDestroyOperationDescriptor(acltensorOperationDescript
     return ACLTENSOR_STATUS_SUCCESS;
 }
 
-/* Phase 2 - Elementwise Trinary 待实现 */
-/*
-acltensorStatus_t acltensorCreateElementwiseTrinary(
-    const acltensorHandle_t            handle,
-    acltensorOperationDescriptor_t*    desc,
-    const acltensorTensorDescriptor_t  descA,
-    const int32_t                      modeA[],
-    acltensorOperator_t                opA,
-    const acltensorTensorDescriptor_t  descB,
-    const int32_t                      modeB[],
-    acltensorOperator_t                opB,
-    const acltensorTensorDescriptor_t  descC,
-    const int32_t                      modeC[],
-    acltensorOperator_t                opC,
-    const acltensorTensorDescriptor_t  descD,
-    const int32_t                      modeD[],
-    acltensorOperator_t                opAB,
-    acltensorOperator_t                opABC,
-    const acltensorComputeDescriptor_t descCompute)
-{
-    (void)handle;
-    (void)desc;
-    (void)descA;
-    (void)modeA;
-    (void)opA;
-    (void)descB;
-    (void)modeB;
-    (void)opB;
-    (void)descC;
-    (void)modeC;
-    (void)opC;
-    (void)descD;
-    (void)modeD;
-    (void)opAB;
-    (void)opABC;
-    (void)descCompute;
-    return ACLTENSOR_STATUS_NOT_SUPPORTED;
-}
-*/
-
-/* Phase 3 - Contraction 待实现 */
-/*
-acltensorStatus_t acltensorCreateContraction(
-    const acltensorHandle_t            handle,
-    acltensorOperationDescriptor_t*    desc,
-    const acltensorTensorDescriptor_t  descA,
-    const int32_t                      modeA[],
-    acltensorOperator_t                opA,
-    const acltensorTensorDescriptor_t  descB,
-    const int32_t                      modeB[],
-    acltensorOperator_t                opB,
-    const acltensorTensorDescriptor_t  descC,
-    const int32_t                      modeC[],
-    acltensorOperator_t                opC,
-    const acltensorTensorDescriptor_t  descD,
-    const int32_t                      modeD[],
-    const acltensorComputeDescriptor_t descCompute)
-{
-    (void)handle;
-    (void)desc;
-    (void)descA;
-    (void)modeA;
-    (void)opA;
-    (void)descB;
-    (void)modeB;
-    (void)opB;
-    (void)descC;
-    (void)modeC;
-    (void)opC;
-    (void)descD;
-    (void)modeD;
-    (void)descCompute;
-    return ACLTENSOR_STATUS_NOT_SUPPORTED;
-}
-*/
-
-/* TODO: Phase 3 - Reduction */
-acltensorStatus_t acltensorCreateReduction(
-    const acltensorHandle_t            handle,
-    acltensorOperationDescriptor_t*    desc,
-    const acltensorTensorDescriptor_t  descA,
-    const int32_t                      modeA[],
-    acltensorOperator_t                opA,
-    const acltensorTensorDescriptor_t  descC,
-    const int32_t                      modeC[],
-    acltensorOperator_t                opC,
-    const acltensorTensorDescriptor_t  descD,
-    const int32_t                      modeD[],
-    acltensorOperator_t                opReduce,
-    const acltensorComputeDescriptor_t descCompute)
-{
-    (void)handle;
-    (void)desc;
-    (void)descA;
-    (void)modeA;
-    (void)opA;
-    (void)descC;
-    (void)modeC;
-    (void)opC;
-    (void)descD;
-    (void)modeD;
-    (void)opReduce;
-    (void)descCompute;
-    return ACLTENSOR_STATUS_NOT_SUPPORTED;
-}
-
-/* TODO: Phase 4 - Permutation */
-acltensorStatus_t acltensorCreatePermutation(
-    const acltensorHandle_t            handle,
-    acltensorOperationDescriptor_t*    desc,
-    const acltensorTensorDescriptor_t  descA,
-    const int32_t                      modeA[],
-    acltensorOperator_t                opA,
-    const acltensorTensorDescriptor_t  descB,
-    const int32_t                      modeB[],
-    const acltensorComputeDescriptor_t descCompute)
-{
-    (void)handle;
-    (void)desc;
-    (void)descA;
-    (void)modeA;
-    (void)opA;
-    (void)descB;
-    (void)modeB;
-    (void)descCompute;
-    return ACLTENSOR_STATUS_NOT_SUPPORTED;
-}
-
-/* Phase 2 - 属性接口待实现 */
-/*
-acltensorStatus_t acltensorOperationDescriptorSetAttribute(
-    const acltensorHandle_t                 handle,
-    acltensorOperationDescriptor_t          desc,
-    acltensorOperationDescriptorAttribute_t attr,
-    const void*                             buf,
-    size_t                                  sizeInBytes)
-{
-    (void)handle;
-    (void)desc;
-    (void)attr;
-    (void)buf;
-    (void)sizeInBytes;
-    return ACLTENSOR_STATUS_NOT_SUPPORTED;
-}
-
-acltensorStatus_t acltensorOperationDescriptorGetAttribute(
-    const acltensorHandle_t                 handle,
-    acltensorOperationDescriptor_t          desc,
-    acltensorOperationDescriptorAttribute_t attr,
-    void*                                   buf,
-    size_t                                  sizeInBytes)
-{
-    (void)handle;
-    (void)desc;
-    (void)attr;
-    (void)buf;
-    (void)sizeInBytes;
-    return ACLTENSOR_STATUS_NOT_SUPPORTED;
-}
-*/
+// 以下操作类型创建接口待后续版本实现：
+// 三元元素级操作：acltensorCreateElementwiseTrinary
+// 张量收缩操作：acltensorCreateContraction
+// 归约操作：acltensorCreateReduction
+// 置换操作：acltensorCreatePermutation
+// 属性设置：acltensorOperationDescriptorSetAttribute
+// 属性获取：acltensorOperationDescriptorGetAttribute

@@ -13,9 +13,11 @@
  * \brief Plan 偏好实现
  */
 
-#include "cann_ops_tensor.h"
 #include "plan_preference.hpp"
+
 #include <new>
+
+#include "cann_ops_tensor.h"
 
 acltensorStatus_t acltensorCreatePlanPreference(
     const acltensorHandle_t    handle,
@@ -53,20 +55,4 @@ acltensorStatus_t acltensorDestroyPlanPreference(acltensorPlanPreference_t pref)
     return ACLTENSOR_STATUS_SUCCESS;
 }
 
-/* Phase 2 - PlanPreferenceSetAttribute 待实现 */
-/*
-acltensorStatus_t acltensorPlanPreferenceSetAttribute(
-    const acltensorHandle_t            handle,
-    acltensorPlanPreference_t          pref,
-    acltensorPlanPreferenceAttribute_t attr,
-    const void*                        buf,
-    size_t                             sizeInBytes)
-{
-    (void)handle;
-    (void)pref;
-    (void)attr;
-    (void)buf;
-    (void)sizeInBytes;
-    return ACLTENSOR_STATUS_NOT_SUPPORTED;
-}
-*/
+// 计划偏好设置属性：acltensorPlanPreferenceSetAttribute - 待后续版本实现

@@ -17,16 +17,18 @@
 #ifndef ACLTENSOR_LIB_ELEMENTWISE_ELEMENTWISE_HPP
 #define ACLTENSOR_LIB_ELEMENTWISE_ELEMENTWISE_HPP
 
-#include "cann_ops_tensor_types.h"
-#include "core/tensor_descriptor.hpp"
-#include "core/operation_descriptor.hpp"
-#include "acl/acl.h"
 #include <unordered_map>
 #include <vector>
 #include <memory>
 #include <mutex>
 #include <cstdint>
 #include <atomic>
+
+#include "acl/acl.h"
+
+#include "cann_ops_tensor_types.h"
+#include "core/tensor_descriptor.hpp"
+#include "core/operation_descriptor.hpp"
 
 namespace acltensor {
 
@@ -35,13 +37,17 @@ namespace acltensor {
  */
 struct SolutionUid
 {
-    acltensorOperator_t   op;         // 操作符
-    acltensorDataType_t   dataType;   // 数据类型
-    uint32_t              numModes;   // 维度数
+    acltensorOperator_t   op;            // 操作符
+    acltensorDataType_t   dataType;      // 数据类型
+    uint32_t              numModes;      // 维度数（0 表示通用）
+    OperationType         operationType; // 操作类型（Binary/Trinary）
 
     bool operator==(SolutionUid const& other) const
     {
-        return op == other.op && dataType == other.dataType && numModes == other.numModes;
+        return op == other.op &&
+               dataType == other.dataType &&
+               numModes == other.numModes &&
+               operationType == other.operationType;
     }
 };
 
@@ -56,10 +62,11 @@ struct SolutionUidHash
         size_t h1 = static_cast<size_t>(uid.op);
         size_t h2 = static_cast<size_t>(uid.dataType);
         size_t h3 = static_cast<size_t>(uid.numModes);
+        size_t h4 = static_cast<size_t>(uid.operationType);
 
         // 使用质数乘法混合哈希值，降低碰撞概率
-        // 31, 37, 41 是常用质数，能更好地分散哈希值
-        return ((h1 * 31) ^ h2) * 37 + h3 * 41;
+        // 31, 37, 41, 43 是质数，与2的幂次无公因数，能更好地分散哈希值
+        return (((h1 * 31) ^ h2) * 37 + h3 * 41) ^ h4 * 43;
     }
 };
 
@@ -234,16 +241,12 @@ class ElementwiseSolutionRegistry
 {
 public:
     /**
-     * @brief 获取单例实例（延迟初始化）
-     *        首次调用时自动注册所有解决方案
+     * @brief 获取单例实例
+     *        解决方案通过各算子的自动注册宏进行注册
      */
     static ElementwiseSolutionRegistry& instance()
     {
         static ElementwiseSolutionRegistry registry;
-        static std::once_flag initFlag;
-        std::call_once(initFlag, [&]() {
-            registry.registerAllSolutions();
-        });
         return registry;
     }
 
@@ -275,33 +278,34 @@ public:
 
     /**
      * @brief 查询匹配的解决方案
-     * @param op        操作符
-     * @param dataType  数据类型
-     * @param numModes  维度数
+     * @param op            操作符
+     * @param dataType      数据类型
+     * @param numModes      维度数
+     * @param operationType 操作类型（Binary/Trinary）
      * @return 匹配的解决方案列表
      */
     std::vector<std::shared_ptr<ElementwiseSolution>> getSolutions(
         acltensorOperator_t op,
         acltensorDataType_t dataType,
-        uint32_t numModes) const
+        uint32_t numModes,
+        OperationType operationType) const
     {
         std::lock_guard<std::mutex> lock(mutex_);
 
         std::vector<std::shared_ptr<ElementwiseSolution>> result;
 
-        SolutionUid targetUid{op, dataType, numModes};
-
-        // 精确匹配
+        // 1. 精确匹配（包含 operationType）
+        SolutionUid targetUid{op, dataType, numModes, operationType};
         auto it = solutions_.find(targetUid);
         if (it != solutions_.end())
         {
             result.push_back(it->second);
         }
 
-        // 如果没有精确匹配，查找通用解决方案（numModes = 0 表示任意维度）
+        // 2. 如果没有精确匹配，查找通用解决方案（numModes = 0，相同 operationType）
         if (result.empty())
         {
-            SolutionUid genericUid{op, dataType, 0};
+            SolutionUid genericUid{op, dataType, 0, operationType};
             auto genericIt = solutions_.find(genericUid);
             if (genericIt != solutions_.end())
             {
@@ -350,18 +354,43 @@ private:
     ElementwiseSolutionRegistry(ElementwiseSolutionRegistry const&) = delete;
     ElementwiseSolutionRegistry& operator=(ElementwiseSolutionRegistry const&) = delete;
 
-    /**
-     * @brief 注册所有解决方案（延迟初始化时调用）
-     */
-    void registerAllSolutions();
-
     mutable std::mutex mutex_;
     std::unordered_map<SolutionUid, std::shared_ptr<ElementwiseSolution>, SolutionUidHash> solutions_;
 };
 
-// 兼容性别名（Phase 1 使用，后续可移除）
+// 兼容性别名（当前版本保留，后续可能会移除）
 using ElementwiseBinarySolution = ElementwiseSolution;
 using ElementwiseBinarySolutionRegistry = ElementwiseSolutionRegistry;
+
+/**
+ * @brief 自动注册宏 - Elementwise 解决方案
+ *        使用静态初始化在程序启动时自动注册解决方案到注册表
+ * @param OP_NAME    操作符名称（如 ADD, SUB, MUL, DIV）
+ * @param DATA_TYPE  数据类型（如 R_32F, R_16F, R_16BF）
+ * @param NUM_MODES  维度数（0 表示通用解决方案，支持任意维度）
+ * @param OP_TYPE    操作类型（BINARY 或 TRINARY）
+ * @param EXECUTE_FUNC 执行函数指针
+ *
+ * 使用示例：
+ * REGISTER_ELEMENTWISE_SOLUTION(ADD, R_32F, 0, BINARY, AddF32Execute);
+ */
+#define REGISTER_ELEMENTWISE_SOLUTION(OP_NAME, DATA_TYPE, NUM_MODES, OP_TYPE, EXECUTE_FUNC) \
+    namespace { \
+        struct OP_NAME##_##DATA_TYPE##_##OP_TYPE##_Registrar { \
+            OP_NAME##_##DATA_TYPE##_##OP_TYPE##_Registrar() { \
+                auto& registry = acltensor::ElementwiseSolutionRegistry::instance(); \
+                acltensor::SolutionUid uid{ \
+                    ACLTENSOR_OP_##OP_NAME, \
+                    ACLTENSOR_##DATA_TYPE, \
+                    NUM_MODES, \
+                    acltensor::OperationType::ELEMENTWISE_##OP_TYPE \
+                }; \
+                auto solution = std::make_shared<acltensor::ElementwiseSolution>(uid, EXECUTE_FUNC); \
+                registry.registerSolution(solution); \
+            } \
+        }; \
+        static OP_NAME##_##DATA_TYPE##_##OP_TYPE##_Registrar g_registrar_##OP_NAME##_##DATA_TYPE##_##OP_TYPE; \
+    }
 
 } // namespace acltensor
 

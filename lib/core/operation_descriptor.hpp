@@ -16,9 +16,10 @@
 #ifndef ACLTENSOR_LIB_CORE_OPERATION_DESCRIPTOR_HPP
 #define ACLTENSOR_LIB_CORE_OPERATION_DESCRIPTOR_HPP
 
+#include <vector>
+
 #include "cann_ops_tensor_types.h"
 #include "tensor_descriptor.hpp"
-#include <vector>
 
 namespace acltensor {
 
@@ -26,12 +27,9 @@ namespace acltensor {
  * @brief 操作类型枚举
  */
 enum class OperationType : uint32_t {
-    ELEMENTWISE_BINARY = 0,   // 阶段一
-    ELEMENTWISE_TRINARY = 1,  // 阶段二
-    /* TODO: Phase 2-4 */
-    // CONTRACTION = 2,
-    // REDUCTION = 3,
-    // PERMUTATION = 4,
+    ELEMENTWISE_BINARY = 0,   // 当前版本支持
+    ELEMENTWISE_TRINARY = 1,  // 待后续版本实现
+    // CONTRACTION、REDUCTION、PERMUTATION 等操作类型待后续版本实现
 };
 
 } // namespace acltensor

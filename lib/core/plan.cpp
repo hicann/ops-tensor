@@ -13,11 +13,13 @@
  * \brief Plan 实现
  */
 
-#include "cann_ops_tensor.h"
 #include "plan.hpp"
+
+#include <new>
+
+#include "cann_ops_tensor.h"
 #include "plan_preference.hpp"
 #include "operation_descriptor.hpp"
-#include <new>
 
 acltensorStatus_t acltensorCreatePlan(
     const acltensorHandle_t              handle,

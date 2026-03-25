@@ -49,41 +49,29 @@ ACLTENSOR_API acltensorStatus_t acltensorCreate(acltensorHandle_t* handle);
  */
 ACLTENSOR_API acltensorStatus_t acltensorDestroy(acltensorHandle_t handle);
 
-/* Phase 2 - PlanCache 相关接口待实现 */
-/*
-ACLTENSOR_API acltensorStatus_t acltensorHandleResizePlanCache(
-    acltensorHandle_t handle, const uint32_t numEntries);
-
-ACLTENSOR_API acltensorStatus_t acltensorHandleWritePlanCacheToFile(
-    const acltensorHandle_t handle, const char fileName[]);
-
-ACLTENSOR_API acltensorStatus_t acltensorHandleReadPlanCacheFromFile(
-    acltensorHandle_t handle, const char fileName[], uint32_t* numCachelinesRead);
-*/
-
 /*============================================================================
  *                        2. 张量描述符管理 (Tensor Descriptor)
  *============================================================================*/
 
 /**
  * @brief 创建张量描述符
- * @param[in] handle                 库句柄
- * @param[out] desc                 返回的张量描述符指针
- * @param[in] numModes              维度数量
- * @param[in] lens                  各维度长度数组
- * @param[in] strides               各维度步长数组（NULL 表示连续内存）
- * @param[in] dataType              数据类型
- * @param[in] alignmentRequirement  内存对齐要求（字节）
+ * @param[in] handle       库句柄
+ * @param[out] desc        返回的张量描述符指针
+ * @param[in] rank         张量秩（维度数量）
+ * @param[in] dimSizes     各维度长度数组
+ * @param[in] stridesIn    各维度步长数组（NULL 表示连续内存）
+ * @param[in] dType        数据类型
+ * @param[in] alignReq     内存对齐要求（字节）
  * @return ACLTENSOR_STATUS_SUCCESS 成功
  */
 ACLTENSOR_API acltensorStatus_t acltensorCreateTensorDescriptor(
     const acltensorHandle_t      handle,
     acltensorTensorDescriptor_t* desc,
-    const uint32_t               numModes,
-    const int64_t                lens[],
-    const int64_t                strides[],
-    acltensorDataType_t          dataType,
-    uint32_t                     alignmentRequirement);
+    const uint32_t               rank,
+    const int64_t                dimSizes[],
+    const int64_t                stridesIn[],
+    acltensorDataType_t          dType,
+    uint32_t                     alignReq);
 
 /**
  * @brief 销毁张量描述符
@@ -134,87 +122,6 @@ ACLTENSOR_API acltensorStatus_t acltensorCreateElementwiseBinary(
  */
 ACLTENSOR_API acltensorStatus_t acltensorDestroyOperationDescriptor(acltensorOperationDescriptor_t desc);
 
-/* Phase 2 - Elementwise Trinary 待实现 */
-/*
-ACLTENSOR_API acltensorStatus_t acltensorCreateElementwiseTrinary(
-    const acltensorHandle_t            handle,
-    acltensorOperationDescriptor_t*    desc,
-    const acltensorTensorDescriptor_t  descA,
-    const int32_t                      modeA[],
-    acltensorOperator_t                opA,
-    const acltensorTensorDescriptor_t  descB,
-    const int32_t                      modeB[],
-    acltensorOperator_t                opB,
-    const acltensorTensorDescriptor_t  descC,
-    const int32_t                      modeC[],
-    acltensorOperator_t                opC,
-    const acltensorTensorDescriptor_t  descD,
-    const int32_t                      modeD[],
-    acltensorOperator_t                opAB,
-    acltensorOperator_t                opABC,
-    const acltensorComputeDescriptor_t descCompute);
-*/
-
-/* TODO: Phase 3 - Contraction */
-ACLTENSOR_API acltensorStatus_t acltensorCreateContraction(
-    const acltensorHandle_t            handle,
-    acltensorOperationDescriptor_t*    desc,
-    const acltensorTensorDescriptor_t  descA,
-    const int32_t                      modeA[],
-    acltensorOperator_t                opA,
-    const acltensorTensorDescriptor_t  descB,
-    const int32_t                      modeB[],
-    acltensorOperator_t                opB,
-    const acltensorTensorDescriptor_t  descC,
-    const int32_t                      modeC[],
-    acltensorOperator_t                opC,
-    const acltensorTensorDescriptor_t  descD,
-    const int32_t                      modeD[],
-    const acltensorComputeDescriptor_t descCompute);
-
-/* TODO: Phase 3 - Reduction */
-ACLTENSOR_API acltensorStatus_t acltensorCreateReduction(
-    const acltensorHandle_t            handle,
-    acltensorOperationDescriptor_t*    desc,
-    const acltensorTensorDescriptor_t  descA,
-    const int32_t                      modeA[],
-    acltensorOperator_t                opA,
-    const acltensorTensorDescriptor_t  descC,
-    const int32_t                      modeC[],
-    acltensorOperator_t                opC,
-    const acltensorTensorDescriptor_t  descD,
-    const int32_t                      modeD[],
-    acltensorOperator_t                opReduce,
-    const acltensorComputeDescriptor_t descCompute);
-
-/* TODO: Phase 4 - Permutation */
-ACLTENSOR_API acltensorStatus_t acltensorCreatePermutation(
-    const acltensorHandle_t            handle,
-    acltensorOperationDescriptor_t*    desc,
-    const acltensorTensorDescriptor_t  descA,
-    const int32_t                      modeA[],
-    acltensorOperator_t                opA,
-    const acltensorTensorDescriptor_t  descB,
-    const int32_t                      modeB[],
-    const acltensorComputeDescriptor_t descCompute);
-
-/* Phase 2 - 属性接口待实现 */
-/*
-ACLTENSOR_API acltensorStatus_t acltensorOperationDescriptorSetAttribute(
-    const acltensorHandle_t                 handle,
-    acltensorOperationDescriptor_t          desc,
-    acltensorOperationDescriptorAttribute_t attr,
-    const void*                             buf,
-    size_t                                  sizeInBytes);
-
-ACLTENSOR_API acltensorStatus_t acltensorOperationDescriptorGetAttribute(
-    const acltensorHandle_t                 handle,
-    acltensorOperationDescriptor_t          desc,
-    acltensorOperationDescriptorAttribute_t attr,
-    void*                                   buf,
-    size_t                                  sizeInBytes);
-*/
-
 /*============================================================================
  *                        4. Plan 和 PlanPreference 管理
  *============================================================================*/
@@ -261,33 +168,6 @@ ACLTENSOR_API acltensorStatus_t acltensorCreatePlan(
  */
 ACLTENSOR_API acltensorStatus_t acltensorDestroyPlan(acltensorPlan_t plan);
 
-/* Phase 2 - 以下接口待实现 */
-/*
-ACLTENSOR_API acltensorStatus_t acltensorPlanPreferenceSetAttribute(
-    const acltensorHandle_t            handle,
-    acltensorPlanPreference_t          pref,
-    acltensorPlanPreferenceAttribute_t attr,
-    const void*                        buf,
-    size_t                             sizeInBytes);
-
-ACLTENSOR_API acltensorStatus_t acltensorEstimateWorkspaceSize(
-    const acltensorHandle_t              handle,
-    const acltensorOperationDescriptor_t desc,
-    const acltensorPlanPreference_t      planPref,
-    const acltensorWorksizePreference_t  workspacePref,
-    uint64_t*                            workspaceSizeEstimate);
-*/
-
-/* Phase 2 - PlanGetAttribute 待实现 */
-/*
-ACLTENSOR_API acltensorStatus_t acltensorPlanGetAttribute(
-    const acltensorHandle_t  handle,
-    const acltensorPlan_t    plan,
-    acltensorPlanAttribute_t attr,
-    void*                    buf,
-    size_t                   sizeInBytes);
-*/
-
 /*============================================================================
  *                        5. 执行函数 (Execution)
  *============================================================================*/
@@ -313,57 +193,6 @@ ACLTENSOR_API acltensorStatus_t acltensorElementwiseBinaryExecute(
     const void*             gamma,
     const void*             C,
     void*                   D,
-    aclrtStream             stream);
-
-/* Phase 2 - Elementwise Trinary Execute 待实现 */
-/*
-ACLTENSOR_API acltensorStatus_t acltensorElementwiseTrinaryExecute(
-    const acltensorHandle_t handle,
-    const acltensorPlan_t   plan,
-    const void*             alpha,
-    const void*             A,
-    const void*             beta,
-    const void*             B,
-    const void*             gamma,
-    const void*             C,
-    void*                   D,
-    aclrtStream             stream);
-*/
-
-/* TODO: Phase 3 - Contraction */
-ACLTENSOR_API acltensorStatus_t acltensorContract(
-    const acltensorHandle_t handle,
-    const acltensorPlan_t   plan,
-    const void*             alpha,
-    const void*             A,
-    const void*             B,
-    const void*             beta,
-    const void*             C,
-    void*                   D,
-    void*                   workspace,
-    uint64_t                workspaceSize,
-    aclrtStream             stream);
-
-/* TODO: Phase 3 - Reduction */
-ACLTENSOR_API acltensorStatus_t acltensorReduce(
-    const acltensorHandle_t handle,
-    const acltensorPlan_t   plan,
-    const void*             alpha,
-    const void*             A,
-    const void*             beta,
-    const void*             C,
-    void*                   D,
-    void*                   workspace,
-    uint64_t                workspaceSize,
-    aclrtStream             stream);
-
-/* TODO: Phase 4 - Permutation */
-ACLTENSOR_API acltensorStatus_t acltensorPermute(
-    const acltensorHandle_t handle,
-    const acltensorPlan_t   plan,
-    const void*             alpha,
-    const void*             A,
-    void*                   B,
     aclrtStream             stream);
 
 /*============================================================================

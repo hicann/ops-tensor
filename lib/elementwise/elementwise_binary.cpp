@@ -13,8 +13,9 @@
  * \brief Elementwise Binary 框架实现
  */
 
-#include "cann_ops_tensor.h"
 #include "elementwise.hpp"
+
+#include "cann_ops_tensor.h"
 #include "core/plan.hpp"
 
 using namespace acltensor;
@@ -22,104 +23,48 @@ using namespace acltensor;
 /**
  * @brief 执行 Elementwise Binary 操作
  */
-acltensorStatus_t acltensorElementwiseBinaryExecute(
-    const acltensorHandle_t handle,
-    const acltensorPlan_t   plan,
-    const void*             alpha,
-    const void*             A,
-    const void*             gamma,
-    const void*             C,
-    void*                   D,
-    aclrtStream             stream)
+acltensorStatus_t acltensorElementwiseBinaryExecute(const acltensorHandle_t handle, const acltensorPlan_t plan,
+    const void* alpha, const void* A, const void* gamma, const void* C, void* D, aclrtStream stream)
 {
-    (void)handle;  // 暂时不使用
+    (void)handle;
 
-    if (plan == nullptr)
-    {
+    if (plan == nullptr || A == nullptr || C == nullptr || D == nullptr) {
         return ACLTENSOR_STATUS_INVALID_VALUE;
     }
 
-    if (A == nullptr || C == nullptr || D == nullptr)
-    {
+    auto* opDesc = plan->opDesc;
+    auto* pref = plan->pref;
+    if (opDesc == nullptr || pref == nullptr) {
         return ACLTENSOR_STATUS_INVALID_VALUE;
     }
 
-    if (plan->opDesc == nullptr || plan->pref == nullptr)
-    {
-        return ACLTENSOR_STATUS_INVALID_VALUE;
-    }
-
-    // 阶段一：只支持 Elementwise Binary
-    if (plan->opDesc->operationType != acltensor::OperationType::ELEMENTWISE_BINARY)
-    {
+    if (opDesc->operationType != acltensor::OperationType::ELEMENTWISE_BINARY) {
         return ACLTENSOR_STATUS_NOT_SUPPORTED;
     }
 
-    // ========== Execute 时选择并缓存 solution ==========
-
-    // 1. 检查是否已有缓存的 solution
+    // Execute 时选择并缓存 solution
     std::shared_ptr<ElementwiseSolution> solution;
-    if (plan->pref->solution != nullptr) {
-        solution = std::static_pointer_cast<ElementwiseSolution>(plan->pref->solution);
+    if (pref->solution != nullptr) {
+        solution = std::static_pointer_cast<ElementwiseSolution>(pref->solution);
     } else {
-        // 2. 首次执行，从注册表查询解决方案
         auto& registry = ElementwiseSolutionRegistry::instance();
+        auto* descD = opDesc->descD;
+        uint32_t numModes = descD ? descD->numModes : 0;
 
-        uint32_t numModes = plan->opDesc->descD ? plan->opDesc->descD->numModes : 0;
-        auto solutions = registry.getSolutions(
-            plan->opDesc->opAC,
-            plan->opDesc->descD->dataType,
-            numModes);
-
+        auto solutions = registry.getSolutions(opDesc->opAC, descD->dataType, numModes, opDesc->operationType);
         if (solutions.empty()) {
-            // 尝试查找通用解决方案（numModes=0）
-            solutions = registry.getSolutions(
-                plan->opDesc->opAC,
-                plan->opDesc->descD->dataType,
-                0);
+            solutions = registry.getSolutions(opDesc->opAC, descD->dataType, 0, opDesc->operationType);
         }
 
-        if (solutions.empty()) {
+        if (solutions.empty())
             return ACLTENSOR_STATUS_NOT_SUPPORTED;
-        }
 
-        // 3. 选择第一个并缓存到 pref->solution
         solution = solutions[0];
-        plan->pref->solution = solution;
+        pref->solution = solution;
     }
 
-    // ========== 构造 ElementwiseArgs ==========
-    ElementwiseArgs args = CreateElementwiseBinaryArgs(
-        plan->opDesc, alpha, A, gamma, C, D, stream);
-
-    // 执行内核（调用新的统一接口）
+    ElementwiseArgs args = CreateElementwiseBinaryArgs(opDesc, alpha, A, gamma, C, D, stream);
     return solution->execute(args);
 }
 
-/* Phase 2 - Elementwise Trinary Execute 待实现 */
-/*
-acltensorStatus_t acltensorElementwiseTrinaryExecute(
-    const acltensorHandle_t handle,
-    const acltensorPlan_t   plan,
-    const void*             alpha,
-    const void*             A,
-    const void*             beta,
-    const void*             B,
-    const void*             gamma,
-    const void*             C,
-    void*                   D,
-    aclrtStream             stream)
-{
-    (void)handle;
-    (void)plan;
-    (void)alpha;
-    (void)A;
-    (void)beta;
-    (void)B;
-    (void)gamma;
-    (void)C;
-    (void)D;
-    (void)stream;
-    return ACLTENSOR_STATUS_NOT_SUPPORTED;
-}
-*/
+// 三元元素级操作执行：acltensorElementwiseTrinaryExecute - 待后续版本实现

@@ -25,28 +25,12 @@ namespace acltensor {
  */
 acltensorStatus_t CheckOperator(acltensorOperator_t op)
 {
-    // Phase 1: 只支持 IDENTITY 和 ADD
+    // 当前仅支持 IDENTITY 和 ADD，其他操作符待后续版本支持
     switch (op)
     {
         case ACLTENSOR_OP_IDENTITY:
         case ACLTENSOR_OP_ADD:
             return ACLTENSOR_STATUS_SUCCESS;
-
-        /* TODO: Phase 2 - 支持更多操作符
-        case ACLTENSOR_OP_MUL:
-        case ACLTENSOR_OP_SUB:
-        case ACLTENSOR_OP_DIV:
-        case ACLTENSOR_OP_MAX:
-        case ACLTENSOR_OP_MIN:
-        case ACLTENSOR_OP_SQRT:
-        case ACLTENSOR_OP_RELU:
-        case ACLTENSOR_OP_EXP:
-        case ACLTENSOR_OP_LOG:
-        case ACLTENSOR_OP_ABS:
-        case ACLTENSOR_OP_NEG:
-        case ACLTENSOR_OP_SIGMOID:
-        case ACLTENSOR_OP_TANH:
-        */
 
         default:
             return ACLTENSOR_STATUS_NOT_SUPPORTED;
@@ -68,17 +52,11 @@ acltensorStatus_t CheckComputeDescriptor(acltensorComputeDescriptor_t descComput
         return ACLTENSOR_STATUS_INVALID_VALUE;
     }
 
-    // Phase 1: 只支持 FP32 计算精度
+    // 当前仅支持 FP32 计算精度，其他数据类型待后续版本支持
     switch (descCompute)
     {
         case ACLTENSOR_COMPUTE_DESC_32F:
             return ACLTENSOR_STATUS_SUCCESS;
-
-        /* TODO: Phase 2 - 支持更多数据类型
-        case ACLTENSOR_COMPUTE_DESC_16F:
-        case ACLTENSOR_COMPUTE_DESC_16BF:
-        case ACLTENSOR_COMPUTE_DESC_64F:
-        */
 
         default:
             return ACLTENSOR_STATUS_NOT_SUPPORTED;

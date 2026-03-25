@@ -13,59 +13,60 @@
  * \brief 张量描述符实现
  */
 
-#include "cann_ops_tensor_types.h"
 #include "tensor_descriptor.hpp"
+
 #include <cstring>
 #include <new>
+
+#include "cann_ops_tensor_types.h"
 
 acltensorStatus_t acltensorCreateTensorDescriptor(
     const acltensorHandle_t      handle,
     acltensorTensorDescriptor_t* desc,
-    const uint32_t               numModes,
-    const int64_t                lens[],
-    const int64_t                strides[],
-    acltensorDataType_t          dataType,
-    uint32_t                     alignmentRequirement)
+    const uint32_t               rank,
+    const int64_t                dimSizes[],
+    const int64_t                stridesIn[],
+    acltensorDataType_t          dType,
+    uint32_t                     alignReq)
 {
-    (void)handle;  // 暂时不使用 handle
+    (void)handle;
 
-    if (desc == nullptr || lens == nullptr) {
+    if (desc == nullptr || dimSizes == nullptr) {
         return ACLTENSOR_STATUS_INVALID_VALUE;
     }
 
-    if (numModes == 0) {
+    if (rank == 0) {
         return ACLTENSOR_STATUS_INVALID_VALUE;
     }
 
-    // 阶段一只支持 FP32
-    if (dataType != ACLTENSOR_R_32F) {
+    // 当前版本仅支持 FP32
+    if (dType != ACLTENSOR_R_32F) {
         return ACLTENSOR_STATUS_NOT_SUPPORTED;
     }
 
-    // 创建描述符
-    acltensorTensorDescriptor* d = new (std::nothrow) acltensorTensorDescriptor();
-    if (d == nullptr) {
+    // 分配张量描述符对象
+    acltensorTensorDescriptor* tensorDesc = new (std::nothrow) acltensorTensorDescriptor();
+    if (tensorDesc == nullptr) {
         return ACLTENSOR_STATUS_ALLOC_FAILED;
     }
 
-    // 设置基本属性
-    d->dataType = dataType;
-    d->numModes = numModes;
-    d->alignmentRequirement = alignmentRequirement;
+    // 初始化张量属性
+    tensorDesc->dataType = dType;
+    tensorDesc->numModes = rank;
+    tensorDesc->alignmentRequirement = alignReq;
 
-    // 复制维度长度
-    d->lens.assign(lens, lens + numModes);
+    // 拷贝维度信息
+    tensorDesc->lens.assign(dimSizes, dimSizes + rank);
 
-    // 如果用户提供了步长，复制过来
-    if (strides != nullptr) {
-        d->strides.assign(strides, strides + numModes);
+    // 用户提供了步长信息则直接使用
+    if (stridesIn != nullptr) {
+        tensorDesc->strides.assign(stridesIn, stridesIn + rank);
     }
-    // 如果未提供步长，computeDerivedAttributes() 会自动计算连续内存布局
 
-    // 统一计算所有派生属性（包括自动计算步长、总元素数、总字节数等）
-    d->computeDerivedAttributes();
+    // 计算派生属性（元素总数、内存连续性、总字节数等）
+    tensorDesc->computeDerivedAttributes();
 
-    *desc = d;
+    *desc = tensorDesc;
     return ACLTENSOR_STATUS_SUCCESS;
 }
 

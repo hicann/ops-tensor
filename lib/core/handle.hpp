@@ -16,20 +16,23 @@
 #ifndef ACLTENSOR_LIB_CORE_HANDLE_HPP
 #define ACLTENSOR_LIB_CORE_HANDLE_HPP
 
-#include "cann_ops_tensor_types.h"
 #include <cstdint>
+
+#include "cann_ops_tensor_types.h"
 
 namespace acltensor {
 
 /**
  * @brief SoC 类型枚举
+ *
+ * 注意：当前版本仅支持 Ascend950，其他枚举项暂不支持。
  */
 enum class SocType : uint32_t
 {
     UNKNOWN = 0,
-    ASCEND910B,
-    ASCEND910_93,
-    ASCEND950,      // 重点支持
+    // ASCEND910B - 暂不支持，保留用于未来扩展
+    // ASCEND910_93 - 暂不支持，保留用于未来扩展
+    ASCEND950       // 当前版本支持
 };
 
 /**
@@ -46,34 +49,27 @@ public:
     SocType  getSocType()    const { return socType_; }
     const char* getSocName() const { return socName_; }
 
-    // 能力查询 - 阶段一只关注 FP32
+    // 能力查询 - 当前仅支持 FP32
     bool supportsFp32() const { return true; }
-
-    /* TODO: Phase 2
-    bool supportsFp16() const { return supportsFp16_; }
-    bool supportsBf16() const { return supportsBf16_; }
-    */
+    // FP16、BF16 等其他数据类型支持待后续版本实现
 
 private:
     int32_t  deviceId_     = -1;
     uint32_t coreNum_      = 0;
     uint64_t ubSize_       = 0;
     SocType  socType_      = SocType::UNKNOWN;
-    char     socName_[64]  = {0};
+    char     socName_[64]  = {0};  // SOC名称缓冲区，64字节足以存储 "Ascend950" 等型号名称
     // bool     supportsFp16_ = false;
 };
 
 } // namespace acltensor
 
 /**
- * @brief 对外句柄结构体（阶段一简化版）
+ * @brief 对外句柄结构体
  */
 struct acltensorHandle {
     acltensor::AscendDevice device;
-
-    /* TODO: Phase 2 */
-    // acltensor::PlanCache* planCache = nullptr;
-    // acltensorLogLevel_t logLevel = ACLTENSOR_LOG_LEVEL_OFF;
+    // PlanCache、logLevel 等功能待后续版本实现
 };
 
 #endif // ACLTENSOR_LIB_CORE_HANDLE_HPP

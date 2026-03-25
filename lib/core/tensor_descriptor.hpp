@@ -16,10 +16,11 @@
 #ifndef ACLTENSOR_LIB_CORE_TENSOR_DESCRIPTOR_HPP
 #define ACLTENSOR_LIB_CORE_TENSOR_DESCRIPTOR_HPP
 
-#include "cann_ops_tensor_types.h"
-#include "utils/type_utils.hpp"
 #include <vector>
 #include <cstdint>
+
+#include "cann_ops_tensor_types.h"
+#include "utils/type_utils.hpp"
 
 /**
  * @brief 张量描述符结构体

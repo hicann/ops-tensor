@@ -13,17 +13,20 @@
  * \brief Add 算子解决方案注册
  */
 
-#include "cann_ops_tensor.h"
-#include "elementwise/elementwise.hpp"
+#include <cstring>
+#include <iostream>
+#include "securec.h"
+
 #include "arch35/add_struct.h"
 #include "platform/platform_info.h"
 #include "tiling/platform/platform_ascendc.h"
-#include <cstring>
-#include <iostream>
+
+#include "cann_ops_tensor.h"
+#include "elementwise/elementwise.hpp"
 
 #define GM_ADDR uint8_t*
 
-// 外部内核函数声明
+// 内核函数声明（由 add_kernel.cpp 实现）
 extern void add_kernel_do(GM_ADDR x1, GM_ADDR x2, GM_ADDR y,
                           GM_ADDR workspace, GM_ADDR tilingGm,
                           uint32_t numBlocks, void *stream);
@@ -55,8 +58,8 @@ static int GetPlatformInfo(uint32_t& maxCoreNum, uint32_t& ubFormSize)
         return -1;
     }
 
-    constexpr uint32_t NUM_QUEUES = 3;
-    constexpr uint32_t BUFFER_NUM = 2;
+    constexpr uint32_t NUM_QUEUES = 3;     // 流水线队列数量（加载/计算/存储）
+    constexpr uint32_t BUFFER_NUM = 2;      // 双缓冲，允许计算与数据搬运并行
     ubFormSize = ubSize / (NUM_QUEUES * BUFFER_NUM * sizeof(float));
 
     return 0;
@@ -64,7 +67,11 @@ static int GetPlatformInfo(uint32_t& maxCoreNum, uint32_t& ubFormSize)
 
 static int CalculateAddTilingData(int64_t n, AddOp::AddTilingData& tilingData, uint32_t& numBlocks)
 {
-    memset(&tilingData, 0, sizeof(AddOp::AddTilingData));
+    int ret = memset_s(&tilingData, sizeof(AddOp::AddTilingData), 0, sizeof(AddOp::AddTilingData));
+    if (ret != EOK) {
+        std::cerr << "[ERROR] CalculateAddTilingData: memset_s failed with code " << ret << std::endl;
+        return -1;
+    }
     tilingData.elemNum = n;
 
     uint32_t maxCoreNum = 0;
@@ -73,8 +80,8 @@ static int CalculateAddTilingData(int64_t n, AddOp::AddTilingData& tilingData, u
         return -1;
     }
 
-    constexpr uint32_t MIN_ELEMENTS_PER_CORE = 8;
-    constexpr uint32_t ALIGN_ELEMENTS = 8;
+    constexpr uint32_t MIN_ELEMENTS_PER_CORE = 8;   // 每核最小处理元素数，避免核心浪费
+    constexpr uint32_t ALIGN_ELEMENTS = 8;          // 32字节对齐（8个float），满足Vector指令要求
 
     uint64_t maxElementsPerCore = (n + maxCoreNum - 1) / maxCoreNum;
 
@@ -100,7 +107,7 @@ static int CalculateAddTilingData(int64_t n, AddOp::AddTilingData& tilingData, u
         tilingData.blockTail = blockFormer;
     }
 
-    int64_t totalElementsForNormalCores = (int64_t)(usedCoreNum - 1) * elementsPerCore;
+    int64_t totalElementsForNormalCores = static_cast<int64_t>(usedCoreNum - 1) * elementsPerCore;
     int64_t remainingElements = n - totalElementsForNormalCores;
 
     tilingData.tailCoreElements = remainingElements;
@@ -201,16 +208,9 @@ static acltensorStatus_t AddF32Execute(const ElementwiseArgs& args)
 }
 
 /**
- * @brief 注册 Add FP32 解决方案到注册表
- * @param registry 解决方案注册表引用
+ * @brief 注册 Add FP32 解决方案（使用自动注册宏）
+ *        支持 Binary 通用解决方案（任意维度）
  */
-void RegisterAddF32Solutions(ElementwiseSolutionRegistry& registry)
-{
-    // numModes=0 表示通用解决方案，支持任意维度
-    SolutionUid uid{ACLTENSOR_OP_ADD, ACLTENSOR_R_32F, 0};
-
-    auto solution = std::make_shared<ElementwiseSolution>(uid, AddF32Execute);
-    registry.registerSolution(solution);
-}
+REGISTER_ELEMENTWISE_SOLUTION(ADD, R_32F, 0, BINARY, AddF32Execute)
 
 } // namespace acltensor

@@ -9,16 +9,18 @@
  * @brief Add算子单元测试
  */
 
-#include "cann_ops_tensor.h"
 #include "add_test.h"
+
 #include <iostream>
 #include <vector>
 #include <cmath>
 
+#include "cann_ops_tensor.h"
+
 using namespace OpsTensorTest;
 
 // 测试基本加法
-void test_basic_add(aclrtStream stream, TestStats& stats) {
+static void test_basic_add(aclrtStream stream, TestStats& stats) {
     TEST_CASE_BEGIN("test_basic_add");
 
     const int64_t size = 5;
@@ -38,7 +40,7 @@ void test_basic_add(aclrtStream stream, TestStats& stats) {
 }
 
 // 测试大数组
-void test_large_array(aclrtStream stream, TestStats& stats) {
+static void test_large_array(aclrtStream stream, TestStats& stats) {
     TEST_CASE_BEGIN("test_large_array");
 
     const int64_t size = 1024;
@@ -58,7 +60,7 @@ void test_large_array(aclrtStream stream, TestStats& stats) {
 }
 
 // 测试负数
-void test_negative_numbers(aclrtStream stream, TestStats& stats) {
+static void test_negative_numbers(aclrtStream stream, TestStats& stats) {
     TEST_CASE_BEGIN("test_negative_numbers");
 
     const int64_t size = 4;
@@ -78,7 +80,7 @@ void test_negative_numbers(aclrtStream stream, TestStats& stats) {
 }
 
 // 测试自定义维度标签
-void test_custom_modes(aclrtStream stream, TestStats& stats) {
+static void test_custom_modes(aclrtStream stream, TestStats& stats) {
     TEST_CASE_BEGIN("test_custom_modes");
 
     const int64_t size = 3;

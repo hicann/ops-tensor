@@ -16,9 +16,10 @@
 #ifndef ACLTENSOR_LIB_CORE_PLAN_PREFERENCE_HPP
 #define ACLTENSOR_LIB_CORE_PLAN_PREFERENCE_HPP
 
-#include "cann_ops_tensor_types.h"
 #include <memory>   // for std::shared_ptr (solution 字段)
 #include <vector>   // for std::vector (candidates 字段)
+
+#include "cann_ops_tensor_types.h"
 
 /**
  * @brief Plan 偏好结构体
@@ -32,17 +33,10 @@
 struct acltensorPlanPreference {
     // ========== 用户偏好 ==========
     acltensorAlgo_t algo = ACLTENSOR_ALGO_DEFAULT;
-
-    /* TODO: Phase 2
-    acltensorCacheMode_t cacheMode = ACLTENSOR_CACHE_MODE_NONE;
-    acltensorAutotuneMode_t autotuneMode = ACLTENSOR_AUTOTUNE_MODE_NONE;
-    int32_t incrementalCount = 0;
-    int32_t kernelRank = 0;
-    */
+    // cacheMode、autotuneMode、incrementalCount、kernelRank 等待后续版本实现
 
     // ========== Solution 选择状态 ==========
-    // 候选解决方案列表（Phase 3 Autotune 时使用）
-    // CreatePlan 时由库填充，Execute 时根据 autotuneMode 遍历选择
+    // 候选解决方案列表（Autotune 功能待后续版本实现）
     std::vector<void*> candidates;
 
     // 当前选定的解决方案（Execute 时首次选择，后续复用）

@@ -54,6 +54,7 @@ const char* acltensorGetErrorString(const acltensorStatus_t error)
  */
 size_t acltensorGetVersion(void)
 {
-    // 版本 1.0.0
+    // 版本 1.0.0 (格式: 0xMMmmPP, MM=Major, mm=Minor, PP=Patch)
+    // 16: Major版本号左移16位到最高字节, 8: Minor版本号左移8位到中间字节
     return (1 << 16) | (0 << 8) | 0;
 }

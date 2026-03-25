@@ -174,7 +174,9 @@ struct ElementwiseTestConfigBase {
 
     // 获取总元素数量
     int64_t numElements() const {
-        if (dimensions.empty()) return 0;
+        if (dimensions.empty()) {
+            return 0;
+        }
         int64_t total = 1;
         for (auto dim : dimensions) {
             total *= dim;

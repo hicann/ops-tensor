@@ -55,13 +55,13 @@ typedef enum {
  * 3. 计算精度描述符
  *============================================================================*/
 typedef enum {
-    ACLTENSOR_COMPUTE_DESC_32F = (1U << 2),   /* FP32 计算 - 阶段一支持 */
+    ACLTENSOR_COMPUTE_DESC_32F = (1U << 2),   /* FP32 计算 - 阶段一支持，bit[2] */
     ACLTENSOR_COMPUTE_DESC_NONE = 0,
-    ACLTENSOR_COMPUTE_DESC_16F = (1U << 0),   /* FP16 计算 */
-    ACLTENSOR_COMPUTE_DESC_64F = (1U << 4),
-    ACLTENSOR_COMPUTE_DESC_16BF = (1U << 10),
-    ACLTENSOR_COMPUTE_DESC_C32F = (1U << 11),
-    ACLTENSOR_COMPUTE_DESC_C64F = (1U << 12),
+    ACLTENSOR_COMPUTE_DESC_16F = (1U << 0),   /* FP16 计算，bit[0] */
+    ACLTENSOR_COMPUTE_DESC_64F = (1U << 4),   /* FP64 计算，bit[4] */
+    ACLTENSOR_COMPUTE_DESC_16BF = (1U << 10), /* BF16 计算，bit[10] */
+    ACLTENSOR_COMPUTE_DESC_C32F = (1U << 11), /* 复数FP32 计算，bit[11] */
+    ACLTENSOR_COMPUTE_DESC_C64F = (1U << 12), /* 复数FP64 计算，bit[12] */
 } acltensorComputeDescriptor_t;
 
 /*============================================================================
@@ -121,55 +121,6 @@ typedef enum {
     ACLTENSOR_WORKSPACE_DEFAULT = 2,      /* 阶段一支持 */
     ACLTENSOR_WORKSPACE_MAX = 3,
 } acltensorWorksizePreference_t;
-
-/*============================================================================
- * 7. 缓存模式 - Phase 2 - 待实现
- *============================================================================*/
-typedef enum {
-    ACLTENSOR_CACHE_MODE_NONE = 0,
-    ACLTENSOR_CACHE_MODE_PEDANTIC = 1,
-} acltensorCacheMode_t;
-
-/*============================================================================
- * 8. 日志级别 - Phase 2 - 待实现
- *============================================================================*/
-typedef enum {
-    ACLTENSOR_LOG_LEVEL_OFF = 0,
-    ACLTENSOR_LOG_LEVEL_ERROR = 1,
-    ACLTENSOR_LOG_LEVEL_PERF_TRACE = 2,
-    ACLTENSOR_LOG_LEVEL_PERF_HINT = 4,
-    ACLTENSOR_LOG_LEVEL_HEURISTICS_TRACE = 8,
-    ACLTENSOR_LOG_LEVEL_API_TRACE = 16,
-} acltensorLogLevel_t;
-
-/*============================================================================
- * 9. 操作描述符属性 - Phase 2 - 待实现
- *============================================================================*/
-typedef enum {
-    ACLTENSOR_OPERATION_DESCRIPTOR_TAG = 0,
-    ACLTENSOR_OPERATION_DESCRIPTOR_SCALAR_TYPE = 1,
-    ACLTENSOR_OPERATION_DESCRIPTOR_FLOPS = 2,
-    ACLTENSOR_OPERATION_DESCRIPTOR_MOVED_BYTES = 3,
-    ACLTENSOR_OPERATION_DESCRIPTOR_PADDING_LEFT = 4,
-    ACLTENSOR_OPERATION_DESCRIPTOR_PADDING_RIGHT = 5,
-} acltensorOperationDescriptorAttribute_t;
-
-/*============================================================================
- * 10. Plan 属性 - Phase 2 - 待实现
- *============================================================================*/
-typedef enum {
-    ACLTENSOR_PLAN_REQUIRED_WORKSPACE = 0,
-    ACLTENSOR_PLAN_KERNEL_ID = 1,
-} acltensorPlanAttribute_t;
-
-/*============================================================================
- * 11. PlanPreference 属性 - Phase 2 - 待实现
- *============================================================================*/
-typedef enum {
-    ACLTENSOR_PLAN_PREFERENCE_CACHE_MODE = 0,
-    ACLTENSOR_PLAN_PREFERENCE_ALGO = 1,
-    ACLTENSOR_PLAN_PREFERENCE_KERNEL_RANK = 2,
-} acltensorPlanPreferenceAttribute_t;
 
 /*============================================================================
  * 12. 不透明句柄类型
