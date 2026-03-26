@@ -156,9 +156,8 @@ acltensorStatus_t ExecuteOnDevice(
 //==============================================================================
 // 主函数：执行 Elementwise Binary 操作
 //==============================================================================
-acltensorStatus_t ExecuteElementwiseBinaryTest(
-    const void* h_A, const void* h_C, void* h_D, const ElementwiseBinaryTestConfig& config, acltensorOperator_t opType,
-    aclrtStream stream)
+acltensorStatus_t ExecuteElementwiseBinaryTest(const void* h_A, const void* h_C, void* h_D,
+    const ElementwiseBinaryTestConfig& config, acltensorOperator_t opType, aclrtStream stream)
 {
     // 1. 创建 Handle
     acltensorHandle_t handle;

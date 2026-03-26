@@ -65,38 +65,66 @@ static int GetPlatformInfo(uint32_t& maxCoreNum, uint32_t& ubFormSize)
     return 0;
 }
 
-static int CalculateAddTilingData(int64_t n, AddOp::AddTilingData& tilingData, uint32_t& numBlocks)
+/**
+ * @brief 计算核心使用情况
+ * @param n 总元素数
+ * @param maxCoreNum 最大核心数
+ * @param usedCoreNum 输出：实际使用的核心数
+ * @param elementsPerCore 输出：每核处理的元素数
+ */
+static void CalculateCoreUsage(int64_t n, uint32_t maxCoreNum,
+                               uint32_t& usedCoreNum, uint64_t& elementsPerCore)
 {
-    int ret = memset_s(&tilingData, sizeof(AddOp::AddTilingData), 0, sizeof(AddOp::AddTilingData));
-    if (ret != EOK) {
-        std::cerr << "[ERROR] CalculateAddTilingData: memset_s failed with code " << ret << std::endl;
-        return -1;
-    }
-    tilingData.elemNum = n;
-
-    uint32_t maxCoreNum = 0;
-    uint32_t ubFormSize = 0;
-    if (GetPlatformInfo(maxCoreNum, ubFormSize) != 0) {
-        return -1;
+    // 防御性检查：确保 maxCoreNum 不为0
+    if (maxCoreNum == 0) {
+        std::cerr << "[ERROR] CalculateCoreUsage: maxCoreNum is 0" << std::endl;
+        return;
     }
 
-    constexpr uint32_t MIN_ELEMENTS_PER_CORE = 8;   // 每核最小处理元素数，避免核心浪费
-    constexpr uint32_t ALIGN_ELEMENTS = 8;          // 32字节对齐（8个float），满足Vector指令要求
+    constexpr uint32_t MIN_ELEMENTS_PER_CORE = 8;  // 每核最小处理元素数
 
     uint64_t maxElementsPerCore = (n + maxCoreNum - 1) / maxCoreNum;
-
-    uint32_t usedCoreNum;
-    uint64_t elementsPerCore = (maxElementsPerCore < MIN_ELEMENTS_PER_CORE) ? MIN_ELEMENTS_PER_CORE : maxElementsPerCore;
-    usedCoreNum = (n + elementsPerCore - 1) / elementsPerCore;
+    elementsPerCore = (maxElementsPerCore < MIN_ELEMENTS_PER_CORE) ? MIN_ELEMENTS_PER_CORE : maxElementsPerCore;
+    usedCoreNum = static_cast<uint32_t>((n + elementsPerCore - 1) / elementsPerCore);
     usedCoreNum = (usedCoreNum > maxCoreNum) ? maxCoreNum : usedCoreNum;
+}
 
-    uint32_t maxBlockByElements = elementsPerCore;
+/**
+ * @brief 计算块参数
+ * @param elementsPerCore 每核元素数
+ * @param ubFormSize UB 可用元素数
+ * @param blockFormer 输出：块大小（对齐后）
+ * @return 0 成功，-1 失败
+ */
+static int CalculateBlockParams(uint64_t elementsPerCore, uint32_t ubFormSize, uint32_t& blockFormer)
+{
+    constexpr uint32_t ALIGN_ELEMENTS = 8;  // 32字节对齐
+
+    uint32_t maxBlockByElements = static_cast<uint32_t>(elementsPerCore);
     uint32_t maxBlockByUB = ubFormSize;
-    uint32_t blockFormer = std::min(maxBlockByElements, maxBlockByUB);
+    blockFormer = std::min(maxBlockByElements, maxBlockByUB);
     blockFormer = (blockFormer + ALIGN_ELEMENTS - 1) / ALIGN_ELEMENTS * ALIGN_ELEMENTS;
+
     if (blockFormer == 0) {
         std::cerr << "[ERROR] CalculateAddTilingData: blockFormer is 0 after alignment" << std::endl;
         return -1;
+    }
+    return 0;
+}
+
+/**
+ * @brief 设置块相关 tiling 数据
+ * @param elementsPerCore 每核元素数
+ * @param blockFormer 块大小
+ * @param tilingData 输出：tiling 数据
+ */
+static void SetBlockTilingData(uint64_t elementsPerCore, uint32_t blockFormer,
+                               AddOp::AddTilingData& tilingData)
+{
+    // 防御性检查：确保 blockFormer 不为0
+    if (blockFormer == 0) {
+        std::cerr << "[ERROR] SetBlockTilingData: blockFormer is 0" << std::endl;
+        return;
     }
 
     tilingData.elementsPerCore = elementsPerCore;
@@ -105,6 +133,25 @@ static int CalculateAddTilingData(int64_t n, AddOp::AddTilingData& tilingData, u
     tilingData.blockTail = elementsPerCore % blockFormer;
     if (tilingData.blockTail == 0) {
         tilingData.blockTail = blockFormer;
+    }
+}
+
+/**
+ * @brief 设置尾部核心 tiling 数据
+ * @param usedCoreNum 使用核心数
+ * @param elementsPerCore 每核元素数
+ * @param blockFormer 块大小
+ * @param n 总元素数
+ * @param tilingData 输出：tiling 数据
+ */
+static void SetTailCoreTilingData(uint32_t usedCoreNum, uint64_t elementsPerCore,
+                                  uint32_t blockFormer, int64_t n,
+                                  AddOp::AddTilingData& tilingData)
+{
+    // 防御性检查：确保 blockFormer 不为0
+    if (blockFormer == 0) {
+        std::cerr << "[ERROR] SetTailCoreTilingData: blockFormer is 0" << std::endl;
+        return;
     }
 
     int64_t totalElementsForNormalCores = static_cast<int64_t>(usedCoreNum - 1) * elementsPerCore;
@@ -116,7 +163,46 @@ static int CalculateAddTilingData(int64_t n, AddOp::AddTilingData& tilingData, u
     if (tilingData.tailCoreBlockTail == 0) {
         tilingData.tailCoreBlockTail = blockFormer;
     }
+}
 
+/**
+ * @brief 计算 Add 算子的 tiling 数据
+ */
+static int CalculateAddTilingData(int64_t n, AddOp::AddTilingData& tilingData, uint32_t& numBlocks)
+{
+    // 初始化 tiling 数据
+    int ret = memset_s(&tilingData, sizeof(AddOp::AddTilingData), 0, sizeof(AddOp::AddTilingData));
+    if (ret != EOK) {
+        std::cerr << "[ERROR] CalculateAddTilingData: memset_s failed with code " << ret << std::endl;
+        return -1;
+    }
+    tilingData.elemNum = n;
+
+    // 获取平台信息
+    uint32_t maxCoreNum = 0;
+    uint32_t ubFormSize = 0;
+    if (GetPlatformInfo(maxCoreNum, ubFormSize) != 0) {
+        return -1;
+    }
+
+    // 计算核心使用情况
+    uint32_t usedCoreNum = 0;
+    uint64_t elementsPerCore = 0;
+    CalculateCoreUsage(n, maxCoreNum, usedCoreNum, elementsPerCore);
+
+    // 计算块参数
+    uint32_t blockFormer = 0;
+    if (CalculateBlockParams(elementsPerCore, ubFormSize, blockFormer) != 0) {
+        return -1;
+    }
+
+    // 设置块 tiling 数据
+    SetBlockTilingData(elementsPerCore, blockFormer, tilingData);
+
+    // 设置尾部核心 tiling 数据
+    SetTailCoreTilingData(usedCoreNum, elementsPerCore, blockFormer, n, tilingData);
+
+    // 设置其他参数
     tilingData.usedCoreNum = usedCoreNum;
     tilingData.ubFormer = ubFormSize;
     numBlocks = usedCoreNum;
@@ -128,11 +214,8 @@ static int CalculateAddTilingData(int64_t n, AddOp::AddTilingData& tilingData, u
  * @brief Add FP32 执行函数（内部实现，保持原有逻辑）
  *        注意：参数顺序与原签名一致
  */
-static acltensorStatus_t AddF32Execute_Impl(
-    const void* A, const void* C, void* D,
-    int64_t elemNum,
-    const void* alpha, const void* gamma,
-    aclrtStream stream)
+static acltensorStatus_t AddF32ExecuteImpl(const void* A, const void* C, void* D,
+    int64_t elemNum, const void* alpha, const void* gamma, aclrtStream stream)
 {
     // 阶段一：忽略 alpha 和 gamma，直接执行 A + C = D
     (void)alpha;
@@ -204,7 +287,7 @@ static acltensorStatus_t AddF32Execute(const ElementwiseArgs& args)
     aclrtStream stream = args.stream;
 
     // 调用原有实现
-    return AddF32Execute_Impl(A, C, D, elemNum, alpha, gamma, stream);
+    return AddF32ExecuteImpl(A, C, D, elemNum, alpha, gamma, stream);
 }
 
 /**

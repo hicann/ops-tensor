@@ -20,7 +20,7 @@
 
 #include "acl/acl.h"
 #include "tiling/platform/platform_ascendc.h"
-
+#include "platform/soc_spec.h"
 #include "cann_ops_tensor.h"
 
 namespace acltensor {
@@ -46,12 +46,12 @@ AscendDevice::AscendDevice()
 
     // 获取 SoC 版本
     // 注意：当前版本仅支持 Ascend950
-    auto socVersion = ascendcPlatform->GetSocVersion();
+    auto npuArch = ascendcPlatform->GetCurNpuArch();
     const char* socNameStr = nullptr;
-    switch (socVersion)
+    switch (npuArch)
     {
         // 其他 SoC 型号暂不支持，待后续版本扩展
-        case platform_ascendc::SocVersion::ASCEND950:
+        case NpuArch::DAV_3510:
             socNameStr = "Ascend950";
             socType_ = SocType::ASCEND950;
             break;
