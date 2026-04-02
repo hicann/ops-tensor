@@ -59,7 +59,6 @@ private:
     uint64_t ubSize_       = 0;
     SocType  socType_      = SocType::UNKNOWN;
     char     socName_[64]  = {0};  // SOC名称缓冲区，64字节足以存储 "Ascend950" 等型号名称
-    // bool     supportsFp16_ = false;
 };
 
 } // namespace acltensor
