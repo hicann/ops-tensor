@@ -20,29 +20,42 @@ ops-tensor 是 [CANN](https://hiascend.com/software/cann) （Compute Architectur
 
 ## 📝 版本配套
 
-本项目源码会跟随 CANN 软件版本发布，关于 CANN 软件版本与本项目标签的对应关系请参阅 [release 仓库](https://gitcode.com/cann/release-management) 中的相应版本说明。
+当前仓库已验证通过的社区版 CANN Toolkit 如下：
 
-**当前版本：** v1.0.0 (2025-03-02)
+| CANN 版本 | 时间戳 | 验证结果 | 下载链接 |
+| --- | --- | --- | --- |
+| `9.0.0` | `20260325000325538` | ✅ PASS | [aarch64](https://ascend.devcloud.huaweicloud.com/artifactory/cann-run-mirror/software/legacy/20260325000325538/aarch64/) / [x86_64](https://ascend.devcloud.huaweicloud.com/artifactory/cann-run-mirror/software/legacy/20260325000325538/x86_64/) |
 
-为确保您的源码定制开发顺利进行，请选择配套的 CANN 版本，使用 master 分支可能存在版本不匹配的风险。
+请根据实际 CPU 架构，从上述链接目录中自行选择对应的 `.run` 安装包。
+
+toolkit 安装包文件名格式如下：
+
+- `Ascend-cann-toolkit_${cann_version}_linux-aarch64.run`
+- `Ascend-cann-toolkit_${cann_version}_linux-x86_64.run`
+
+1. **安装社区版 CANN Toolkit**
+
+    ```bash
+    # 确保安装包具有可执行权限
+    chmod +x Ascend-cann-toolkit_${cann_version}_linux-${arch}.run
+    # 安装命令
+    ./Ascend-cann-toolkit_${cann_version}_linux-${arch}.run --install --force --install-path=${install_path}
+    ```
+    - `${cann_version}`：表示 toolkit 安装包版本号，需满足上文的最低版本要求。
+    - `${arch}`：表示 CPU 架构，如 `aarch64`、`x86_64`。
+    - `${install_path}`：表示指定安装路径，默认安装在 `/usr/local/Ascend` 目录。
+
+2. **配置环境变量**
+
+   安装完成后，请先执行：
+
+    ```bash
+    source ${install_path}/cann/set_env.sh
+    ```
+
+   请将 `${install_path}` 替换为 toolkit 的实际安装目录，例如 `/usr/local/Ascend` 或 `${HOME}/Ascend`。
 
 ## ⚡️ 快速入门
-
-### 环境要求
-
-- CANN 8.0 及以上版本
-- 支持 Ascend950 SoC（**当前版本仅支持 Ascend950，其他 SoC 型号暂不支持**）
-- Linux x86_64/AArch64 平台
-
-### 环境配置
-
-```bash
-# 设置 CANN 环境变量
-source /usr/local/Ascend/cann/set_env.sh
-
-# 验证环境
-echo $ASCEND_HOME_PATH
-```
 
 ### 编译与测试
 
