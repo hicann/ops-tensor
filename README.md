@@ -20,7 +20,7 @@ ops-tensor 是 [CANN](https://hiascend.com/software/cann) （Compute Architectur
 
 ## 📝 版本配套
 
-当前仓库已验证通过的社区版 CANN Toolkit 如下：
+当前仓库已验证通过的 CANN Toolkit 如下：
 
 | CANN 版本 | 发布时间 | 分支 |
 | --- | --- | --- |
