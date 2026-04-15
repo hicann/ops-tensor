@@ -22,9 +22,9 @@ ops-tensor 是 [CANN](https://hiascend.com/software/cann) （Compute Architectur
 
 当前仓库已验证通过的社区版 CANN Toolkit 如下：
 
-| CANN 版本 | 时间戳 | 验证结果 | 下载链接 |
-| --- | --- | --- | --- |
-| `9.0.0` | `20260325000325538` | ✅ PASS | [aarch64](https://ascend.devcloud.huaweicloud.com/artifactory/cann-run-mirror/software/legacy/20260325000325538/aarch64/) / [x86_64](https://ascend.devcloud.huaweicloud.com/artifactory/cann-run-mirror/software/legacy/20260325000325538/x86_64/) |
+| CANN 版本 | 发布时间 | 分支 |
+| --- | --- | --- |
+| [CANN 9.0.0-beta.2](https://www.hiascend.com/developer/download/community/result?module=cann&cann=9.0.0-beta.2) | `2026/03/30` | master |
 
 请根据实际 CPU 架构，从上述链接目录中自行选择对应的 `.run` 安装包。
 
