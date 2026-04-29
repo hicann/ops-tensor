@@ -1,6 +1,7 @@
 # ops-tensor
 
 ## 🔥 最新动态
+- [2026/04] 新增 `tensor_api`、`Blaze`（**B**asic **L**inear **A**lgebra **O**ptimized **E**ngine）公共模块，分别为算子开发提供张量结构抽象与高性能线性代数加速能力。
 - [2026/03] 完成项目基础架构搭建，支持 Add 算子实现和测试，支持一键编译、测试和打包。
 - [2026/03] 建立完整的测试框架，支持单元测试、超时控制和自动化测试统计。
 - [2026/03] 实现标准化的打包流程，生成 .run 安装包，支持 install/uninstall/upgrade 完整生命周期管理。
@@ -12,6 +13,7 @@ ops-tensor 是 [CANN](https://hiascend.com/software/cann) （Compute Architectur
 ### 主要特性
 
 - ✅ **模块化设计** - 支持动态添加算子模块，每个算子独立开发、编译和测试
+- ✅ **公共模块** - `tensor_api` 提供张量结构抽象，`Blaze` 提供高性能线性代数加速能力，作为算子开发的统一基础
 - ✅ **标准 CMake 构建** - 跨平台编译支持，统一的构建流程
 - ✅ **完整测试体系** - 基于自定义测试框架，支持自动化测试和超时控制
 - ✅ **便捷打包** - 一键生成 .run 安装包，支持 install/uninstall/upgrade
@@ -120,6 +122,15 @@ sudo ./cann-950-ops-tensor_9.0.0_linux-*.run --upgrade
 | Ascend310P | ascend310p | ❌ 暂不支持 |
 | Ascend310B | ascend310b | ❌ 暂不支持 |
 
+### 公共模块
+
+ops-tensor 通过模块化的公共代码为各算子提供统一的基础能力，算子按需调用：
+
+| 模块 | 路径 | 形态 | 简介 |
+| :--- | :--- | :--- | :--- |
+| `tensor_api` | [`include/tensor_api/`](include/tensor_api/) | header-only | 底层 Tensor 抽象（Layout / Shape / Coord 等类型与工具），用于在 Kernel 端构建结构化的张量视图 |
+| `Blaze` | [`include/blaze/`](include/blaze/) | header-only | 高性能线性代数加速引擎（**B**asic **L**inear **A**lgebra **O**ptimized **E**ngine），服务于使用到矩阵乘计算的相关算子（Matmul、GroupedMatmul、MC2 等），提供分层的 Kernel / Block / Tile 抽象与配套 Policy / Epilogue / Utils。详见 [include/blaze/README.md](include/blaze/README.md) |
+
 ## 🔍 目录结构
 
 ```
@@ -133,7 +144,9 @@ ops-tensor/
 │   └── third_party/           # 第三方依赖
 ├── include/                    # 公共头文件
 │   ├── cann_ops_tensor.h      # API 头文件
-│   └── cann_ops_tensor_types.h # 类型定义头文件
+│   ├── cann_ops_tensor_types.h # 类型定义头文件
+│   ├── tensor_api/            # 底层 Tensor 抽象（Layout/Shape/Coord 等）
+│   └── blaze/                 # Blaze 高性能线性代数加速引擎
 ├── scripts/                    # 脚本目录
 │   ├── check_build_dependencies.py  # 依赖检查脚本
 │   ├── generate_version_info.py    # 版本信息生成
@@ -181,24 +194,19 @@ ops-tensor/
 └── README.md                   # 本文件
 ```
 
-**说明**：
-- **lib/** - 基础设施库，提供算子开发所需的核心功能：
-  - `core/`: 算子描述、执行计划、张量抽象等基础设施
-  - `elementwise/`: 元素算子通用实现
-  - `utils/`: 工具函数和验证逻辑
-  - **所有算子实现都依赖 lib 模块提供的基础设施**
-- `<op>_solution.cpp` - 解决方案实现（Tiling 计算、内存管理、解决方案注册）
-- `<op>_kernel.cpp` - Kernel 核函数实现
-- `arch35/<op>_struct.h` - Tiling 数据结构（可选，也可定义在 solution.cpp 中）
-- `arch35/` 目录是可选的，仅在需要区分不同 SOC 架构时使用
-- 测试文件强烈推荐，但不是必需的
+**说明**：仓库代码按角色分为三类：
 
-**说明**：
-- `<op>_solution.cpp` - 解决方案实现（Tiling 计算、内存管理、解决方案注册）
-- `<op>_kernel.cpp` - Kernel 核函数实现
-- `arch35/<op>_struct.h` - Tiling 数据结构（可选，也可定义在 solution.cpp 中）
-- `arch35/` 目录是可选的，仅在需要区分不同 SOC 架构时使用
-- 测试文件强烈推荐，但不是必需的
+- **框架代码**：
+  - `lib/` - 算子运行框架（编译产物），提供句柄、执行计划、算子/张量描述符、参数验证、解决方案注册等基础设施，所有算子链接依赖
+- **公共模块**（详见上文「公共模块」小节）：
+  - `include/tensor_api/` - 底层 Tensor 抽象（header-only）
+  - `include/blaze/` - 矩阵乘相关算子的高性能加速引擎（header-only），详见 [`include/blaze/README.md`](include/blaze/README.md)
+- **算子目录**（`src/<op>/`）：
+  - `<op>_solution.cpp` - 解决方案实现（Tiling 计算、内存管理、解决方案注册）
+  - `<op>_kernel.cpp` - Kernel 核函数实现
+  - `arch35/<op>_struct.h` - Tiling 数据结构（可选，也可定义在 solution.cpp 中）
+  - `arch35/` 目录是可选的，仅在需要区分不同 SOC 架构时使用
+  - `tests/` 目录强烈推荐，但不是必需的
 
 ## 🛠️ 开发指南
 
