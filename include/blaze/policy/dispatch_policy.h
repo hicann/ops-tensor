@@ -18,6 +18,13 @@ namespace Blaze {
 namespace Gemm {
 /* block schedule policies */
 struct KernelMmadWithScale {}; // Multi-block with scale
+struct KernelMultiBlockStreamK {}; // Multi-tile transfer with K-axis spliting and caching
+
+enum class MatMulL0C2Out : std::uint8_t {
+    ON_THE_FLY = 0,
+    ND_FIXPIPE_1_1 = 1,
+    ND_FIXPIPE_1_2 = 2
+};
 
 /**
  * @struct MatmulWithScaleMx
@@ -29,5 +36,22 @@ struct MatmulWithScaleMx {
     constexpr static uint64_t fullLoadMode = FULL_LOAD_MODE_;
 };
 
+/**
+ * @struct MatmulMultiBlockWithStreamK
+ * @brief Matrix multiplication split k axis processing structure, no quant, no bias, implemented base on layout
+ * @param [in] FixpOpti: enum, judge if enabling fixp align optimize, default is ON_THE_FLY
+ * @param [in] FUSED_OP_TYPE_: execute fusion after mmad , default is 0
+ */
+template <MatMulL0C2Out FixpOpti = MatMulL0C2Out::ON_THE_FLY, uint64_t FUSED_OP_TYPE_ = 0>
+struct MatmulMultiBlockWithStreamK {
+    using ScheduleType = KernelMultiBlockStreamK;
+    constexpr static bool enableInputDataLenCheck = false;
+    constexpr static bool enableRelu = (FUSED_OP_TYPE_ == OP_TYPE_RELU);
+    constexpr static bool enableAdd = (FUSED_OP_TYPE_ == OP_TYPE_ADD);
+    constexpr static bool enableMul = (FUSED_OP_TYPE_ == OP_TYPE_MUL);
+    constexpr static MatMulL0C2Out fixpOpti_ = FixpOpti;
+};
+
 } // namespace Gemm
 } // namespace Blaze
+

@@ -25,9 +25,7 @@ template <
     class DispatchPolicy_, class AType_, class LayoutA_, class BType_, class LayoutB_, class CType_, class LayoutC_,
     class BiasType_, class LayoutBias_, class Enable = void>
 class BlockMmad {
-    static_assert(
-        !AscendC::Std::is_same_v<DispatchPolicy_, DispatchPolicy_>,
-        "BlockMmad is not implemented for this DispatchPolicy");
+    static_assert(always_false_v<DispatchPolicy_>, "BlockMmad is not implemented for this DispatchPolicy");
 };
 } // namespace Block
 } // namespace Gemm

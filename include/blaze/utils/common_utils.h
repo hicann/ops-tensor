@@ -24,17 +24,26 @@ namespace Blaze {
 namespace Gemm {
 constexpr int32_t MATMUL_MNK_ALIGN = 16;
 constexpr int64_t DOUBLE_BUFFER_COUNT = 2LL;
-constexpr int MNK_M = 0;
-constexpr int MNK_N = 1;
-constexpr int MNK_K = 2;
-constexpr int MNK_B = 3;
-constexpr int MNK_M0 = 4;
-constexpr int MNK_N0 = 5;
+constexpr int32_t MNK_M = 0;
+constexpr int32_t MNK_N = 1;
+constexpr int32_t MNK_K = 2;
+constexpr int32_t MNK_B = 3;
+constexpr int32_t MNK_M0 = 4;
+constexpr int32_t MNK_N0 = 5;
+constexpr int32_t EVEN_NUMBER = 2;
 
 constexpr static uint64_t A_FULL_LOAD_MODE = 1UL;
 constexpr static uint64_t B_FULL_LOAD_MODE = 2UL;
 constexpr static uint64_t NONE_FULL_LOAD_MODE = 0UL;
 
+constexpr uint16_t ZERO_FLAG = 0;
+constexpr uint16_t FIRST_FLAG = 1;
+constexpr uint16_t SECOND_FLAG = 2;
+constexpr uint16_t THIRD_FLAG = 3;
+constexpr uint16_t FOURTH_FLAG = 4;
+constexpr uint16_t FIFTH_FLAG = 5;
+constexpr uint16_t SIXTH_FLAG = 6;
+constexpr uint16_t SEVENTH_FLAG = 7;
 constexpr static int64_t PER_BLOCK_SIZE = 128LL;
 constexpr uint32_t MXFP_DIVISOR_SIZE = 64;
 constexpr uint32_t MXFP_MULTI_BASE_SIZE = 2;
@@ -45,12 +54,18 @@ constexpr uint32_t C0_SIZE_B8 = 32UL;
 constexpr uint32_t C0_SIZE_B4 = 64UL;
 constexpr uint32_t C0_SIZE_L0C = 16UL;
 
-struct MatmulShape {
-    int64_t m;
-    int64_t n;
-    int64_t k;
-    int64_t b;
-};
+// FusedMatMul OpType
+constexpr uint64_t OP_TYPE_EMPTY = 0UL;
+constexpr uint64_t OP_TYPE_ADD = 1UL;
+constexpr uint64_t OP_TYPE_MUL = 2UL;
+constexpr uint64_t OP_TYPE_RELU = 5UL;
+constexpr uint64_t BLOCK_BYTE_SIZE = 32;
+
+template <typename...>
+struct always_false : public AscendC::Std::false_type {};
+
+template <typename... Tp>
+constexpr bool always_false_v = always_false<Tp...>::value;
 
 template <typename T>
 __aicore__ inline constexpr bool IsFp4()
