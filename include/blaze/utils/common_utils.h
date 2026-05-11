@@ -14,8 +14,10 @@
  */
 
 #pragma once
+
 #if ASC_DEVKIT_MAJOR >= 9
 #include "kernel_basic_intf.h"
+#include "std/algorithm.h"
 #else
 #include "kernel_operator.h"
 #endif
@@ -50,6 +52,7 @@ constexpr uint32_t MXFP_MULTI_BASE_SIZE = 2;
 constexpr uint32_t BLOCK_CUBE = 16UL;
 constexpr uint32_t FINAL_ACCUMULATION = 3;
 constexpr uint32_t NON_FINAL_ACCUMULATION = 2;
+
 constexpr uint32_t C0_SIZE_B8 = 32UL;
 constexpr uint32_t C0_SIZE_B4 = 64UL;
 constexpr uint32_t C0_SIZE_L0C = 16UL;
@@ -71,6 +74,22 @@ template <typename T>
 __aicore__ inline constexpr bool IsFp4()
 {
     return AscendC::IsSameType<T, fp4x2_e2m1_t>::value || AscendC::IsSameType<T, fp4x2_e1m2_t>::value;
+}
+
+__aicore__ inline int64_t CeilDiv(int64_t a, int64_t b)
+{
+    if (b == 0) {
+        return a;
+    }
+    return (a + b - 1) / b;
+}
+
+__aicore__ inline int64_t CeilAlign(int64_t a, int64_t b)
+{
+    if (b == 0) {
+        return a;
+    }
+    return (a + b - 1) / b * b;
 }
 
 template <typename T>
@@ -99,6 +118,12 @@ __aicore__ inline uint64_t CeilAlign(uint64_t a, uint64_t b)
         return a;
     }
     return (a + b - 1) / b * b;
+}
+
+__aicore__ inline int64_t GetPerBlockNum(int64_t coreNum, int64_t mTileNum, int64_t nTileNum, int64_t b = 1)
+{
+    int64_t perCoreBlockNum = Blaze::Gemm::CeilDiv(mTileNum * nTileNum * b, coreNum);
+    return perCoreBlockNum;
 }
 
 } // namespace Gemm

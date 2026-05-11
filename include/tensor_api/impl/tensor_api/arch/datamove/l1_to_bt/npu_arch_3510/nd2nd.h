@@ -64,7 +64,7 @@ private:
             convControl = true;
         }
 
-        uint16_t blockLen = Std::ceil_division(srcCol, C0_ELEMENT<dstType>);
+        uint16_t blockLen = Std::ceil_division(srcCol, C0_ELEMENT<srcType>);
         if constexpr (IsOneOfAttrV<srcType, float, int32_t>) {
             blockLen = Std::ceil_align(blockLen, 2);
         }

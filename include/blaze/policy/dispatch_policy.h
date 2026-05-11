@@ -52,6 +52,20 @@ struct MatmulMultiBlockWithStreamK {
     constexpr static MatMulL0C2Out fixpOpti_ = FixpOpti;
 };
 
+/**
+ * @struct MatmulMultiBlockWithTensorApi
+ * @brief Matrix multiplication multi-block structure, no quant, implemented based on Layout
+ * @param [in] FULL_LOAD_MODE: mode of full load, default is 0(no full load)
+ * @param [in] ENABLE_RELU: execute relu after mmad , default is false
+ */
+template <uint64_t FULL_LOAD_MODE_ = 0, uint64_t FUSED_OP_TYPE_ = 0>
+struct MatmulMultiBlockWithTensorApi {
+    constexpr static uint64_t fullLoadMode = FULL_LOAD_MODE_;
+    constexpr static bool enableRelu = (FUSED_OP_TYPE_ == OP_TYPE_RELU);
+    constexpr static bool enableAdd = (FUSED_OP_TYPE_ == OP_TYPE_ADD);
+    constexpr static bool enableMul = (FUSED_OP_TYPE_ == OP_TYPE_MUL);
+};
+
 } // namespace Gemm
 } // namespace Blaze
 
