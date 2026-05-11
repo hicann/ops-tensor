@@ -89,8 +89,8 @@ private:
                   GetElement<AttrInfo::Shape, AttrInfo::Column, 0>(srcLayout) -
                   GetElement<AttrInfo::Shape, AttrInfo::Column, 1>(dstLayout) *
                   GetElement<AttrInfo::Shape, AttrInfo::Column, 0>(dstLayout);
-        auto mStep = GetElement<AttrInfo::Shape, AttrInfo::Row, 1>(srcLayout) *
-                GetElement<AttrInfo::Shape, AttrInfo::Row, 0>(srcLayout) / FRACTAL_FIXED;
+        auto mStep = GetElement<AttrInfo::Shape, AttrInfo::Row, 1>(dstLayout) *
+                GetElement<AttrInfo::Shape, AttrInfo::Row, 0>(dstLayout) / FRACTAL_FIXED;
         auto kStep = GetElement<AttrInfo::Shape, AttrInfo::Column, 1>(srcLayout) *
                 GetElement<AttrInfo::Shape, AttrInfo::Column, 0>(srcLayout) / C0_ELEMENT<DstType>;
         // Nz -> Zn
