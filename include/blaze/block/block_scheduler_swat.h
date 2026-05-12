@@ -9,7 +9,7 @@
  */
 
 /* !
- * \file block_scheduler_aswt.h
+ * \file block_scheduler_swat.h
  * \brief
  */
 
@@ -27,7 +27,7 @@ constexpr int64_t FP32_SPLIT_K_THRESHOLD1 = 1024;
 constexpr int64_t FP32_SPLIT_K_THRESHOLD2 = 8192;
 
 template <class ProblemShape_, int64_t FullLoadMode_ = 0>
-class BlockSchedulerAswtBuiltIn {
+class BlockSchedulerSwat {
 public:
     int64_t mTileNum_{0};
     int64_t nTileNum_{0};
@@ -116,7 +116,7 @@ public:
     };
 
 public:
-    __aicore__ inline BlockSchedulerAswtBuiltIn(
+    __aicore__ inline BlockSchedulerSwat(
         const ProblemShape& shape, int64_t blockIdx, int64_t blockNum, const Params& params, bool isFp32 = false,
         bool isNdFormat = true)
         : blockIdx_(blockIdx), blockNum_(blockNum), isFp32_(isFp32), isNdFormat_(isNdFormat)
