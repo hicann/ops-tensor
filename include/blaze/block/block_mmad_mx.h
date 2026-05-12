@@ -27,8 +27,6 @@
 #include "block_mmad.h"
 #include "include/tensor_api/tensor.h"
 #include "../tile/tile_mmad_mx.h"
-#include "../tile/copy_scale_l1_to_l0a.h"
-#include "../tile/copy_scale_l1_to_l0b.h"
 #include "../tile/pad_mx_kl1.h"
 
 namespace Blaze {
@@ -339,9 +337,8 @@ public:
                 tileL1L0Param.curM, Blaze::Gemm::CeilDiv(curKL0, MXFP_DIVISOR_SIZE) * MXFP_MULTI_BASE_SIZE);
             auto tensorScaleAL0 =
                 AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<Location::L0A, fp8_e8m0_t>(l0Offset), layoutScaleAL0);
-            auto CopyL12L0MxScaleA3510 = AscendC::Te::MakeCopy(Blaze::Gemm::Tile::CopyL12L0MxScaleA3510{});
             AscendC::Te::Copy(
-                CopyL12L0MxScaleA3510, tensorScaleAL0, tensorBlockScaleAL1,
+                CopyL12L0A, tensorScaleAL0, tensorBlockScaleAL1,
                 AscendC::Te::MakeCoord(
                     0, iter1 * Blaze::Gemm::CeilDiv(baseK_, MXFP_DIVISOR_SIZE) * MXFP_MULTI_BASE_SIZE));
 
@@ -369,9 +366,8 @@ public:
                 Blaze::Gemm::CeilDiv(curKL0, MXFP_DIVISOR_SIZE) * MXFP_MULTI_BASE_SIZE, tileL1L0Param.curN);
             auto tensorScaleBL0 =
                 AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<Location::L0B, fp8_e8m0_t>(l0Offset), layoutScaleBL0);
-            auto CopyL12L0MxScaleB3510 = AscendC::Te::MakeCopy(Blaze::Gemm::Tile::CopyL12L0MxScaleB3510{});
             AscendC::Te::Copy(
-                CopyL12L0MxScaleB3510, tensorScaleBL0, tensorBlockScaleBL1,
+                CopyL12L0B, tensorScaleBL0, tensorBlockScaleBL1,
                 AscendC::Te::MakeCoord(
                     iter1 * Blaze::Gemm::CeilDiv(baseK_, MXFP_DIVISOR_SIZE) * MXFP_MULTI_BASE_SIZE, 0));
 

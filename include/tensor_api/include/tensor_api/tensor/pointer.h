@@ -25,10 +25,10 @@
 
 namespace AscendC {
 namespace Te {
-template <typename HardWare, typename TraitOrType, typename... Args>
+template <typename Hardware, typename TraitOrType, typename... Args>
 __aicore__ inline constexpr auto MakeMemPtr(Args... args);
 
-template <typename HardWare, typename... Args>
+template <typename Hardware, typename... Args>
 __aicore__ inline constexpr auto MakeMemPtr(Args... args);
 
 } // namespace Te
