@@ -83,7 +83,7 @@ docker run --name cann_container --device /dev/davinci0 --device /dev/davinci_ma
 
     根据实际产品型号和环境架构，获取对应的`Ascend-cann-toolkit_${cann_version}_linux-${arch}.run`包。
 
-    Ascend 950系列产品：单击[下载链接](https://mirror-centralrepo.devcloud.cn-north-4.huaweicloud.com/artifactory/cann-run-release/software/9.0.0-alpha.1/)获取软件包。
+    Ascend 950系列产品：单击[下载链接](https://ascend.devcloud.huaweicloud.com/artifactory/cann-run-mirror/software/master/)获取软件包。
 
     ```bash
     # 确保安装包具有可执行权限
@@ -101,7 +101,7 @@ docker run --name cann_container --device /dev/davinci0 --device /dev/davinci_ma
 
     根据实际产品型号和环境架构，获取对应的`Ascend-cann-${soc_name}-ops_${cann_version}_linux-${arch}.run`包。
 
-    Ascend 950系列产品：单击[下载链接](https://mirror-centralrepo.devcloud.cn-north-4.huaweicloud.com/artifactory/cann-run-release/software/9.0.0-alpha.1/)获取软件包。
+    Ascend 950系列产品：单击[下载链接](https://ascend.devcloud.huaweicloud.com/artifactory/cann-run-mirror/software/master/)获取软件包。
 
     ```bash
     # 确保安装包具有可执行权限

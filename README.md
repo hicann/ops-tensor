@@ -84,13 +84,13 @@ toolkit 安装包文件名格式如下：
 
 ```bash
 # 标准安装（需要 root 权限）
-sudo ./cann-950-ops-tensor_9.0.0_linux-*.run
+sudo ./cann-950-ops-tensor_9.0.0_linux-*.run --full
 
 # 查看安装包信息
 ./cann-950-ops-tensor_9.0.0_linux-*.run --help
 
 # 安装到自定义路径
-sudo ./cann-950-ops-tensor_9.0.0_linux-*.run --install-path=/opt/ascend
+sudo ./cann-950-ops-tensor_9.0.0_linux-*.run --full --install-path=/opt/ascend
 
 # 卸载
 sudo ./cann-950-ops-tensor_9.0.0_linux-*.run --uninstall

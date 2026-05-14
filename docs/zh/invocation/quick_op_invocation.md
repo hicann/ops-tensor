@@ -43,7 +43,7 @@
 3. **配置环境变量**
 
     ```bash
-    source ${ASCEND_HOME_PATH}/cann/set_env.bash
+    source ${ASCEND_HOME_PATH}/cann/set_env.sh
     ```
 
 4. **（可选）卸载ops-tensor包**

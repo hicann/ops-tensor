@@ -510,7 +510,7 @@ install_package() {
   logandprint "[INFO]: Install path: ${TARGET_VERSION_DIR}/${OPP_PLATFORM_DIR}"
   logandprint "[INFO]:"
   logandprint "[INFO]: To use ops-tensor, you may need to set environment:"
-  logandprint "[INFO]:   source ${TARGET_VERSION_DIR}/set_env.bash"
+  logandprint "[INFO]:   source ${TARGET_VERSION_DIR}/set_env.sh"
   logandprint "[INFO]: ============================================"
 }
 

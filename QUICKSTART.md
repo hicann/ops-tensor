@@ -90,7 +90,7 @@ ops-tensor安装在`${ASCEND_HOME_PATH}/cann`路径中，`${ASCEND_HOME_PATH}`�
 ### 4. 配置环境变量
 
 ```bash
-source ${ASCEND_HOME_PATH}/cann/set_env.bash
+source ${ASCEND_HOME_PATH}/cann/set_env.sh
 ```
 
 ### 5. 运行测试
