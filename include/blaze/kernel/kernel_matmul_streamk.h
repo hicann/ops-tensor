@@ -33,31 +33,17 @@ namespace Kernel {
 // specialization of streamk tensor api kernel
 template <class ProblemShape_, class BlockMmad_, class BlockEpilogue_, class BlockScheduler_, typename Enable_ = void>
 class KernelMatmulStreamK {
-    static_assert(always_false_v<BlockEpilogue_>, "KernelStreamk is not implemented for this BlockEpilogue");
+    static_assert(
+        always_false_v<BlockEpilogue_> && always_false_v<BlockMmad_>,
+        "KernelStreamk is not implemented for this BlockEpilogue or BlockMmad");
 };
 
 template <class ProblemShape_, class BlockMmad_, class BlockEpilogue_, class BlockScheduler_>
 class KernelMatmulStreamK<
     ProblemShape_, BlockMmad_, BlockEpilogue_, BlockScheduler_,
     AscendC::Std::enable_if_t<
-        AscendC::Std::is_base_of_v<
-            BlockEpilogue_,
-            Block::BlockEpilogueStreamK<float, float, MatmulMultiBlockWithStreamK<MatMulL0C2Out::ON_THE_FLY>>> ||
-        AscendC::Std::is_base_of_v<
-            BlockEpilogue_,
-            Block::BlockEpilogueStreamK<float, float, MatmulMultiBlockWithStreamK<MatMulL0C2Out::ND_FIXPIPE_1_2>>> ||
-        AscendC::Std::is_base_of_v<
-            BlockEpilogue_,
-            Block::BlockEpilogueStreamK<float, bfloat16_t, MatmulMultiBlockWithStreamK<MatMulL0C2Out::ON_THE_FLY>>> ||
-        AscendC::Std::is_base_of_v<
-            BlockEpilogue_, Block::BlockEpilogueStreamK<
-                                float, bfloat16_t, MatmulMultiBlockWithStreamK<MatMulL0C2Out::ND_FIXPIPE_1_2>>> ||
-        AscendC::Std::is_base_of_v<
-            BlockEpilogue_,
-            Block::BlockEpilogueStreamK<float, half, MatmulMultiBlockWithStreamK<MatMulL0C2Out::ON_THE_FLY>>> ||
-        AscendC::Std::is_base_of_v<
-            BlockEpilogue_,
-            Block::BlockEpilogueStreamK<float, half, MatmulMultiBlockWithStreamK<MatMulL0C2Out::ND_FIXPIPE_1_2>>>>> {
+        AscendC::Std::is_same_v<KernelMultiBlockStreamK, typename BlockMmad_::DispatchPolicy::ScheduleType> &&
+        AscendC::Std::is_same_v<KernelMultiBlockStreamK, typename BlockEpilogue_::DispatchPolicy::ScheduleType>>> {
 public:
     __aicore__ inline KernelMatmulStreamK()
     {}
@@ -211,9 +197,9 @@ public:
                 auto workspaceStride = AscendC::Te::MakeStride(
                     AscendC::Te::MakeStride(Std::Int<0>{}, workspaceStrideColumn0),
                     AscendC::Te::MakeStride(Std::Int<0>{}, Std::Int<1>{}));
-                auto layoutWorkspace = AscendC::Te::MakePatternLayout<
-                    AscendC::Te::NDExtLayoutPtn, AscendC::Te::LayoutTraitDefault<float>>(
-                    workspaceShape, workspaceStride);
+                auto layoutWorkspace =
+                    AscendC::Te::MakePatternLayout<AscendC::Te::NDExtLayoutPtn, AscendC::Te::LayoutTraitDefault<float>>(
+                        workspaceShape, workspaceStride);
                 // workspace use 1 dim expression, make tensor each calculate
                 auto gmWorkSpace = AscendC::Te::MakeTensor(
                     AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(workspaceGmAddr_ + offsetWorkspace),

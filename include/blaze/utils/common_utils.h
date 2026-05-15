@@ -62,7 +62,7 @@ constexpr uint64_t OP_TYPE_EMPTY = 0UL;
 constexpr uint64_t OP_TYPE_ADD = 1UL;
 constexpr uint64_t OP_TYPE_MUL = 2UL;
 constexpr uint64_t OP_TYPE_RELU = 5UL;
-constexpr uint64_t BLOCK_BYTE_SIZE = 32;
+constexpr int64_t BLOCK_BYTE_SIZE = 32L;
 
 template <typename...>
 struct always_false : public AscendC::Std::false_type {};
@@ -76,7 +76,8 @@ __aicore__ inline constexpr bool IsFp4()
     return AscendC::IsSameType<T, fp4x2_e2m1_t>::value || AscendC::IsSameType<T, fp4x2_e1m2_t>::value;
 }
 
-__aicore__ inline int64_t CeilDiv(int64_t a, int64_t b)
+template <typename T>
+__aicore__ inline T CeilDiv(T a, T b)
 {
     if (b == 0) {
         return a;
@@ -84,7 +85,8 @@ __aicore__ inline int64_t CeilDiv(int64_t a, int64_t b)
     return (a + b - 1) / b;
 }
 
-__aicore__ inline int64_t CeilAlign(int64_t a, int64_t b)
+template <typename T>
+__aicore__ inline T CeilAlign(T a, T b)
 {
     if (b == 0) {
         return a;
@@ -102,22 +104,6 @@ template <typename T>
 __aicore__ inline T Min(T a, T b)
 {
     return a > b ? b : a;
-}
-
-__aicore__ inline uint64_t CeilDiv(uint64_t a, uint64_t b)
-{
-    if (b == 0) {
-        return a;
-    }
-    return (a + b - 1) / b;
-}
-
-__aicore__ inline uint64_t CeilAlign(uint64_t a, uint64_t b)
-{
-    if (b == 0) {
-        return a;
-    }
-    return (a + b - 1) / b * b;
 }
 
 __aicore__ inline int64_t GetPerBlockNum(int64_t coreNum, int64_t mTileNum, int64_t nTileNum, int64_t b = 1)

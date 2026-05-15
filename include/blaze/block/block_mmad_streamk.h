@@ -24,13 +24,11 @@ namespace Gemm {
 namespace Block {
 
 template <
-    class DispatchPolicy_, class AType_, class LayoutA_, class BType_, class LayoutB_, class CType_, class LayoutC_,
-    class BiasType_, class LayoutBias_>
+    MatMulL0C2Out FixpOpti_, uint64_t FUSED_OP_TYPE_, class AType_, class LayoutA_, class BType_, class LayoutB_,
+    class CType_, class LayoutC_, class BiasType_, class LayoutBias_>
 class BlockMmad<
-    DispatchPolicy_, AType_, LayoutA_, BType_, LayoutB_, CType_, LayoutC_, BiasType_, LayoutBias_,
-    AscendC::Std::enable_if_t<
-        AscendC::Std::is_base_of_v<MatmulMultiBlockWithStreamK<MatMulL0C2Out::ON_THE_FLY>, DispatchPolicy_> ||
-        AscendC::Std::is_base_of_v<MatmulMultiBlockWithStreamK<MatMulL0C2Out::ND_FIXPIPE_1_2>, DispatchPolicy_>>> {
+    MatmulMultiBlockWithStreamK<FixpOpti_, FUSED_OP_TYPE_>, AType_, LayoutA_, BType_, LayoutB_, CType_, LayoutC_,
+    BiasType_, LayoutBias_> {
 public:
     using AType = AType_;
     using BType = BType_;
@@ -40,7 +38,7 @@ public:
     using LayoutB = LayoutB_;
     using LayoutC = LayoutC_;
     using LayoutBias = LayoutBias_;
-    using DispatchPolicy = DispatchPolicy_;
+    using DispatchPolicy = MatmulMultiBlockWithStreamK<FixpOpti_, FUSED_OP_TYPE_>;
     using TupleShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
     static constexpr bool transA = !(AscendC::Std::is_same_v<LayoutA, AscendC::Te::NDExtLayoutPtn>);
     static constexpr bool transB =
@@ -141,7 +139,7 @@ public:
         uint64_t curNL1 = Get<MNK_N>(tileShape);
         uint64_t curSingleCoreK = Get<MNK_K>(tileShape);
         uint64_t curKL1Iter = (curSingleCoreK + kL1_ - 1) / kL1_;
-        uint64_t nl1Align = CeilAlign(curNL1, AscendC::BLOCK_CUBE);
+        uint64_t nl1Align = CeilAlign(curNL1, static_cast<uint64_t>(AscendC::BLOCK_CUBE));
         uint64_t l0cOffset = 0;
         auto layoutL0C =
             AscendC::Te::FrameLayoutFormat<AscendC::Te::NZLayoutPtn, AscendC::Std::Int<C0_SIZE_L0C>>{}(curML1, curNL1);
