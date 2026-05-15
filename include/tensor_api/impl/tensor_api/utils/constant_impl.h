@@ -32,6 +32,7 @@ constexpr size_t FOUR_DIM_DATA = 4;
 constexpr size_t FRACTAL_FIXED = 16;
 constexpr size_t MX_SCALE_K0 = 2;
 constexpr uint32_t BLOCK_CUBE = 16;
+constexpr uint64_t HIFLOAT8_MMAD_CTRL_MASK = 0x200000000000ULL;
 
 struct ArchVersion {
     static constexpr uint32_t V3510 = 3510;
