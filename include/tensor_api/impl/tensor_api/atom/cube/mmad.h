@@ -44,7 +44,7 @@ struct MmadTraits<MmadOpWith, MmadTraitsType>
 };
 
 template <typename MmadTraitsType>
-struct MmadTraits<MmadOperation, MmadTraitsType> : public MmadTraits<MmadOperation, MmadTraitsType, MmadOpWith, MmadTraitDefault> {};
+struct MmadTraits<MmadOperation, MmadTraitsType> : public MmadTraits<MmadOperation, MmadTraitsType, MmadOpWith, MmadTraitsType> {};
 
 template <>
 struct MmadTraits<MmadOperation> : public MmadTraits<MmadOperation, MmadTraitDefault> {};

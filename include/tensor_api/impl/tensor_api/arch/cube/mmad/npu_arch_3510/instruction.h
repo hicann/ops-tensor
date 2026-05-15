@@ -28,6 +28,13 @@
 namespace AscendC {
 namespace Te {
 
+__aicore__ inline static void SetCtrl(uint64_t loc) {
+    uint64_t oriConfig = asc_get_ctrl();
+    uint64_t mask = (static_cast<uint64_t>(1) << loc);
+    uint64_t config = oriConfig | mask;
+    asc_set_ctrl(config);
+}
+
 class MmadInstr {
 public:
     template <typename T, typename U, typename S, typename... Params>
@@ -44,7 +51,13 @@ private:
             return;
         }
         if constexpr (CURRENT_ARCH_VERSION == ArchVersion::V3510) {
-            asc_mmad(dst, fm, filter, m, k, n, unitFlag, disableGemv, cmatrixSource, cmatrixInitVal);
+            if constexpr (Std::is_same_v<U, hifloat8_t> || Std::is_same_v<S, hifloat8_t>) {
+                asc_mmad(dst, reinterpret_cast<__ca__ fp8_e4m3fn_t*>(fm),
+                    reinterpret_cast<__cb__ fp8_e4m3fn_t*>(filter), m, k, n, unitFlag, disableGemv, cmatrixSource,
+                    cmatrixInitVal);
+            } else {
+                asc_mmad(dst, fm, filter, m, k, n, unitFlag, disableGemv, cmatrixSource, cmatrixInitVal);
+            }
         }
     }
 };
@@ -68,7 +81,13 @@ private:
 
         if constexpr (CURRENT_ARCH_VERSION == ArchVersion::V3510) {
             uint64_t xd = ((uint64_t)dst) & 0xffffffffULL | ((bias & 0xffffffffULL) << 32);
-            asc_mmad((__cc__ T*)xd, fm, filter, m, k, n, unitFlag, disableGemv, cmatrixSource, cmatrixInitVal);
+            if constexpr (Std::is_same_v<U, hifloat8_t> || Std::is_same_v<S, hifloat8_t>) {
+                asc_mmad((__cc__ T*)xd, reinterpret_cast<__ca__ fp8_e4m3fn_t*>(fm),
+                    reinterpret_cast<__cb__ fp8_e4m3fn_t*>(filter), m, k, n, unitFlag, disableGemv, cmatrixSource,
+                    cmatrixInitVal);
+            } else {
+                asc_mmad((__cc__ T*)xd, fm, filter, m, k, n, unitFlag, disableGemv, cmatrixSource, cmatrixInitVal);
+            }
         }
     }
 };

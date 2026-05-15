@@ -41,7 +41,7 @@ struct CopyTraits<CopyL0C2UBWith, TraitStruct> {
 };
 
 template <typename Traits>
-struct CopyTraits<CopyL0C2UB, Traits> : public CopyTraits<CopyL0C2UB, Traits, CopyL0C2UBWith, CopyL0C2UBTraitDefault> {
+struct CopyTraits<CopyL0C2UB, Traits> : public CopyTraits<CopyL0C2UB, Traits, CopyL0C2UBWith, Traits> {
 };
 
 template <>

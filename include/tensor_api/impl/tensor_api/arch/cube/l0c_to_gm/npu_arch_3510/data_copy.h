@@ -124,7 +124,8 @@ private:
         auto dstLayout = dst.Layout();
         auto srcLayout = src.Layout();
 
-        uint32_t nSize = GetTotalColumnShape(srcLayout);
+        uint32_t nSize = Std::min(GetTotalColumnShape(srcLayout), GetTotalColumnShape(dstLayout));
+        uint32_t mSize = Std::min(GetTotalRowShape(srcLayout), GetTotalRowShape(dstLayout));
         if constexpr (IsTail) {
             nSize %= MAIN_LOOP_N_SIZE_3510;
         } else {
@@ -133,7 +134,6 @@ private:
             }
         }
 
-        const uint32_t mSize = GetTotalRowShape(srcLayout);
         const uint32_t srcStride = GetElement<AttrInfo::Stride, AttrInfo::Column, 1>(srcLayout) / FRACTAL_FIXED;
         uint32_t dstStride = 0;
         if constexpr (IsSatisfiedPtnFormatV<T, NDExtLayoutPtn>) {
