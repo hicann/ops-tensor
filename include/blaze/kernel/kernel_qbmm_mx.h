@@ -21,7 +21,6 @@
 #include "kernel_operator_intf.h"
 #endif
 #include "../utils/common_utils.h"
-#include "../utils/quant_batch_matmul_constant.h"
 #include "../block/block_scheduler_qbmm.h"
 #include "include/tensor_api/tensor.h"
 
@@ -32,7 +31,6 @@ namespace Kernel {
     template <class ProblemShape, class BlockMmad, class BlockEpilogue, class BlockScheduler, bool isAtomicAdd>
 #define QBMM_MX_KERNEL_FUN_TEM_PARAMS ProblemShape, BlockMmad, BlockEpilogue, BlockScheduler, isAtomicAdd
 
-using namespace Blaze::Gemm::QuantBatchMatmul;
 using namespace AscendC;
 
 QBMM_MX_KERNEL_CLASS_TEM_PARAMS
@@ -56,7 +54,7 @@ public:
     using LayoutA = typename BlockMmad::LayoutA;
     using LayoutB = typename BlockMmad::LayoutB;
     using LayoutC = typename BlockMmad::LayoutC;
-    static constexpr int32_t C0_SIZE = IsFp4<AType>() ? C0_SIZE_B4 : C0_SIZE_B8;
+    static constexpr uint64_t C0_SIZE = IsFp4<AType>() ? C0_SIZE_B4 : C0_SIZE_B8;
     static constexpr int32_t SCALE_C0 = 2;
 
     using BlockShape = Te::Shape<int64_t, int64_t, int64_t, int64_t>;

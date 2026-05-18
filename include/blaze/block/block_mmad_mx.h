@@ -22,7 +22,6 @@
 #endif
 #include "../utils/layout_utils.h"
 #include "../utils/common_utils.h"
-#include "../utils/quant_batch_matmul_constant.h"
 #include "../policy/dispatch_policy.h"
 #include "block_mmad.h"
 #include "include/tensor_api/tensor.h"
@@ -34,7 +33,6 @@ namespace Gemm {
 namespace Block {
 
 using namespace AscendC::Te;
-using namespace Blaze::Gemm::QuantBatchMatmul;
 
 template <
     class DispatchPolicy_, class AType_, class LayoutA_, class BType_, class LayoutB_, class CType_, class LayoutC_,
@@ -55,7 +53,7 @@ public:
     using MxL0BType = typename AscendC::GetL0DataType<BType, true>::Type;
     using BiasType = BiasType_;
     using DispatchPolicy = DispatchPolicy_;
-    using ProblemShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
+    using ProblemShape = AscendC::Te::Shape<uint64_t, uint64_t, uint64_t, uint64_t>;
     using BlockShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
     uint64_t m_;
     uint64_t n_;

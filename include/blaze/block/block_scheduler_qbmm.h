@@ -17,7 +17,6 @@
 
 #include "../utils/layout_utils.h"
 #include "../utils/common_utils.h"
-#include "../utils/quant_batch_matmul_constant.h"
 #include "include/tensor_api/tensor.h"
 
 namespace Blaze {
@@ -189,7 +188,7 @@ public:
         }
     }
 
-    template <QuantBatchMatmul::QuantMode aQuantMode, QuantBatchMatmul::QuantMode bQuantMode, bool weightNz = false>
+    template <QuantMode aQuantMode, QuantMode bQuantMode, bool weightNz = false>
     __aicore__ inline BlockShape GetBlockShape(BlockCoord blockCoord)
     {
         int64_t singleCoreM = baseM_;
@@ -208,15 +207,12 @@ public:
         if constexpr (IsFp4<AType>() && !transB) {
             singleCoreNSplit = (singleCoreNSplit + 1) & ~1;
         }
-        if constexpr (
-            (aQuantMode == QuantBatchMatmul::QuantMode::PERGROUP_MODE ||
-             aQuantMode == QuantBatchMatmul::QuantMode::PERBLOCK_MODE) &&
-            transA) {
+        if constexpr ((aQuantMode == QuantMode::PERGROUP_MODE || aQuantMode == QuantMode::PERBLOCK_MODE) && transA) {
             singleCoreMSplit = PER_BLOCK_SIZE << (singleCoreMSplit > PER_BLOCK_SIZE);
-        } else if constexpr (aQuantMode == QuantBatchMatmul::QuantMode::PERBLOCK_MODE) {
+        } else if constexpr (aQuantMode == QuantMode::PERBLOCK_MODE) {
             CeilPowerOfTwo(singleCoreMSplit);
         }
-        if constexpr (bQuantMode == QuantBatchMatmul::QuantMode::PERBLOCK_MODE) {
+        if constexpr (bQuantMode == QuantMode::PERBLOCK_MODE) {
             if constexpr (!transB) { // (k, n)
                 singleCoreNSplit = PER_BLOCK_SIZE << (singleCoreNSplit > PER_BLOCK_SIZE);
             } else {
@@ -226,9 +222,9 @@ public:
 
         if constexpr (weightNz) {
             if constexpr (!transB) {
-                singleCoreNSplit = Blaze::Gemm::CeilAlign(singleCoreNSplit, C0_SIZE);
+                singleCoreNSplit = Blaze::Gemm::CeilAlign(singleCoreNSplit, static_cast<int64_t>(C0_SIZE));
             } else {
-                singleCoreNSplit = Blaze::Gemm::CeilAlign(singleCoreNSplit, BLOCK_CUBE);
+                singleCoreNSplit = Blaze::Gemm::CeilAlign(singleCoreNSplit, static_cast<int64_t>(BLOCK_CUBE));
             }
         }
 
@@ -276,8 +272,8 @@ public:
             return false;
         }
 
-        int64_t blockCoordM = AscendC::Te::Get<QuantBatchMatmul::IDX_M_TILEIDX>(blockCoord);
-        int64_t blockCoordN = AscendC::Te::Get<QuantBatchMatmul::IDX_N_TILEIDX>(blockCoord);
+        int64_t blockCoordM = AscendC::Te::Get<IDX_M_TILEIDX>(blockCoord);
+        int64_t blockCoordN = AscendC::Te::Get<IDX_N_TILEIDX>(blockCoord);
 
         int64_t newBlockIdx = (roundIdx_ == round_ - 1) ? blockIdx_ / totalTailTile_ : blockIdx_;
         int64_t tileIdx = newBlockIdx + roundIdx_ * blockNum_;
@@ -287,8 +283,8 @@ public:
             blockCoordN = roundIdx_ * blockNum_ / mCnt_ % nCnt_ + blockIdx_ / mCnt_ / curNTailTile;
             roundIdx_++;
             blockCoord = BlockCoord{
-                blockCoordM, blockCoordN, AscendC::Te::Get<QuantBatchMatmul::IDX_M_TAIL_SPLIT_TILEIDX>(blockCoord),
-                AscendC::Te::Get<QuantBatchMatmul::IDX_N_TAIL_SPLIT_TILEIDX>(blockCoord)};
+                blockCoordM, blockCoordN, AscendC::Te::Get<IDX_M_TAIL_SPLIT_TILEIDX>(blockCoord),
+                AscendC::Te::Get<IDX_N_TAIL_SPLIT_TILEIDX>(blockCoord)};
             return true;
         }
         if (blockIdx_ < startBlockIdx_) {
@@ -313,8 +309,8 @@ public:
         }
         roundIdx_++;
         blockCoord = BlockCoord{
-            blockCoordM, blockCoordN, AscendC::Te::Get<QuantBatchMatmul::IDX_M_TAIL_SPLIT_TILEIDX>(blockCoord),
-            AscendC::Te::Get<QuantBatchMatmul::IDX_N_TAIL_SPLIT_TILEIDX>(blockCoord)};
+            blockCoordM, blockCoordN, AscendC::Te::Get<IDX_M_TAIL_SPLIT_TILEIDX>(blockCoord),
+            AscendC::Te::Get<IDX_N_TAIL_SPLIT_TILEIDX>(blockCoord)};
         return true;
     }
 
