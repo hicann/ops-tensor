@@ -203,7 +203,8 @@ public:
             aivParams_.curML1InAiv = aivParams_.mCntIndex != (mCnt_ - 1) ? mL1_ : (m_ - (mCnt_ - 1) * mL1_);
             aivParams_.curNL1InAiv = aivParams_.nCntIndex != (nCnt_ - 1) ? nL1_ : (n_ - (nCnt_ - 1) * nL1_);
             if constexpr(DispatchPolicy::fixpOpti_ == MatMulL0C2Out::ND_FIXPIPE_1_2) {
-                aivParams_.curAlignedNInAiv = CeilAlign(aivParams_.curNL1InAiv, static_cast<uint64_t>(AscendC::ONE_BLK_SIZE));
+                aivParams_.curAlignedNInAiv =
+                    CeilAlign(aivParams_.curNL1InAiv, static_cast<uint64_t>(AscendC::ONE_BLK_SIZE));
             } else {
                 aivParams_.curAlignedNInAiv = aivParams_.curNL1InAiv;
             }

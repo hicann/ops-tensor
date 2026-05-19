@@ -36,12 +36,17 @@ namespace Gemm {
 namespace Kernel {
 
 template <class ProblemShape, class BlockMmad, class BlockEpilogue, class BlockScheduler, typename Enable = void>
-class KernelMatmulBasic;
+class KernelMatmulBasic {
+    static_assert(
+        always_false_v<BlockEpilogue> && always_false_v<BlockMmad>,
+        "KernelMatmulBasic is not implemented for this BlockEpilogue or BlockMmad");
+};
 
 template <class ProblemShape_, class BlockMmad_, class BlockEpilogue_, class BlockScheduler_>
 class KernelMatmulBasic<
     ProblemShape_, BlockMmad_, BlockEpilogue_, BlockScheduler_,
-    AscendC::Std::enable_if_t<AscendC::Std::is_same_v<BlockEpilogue_, Block::BlockEpilogueEmpty>>> {
+    AscendC::Std::enable_if_t<
+        AscendC::Std::is_same_v<KernelMmadMultiBlockBasic, typename BlockMmad_::DispatchPolicy::ScheduleType>>> {
 public:
     __aicore__ inline KernelMatmulBasic()
     {}
@@ -56,9 +61,7 @@ public:
     static constexpr bool transB = BlockMmad::transB;
     static constexpr bool weightNZFormat = BlockMmad::weightNZFormat;
     // mmad
-    using BlockMmadArguments = typename BlockMmad::Arguments;
     using BlockMmadParams = typename BlockMmad::Params;
-    using BlockEpilogueArguments = typename BlockEpilogue::Arguments;
     using BlockEpilogueParams = typename BlockEpilogue::Params;
     using BlockSchedulerParams = typename BlockScheduler::Params;
     using AType = typename BlockMmad::AType;
@@ -85,13 +88,6 @@ public:
     __gm__ BType* bGmAddr_;
     __gm__ CType* cGmAddr_;
     __gm__ BiasType* biasGmAddr_ = nullptr; // 可选输入，直接初始化
-
-    struct Arguments {
-        ProblemShape problemShape;
-        BlockMmadArguments mmadArgs;
-        BlockEpilogueArguments epilogueArgs;
-        Arguments() = default;
-    };
 
     struct Params {
         ProblemShape problemShape;
@@ -148,8 +144,7 @@ public:
             AscendC::SetHF32TransMode(1);
         }
         SetMMLayoutTransform(true); // Set Mmad output as cloumn major for Fixpipe
-        blockMmad.template Init<BlockScheduler::FullLoadMode>(
-            problemShape_, tileL1, tileL0, isBias_, bs.GetL1BuferNum_(), bs.GetL0cDB());
+        blockMmad.Init(problemShape_, tileL1, tileL0, isBias_, bs.GetL1BuferNum_(), bs.GetL0cDB());
 
         int64_t m = AscendC::Te::Get<MNK_M>(problemShape_);
         int64_t n = AscendC::Te::Get<MNK_N>(problemShape_);

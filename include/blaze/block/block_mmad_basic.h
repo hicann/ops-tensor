@@ -9,7 +9,7 @@
  */
 
 /*!
- * \file block_matmul_pingpong_basic.h
+ * \file block_mmad_basic.h
  * \brief
  */
 
@@ -26,14 +26,11 @@ namespace Gemm {
 namespace Block {
 
 template <
-    class DispatchPolicy_, class AType_, class LayoutA_, class BType_, class LayoutB_, class CType_, class LayoutC_,
-    class BiasType_, class LayoutBias_>
+    uint64_t FULL_LOAD_MODE_, uint64_t FUSED_OP_TYPE_, class AType_, class LayoutA_, class BType_, class LayoutB_,
+    class CType_, class LayoutC_, class BiasType_, class LayoutBias_>
 class BlockMmad<
-    DispatchPolicy_, AType_, LayoutA_, BType_, LayoutB_, CType_, LayoutC_, BiasType_, LayoutBias_,
-    AscendC::Std::enable_if_t<
-        AscendC::Std::is_base_of_v<MatmulMultiBlockWithTensorApi<>, DispatchPolicy_> ||
-        AscendC::Std::is_base_of_v<MatmulMultiBlockWithTensorApi<B_FULL_LOAD_MODE>, DispatchPolicy_> ||
-        AscendC::Std::is_base_of_v<MatmulMultiBlockWithTensorApi<A_FULL_LOAD_MODE>, DispatchPolicy_>>> {
+    MatmulMultiBlockBasic<FULL_LOAD_MODE_, FUSED_OP_TYPE_>, AType_, LayoutA_, BType_, LayoutB_, CType_, LayoutC_,
+    BiasType_, LayoutBias_> {
 public:
     using AType = AType_;
     using BType = BType_;
@@ -43,7 +40,7 @@ public:
     using LayoutB = LayoutB_;
     using LayoutC = LayoutC_;
     using LayoutBias = LayoutBias_;
-    using DispatchPolicy = DispatchPolicy_;
+    using DispatchPolicy = MatmulMultiBlockBasic<FULL_LOAD_MODE_, FUSED_OP_TYPE_>;
     using TupleShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
     using TupleL1L0Shape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t, int64_t, int64_t>;
     uint64_t m_{1};
@@ -123,7 +120,6 @@ public:
         }
     }
 
-    template <uint64_t FULL_LOAD_MODE_ = B_FULL_LOAD_MODE>
     __aicore__ inline void Init(
         const TupleShape& shape, const TupleShape& tileL1, const TupleShape& tileL0, bool isBias, uint64_t l1BufNum,
         bool l0cDB)
@@ -156,8 +152,8 @@ public:
         // m0 n0
         uint64_t curM = AscendC::Te::Get<MNK_M0>(tileShape);
         uint64_t curN = AscendC::Te::Get<MNK_N0>(tileShape);
-        uint64_t ml1Align = Blaze::Gemm::CeilAlign(curM, AscendC::BLOCK_CUBE);
-        uint64_t nl1Align = Blaze::Gemm::CeilAlign(curN, AscendC::BLOCK_CUBE);
+        uint64_t ml1Align = Blaze::Gemm::CeilAlign(curM, static_cast<uint64_t>(AscendC::BLOCK_CUBE));
+        uint64_t nl1Align = Blaze::Gemm::CeilAlign(curN, static_cast<uint64_t>(AscendC::BLOCK_CUBE));
         uint64_t l0cOffset = (l0cPingPong_ & 0x1) * HALF_L0C_SIZE;
         if (enableL0cPingPong_) {
             AscendC::WaitFlag<AscendC::HardEvent::FIX_M>(l0cPingPong_ & 0x1);
@@ -228,7 +224,7 @@ public:
                 AscendC::Te::Copy(copyL12L0A, tensorAL0, tensorBlockAL1);
 
                 // Bias L1->L0
-                uint64_t nl1Align = Blaze::Gemm::CeilAlign(curN, AscendC::BLOCK_CUBE);
+                uint64_t nl1Align = Blaze::Gemm::CeilAlign(curN, static_cast<uint64_t>(AscendC::BLOCK_CUBE));
                 auto layoutBiasL0 = AscendC::Te::MakeFrameLayout<AscendC::Te::NDExtLayoutPtn>(1UL, nl1Align);
                 auto offsetBiasL0 = baseN_ * biasBufId * sizeof(float);
                 auto tensorBiasL0 = AscendC::Te::MakeTensor(

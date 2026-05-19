@@ -9,7 +9,7 @@
  */
 
 /* !
- * \file block_scheduler_swat.h
+ * \file block_scheduler_matmul_basic.h
  * \brief
  */
 
@@ -27,7 +27,7 @@ constexpr int64_t FP32_SPLIT_K_THRESHOLD1 = 1024;
 constexpr int64_t FP32_SPLIT_K_THRESHOLD2 = 8192;
 
 template <class ProblemShape_, int64_t FullLoadMode_ = 0>
-class BlockSchedulerSwat {
+class BlockSchedulerMatmulBasic {
 public:
     int64_t mTileNum_{0};
     int64_t nTileNum_{0};
@@ -116,7 +116,7 @@ public:
     };
 
 public:
-    __aicore__ inline BlockSchedulerSwat(
+    __aicore__ inline BlockSchedulerMatmulBasic(
         const ProblemShape& shape, int64_t blockIdx, int64_t blockNum, const Params& params, bool isFp32 = false,
         bool isNdFormat = true)
         : blockIdx_(blockIdx), blockNum_(blockNum), isFp32_(isFp32), isNdFormat_(isNdFormat)
@@ -136,9 +136,9 @@ public:
         ubDB_ = params.ubDB;
         int64_t m = AscendC::Te::Get<0>(shape);
         int64_t n = AscendC::Te::Get<1>(shape);
-        mTileNum_ = CeilDiv(m, params.mL1);
-        nTileNum_ = CeilDiv(n, params.nL1);
-        kTileNum_ = CeilDiv(k_, params.kL1);
+        mTileNum_ = CeilDiv(static_cast<uint32_t>(m), params.mL1);
+        nTileNum_ = CeilDiv(static_cast<uint32_t>(n), params.nL1);
+        kTileNum_ = CeilDiv(static_cast<uint32_t>(k_), params.kL1);
         perCoreBlockNum_ = GetPerBlockNum(blockNum_, mTileNum_, nTileNum_, batch_);
         tileNum_ = mTileNum_ * nTileNum_;
         int64_t tailTileNum = tileNum_ % blockNum_;

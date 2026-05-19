@@ -19,7 +19,7 @@ namespace Gemm {
 /* block schedule policies */
 struct KernelMmadWithScale {}; // Multi-block with scale
 struct KernelMultiBlockStreamK {}; // Multi-tile transfer with K-axis spliting and caching
-
+struct KernelMmadMultiBlockBasic {}; // Multi-tile basic
 enum class MatMulL0C2Out : std::uint8_t {
     ON_THE_FLY = 0,
     ND_FIXPIPE_1_1 = 1,
@@ -53,13 +53,14 @@ struct MatmulMultiBlockWithStreamK {
 };
 
 /**
- * @struct MatmulMultiBlockWithTensorApi
+ * @struct MatmulMultiBlockBasic
  * @brief Matrix multiplication multi-block structure, no quant, implemented based on Layout
  * @param [in] FULL_LOAD_MODE: mode of full load, default is 0(no full load)
- * @param [in] ENABLE_RELU: execute relu after mmad , default is false
+ * @param [in] FUSED_OP_TYPE_: execute fusion after mmad , default is 0
  */
-template <uint64_t FULL_LOAD_MODE_ = 0, uint64_t FUSED_OP_TYPE_ = 0>
-struct MatmulMultiBlockWithTensorApi {
+template <uint64_t FULL_LOAD_MODE_ = 0, uint64_t FUSED_OP_TYPE_ = 0, class KernelSchedule_ = KernelMmadMultiBlockBasic>
+struct MatmulMultiBlockBasic {
+    using ScheduleType = KernelSchedule_;
     constexpr static uint64_t fullLoadMode = FULL_LOAD_MODE_;
     constexpr static bool enableRelu = (FUSED_OP_TYPE_ == OP_TYPE_RELU);
     constexpr static bool enableAdd = (FUSED_OP_TYPE_ == OP_TYPE_ADD);
