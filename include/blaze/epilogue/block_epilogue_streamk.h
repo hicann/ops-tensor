@@ -20,8 +20,8 @@
 #include "kernel_operator.h"
 #endif
 #include "fusion/default_fusion_op.h"
-#include "../utils/common_utils.h"
-#include "../policy/dispatch_policy.h"
+#include "blaze/gemm/utils/common_utils.h"
+#include "blaze/gemm/policy/dispatch_policy.h"
 #include "include/tensor_api/tensor.h"
 
 namespace Blaze {

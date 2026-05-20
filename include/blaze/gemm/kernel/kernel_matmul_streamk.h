@@ -15,6 +15,8 @@
 
 #pragma once
 
+#include "kernel_universal.h"
+
 #define ASCENDC_CUBE_ONLY
 #if ASC_DEVKIT_MAJOR >= 9
 #include "kernel_basic_intf.h"
@@ -23,31 +25,25 @@
 #endif
 #include "lib/matmul_intf.h"
 
-#include "../epilogue/block_epilogue_streamk.h"
-#include "../block/block_mmad_streamk.h"
-#include "../utils/common_utils.h"
+#include "blaze/epilogue/block_epilogue_streamk.h"
+#include "blaze/gemm/block/block_mmad_streamk.h"
+#include "blaze/gemm/utils/common_utils.h"
 #include "include/tensor_api/tensor.h"
+
 namespace Blaze {
 namespace Gemm {
 namespace Kernel {
-// specialization of streamk tensor api kernel
-template <class ProblemShape_, class BlockMmad_, class BlockEpilogue_, class BlockScheduler_, typename Enable_ = void>
-class KernelMatmulStreamK {
-    static_assert(
-        always_false_v<BlockEpilogue_> && always_false_v<BlockMmad_>,
-        "KernelStreamk is not implemented for this BlockEpilogue or BlockMmad");
-};
 
 template <class ProblemShape_, class BlockMmad_, class BlockEpilogue_, class BlockScheduler_>
-class KernelMatmulStreamK<
+class GemmUniversal<
     ProblemShape_, BlockMmad_, BlockEpilogue_, BlockScheduler_,
     AscendC::Std::enable_if_t<
         AscendC::Std::is_same_v<KernelMultiBlockStreamK, typename BlockMmad_::DispatchPolicy::ScheduleType> &&
         AscendC::Std::is_same_v<KernelMultiBlockStreamK, typename BlockEpilogue_::DispatchPolicy::ScheduleType>>> {
 public:
-    __aicore__ inline KernelMatmulStreamK()
+    __aicore__ inline GemmUniversal()
     {}
-    __aicore__ inline ~KernelMatmulStreamK()
+    __aicore__ inline ~GemmUniversal()
     {}
     using BlockMmadOp = BlockMmad_;
     using ProblemShape = ProblemShape_;
@@ -82,7 +78,6 @@ public:
     int64_t n_ = 0;
     int64_t k_ = 0;
     int64_t usedCoreNum_ = 0;
-
     // shape
     TupleShape problemShape_{};
     bool isBias_ = false;
@@ -112,7 +107,6 @@ public:
         n_ = Get<MNK_N>(problemShape_);
         k_ = Get<MNK_K>(problemShape_);
         usedCoreNum_ = params.schParams.usedCoreNum;
-        // Init GlobalTensor
         aGmAddr_ = reinterpret_cast<__gm__ AType*>(blockMmadParams_.aGmAddr);
         bGmAddr_ = reinterpret_cast<__gm__ BType*>(blockMmadParams_.bGmAddr);
         cGmAddr_ = reinterpret_cast<__gm__ CType*>(blockMmadParams_.cGmAddr);
@@ -125,7 +119,6 @@ public:
 
     __aicore__ inline void operator()(Params const& params)
     {
-        // Init
         Init(params);
         if (usedCoreNum_ <= 0) {
             return;
@@ -137,7 +130,7 @@ public:
         int64_t kL1 = Get<MNK_K>(tileL1);
         int64_t mTileNum = Get<MNK_M>(bs.GetMNKTileNum());
         int64_t nTileNum = Get<MNK_N>(bs.GetMNKTileNum());
-        int64_t skKTileNum = Get<MNK_K>(bs.GetMNKTileNum()); // it only used in sk
+        int64_t skKTileNum = Get<MNK_K>(bs.GetMNKTileNum()); // it only used in sk scene
         int64_t tileNum = bs.GetTotalTileNum();
         if ASCEND_IS_AIC {
             // Instantiate mmadOp
@@ -159,7 +152,6 @@ public:
             SetMMLayoutTransform(true); // copy out with nfirst, try to make cube and fixp pairing.
             blockMmadOp.Init(problemShape_, tileL1, tileL0, isBias_);
             int64_t tailSKTotalTileNum = static_cast<int64_t>(((mTileNum * nTileNum) % usedCoreNum_) * skKTileNum);
-            // create layout and tensor on gm for origin shape
             auto layoutA = MakeLayoutA{}(m_, k_);
             auto layoutB = MakeLayoutB{}(k_, n_);
             auto layoutC = MakeLayoutC{}(m_, n_);
@@ -187,7 +179,7 @@ public:
                 int64_t offsetWorkspace =
                     (((tmpTileIdx % usedCoreNum_) / skKTileNum) * skKTileNum + Get<MNK_K>(singleCoreCoord)) *
                     BLOCK_BASE_M * BLOCK_BASE_N;
-                // when fixpipe 1v2 , dstStride should align to 32
+                // when fixpipe 1v2, dstStride should align to 32
                 auto workspaceStrideColumn0 = BlockMmadOp::DispatchPolicy::fixpOpti_ == MatMulL0C2Out::ND_FIXPIPE_1_2 ?
                                                   CeilAlign(Get<MNK_N>(singleCoreShape), BLOCK_BYTE_SIZE) :
                                                   Get<MNK_N>(singleCoreShape);
@@ -208,7 +200,7 @@ public:
                 auto gmBlockA = gmA.Slice(
                     AscendC::Te::MakeCoord(
                         Get<MNK_M>(singleCoreCoord) * mL1,
-                        Get<MNK_K>(singleCoreCoord) * kSingleCore), // 取元素的坐标，不是tile块地址
+                        Get<MNK_K>(singleCoreCoord) * kSingleCore), // use point address, not tile block
                     AscendC::Te::MakeShape(Get<MNK_M>(singleCoreShape), Get<MNK_K>(singleCoreShape)));
                 auto gmBlockB = gmB.Slice(
                     AscendC::Te::MakeCoord(

@@ -15,8 +15,8 @@
 
 #pragma once
 
-#include "../policy/dispatch_policy.h"
-#include "../utils/common_utils.h"
+#include "blaze/gemm/policy/dispatch_policy.h"
+#include "blaze/gemm/utils/common_utils.h"
 #include "block_mmad.h"
 
 namespace Blaze {

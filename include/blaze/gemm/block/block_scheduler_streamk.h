@@ -15,7 +15,7 @@
 
 #pragma once
 
-#include "../utils/common_utils.h"
+#include "blaze/gemm/utils/common_utils.h"
 #include "include/tensor_api/tensor.h"
 
 namespace Blaze {

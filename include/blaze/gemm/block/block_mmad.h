@@ -14,7 +14,7 @@
  */
 #pragma once
 
-#include "../utils/common_utils.h"
+#include "blaze/gemm/utils/common_utils.h"
 
 namespace Blaze {
 namespace Gemm {
@@ -25,7 +25,7 @@ namespace Block {
  */
 template <
     class DispatchPolicy_, class AType_, class LayoutA_, class BType_, class LayoutB_, class CType_, class LayoutC_,
-    class BiasType_, class LayoutBias_, class Enable = void>
+    class BiasType_, class LayoutBias_>
 class BlockMmad {
     static_assert(Blaze::Gemm::always_false_v<DispatchPolicy_>, "BlockMmad is not implemented for this DispatchPolicy");
 };

@@ -19,7 +19,7 @@
 #else
 #include "kernel_operator.h"
 #endif
-#include "../../utils/common_utils.h"
+#include "blaze/gemm/utils/common_utils.h"
 
 namespace Blaze {
 namespace Gemm {
