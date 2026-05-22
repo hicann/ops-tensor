@@ -24,33 +24,26 @@
 #include "kernel_operator_intf.h"
 #endif
 
-#include "../epilogue/block_epilogue_empty.h"
-#include "../block/block_mmad.h"
-#include "../block/block_mmad_basic.h"
-#include "../utils/common_utils.h"
-
+#include "blaze/epilogue/block_epilogue_empty.h"
+#include "blaze/gemm/block/block_mmad.h"
+#include "blaze/gemm/block/block_mmad_basic.h"
+#include "blaze/gemm/utils/common_utils.h"
+#include "kernel_universal.h"
 #include "include/tensor_api/tensor.h"
 
 namespace Blaze {
 namespace Gemm {
 namespace Kernel {
 
-template <class ProblemShape, class BlockMmad, class BlockEpilogue, class BlockScheduler, typename Enable = void>
-class KernelMatmulBasic {
-    static_assert(
-        always_false_v<BlockEpilogue> && always_false_v<BlockMmad>,
-        "KernelMatmulBasic is not implemented for this BlockEpilogue or BlockMmad");
-};
-
 template <class ProblemShape_, class BlockMmad_, class BlockEpilogue_, class BlockScheduler_>
-class KernelMatmulBasic<
+class GemmUniversal<
     ProblemShape_, BlockMmad_, BlockEpilogue_, BlockScheduler_,
     AscendC::Std::enable_if_t<
         AscendC::Std::is_same_v<KernelMmadMultiBlockBasic, typename BlockMmad_::DispatchPolicy::ScheduleType>>> {
 public:
-    __aicore__ inline KernelMatmulBasic()
+    __aicore__ inline GemmUniversal()
     {}
-    __aicore__ inline ~KernelMatmulBasic()
+    __aicore__ inline ~GemmUniversal()
     {}
 
     using BlockMmad = BlockMmad_;

@@ -15,10 +15,10 @@
 
 #pragma once
 
+#include "blaze/gemm/utils/common_utils.h"
+#include "blaze/gemm/utils/layout_utils.h"
+#include "blaze/gemm/policy/dispatch_policy.h"
 #include "block_mmad.h"
-#include "../utils/common_utils.h"
-#include "../utils/layout_utils.h"
-#include "../policy/dispatch_policy.h"
 #include "include/tensor_api/tensor.h"
 
 namespace Blaze {
