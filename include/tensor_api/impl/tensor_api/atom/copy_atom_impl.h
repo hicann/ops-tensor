@@ -37,6 +37,8 @@
 
 #include "impl/tensor_api/atom/cube/copy_l12l0a.h"
 #include "impl/tensor_api/atom/cube/copy_l12l0b.h"
+#include "impl/tensor_api/atom/cube/copy_l12l0scalea.h"
+#include "impl/tensor_api/atom/cube/copy_l12l0scaleb.h"
 
 namespace AscendC {
 namespace Te {

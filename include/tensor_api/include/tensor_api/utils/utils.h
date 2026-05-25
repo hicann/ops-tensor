@@ -16,9 +16,9 @@
 #ifndef INCLUDE_TENSOR_API_UTILS_UTILS_H
 #define INCLUDE_TENSOR_API_UTILS_UTILS_H
 
-#include "include/utils/base/sys_macros.h"
-#include "include/utils/base/sys_constants.h"
-#include "include/utils/common_types.h"
+#include "utils/base/sys_macros.h"
+#include "utils/base/sys_constants.h"
+#include "utils/common_types.h"
 
 namespace AscendC { 
 namespace Te {
@@ -90,9 +90,11 @@ struct FixpipeTrait {
 struct FixpipeParams {
    __aicore__ constexpr FixpipeParams() {};
 
-   __aicore__ constexpr FixpipeParams(uint8_t unitFlagIn) : unitFlag(unitFlagIn) {};
+   __aicore__ constexpr FixpipeParams(uint8_t unitFlagIn, bool subBlockIdIn) : unitFlag(unitFlagIn), subBlockId(subBlockIdIn) {};
     
     uint8_t unitFlag = 0;
+
+    bool subBlockId = false;
 };
 
 struct LoadDataTrait {

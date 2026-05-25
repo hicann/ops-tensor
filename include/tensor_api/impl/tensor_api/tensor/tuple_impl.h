@@ -96,7 +96,7 @@ struct Product {
     {
         if constexpr (Std::is_tuple_v<T>) {
             if constexpr (Std::tuple_size_v<T> == 0) {
-                return Std::Int<1>{};
+                return _1{};
             } else {
                 return TransformApply(intT, Product{}, MultipliesUnaryLeftFold{});
             }

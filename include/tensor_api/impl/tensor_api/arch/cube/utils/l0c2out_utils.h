@@ -224,12 +224,14 @@ __aicore__ inline void InsertSync()
 template <typename T, typename U>
 __aicore__ inline static void SetRegisterImpl(const T& /*dst*/, const U& /*src*/)
 {
-    if constexpr (IsSatisfiedPtnFormatV<T, NDExtLayoutPtn>) {
+    constexpr bool isNdFormat = IsSatisfiedPtnFormatV<T, NDExtLayoutPtn> || IsSatisfiedPtnFormatV<T, NDLayoutPtn>;
+    constexpr bool isDnFormat = IsSatisfiedPtnFormatV<T, DNExtLayoutPtn> || IsSatisfiedPtnFormatV<T, DNLayoutPtn>;
+    if constexpr (isNdFormat) {
         constexpr uint32_t ndNum = 1;
         constexpr uint32_t srcNdStride = 0;
         constexpr uint32_t dstNdStride = 0;
         SetRegisterInstr::SetRegister(ndNum, dstNdStride, srcNdStride);
-    } else if constexpr (IsSatisfiedPtnFormatV<T, DNExtLayoutPtn>) {
+    } else if constexpr (isDnFormat) {
         constexpr uint32_t dnNum = 1;
         constexpr uint32_t dstDnMatrixStride = 0;
         constexpr uint32_t srcNzMatrixStride = 0;
@@ -241,12 +243,14 @@ __aicore__ inline static void SetRegisterImpl(const T& /*dst*/, const U& /*src*/
 template <typename T, typename U>
 __aicore__ inline static void SetRegisterImpl(const T& /*dst*/, const U& /*src*/, uint64_t quant)
 {
-    if constexpr (IsSatisfiedPtnFormatV<T, NDExtLayoutPtn>) {
+    constexpr bool isNdFormat = IsSatisfiedPtnFormatV<T, NDExtLayoutPtn> || IsSatisfiedPtnFormatV<T, NDLayoutPtn>;
+    constexpr bool isDnFormat = IsSatisfiedPtnFormatV<T, DNExtLayoutPtn> || IsSatisfiedPtnFormatV<T, DNLayoutPtn>;
+    if constexpr (isNdFormat) {
         constexpr uint32_t ndNum = 1;
         constexpr uint32_t srcNdStride = 0;
         constexpr uint32_t dstNdStride = 0;
         SetRegisterInstr::SetRegister(quant, ndNum, dstNdStride, srcNdStride);
-    } else if constexpr (IsSatisfiedPtnFormatV<T, DNExtLayoutPtn>) {
+    } else if constexpr (isDnFormat) {
         constexpr uint32_t dnNum = 1;
         constexpr uint32_t dstDnMatrixStride = 0;
         constexpr uint32_t srcNzMatrixStride = 0;

@@ -53,9 +53,18 @@ private:
         auto srcLayout = src.Layout();
 
         uint16_t ndNum = 1;
-        uint16_t nValue = GetElement<AttrInfo::Shape, AttrInfo::Row, 1>(srcLayout);
-        uint32_t dValue = GetElement<AttrInfo::Shape, AttrInfo::Column, 1>(srcLayout);
-        auto srcRowStride = GetElement<AttrInfo::Stride, AttrInfo::Row, 1>(srcLayout);
+        uint16_t nValue;
+        uint32_t dValue;
+        uint32_t srcRowStride;
+        if constexpr (IsSatisfiedPtnFormatV<U, NDLayoutPtn>) {
+            nValue = GetElement<AttrInfo::Shape, AttrInfo::Row>(srcLayout);
+            dValue = GetElement<AttrInfo::Shape, AttrInfo::Column>(srcLayout);
+            srcRowStride = GetElement<AttrInfo::Stride, AttrInfo::Row>(srcLayout);
+        } else {
+            nValue = GetElement<AttrInfo::Shape, AttrInfo::Row, 1>(srcLayout);
+            dValue = GetElement<AttrInfo::Shape, AttrInfo::Column, 1>(srcLayout);
+            srcRowStride = GetElement<AttrInfo::Stride, AttrInfo::Row, 1>(srcLayout);
+        }
         auto dstColumnStride = GetElement<AttrInfo::Stride, AttrInfo::Column, 1>(dstLayout);
         if constexpr (IsB4Type<type>) {
             // move fp4 as b8, need to be divided by 2

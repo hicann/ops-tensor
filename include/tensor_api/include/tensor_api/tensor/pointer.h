@@ -25,18 +25,17 @@
 
 namespace AscendC {
 namespace Te {
-template <typename Hardware, typename TraitOrType, typename... Args,
-    Std::enable_if_t<!IsMemPtrIterator<FirstArgT<Args...>>::value, int> Enable>
-__aicore__ inline constexpr auto MakeMemPtr(Args... args);
 
-template <typename Hardware, typename... Args,
-    Std::enable_if_t<IsMemPtrIterator<FirstArgT<Args...>>::value, int> Enable>
-__aicore__ inline constexpr auto MakeMemPtr(Args... args);
+template <typename PtrPattern, typename DataType, typename Addr,
+    EnableMakePtrByTrait<PtrPattern, Addr> Enable>
+__aicore__ inline auto MakeMemPtr(Addr addr);
 
-template <typename Iterator>
-__aicore__ inline constexpr auto MakeMemPtr(const Iterator& iter);
+template <typename PtrPattern, typename Iterator,
+    EnableMakeHardwarePtr<PtrPattern, Iterator> Enable>
+__aicore__ inline constexpr auto MakeMemPtr(Iterator iterator);
 
-
+template <typename Iterator, EnableMakePtrByIter<Iterator> Enable>
+__aicore__ inline constexpr auto MakeMemPtr(Iterator iterator);
 } // namespace Te
 } // namespace AscendC
 

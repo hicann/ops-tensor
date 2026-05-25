@@ -24,7 +24,7 @@
 
 #include "impl/tensor_api/utils/utils_impl.h"
 #include "impl/tensor_api/tensor/pointer_pattern.h"
-#include "impl/tensor_api/tensor/local_tensor_impl.h"
+#include "impl/tensor_api/tensor/tensor_impl.h"
 
 namespace AscendC {
 namespace Te {
@@ -48,12 +48,11 @@ using ToTuple = ToTupleImpl<T, Std::is_tuple_v<T>>;
 template <typename T>
 struct GetTypeFromNDimTrait;
 
-template <typename hPos, typename Pointer, 
-          typename ShapeRows, typename ShapeCols, 
-          typename StrideRows, typename StrideCols, 
+template <template <typename> class TensorType, typename hPos, typename Pointer,
+          typename ShapeRows, typename ShapeCols, typename StrideRows, typename StrideCols,
           typename LayoutPattern>
 struct GetTypeFromNDimTrait<
-    LocalTensor<TensorAttribute<ViewEngine<HardwareMemPtr<hPos, Pointer>>,
+    TensorType<TensorAttribute<ViewEngine<HardwareMemPtr<hPos, Pointer>>,
         Layout<Shape<ShapeRows, ShapeCols>, Stride<StrideRows, StrideCols>, LayoutPattern>>>> {
     using ShapeRowTuple = typename ToTuple<ShapeRows>::type;
     using ShapeColTuple = typename ToTuple<ShapeCols>::type;
@@ -85,27 +84,27 @@ struct GetNDimType;
 
 template <typename T, size_t dim>
 struct GetNDimType<T, AttrInfo::Shape, AttrInfo::Row, dim> {
-    using type = Std::remove_cvref_t<typename GetTypeFromNDimTrait<T>::template ShapeRowDim<dim>>;
+    using type = Std::remove_cvref_t<typename GetTypeFromNDimTrait<Std::remove_cvref_t<T>>::template ShapeRowDim<dim>>;
 };
 
 template <typename T, size_t dim>
 struct GetNDimType<T, AttrInfo::Shape, AttrInfo::Column, dim> {
-    using type = Std::remove_cvref_t<typename GetTypeFromNDimTrait<T>::template ShapeColDim<dim>>;
+    using type = Std::remove_cvref_t<typename GetTypeFromNDimTrait<Std::remove_cvref_t<T>>::template ShapeColDim<dim>>;
 };
 
 template <typename T, size_t dim>
 struct GetNDimType<T, AttrInfo::Stride, AttrInfo::Row, dim> {
-    using type = Std::remove_cvref_t<typename GetTypeFromNDimTrait<T>::template StrideRowDim<dim>>;
+    using type = Std::remove_cvref_t<typename GetTypeFromNDimTrait<Std::remove_cvref_t<T>>::template StrideRowDim<dim>>;
 };
 
 template <typename T, size_t dim>
 struct GetNDimType<T, AttrInfo::Stride, AttrInfo::Column, dim> {
-    using type = Std::remove_cvref_t<typename GetTypeFromNDimTrait<T>::template StrideColDim<dim>>;
+    using type = Std::remove_cvref_t<typename GetTypeFromNDimTrait<Std::remove_cvref_t<T>>::template StrideColDim<dim>>;
 };
 
 template <typename TensorType, typename TargetLayoutPtn> 
 struct IsSatisfiedPtnFormat {
-    using LayoutPattern = GetLayoutPattern<typename TensorType::layoutType>;
+    using LayoutPattern = GetLayoutPattern<typename Std::remove_cvref_t<TensorType>::layoutType>;
     static constexpr bool value = Std::is_same_v<LayoutPattern, TargetLayoutPtn>;
 };
 

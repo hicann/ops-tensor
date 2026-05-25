@@ -45,27 +45,55 @@ private:
 
         auto dstLayout = dst.Layout();
         auto srcLayout = src.Layout();
+        constexpr bool isNdSrcFormat = IsSatisfiedPtnFormatV<U, NDExtLayoutPtn> || IsSatisfiedPtnFormatV<U, NDLayoutPtn>;
+        constexpr bool isNdDstFormat = IsSatisfiedPtnFormatV<T, NDExtLayoutPtn> || IsSatisfiedPtnFormatV<T, NDLayoutPtn>;
+        constexpr bool isDnSrcFormat = IsSatisfiedPtnFormatV<U, DNExtLayoutPtn> || IsSatisfiedPtnFormatV<U, DNLayoutPtn>;
+        constexpr bool isDnDstFormat = IsSatisfiedPtnFormatV<T, DNExtLayoutPtn> || IsSatisfiedPtnFormatV<T, DNLayoutPtn>;
 
         uint16_t blockCount = 0;
         uint32_t blockLen = 0;
         int64_t srcStride = 0;
         int64_t dstStride = 0;
 
-        if constexpr (IsSatisfiedPtnFormatV<U, NDExtLayoutPtn> && IsSatisfiedPtnFormatV<T, NDExtLayoutPtn>) {
+        if constexpr (isNdSrcFormat && isNdDstFormat) {
             blockCount = GetTotalRowShape(srcLayout);
             // Next three parameters are in unit of 32B
             blockLen = Std::ceil_division(GetTotalColumnShape(srcLayout), C0_ELEMENT<SRC_TYPE>);
 
-            srcStride = Std::ceil_division(GetElement<AttrInfo::Stride, AttrInfo::Row, 1>(srcLayout) - GetTotalColumnShape(srcLayout), C0_ELEMENT<SRC_TYPE>);
-            dstStride = Std::ceil_division(GetElement<AttrInfo::Stride, AttrInfo::Row, 1>(dstLayout) - GetTotalColumnShape(srcLayout), C0_ELEMENT<DST_TYPE>);
+            uint32_t srcRowStride;
+            uint32_t dstRowStride;
+            if constexpr (IsSatisfiedPtnFormatV<U, NDLayoutPtn>) {
+                srcRowStride = GetElement<AttrInfo::Stride, AttrInfo::Row>(srcLayout);
+            } else {
+                srcRowStride = GetElement<AttrInfo::Stride, AttrInfo::Row, 1>(srcLayout);
+            }
+            if constexpr (IsSatisfiedPtnFormatV<T, NDLayoutPtn>) {
+                dstRowStride = GetElement<AttrInfo::Stride, AttrInfo::Row>(dstLayout);
+            } else {
+                dstRowStride = GetElement<AttrInfo::Stride, AttrInfo::Row, 1>(dstLayout);
+            }
+            srcStride = Std::ceil_division(srcRowStride - GetTotalColumnShape(srcLayout), C0_ELEMENT<SRC_TYPE>);
+            dstStride = Std::ceil_division(dstRowStride - GetTotalColumnShape(srcLayout), C0_ELEMENT<DST_TYPE>);
 
-        } else if constexpr (IsSatisfiedPtnFormatV<U, DNExtLayoutPtn> && IsSatisfiedPtnFormatV<T, DNExtLayoutPtn>) {
+        } else if constexpr (isDnSrcFormat && isDnDstFormat) {
             blockCount = GetTotalColumnShape(srcLayout);
             // Next three parameters are in unit of 32B
             blockLen = Std::ceil_division(GetTotalRowShape(srcLayout), C0_ELEMENT<SRC_TYPE>);
 
-            srcStride = Std::ceil_division((GetElement<AttrInfo::Stride, AttrInfo::Column, 1>(srcLayout) - GetTotalRowShape(srcLayout)), C0_ELEMENT<SRC_TYPE>);
-            dstStride = Std::ceil_division((GetElement<AttrInfo::Stride, AttrInfo::Column, 1>(dstLayout) - GetTotalRowShape(srcLayout)), C0_ELEMENT<DST_TYPE>);
+            uint32_t srcColumnStride;
+            uint32_t dstColumnStride;
+            if constexpr (IsSatisfiedPtnFormatV<U, DNLayoutPtn>) {
+                srcColumnStride = GetElement<AttrInfo::Stride, AttrInfo::Column>(srcLayout);
+            } else {
+                srcColumnStride = GetElement<AttrInfo::Stride, AttrInfo::Column, 1>(srcLayout);
+            }
+            if constexpr (IsSatisfiedPtnFormatV<T, DNLayoutPtn>) {
+                dstColumnStride = GetElement<AttrInfo::Stride, AttrInfo::Column>(dstLayout);
+            } else {
+                dstColumnStride = GetElement<AttrInfo::Stride, AttrInfo::Column, 1>(dstLayout);
+            }
+            srcStride = Std::ceil_division(srcColumnStride - GetTotalRowShape(srcLayout), C0_ELEMENT<SRC_TYPE>);
+            dstStride = Std::ceil_division(dstColumnStride - GetTotalRowShape(srcLayout), C0_ELEMENT<DST_TYPE>);
 
         } else if constexpr (IsSatisfiedPtnFormatV<U, NZLayoutPtn> && IsSatisfiedPtnFormatV<T, NZLayoutPtn>) {
             blockCount = GetElement<AttrInfo::Shape, AttrInfo::Column, 1>(srcLayout);
@@ -77,7 +105,7 @@ private:
             dstStride = GetElement<AttrInfo::Stride, AttrInfo::Column, 1>(dstLayout) / C0_ELEMENT<DST_TYPE> - blockLen;
 
         } else {
-            static_assert((IsSatisfiedPtnFormatV<U, NDExtLayoutPtn> && IsSatisfiedPtnFormatV<T, NDExtLayoutPtn>) || (IsSatisfiedPtnFormatV<U, DNExtLayoutPtn> && IsSatisfiedPtnFormatV<T, DNExtLayoutPtn>)
+            static_assert((isNdSrcFormat && isNdDstFormat) || (isDnSrcFormat && isDnDstFormat)
                               || (IsSatisfiedPtnFormatV<U, NZLayoutPtn> && IsSatisfiedPtnFormatV<T, NZLayoutPtn>),
                           "Unsupported layout type combination for DataCopyL12UB3510");
         }

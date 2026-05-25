@@ -83,28 +83,37 @@ private:
     {
         auto dstLayout = dst.Layout();
         auto srcLayout = src.Layout();
+        constexpr bool isNdFormat = IsSatisfiedPtnFormatV<T, NDExtLayoutPtn> || IsSatisfiedPtnFormatV<T, NDLayoutPtn>;
+        constexpr bool isDnFormat = IsSatisfiedPtnFormatV<T, DNExtLayoutPtn> || IsSatisfiedPtnFormatV<T, DNLayoutPtn>;
 
         uint32_t nSize = Std::min(GetTotalColumnShape(srcLayout), GetTotalColumnShape(dstLayout));
         uint32_t mSize = Std::min(GetTotalRowShape(srcLayout), GetTotalRowShape(dstLayout));
         uint32_t srcStride = GetElement<AttrInfo::Stride, AttrInfo::Column, 1>(srcLayout) / FRACTAL_FIXED;
         uint32_t dstStride = 0;
 
-        if constexpr (IsSatisfiedPtnFormatV<T, NDExtLayoutPtn>) {
-            dstStride = GetElement<AttrInfo::Stride, AttrInfo::Row, 1>(dstLayout);
+        if constexpr (isNdFormat) {
+            if constexpr (IsSatisfiedPtnFormatV<T, NDLayoutPtn>) {
+                dstStride = GetElement<AttrInfo::Stride, AttrInfo::Row>(dstLayout);
+            } else {
+                dstStride = GetElement<AttrInfo::Stride, AttrInfo::Row, 1>(dstLayout);
+            }
         } else {
-            dstStride = GetElement<AttrInfo::Stride, AttrInfo::Column, 1>(dstLayout);
+            if constexpr (IsSatisfiedPtnFormatV<T, DNLayoutPtn>) {
+                dstStride = GetElement<AttrInfo::Stride, AttrInfo::Column>(dstLayout);
+            } else {
+                dstStride = GetElement<AttrInfo::Stride, AttrInfo::Column, 1>(dstLayout);
+            }
         }
 
         bool reluEn = trait.enableRelu;
         uint8_t unitFlag = params.unitFlag;
-        bool nz2ndEn = IsSatisfiedPtnFormatV<T, NDExtLayoutPtn>;
-        bool nz2dnEn = IsSatisfiedPtnFormatV<T, DNExtLayoutPtn>;
+        bool nz2ndEn = isNdFormat;
+        bool nz2dnEn = isDnFormat;
 
-        uint8_t cacheMode = dst.Engine().GetCacheMode();
         bool isChannelSplit = trait.enableChannelSplit;
 
         uint8_t dualDstCtl = trait.dualDstCtl;
-        bool subBlockId = false;
+        bool subBlockId = params.subBlockId;
         CopyMatrixCcToUbInstr::DataCopy<quantPre, T, U>(dst, src, nSize, mSize, srcStride, dstStride, dualDstCtl,
                                                         reluEn, unitFlag, subBlockId, isChannelSplit, nz2ndEn, nz2dnEn);
     }
@@ -133,6 +142,8 @@ private:
     {
         auto dstLayout = dst.Layout();
         auto srcLayout = src.Layout();
+        constexpr bool isNdFormat = IsSatisfiedPtnFormatV<T, NDExtLayoutPtn> || IsSatisfiedPtnFormatV<T, NDLayoutPtn>;
+        constexpr bool isDnFormat = IsSatisfiedPtnFormatV<T, DNExtLayoutPtn> || IsSatisfiedPtnFormatV<T, DNLayoutPtn>;
 
         uint32_t nSize = Std::min(GetTotalColumnShape(srcLayout), GetTotalColumnShape(dstLayout));
         uint32_t mSize = Std::min(GetTotalRowShape(srcLayout), GetTotalRowShape(dstLayout));
@@ -146,20 +157,28 @@ private:
 
         const uint32_t srcStride = GetElement<AttrInfo::Stride, AttrInfo::Column, 1>(srcLayout) / FRACTAL_FIXED;
         uint32_t dstStride = 0;
-        if constexpr (IsSatisfiedPtnFormatV<T, NDExtLayoutPtn>) {
-            dstStride = GetElement<AttrInfo::Stride, AttrInfo::Row, 1>(dstLayout);
+        if constexpr (isNdFormat) {
+            if constexpr (IsSatisfiedPtnFormatV<T, NDLayoutPtn>) {
+                dstStride = GetElement<AttrInfo::Stride, AttrInfo::Row>(dstLayout);
+            } else {
+                dstStride = GetElement<AttrInfo::Stride, AttrInfo::Row, 1>(dstLayout);
+            }
         } else {
-            dstStride = GetElement<AttrInfo::Stride, AttrInfo::Column, 1>(dstLayout);
+            if constexpr (IsSatisfiedPtnFormatV<T, DNLayoutPtn>) {
+                dstStride = GetElement<AttrInfo::Stride, AttrInfo::Column>(dstLayout);
+            } else {
+                dstStride = GetElement<AttrInfo::Stride, AttrInfo::Column, 1>(dstLayout);
+            }
         }
 
         const bool reluEn = trait.enableRelu;
         const uint8_t unitFlag = params.unitFlag;
 
-        constexpr bool nz2ndEn = IsSatisfiedPtnFormatV<T, NDExtLayoutPtn>;
-        constexpr bool nz2dnEn = IsSatisfiedPtnFormatV<T, DNExtLayoutPtn>;
+        constexpr bool nz2ndEn = isNdFormat;
+        constexpr bool nz2dnEn = isDnFormat;
 
         const bool channelSplit = trait.enableChannelSplit;
-        bool subBlockId = false;
+        bool subBlockId = params.subBlockId;
         uint8_t dualDstCtl = trait.dualDstCtl;
 
         return Std::make_tuple(nSize, mSize, srcStride, dstStride, dualDstCtl, reluEn, unitFlag, subBlockId,
@@ -171,8 +190,8 @@ private:
     {
         auto dstAddr = reinterpret_cast<__fbuf__ uint64_t*>(AllocFbTempBuf(calNSize));
         auto dst = MakeTensor(MakeMemPtr<Location::FIXBUF>(dstAddr), src.Layout());
-        auto coord = MakeCoord(Std::Int<0>{}, nIterIndex * MAIN_LOOP_N_SIZE_3510);
-        auto shape = MakeShape(Std::Int<1>{}, calNSize);
+        auto coord = MakeCoord(_0{}, nIterIndex * MAIN_LOOP_N_SIZE_3510);
+        auto shape = MakeShape(_1{}, calNSize);
         auto tileSrc = src.Slice(coord, shape);
         DataCopyL12FB3510::Run<DEFAULT_COPY_L1_FB_TRAIT>(dst, tileSrc);
         SetFpc(dstAddr);

@@ -26,11 +26,9 @@
 #include "impl/tensor_api/arch/cube/l1_to_l0b/npu_arch_3510/zn2zn.h"
 #include "impl/tensor_api/arch/cube/l1_to_l0b/npu_arch_3510/nz2zn.h"
 #include "impl/tensor_api/arch/cube/l1_to_l0b/npu_arch_3510/nz2znb8b4.h"
-#include "impl/tensor_api/arch/cube/l1_to_l0b/npu_arch_3510/scaleb.h"
 #include "impl/tensor_api/arch/cube/l1_to_l0b/npu_arch_3510/zn2zn_with_coord.h"
 #include "impl/tensor_api/arch/cube/l1_to_l0b/npu_arch_3510/nz2zn_with_coord.h"
 #include "impl/tensor_api/arch/cube/l1_to_l0b/npu_arch_3510/nz2znb8b4_with_coord.h"
-#include "impl/tensor_api/arch/cube/l1_to_l0b/npu_arch_3510/scaleb_with_coord.h"
 
 namespace AscendC {
 namespace Te {
@@ -38,7 +36,9 @@ namespace Te {
 class CopyL12L0BIgnore {
 public:
     template <const CopyL12L0BTrait& trait, typename ...Args>
-    __aicore__ inline void static Run(const Args&... args) {}
+    __aicore__ inline void static Run(const Args&... args) {
+        static_assert(Std::is_same_v<Args..., void>, "CopyL12L0BIgnore should not be called");
+    }
 };
 
 template <typename dstPos, typename srcPos, uint32_t Version, typename DstLayoutPattern, typename SrcLayoutPattern, typename CopyMode>
@@ -82,17 +82,6 @@ struct CopyL12L0BTensor2Tensor<Location::L0B, Location::L1, ArchVersion::V3510, 
     using type = LoadDataL12L0BNZ2ZNB8B4WithCoord3510;
 };
 
-template <>
-struct CopyL12L0BTensor2Tensor<Location::L0B, Location::L1, ArchVersion::V3510, NNLayoutPtn, NNLayoutPtn, CopyMode::NORMAL>
-{
-    using type = LoadDataL12L0MxScaleB3510;
-};
-
-template <>
-struct CopyL12L0BTensor2Tensor<Location::L0B, Location::L1, ArchVersion::V3510, NNLayoutPtn, NNLayoutPtn, CopyMode::NORMAL_COORD>
-{
-    using type = LoadDataL12L0MxScaleBWithCoord3510;
-};
 } // namespace Te
 } // namespace AscendC
 #endif // IMPL_TENSOR_API_ARCH_CUBE_L1_TO_L0B_ROUTING_H

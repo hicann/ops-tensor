@@ -28,6 +28,8 @@ struct CopyGM2L1;
 struct CopyL12UB;
 struct CopyL12L0B;
 struct CopyL12L0A;
+struct CopyL12L0ScaleA;
+struct CopyL12L0ScaleB;
 struct CopyL12FB;
 struct CopyL12BT;
 struct CopyL0C2GM;

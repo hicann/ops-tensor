@@ -46,7 +46,7 @@ private:
         auto dstLayout = dst.Layout();
         auto srcLayout = src.Layout();
 
-        uint8_t cacheMode = src.Engine().GetCacheMode();
+        uint8_t cacheMode = dst.Engine().GetCacheMode();
 
         uint16_t blockCount = 0;
         uint32_t blockLen = 0;

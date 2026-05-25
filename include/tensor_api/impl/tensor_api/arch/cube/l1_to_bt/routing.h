@@ -29,7 +29,10 @@ namespace Te {
 class CopyL12BTIgnore {
 public:
     template <const CopyL12BTTrait& trait, typename ...Args>
-    __aicore__ inline static void Run(const Args&... args) {}
+    __aicore__ inline static void Run(const Args&... args)
+    {
+        static_assert(Std::is_same_v<Args..., void>, "CopyL12BTIgnore should not be called");
+    }
 };
 
 template <typename dstTPos, typename srcTpos, uint32_t Version>

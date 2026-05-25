@@ -30,7 +30,7 @@ namespace AscendC {
 namespace Te {
 
 template <typename Traits>
-struct CopyTraits<CopyGM2UB, Traits> : public CopyTraits<CopyGM2UB, Traits, CopyGM2UB, CopyGM2UBTraitDefault> {
+struct CopyTraits<CopyGM2UB, Traits> : public CopyTraits<CopyGM2UB, Traits, CopyGM2UB, Traits> {
 };
 
 template <>

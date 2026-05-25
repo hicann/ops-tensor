@@ -44,8 +44,8 @@ __aicore__ inline constexpr auto Crd2IdxITT(const T& coord, const U& shape, cons
     if constexpr (sizeof...(Is) == 0) {  // Avoid recursion and mod on single/last iter
         return Crd2Idx(coord, Std::get<I0>(shape), Std::get<I0>(stride));
     } else if constexpr (Std::is_constant<0, T>::value) {
-        return Crd2Idx(Std::Int<0>{}, Std::get<I0>(shape), Std::get<I0>(stride)) +
-            (Std::Int<0>{} + ... + Crd2Idx(Std::Int<0>{}, Std::get<Is>(shape), Std::get<Is>(stride)));
+        return Crd2Idx(_0{}, Std::get<I0>(shape), Std::get<I0>(stride)) +
+            (_0{} + ... + Crd2Idx(_0{}, Std::get<Is>(shape), Std::get<Is>(stride)));
     } else { // General case
         auto prod = Product{}(Std::get<I0>(shape));
         auto div = coord / prod;

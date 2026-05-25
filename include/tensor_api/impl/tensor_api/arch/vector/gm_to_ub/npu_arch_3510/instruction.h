@@ -23,7 +23,7 @@
 #define IMPL_TENSOR_API_ARCH_VECTOR_GM_TO_UB_NPU_ARCH_3510_INSTRUCTION_H
 
 #include "impl/tensor_api/tensor/pointer_pattern.h"
-#include "impl/tensor_api/tensor/local_tensor_impl.h"
+#include "impl/tensor_api/tensor/tensor_impl.h"
 #include "impl/tensor_api/arch/utils/arch_utils.h"
 
 namespace AscendC {

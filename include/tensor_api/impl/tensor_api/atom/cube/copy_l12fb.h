@@ -29,7 +29,7 @@ namespace AscendC {
 namespace Te {
 
 template <typename Traits>
-struct CopyTraits<CopyL12FB, Traits> : public CopyTraits<CopyL12FB, Traits, CopyL12FB, CopyL12FBTraitDefault> {};
+struct CopyTraits<CopyL12FB, Traits> : public CopyTraits<CopyL12FB, Traits, CopyL12FB, Traits> {};
 
 template <>
 struct CopyTraits<CopyL12FB> : public CopyTraits<CopyL12FB, CopyL12FBTraitDefault> {};

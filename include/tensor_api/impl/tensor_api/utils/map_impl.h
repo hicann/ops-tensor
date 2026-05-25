@@ -27,11 +27,6 @@
 namespace AscendC {
 namespace Te {
 
-struct EmptyValue {
-    template <typename... Args>
-    __aicore__ __inline__ static void Run(const Args&...) {}
-};
-
 template <typename... Pairs>
 class TupleMap {
 private:
@@ -72,7 +67,7 @@ private:
 
     template <typename Key, size_t MaxSize>
     struct FindImpl<Key, MaxSize, MaxSize> {
-        using type = EmptyValue;
+        using type = Std::ignore_t;
     };
 
     template <typename Key, typename... ExistingPairs>

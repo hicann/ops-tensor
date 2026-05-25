@@ -26,11 +26,11 @@
 #include <utility>
 #include <type_traits>
 #include "impl/tensor_api/utils/macro_impl.h"
-#include "include/utils/std/tuple.h"
-#include "include/utils/std/type_traits.h"
-#include "include/utils/std/utility.h"
-#include "include/utils/std/algorithm.h"
-#include "include/utils/std/cmath.h"
+#include "utils/std/tuple.h"
+#include "utils/std/type_traits.h"
+#include "utils/std/utility.h"
+#include "utils/std/algorithm.h"
+#include "utils/std/cmath.h"
 
 namespace AscendC {
 namespace Te {

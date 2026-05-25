@@ -27,21 +27,32 @@
 namespace AscendC {
 namespace Te {
 
-template <typename Tp, const Tp& traits, typename T, typename... Params>
-__aicore__ inline void Mmad(const MmadAtom<T>& atomMmad, const Params& ...params)
+template <typename AtomType, typename DstTensor, typename FmTensor, typename FilterTensor>
+__aicore__ inline void Mmad(
+    const MmadAtom<AtomType>& atomMmad, const DstTensor& dst, const FmTensor& fm, const FilterTensor& filter)
 {
-    atomMmad.template Call<traits>(params...);
+    atomMmad.Call(dst, fm, filter);
 }
 
-template <typename T, typename... Params>
-__aicore__ inline void Mmad(const MmadAtom<T>& atomMmad, const Params& ...params)
+template <typename AtomType, typename DstTensor, typename FmTensor, typename FilterTensor, typename BiasTensor,
+    Std::enable_if_t<IsAttrTensorV<BiasTensor>, int> = 0>
+__aicore__ inline void Mmad(
+    const MmadAtom<AtomType>& atomMmad, const DstTensor& dst, const FmTensor& fm, const FilterTensor& filter,
+    const BiasTensor& bias)
 {
-    atomMmad.Call(params...);
+    atomMmad.Call(dst, fm, filter, bias);
 }
 
-template <typename... Args>
-__aicore__ inline auto MakeMmad(const Args& ...traits) {
-    return MmadAtom<MmadTraits<Args...>>{};
+template <typename MmadOperationType>
+__aicore__ inline constexpr auto MakeMmad(const MmadOperationType& mmadOperation)
+{
+    return MmadAtom<MmadTraits<MmadOperationType>>{};
+}
+
+template <typename MmadOperationType, typename MmadTraitType>
+__aicore__ inline constexpr auto MakeMmad(const MmadOperationType& mmadOperation, const MmadTraitType& mmadTrait)
+{
+    return MmadAtom<MmadTraits<MmadOperationType, MmadTraitType>>{};
 }
 
 }

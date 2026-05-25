@@ -51,10 +51,24 @@ private:
         auto dstLayout = dst.Layout();
         auto srcLayout = src.Layout();
 
-        uint16_t srcCol = GetElement<AttrInfo::Shape, AttrInfo::Column, 1>(srcLayout);
-        uint16_t srcRow = GetElement<AttrInfo::Stride, AttrInfo::Row, 1>(srcLayout);
-        uint16_t dstCol = GetElement<AttrInfo::Shape, AttrInfo::Column, 1>(dstLayout);
-        uint16_t dstRow = GetElement<AttrInfo::Stride, AttrInfo::Row, 1>(dstLayout);
+        uint16_t srcCol;
+        uint16_t srcRow;
+        uint16_t dstCol;
+        uint16_t dstRow;
+        if constexpr (IsSatisfiedPtnFormatV<U, NDLayoutPtn>) {
+            srcCol = GetElement<AttrInfo::Shape, AttrInfo::Column>(srcLayout);
+            srcRow = GetElement<AttrInfo::Stride, AttrInfo::Row>(srcLayout);
+        } else {
+            srcCol = GetElement<AttrInfo::Shape, AttrInfo::Column, 1>(srcLayout);
+            srcRow = GetElement<AttrInfo::Stride, AttrInfo::Row, 1>(srcLayout);
+        }
+        if constexpr (IsSatisfiedPtnFormatV<T, NDLayoutPtn>) {
+            dstCol = GetElement<AttrInfo::Shape, AttrInfo::Column>(dstLayout);
+            dstRow = GetElement<AttrInfo::Stride, AttrInfo::Row>(dstLayout);
+        } else {
+            dstCol = GetElement<AttrInfo::Shape, AttrInfo::Column, 1>(dstLayout);
+            dstRow = GetElement<AttrInfo::Stride, AttrInfo::Row, 1>(dstLayout);
+        }
 
         using srcType = typename U::elementType;
         using dstType = typename T::elementType;
@@ -69,7 +83,12 @@ private:
             blockLen = Std::ceil_align(blockLen, 2);
         }
 
-        uint16_t blockCount = GetElement<AttrInfo::Shape, AttrInfo::Row, 1>(srcLayout);
+        uint16_t blockCount;
+        if constexpr (IsSatisfiedPtnFormatV<U, NDLayoutPtn>) {
+            blockCount = GetElement<AttrInfo::Shape, AttrInfo::Row>(srcLayout);
+        } else {
+            blockCount = GetElement<AttrInfo::Shape, AttrInfo::Row, 1>(srcLayout);
+        }
         uint16_t srcStride = (srcRow - srcCol) / C0_ELEMENT<srcType>;
         uint16_t dstStride = Std::ceil_align((dstRow - srcCol) / C0_ELEMENT<dstType>, 2);
         CopyL12BTInstr::DataCopy(dst, src, convControl, blockCount, blockLen, srcStride, dstStride);

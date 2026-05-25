@@ -71,15 +71,16 @@ using IsDirectQuantMode = Std::is_one_of_value<QuantMode_t, quantPre, TILE_OP_IN
 
 template <typename info1, typename info2, size_t dim, typename T>
 __aicore__ inline constexpr decltype(auto) GetElement(const T& layout) {
-    
     constexpr size_t shapeOrStride = (Std::is_same_v<info1, AttrInfo::Shape> ? 0 : 1);
     constexpr size_t rowOrColumn = (Std::is_same_v<info2, AttrInfo::Row> ? 0 : 1);
+    return layout.template Get<shapeOrStride, rowOrColumn, dim>();
+}
 
-    if constexpr (T::depth == 2) {
-        return layout.template Get<shapeOrStride, rowOrColumn>();
-    } else {
-        return layout.template Get<shapeOrStride, rowOrColumn, dim>();
-    }
+template <typename info1, typename info2, typename T>
+__aicore__ inline constexpr decltype(auto) GetElement(const T& layout) {
+    constexpr size_t shapeOrStride = (Std::is_same_v<info1, AttrInfo::Shape> ? 0 : 1);
+    constexpr size_t rowOrColumn = (Std::is_same_v<info2, AttrInfo::Row> ? 0 : 1);
+    return layout.template Get<shapeOrStride, rowOrColumn>();
 }
 
 template <typename LayoutType>

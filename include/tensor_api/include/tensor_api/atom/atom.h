@@ -21,8 +21,8 @@
 #ifndef INCLUDE_TENSOR_API_ATOM_ATOM_H
 #define INCLUDE_TENSOR_API_ATOM_ATOM_H
 
-#include "include/tensor_api/atom/cube/copy_atom.h"
-#include "include/tensor_api/atom/cube/mmad_atom.h"
+#include "tensor_api/atom/cube/copy_atom.h"
+#include "tensor_api/atom/cube/mmad_atom.h"
 
 #endif // INCLUDE_TENSOR_API_ATOM_ATOM_H
 

@@ -52,9 +52,18 @@ private:
         auto dstLayout = dst.Layout();
         auto srcLayout = src.Layout();
 
-        uint16_t srcRowShape = GetElement<AttrInfo::Shape, AttrInfo::Row, 1>(srcLayout);
-        uint32_t srcColShape = GetElement<AttrInfo::Shape, AttrInfo::Column, 1>(srcLayout);
-        auto srcColStride = GetElement<AttrInfo::Stride, AttrInfo::Column, 1>(srcLayout);
+        uint16_t srcRowShape;
+        uint32_t srcColShape;
+        uint32_t srcColStride;
+        if constexpr (IsSatisfiedPtnFormatV<U, DNLayoutPtn>) {
+            srcRowShape = GetElement<AttrInfo::Shape, AttrInfo::Row>(srcLayout);
+            srcColShape = GetElement<AttrInfo::Shape, AttrInfo::Column>(srcLayout);
+            srcColStride = GetElement<AttrInfo::Stride, AttrInfo::Column>(srcLayout);
+        } else {
+            srcRowShape = GetElement<AttrInfo::Shape, AttrInfo::Row, 1>(srcLayout);
+            srcColShape = GetElement<AttrInfo::Shape, AttrInfo::Column, 1>(srcLayout);
+            srcColStride = GetElement<AttrInfo::Stride, AttrInfo::Column, 1>(srcLayout);
+        }
         uint16_t dstBColStride =
             GetElement<AttrInfo::Stride, AttrInfo::Column, 1>(dstLayout);
 

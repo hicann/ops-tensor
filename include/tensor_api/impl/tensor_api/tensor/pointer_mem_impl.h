@@ -48,6 +48,18 @@ struct IsHardwareMem<PtrPattern, Pointer, void_t<typename Pointer::iterator>>
 
 template <typename PtrPattern, typename Pointer>
 constexpr bool IsHardwareMemV = IsHardwareMem<PtrPattern, Pointer>::value;
+
+template <typename T, typename = void> 
+struct IsMemPtrIterator : Std::false_type {}; 
+
+template <typename T> 
+struct IsMemPtrIterator<T, void_t<decltype(*Std::declval<T&>())>> : Std::true_type {}; 
+
+template <typename PtrPattern, typename Iterator> 
+__aicore__ inline auto MakeLocationMemPtr(Iterator iter) 
+{ 
+    return HardwareMemPtr<PtrPattern, Iterator>{iter}; 
+} 
 } // namespace Te
 } // namespace AscendC
 

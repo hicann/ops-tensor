@@ -27,21 +27,37 @@
 namespace AscendC {
 namespace Te {
 
-template <typename Tp, const Tp& traits, typename T, typename... Params>
-__aicore__ inline void Copy(const CopyAtom<T>& atomCopy, const Params& ...params)
+template <typename QuantParam>
+constexpr bool IsQuantScalarV =
+    !IsAttrTensorV<QuantParam> && Std::is_convertible_v<Std::remove_cvref_t<QuantParam>, uint64_t>;
+
+template <typename QuantParam>
+constexpr bool IsCopyQuantParamV = IsQuantScalarV<QuantParam> || IsAttrTensorV<QuantParam>;
+
+template <typename AtomType, typename DstTensor, typename SrcTensor>
+__aicore__ inline void Copy(const CopyAtom<AtomType>& atomCopy, const DstTensor& dst, const SrcTensor& src)
 {
-    atomCopy.template Call<traits>(params...);
+    atomCopy.Call(dst, src);
 }
 
-template <typename T, typename... Params>
-__aicore__ inline void Copy(const CopyAtom<T>& atomCopy, const Params& ...params)
+template <typename AtomType, typename DstTensor, typename SrcTensor, typename QuantParam,
+    Std::enable_if_t<IsCopyQuantParamV<QuantParam>, int> = 0>
+__aicore__ inline void Copy(const CopyAtom<AtomType>& atomCopy, const DstTensor& dst, const SrcTensor& src,
+    const QuantParam& quant)
 {
-    atomCopy.Call(params...);
+    atomCopy.Call(dst, src, quant);
 }
 
-template <typename... Args>
-__aicore__ inline auto MakeCopy(const Args& ...traits) {
-    return CopyAtom<CopyTraits<Args...>>{};
+template <typename CopyOperationType>
+__aicore__ inline constexpr auto MakeCopy(const CopyOperationType& copyOperation)
+{
+    return CopyAtom<CopyTraits<CopyOperationType>>{};
+}
+
+template <typename CopyOperationType, typename CopyTraitType>
+__aicore__ inline constexpr auto MakeCopy(const CopyOperationType& copyOperation, const CopyTraitType& copyTrait)
+{
+    return CopyAtom<CopyTraits<CopyOperationType, CopyTraitType>>{};
 }
 
 }
