@@ -1,5 +1,5 @@
 # Pad MX K L1
-> [代码位置](../../../include/blaze/tile/pad_mx_kl1.h)
+> [代码位置](../../../../include/blaze/gemm/tile/pad_mx_kl1.h)
 
 ## 功能说明
 MX 量化 K 轴 Padding Tile，用于 L1 缓冲区的 K 轴尾部补零对齐。支持 NZ/ZN 布局，确保 K 轴对齐到 C0_SIZE。
@@ -32,10 +32,10 @@ K 轴需对齐到 C0_SIZE：
 struct PadMxKL1Base {
     template <typename T>
     __aicore__ inline static void PadZero(const T& tensorL1, uint64_t repeatTimes, uint64_t blockNum, uint64_t dstGap);
-    
+
     template <typename type>
     __aicore__ inline static constexpr bool IsMxFp4();
-    
+
     template <typename type>
     __aicore__ inline static constexpr bool IsMxFp8();
 };

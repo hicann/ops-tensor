@@ -9,7 +9,7 @@
  */
 
 /*!
- * \file block_epilogue_streamk.h
+ * \file block_epilogue_matmul_streamk.h
  * \brief
  */
 
@@ -19,7 +19,7 @@
 #else
 #include "kernel_operator.h"
 #endif
-#include "fusion/default_fusion_op.h"
+#include "blaze/epilogue/fusion/default_fusion_op.h"
 #include "blaze/gemm/utils/common_utils.h"
 #include "blaze/gemm/policy/dispatch_policy.h"
 #include "include/tensor_api/tensor.h"
@@ -29,7 +29,7 @@ namespace Gemm {
 namespace Block {
 
 template <class WorkspaceType_, class OutType_, class DispatchPolicy_>
-class BlockEpilogueStreamK {
+class BlockEpilogueMatmulStreamK {
 public:
     using BlockShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
     using BlockCoord = AscendC::Te::Coord<int64_t, int64_t, int64_t, int64_t>;
@@ -41,8 +41,8 @@ public:
 
     using Params = Arguments;
 
-    __aicore__ inline BlockEpilogueStreamK() {}
-    __aicore__ inline ~BlockEpilogueStreamK() {}
+    __aicore__ inline BlockEpilogueMatmulStreamK() {}
+    __aicore__ inline ~BlockEpilogueMatmulStreamK() {}
 
     using WorkspaceType = WorkspaceType_;
     using OutType = OutType_;

@@ -1,5 +1,5 @@
 # Kernel Qbmm Mx
-> [代码位置](../../../include/blaze/kernel/kernel_qbmm_mx.h)
+> [代码位置](../../../../include/blaze/gemm/kernel/kernel_qbmm_mx.h)
 
 ## 功能说明
 MX 量化 Batch Matmul Kernel，仅支持 AIC 计算，支持 MxFP4/MxFP8 量化格式。集成 Scale 因子（pertokenScale、scale）处理、多 Batch 维度支持、L2 Cache 动态配置，适用于量化推理场景。

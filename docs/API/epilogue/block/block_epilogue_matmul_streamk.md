@@ -1,5 +1,5 @@
 # Block Epilogue StreamK
-> [代码位置](../../../include/blaze/epilogue/block_epilogue_streamk.h)
+> [代码位置](../../../../include/blaze/epilogue/block/block_epilogue_matmul_streamk.h)
 
 ## 功能说明
 StreamK 矩阵乘后处理 Block，运行在 AIV 核。从 workspace 读取 AIC 计算的中间结果，执行 K 轴切分累加（Add）、类型转换（Cast）、ReLU 激活，并输出到 GM。
@@ -115,15 +115,15 @@ struct CopyUb2GmParams {
 
 ### 构造函数
 ```
-__aicore__ inline BlockEpilogueStreamK()
+__aicore__ inline BlockEpilogueMatmulStreamK()
 ```
-功能：构造 BlockEpilogueStreamK 对象。
+功能：构造 BlockEpilogueMatmulStreamK 对象。
 
 ### 析构函数
 ```
-__aicore__ inline ~BlockEpilogueStreamK()
+__aicore__ inline ~BlockEpilogueMatmulStreamK()
 ```
-功能：析构 BlockEpilogueStreamK 对象。
+功能：析构 BlockEpilogueMatmulStreamK 对象。
 
 ### Init函数
 ```
@@ -135,7 +135,7 @@ __aicore__ inline void Init(
     uint64_t usedCoreNum,         // 使用的核数
     bool checkIsSkScene)          // 是否为 SK 模式
 ```
-功能：初始化 BlockEpilogueStreamK 组件。
+功能：初始化 BlockEpilogueMatmulStreamK 组件。
 参数说明：
 | 参数 | 类型 | 说明 |
 |------|------|------|
@@ -233,7 +233,7 @@ using WorkspaceType = float;
 using OutType = half;
 using DispatchPolicy = Blaze::Gemm::MatmulMultiBlockWithStreamK<Blaze::Gemm::MatMulL0C2Out::ON_THE_FLY>;
 
-using BlockEpilogue = Blaze::Gemm::Block::BlockEpilogueStreamK<
+using BlockEpilogue = Blaze::Gemm::Block::BlockEpilogueMatmulStreamK<
     WorkspaceType, OutType, DispatchPolicy>;
 ```
 

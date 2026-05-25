@@ -160,44 +160,46 @@ Blaze (Basic Linear Algebra optimized Engine) 是一个高性能矩阵乘库，�
 ```
 blaze/
 ├── include/blaze/
-│   ├── kernel/              # Kernel 层组件
-│   │   ├── kernel_matmul_basic.h
-│   │   ├── kernel_matmul_streamk.h
-│   │   └── kernel_qbmm_mx.h
-│   │
-│   ├── block/               # Block 层组件
-│   │   ├── block_mmad.h          # BlockMmad 基类
-│   │   ├── block_mmad_basic.h    # Basic BlockMmad
-│   │   ├── block_mmad_streamk.h  # StreamK BlockMmad
-│   │   ├── block_mmad_mx.h       # MX BlockMmad
-│   │   ├── block_scheduler_matmul_basic.h
-│   │   ├── block_scheduler_streamk.h
-│   │   └── block_scheduler_qbmm.h
-│   │
 │   ├── epilogue/            # Epilogue 层组件
 │   │   ├── block_epilogue_empty.h
-│   │   └── block_epilogue_streamk.h
-│   │
-│   ├── tile/                # Tile 层组件
-│   │   ├── tile_mmad_mx.h
-│   │   ├── pad_mx_kl1.h
-│   │   ├── copy_scale_l1_to_l0a.h
-│   │   └── copy_scale_l1_to_l0b.h
-│   │
-│   ├── policy/              # Policy 层
-│   │   └── dispatch_policy.h
-│   │
-│   └── utils/               # Utils 层
+│   │   └── block_epilogue_matmul_streamk.h
+|   └── gemm/
+│       ├── kernel/              # Kernel 层组件
+│       │   ├── kernel_matmul_basic.h
+│       │   ├── kernel_matmul_streamk.h
+│       │   └── kernel_qbmm_mx.h
+│       │
+│       ├── block/               # Block 层组件
+│       │   ├── block_mmad.h          # BlockMmad 基类
+│       │   ├── block_mmad_basic.h    # Basic BlockMmad
+│       │   ├── block_mmad_streamk.h  # StreamK BlockMmad
+│       │   ├── block_mmad_mx.h       # MX BlockMmad
+│       │   ├── block_scheduler_matmul_basic.h
+│       │   ├── block_scheduler_matmul_streamk.h
+│       │   └── block_scheduler_qbmm.h
+│       │
+│       ├── tile/                # Tile 层组件
+│       │   ├── tile_mmad_mx.h
+│       │   ├── pad_mx_kl1.h
+│       │   ├── copy_scale_l1_to_l0a.h
+│       │   └── copy_scale_l1_to_l0b.h
+│       │
+│       ├── policy/              # Policy 层
+│       │   └── dispatch_policy.h
+│       │
+│       └── utils/               # Utils 层
 │       ├── common_utils.h
 │       ├── layout_utils.h
 │       └── quant_batch_matmul_constant.h
 │
 └── docs/API/                # API 文档
     ├── README.md            # 本文档
-    ├── kernel/              # Kernel 层文档
-    ├── block/               # Block 层文档
     ├── epilogue/            # Epilogue 层文档
-    └── tile/                # Tile 层文档
+    |   └── block/                # Block 层文档
+    └── gemm/                # Gemm 层文档
+        ├── kernel/              # Kernel 层文档
+        ├── block/               # Block 层文档
+        └── tile/                # Tile 层文档
 ```
 
 ## 快速开始
@@ -215,7 +217,7 @@ blaze/
 Tile 层辅助组件 → [Tile 层 API](tile/README.md)
 
 ### 5. 配置策略
-调度策略和配置 → [Policy 层](../include/blaze/policy/dispatch_policy.h)
+调度策略和配置 → [Policy 层](../../include/blaze/gemm/policy/dispatch_policy.h)
 
 ## 版本信息
 

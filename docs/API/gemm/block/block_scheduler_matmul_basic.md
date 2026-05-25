@@ -1,5 +1,5 @@
 # Block Scheduler Matmul Basic
-> [代码位置](../../../include/blaze/block/block_scheduler_matmul_basic.h)
+> [代码位置](../../../../include/blaze/gemm/block/block_scheduler_matmul_basic.h)
 
 ## 功能说明
 MatmulBasic 内置调度器，支持 tile 切分、block 分配、Z 型扫描、尾块切分、单核 SplitK 切分等。适用于 Basic Kernel 和通用矩阵乘场景。
@@ -30,29 +30,29 @@ struct Params {
     uint32_t mL1 = 0;        // M 轴 L1 tile 尺寸
     uint32_t nL1 = 0;        // N 轴 L1 tile 尺寸
     uint32_t kL1 = 0;        // K 轴 L1 tile 尺寸
-    
+
     // L0 base 形状（必填）
     uint32_t baseM = 0;      // M 轴 L0 base 尺寸
     uint32_t baseN = 0;      // N 轴 L0 base 尺寸
     uint32_t baseK = 0;      // K 轴 L0 base 尺寸
-    
+
     // 尾块切分（Batch=1 场景，可选）
     uint32_t mTailCnt = 0;   // M 轴尾块切分数量
     uint32_t nTailCnt = 0;   // N 轴尾块切分数量
-    
+
     // L1 尾块切分（可选）
     uint32_t mBaseTailSplitCnt = 1;  // M 轴 L1 尾块切分数量
     uint32_t nBaseTailSplitCnt = 1;  // N 轴 L1 尾块切分数量
     uint32_t mTailMain = 1;          // M 轴 L1 尾块主尺寸
     uint32_t nTailMain = 1;          // N 轴 L1 尾块主尺寸
-    
+
     // 其他配置（可选）
     uint8_t isHf32 = 0;              // HF32 模式标志
     uint8_t l1BufferNum = 0;         // L1 缓冲数量（双缓冲=2）
     uint8_t l0cDB = 1;               // L0C 双缓冲（1=单缓冲, 2=双缓冲）
     uint8_t ubDB = 1;                // UB 双缓冲（1=单缓冲, 2=双缓冲）
     L2CacheMode l2CacheDisable = L2CacheMode::L2_CACHE_DEFAULT;  // L2Cache 配置
-    
+
     // 非连续场景（可选）
     uint32_t sliceM = 0;             // 非连续场景 M 轴 slice 尺寸
     uint32_t srcNdStride = 0;        // 非连续场景 stride
@@ -502,30 +502,30 @@ BlockScheduler::Params params = {
     .mL1 = 256,
     .nL1 = 256,
     .kL1 = 128,
-    
+
     // L0 base 形状
     .baseM = 128,
     .baseN = 128,
     .baseK = 64,
-    
+
     // 尾块切分（Batch=1 场景）
     .mTailCnt = 2,
     .nTailCnt = 2,
-    
+
     // L1 尾块切分
     .mBaseTailSplitCnt = 1,
     .nBaseTailSplitCnt = 1,
     .mTailMain = 1,
     .nTailMain = 1,
-    
+
     // 双缓冲
     .l1BufferNum = 2,
     .l0cDB = 2,
     .ubDB = 2,
-    
+
     // L2Cache
     .l2CacheDisable = L2CacheMode::L2_CACHE_DEFAULT,
-    
+
     // 非连续场景（连续 ND 格式不需要设置）
     .sliceM = 0,
     .srcNdStride = 0,

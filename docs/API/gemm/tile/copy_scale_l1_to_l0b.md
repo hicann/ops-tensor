@@ -1,5 +1,5 @@
 # Copy Scale L1 to L0B
-> [代码位置](../../../include/blaze/tile/copy_scale_l1_to_l0b.h)
+> [代码位置](../../../../include/blaze/gemm/tile/copy_scale_l1_to_l0b.h)
 
 ## 功能说明
 MX 量化 ScaleB 因子拷贝 Tile，用于将 ScaleB 从 L1 拷贝到 L0B。支持 fp8_e8m0_t 数据类型，用于 MX 量化矩阵乘。

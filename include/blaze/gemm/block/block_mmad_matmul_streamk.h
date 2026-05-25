@@ -9,7 +9,7 @@
  */
 
 /*!
- * \file block_mmad_streamk.h
+ * \file block_mmad_matmul_streamk.h
  * \brief
  */
 

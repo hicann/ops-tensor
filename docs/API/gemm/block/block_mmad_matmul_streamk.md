@@ -1,5 +1,5 @@
 # Block Mmad StreamK
-> [代码位置](../../../include/blaze/block/block_mmad_streamk.h)
+> [代码位置](../../../../include/blaze/gemm/block/block_mmad_matmul_streamk.h)
 
 ## 功能说明
 StreamK 矩阵乘 Block，基于 Tensor API 实现，仅支持 AIC 计算。支持输出到 GM 或 workspace、K 轴切分（K split）、固定双缓冲优化，适用于 StreamK Kernel 场景。
@@ -119,7 +119,7 @@ __aicore__ inline void Init(
     const TupleShape& tileL0,    // L0 切分形状
     bool isBias)                 // 是否启用 bias
 ```
-功能：初始化 BlockMmadStreamK 组件。
+功能：初始化 BlockMmadMatmulStreamK 组件。
 参数说明：
 | 参数 | 类型 | 说明 |
 |------|------|------|

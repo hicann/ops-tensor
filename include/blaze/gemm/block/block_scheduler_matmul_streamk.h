@@ -9,7 +9,7 @@
  */
 
 /* !
- * \file block_scheduler_streamk.h
+ * \file block_scheduler_matmul_streamk.h
  * \brief
  */
 
@@ -22,7 +22,7 @@ namespace Blaze {
 namespace Gemm {
 namespace Block {
 template <class ProblemShape_>
-class BlockSchedulerStreamK {
+class BlockSchedulerMatmulStreamK {
 public:
     int64_t usedCoreNum_{0};
     int64_t mTileNum_{0};
@@ -68,7 +68,7 @@ public:
     };
 
 public:
-    __aicore__ inline BlockSchedulerStreamK(const ProblemShape& shape, const Params& params)
+    __aicore__ inline BlockSchedulerMatmulStreamK(const ProblemShape& shape, const Params& params)
     {
         usedCoreNum_ = params.usedCoreNum;
         m_ = Get<MNK_M>(shape);

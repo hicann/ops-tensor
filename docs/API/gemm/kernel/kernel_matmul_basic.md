@@ -1,5 +1,5 @@
 # Kernel Matmul Basic
-> [代码位置](../../../include/blaze/kernel/kernel_matmul_basic.h)
+> [代码位置](../../../../include/blaze/gemm/kernel/kernel_matmul_basic.h)
 
 ## 功能说明
 基础矩阵乘 Kernel，仅支持 AIC 计算，无 AIV 参与，不支持 workspace。适用于小矩阵、简单计算场景，集成 BlockScheduler 调度、BlockMmad 计算和 BlockEpilogueEmpty 后处理组件。
@@ -207,7 +207,7 @@ params.schedulerParams.ubDB = 2;                // UB 双缓冲（1=单缓冲, 2
 params.schedulerParams.isHf32 = 0;              // HF32 模式标志（0=关闭）
 
 // L2Cache 配置（可选，控制 A/B 矩阵 L2Cache 行为）
-params.schedulerParams.l2CacheDisable = 
+params.schedulerParams.l2CacheDisable =
     Blaze::Gemm::L2CacheMode::L2_CACHE_DEFAULT; // L2Cache 使能（默认）
 // 其他选项：
 //   A_L2_CACHE_DISABLE     禁用 A 矩阵 L2Cache

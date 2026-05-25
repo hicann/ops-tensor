@@ -22,12 +22,14 @@
 
 ```
 blaze/
-├── kernel/      # Kernel 层：完整算子内核入口        （示例：kernel_qbmm_mx.h）
-├── block/      # Block 层：Block 级矩阵乘抽象与调度  （示例：block_mmad_mx.h、block_scheduler_qbmm.h）
-├── tile/       # Tile 层：细粒度搬运与计算原语        （示例：tile_mmad_mx.h、copy_scale_l1_to_l0a.h）
-├── epilogue/   # Epilogue 层：后处理策略             （示例：block_epilogue_empty.h）
-├── policy/     # Dispatch Policy：派发策略定义       （示例：dispatch_policy.h）
-└── utils/      # 通用工具与常量                      （示例：common_utils.h、layout_utils.h）
+├──epilogue/   # Epilogue 层：后处理策略             （示例：block_epilogue_empty.h
+|   └── block/
+└── gemm/      # 工具库
+    ├── kernel/      # Kernel 层：完整算子内核入口        （示例：kernel_qbmm_mx.h）
+    ├── block/      # Block 层：Block 级矩阵乘抽象与调度  （示例：block_mmad_mx.h、block_scheduler_qbmm.h）
+    ├── tile/       # Tile 层：细粒度搬运与计算原语        （示例：tile_mmad_mx.h、copy_scale_l1_to_l0a.h）
+    ├── policy/     # Dispatch Policy：派发策略定义       （示例：dispatch_policy.h）
+    └── utils/      # 通用工具与常量                      （示例：common_utils.h、layout_utils.h）
 ```
 
 各层职责（自上而下）：

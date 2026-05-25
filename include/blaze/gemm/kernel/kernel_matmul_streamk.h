@@ -25,8 +25,8 @@
 #endif
 #include "lib/matmul_intf.h"
 
-#include "blaze/epilogue/block_epilogue_streamk.h"
-#include "blaze/gemm/block/block_mmad_streamk.h"
+#include "blaze/epilogue/block/block_epilogue_matmul_streamk.h"
+#include "blaze/gemm/block/block_mmad_matmul_streamk.h"
 #include "blaze/gemm/utils/common_utils.h"
 #include "include/tensor_api/tensor.h"
 

@@ -1,5 +1,5 @@
 # Block Epilogue Empty
-> [代码位置](../../../include/blaze/epilogue/block_epilogue_empty.h)
+> [代码位置](../../../../include/blaze/epilogue/block/block_epilogue_empty.h)
 
 ## 功能说明
 空后处理组件，用于不支持后处理操作的矩阵乘 Kernel。作为 `BlockEpilogue` 的默认实现，满足 Kernel 模板参数要求但不执行任何实际计算。
@@ -144,20 +144,20 @@ public:
     struct Arguments {
         float threshold;  // ReLU 参数
     };
-    
+
     __aicore__ inline void Init(Arguments const& args) {
         threshold_ = args.threshold;
     }
-    
+
     __aicore__ inline void Run() {
         AscendC::Relu(outputTensor, inputTensor, threshold_);
     }
-    
+
     __aicore__ inline void operator()(Arguments const& args) {
         Init(args);
         Run();
     }
-    
+
 private:
     float threshold_;
     AscendC::GlobalTensor<float> outputTensor_;

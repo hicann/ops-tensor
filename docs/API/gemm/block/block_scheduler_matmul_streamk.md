@@ -1,5 +1,5 @@
 # Block Scheduler StreamK
-> [代码位置](../../../include/blaze/block/block_scheduler_streamk.h)
+> [代码位置](../../../../include/blaze/gemm/block/block_scheduler_matmul_streamk.h)
 
 ## 功能说明
 StreamK 调度器，支持 DP+SK 混合策略。将问题规模切分为 DP（Data Parallel）模式和 SK（StreamK）模式的 tile，适用于 StreamK Kernel 的 AIC+AIV 双核协同计算场景。
@@ -100,9 +100,9 @@ struct Params {
 
 ### 构造函数
 ```
-__aicore__ inline BlockSchedulerStreamK(const ProblemShape& shape, const Params& params)
+__aicore__ inline BlockSchedulerMatmulStreamK(const ProblemShape& shape, const Params& params)
 ```
-功能：初始化 BlockSchedulerStreamK，计算 DP+SK 混合 tile 切分。
+功能：初始化 BlockSchedulerMatmulStreamK，计算 DP+SK 混合 tile 切分。
 参数说明：
 | 参数 | 类型 | 说明 |
 |------|------|------|
@@ -241,7 +241,7 @@ __aicore__ inline void UpdateMNTileIdx(int64_t tileIdx)
 ### 组件组装
 ```
 using ProblemShape = Shape<int64_t, int64_t, int64_t, int64_t>;
-using BlockScheduler = Blaze::Gemm::Block::BlockSchedulerStreamK<ProblemShape>;
+using BlockScheduler = Blaze::Gemm::Block::BlockSchedulerMatmulStreamK<ProblemShape>;
 ```
 
 ### 参数准备

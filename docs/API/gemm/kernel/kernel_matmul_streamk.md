@@ -1,5 +1,5 @@
 # Kernel Matmul StreamK
-> [代码位置](../../../include/blaze/kernel/kernel_matmul_streamk.h)
+> [代码位置](../../../../include/blaze/gemm/kernel/kernel_matmul_streamk.h)
 
 ## 功能说明
 StreamK 矩阵乘 Kernel，支持 AIC + AIV 双核协同计算。支持 workspace（用于 K 轴切分中间结果）、DP+SK 混合策略、AIC-AIV 跨核同步，适用于大矩阵、高并行度场景。

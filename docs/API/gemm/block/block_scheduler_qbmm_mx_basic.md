@@ -1,5 +1,5 @@
 # Block Scheduler Quant Batch Matmul
-> [代码位置](../../../include/blaze/block/block_scheduler_qbmm.h)
+> [代码位置](../../../../include/blaze/gemm/block/block_scheduler_qbmm.h)
 
 ## 功能说明
 量化 Batch Matmul 调度器，支持多 Batch 维度切分、尾块切分、负载均衡、Z 型扫描。适用于 Quant Batch Matmul MX Kernel 场景，支持 MxFP4/MxFP8 量化数据类型。
@@ -283,16 +283,16 @@ while (scheduler.GetTileIdx(blockCoord)) {
     constexpr auto bQuantMode = QuantBatchMatmul::QuantMode::PERGROUP_MODE;
     constexpr bool weightNz = true;
     auto blockShape = scheduler.GetBlockShape<aQuantMode, bQuantMode, weightNz>(blockCoord);
-    
+
     int64_t singleCoreM = Get<0>(blockShape);
     int64_t singleCoreN = Get<1>(blockShape);
     int64_t mSplitOffset = Get<2>(blockShape);
     int64_t nSplitOffset = Get<3>(blockShape);
-    
+
     // 获取 GM 地址偏移
     int64_t mPos, nPos;
     scheduler.GetTileCoord(blockCoord, mPos, nPos);
-    
+
     // 执行 BlockMmadMX 计算
     // ...
 }
