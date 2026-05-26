@@ -17,7 +17,7 @@
 
 #include "../utils/layout_utils.h"
 #include "../utils/common_utils.h"
-#include "include/tensor_api/tensor.h"
+#include "tensor_api/tensor.h"
 
 namespace Blaze {
 namespace Gemm {

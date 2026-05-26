@@ -22,7 +22,7 @@
 #endif
 #include "../utils/common_utils.h"
 #include "../block/block_scheduler_qbmm.h"
-#include "include/tensor_api/tensor.h"
+#include "tensor_api/tensor.h"
 
 namespace Blaze {
 namespace Gemm {

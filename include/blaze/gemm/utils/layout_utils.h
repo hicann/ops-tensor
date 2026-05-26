@@ -15,7 +15,7 @@
 
 #pragma once
 
-#include "include/tensor_api/tensor.h"
+#include "tensor_api/tensor.h"
 
 namespace Blaze {
 namespace Gemm {

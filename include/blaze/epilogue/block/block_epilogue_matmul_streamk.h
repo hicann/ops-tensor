@@ -22,7 +22,7 @@
 #include "blaze/epilogue/fusion/default_fusion_op.h"
 #include "blaze/gemm/utils/common_utils.h"
 #include "blaze/gemm/policy/dispatch_policy.h"
-#include "include/tensor_api/tensor.h"
+#include "tensor_api/tensor.h"
 
 namespace Blaze {
 namespace Gemm {

@@ -14,7 +14,7 @@
  */
 #pragma once
 
-#include "include/tensor_api/tensor.h"
+#include "tensor_api/tensor.h"
 #include "c_api/asc_simd.h"
 
 using AscendC::Te::C0_ELEMENT;

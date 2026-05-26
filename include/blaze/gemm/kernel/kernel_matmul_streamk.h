@@ -28,7 +28,7 @@
 #include "blaze/epilogue/block/block_epilogue_matmul_streamk.h"
 #include "blaze/gemm/block/block_mmad_matmul_streamk.h"
 #include "blaze/gemm/utils/common_utils.h"
-#include "include/tensor_api/tensor.h"
+#include "tensor_api/tensor.h"
 
 namespace Blaze {
 namespace Gemm {

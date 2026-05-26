@@ -17,6 +17,7 @@
 
 #include "blaze/gemm/policy/dispatch_policy.h"
 #include "blaze/gemm/utils/common_utils.h"
+#include "tensor_api/tensor.h"
 #include "block_mmad.h"
 
 namespace Blaze {
@@ -225,18 +226,13 @@ public:
                     (iter0 + 1 == curKL1Iter && iter1 + 1 == kL0Iter) ? FINAL_ACCUMULATION : NON_FINAL_ACCUMULATION;
                 bool cmatrixInitVal = (iter0 == 0 && iter1 == 0 && (!isBias_ || (isBias_ && kCntIndex != 0)));
                 AscendC::Te::MmadParams mmadParams(curML1, curNL1, curK0, unitFlag, cmatrixInitVal);
+                constexpr auto mmadAtom =
+                    AscendC::Te::MakeMmad(AscendC::Te::MmadOperation{}, AscendC::Te::MmadTraitDefault{});
+
                 if (isBias_ && iter0 == 0 && iter1 == 0 && kCntIndex == 0) {
-                    AscendC::Te::Mmad(
-                        AscendC::Te::MmadAtom<
-                            AscendC::Te::MmadTraits<AscendC::Te::MmadOperation, AscendC::Te::MmadTraitDefault>>{}
-                            .with(mmadParams),
-                        tensorL0C, tensorAL0, tensorBL0, tensorBiasL0);
+                    AscendC::Te::Mmad(mmadAtom.with(mmadParams), tensorL0C, tensorAL0, tensorBL0, tensorBiasL0);
                 } else {
-                    AscendC::Te::Mmad(
-                        AscendC::Te::MmadAtom<
-                            AscendC::Te::MmadTraits<AscendC::Te::MmadOperation, AscendC::Te::MmadTraitDefault>>{}
-                            .with(mmadParams),
-                        tensorL0C, tensorAL0, tensorBL0);
+                    AscendC::Te::Mmad(mmadAtom.with(mmadParams), tensorL0C, tensorAL0, tensorBL0);
                 }
 
                 AscendC::SetFlag<AscendC::HardEvent::M_MTE1>(l0PingPong_ & 0x1);

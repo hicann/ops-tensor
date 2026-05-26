@@ -19,7 +19,7 @@
 #include "blaze/gemm/utils/layout_utils.h"
 #include "blaze/gemm/policy/dispatch_policy.h"
 #include "block_mmad.h"
-#include "include/tensor_api/tensor.h"
+#include "tensor_api/tensor.h"
 
 namespace Blaze {
 namespace Gemm {
@@ -248,6 +248,9 @@ public:
                 AscendC::SetFlag<AscendC::HardEvent::MTE1_M>(static_cast<uint16_t>(mte1Flag));
                 AscendC::WaitFlag<AscendC::HardEvent::MTE1_M>(static_cast<uint16_t>(mte1Flag));
 
+                constexpr auto mmadAtom =
+                    AscendC::Te::MakeMmad(AscendC::Te::MmadOperation{}, AscendC::Te::MmadTraitDefault{});
+
                 // Mmad参数
                 AscendC::Te::MmadParams mmadParams(
                     curM, curN, curK0,
@@ -257,15 +260,9 @@ public:
                     (iter0 == 0 && iter1 == 0 && !isBias_));
                 // 传入自定义Trait类型
                 if (NeedProcessBias(iter0, iter1)) {
-                    AscendC::Te::Mmad(
-                        AscendC::Te::MmadAtom<
-                            AscendC::Te::MmadTraits<AscendC::Te::MmadOperation, AscendC::Te::MmadTraitDefault>>{},
-                        tensorL0C, tensorAL0, tensorBL0, tensorBiasL0, mmadParams);
+                    AscendC::Te::Mmad(mmadAtom.with(mmadParams), tensorL0C, tensorAL0, tensorBL0, tensorBiasL0);
                 } else {
-                    AscendC::Te::Mmad(
-                        AscendC::Te::MmadAtom<
-                            AscendC::Te::MmadTraits<AscendC::Te::MmadOperation, AscendC::Te::MmadTraitDefault>>{},
-                        tensorL0C, tensorAL0, tensorBL0, mmadParams);
+                    AscendC::Te::Mmad(mmadAtom.with(mmadParams), tensorL0C, tensorAL0, tensorBL0);
                 }
 
                 AscendC::SetFlag<AscendC::HardEvent::M_MTE1>(static_cast<uint16_t>(mte1Flag));
@@ -282,7 +279,7 @@ public:
         // 数据搬出到GM
         AscendC::Te::FixpipeParams fixpParams(enableL0cPingPong_ ? 0 : FINAL_ACCUMULATION);
         auto copyL0C2GM = AscendC::Te::MakeCopy(AscendC::Te::CopyL0C2GM{});
-        AscendC::Te::Copy(copyL0C2GM, gmC, tensorL0C, fixpParams);
+        AscendC::Te::Copy(copyL0C2GM.with(fixpParams), gmC, tensorL0C);
 
         if (enableL0cPingPong_) {
             AscendC::SetFlag<AscendC::HardEvent::FIX_M>(l0cPingPong_ & 0x1);

@@ -20,13 +20,13 @@
 #include "utils/base/sys_constants.h"
 #include "utils/common_types.h"
 
-namespace AscendC { 
+namespace AscendC {
 namespace Te {
 
 enum class CacheMode : uint8_t {
-    CACHE_MODE_NORMAL = 0,	 
-    CACHE_MODE_DISABLE = 4,	    
-    CACHE_MODE_LAST, 
+    CACHE_MODE_NORMAL = 0,
+    CACHE_MODE_DISABLE = 4,
+    CACHE_MODE_LAST,
     CACHE_MODE_PERSISTENT
 };
 
@@ -43,20 +43,20 @@ struct MmadTrait {
         disableGemv = disableGemvIn;
         mmadType = mmadTypeIn;
     };
-    
+
     int32_t fmOffset = 0;
     bool kDirectionAlign = false;
     bool cmatrixSource = false;
     bool disableGemv = true;
-    MmadType mmadType = MmadType::NORMAL; 
+    MmadType mmadType = MmadType::NORMAL;
 };
 
 struct MmadParams {
     __aicore__ constexpr MmadParams() {};
 
-    __aicore__ constexpr MmadParams(uint16_t mIn, uint16_t nIn, uint16_t kIn, uint8_t unitFlagIn, bool cmatrixInitValIn) : 
+    __aicore__ constexpr MmadParams(uint16_t mIn, uint16_t nIn, uint16_t kIn, uint8_t unitFlagIn, bool cmatrixInitValIn) :
         m(mIn), n(nIn), k(kIn), unitFlag(unitFlagIn), cmatrixInitVal(cmatrixInitValIn){};
-    
+
     uint16_t m = 0;
     uint16_t n = 0;
     uint16_t k = 0;
@@ -90,8 +90,8 @@ struct FixpipeTrait {
 struct FixpipeParams {
    __aicore__ constexpr FixpipeParams() {};
 
-   __aicore__ constexpr FixpipeParams(uint8_t unitFlagIn, bool subBlockIdIn) : unitFlag(unitFlagIn), subBlockId(subBlockIdIn) {};
-    
+   __aicore__ constexpr FixpipeParams(uint8_t unitFlagIn, bool subBlockIdIn = false) : unitFlag(unitFlagIn), subBlockId(subBlockIdIn) {};
+
     uint8_t unitFlag = 0;
 
     bool subBlockId = false;
@@ -107,7 +107,7 @@ struct LoadDataTrait {
     bool transposed = false;
 };
 
-} // namespace Te 
+} // namespace Te
 } // namespace AscendC
 
 #endif // INCLUDE_TENSOR_API_UTILS_UTILS_H

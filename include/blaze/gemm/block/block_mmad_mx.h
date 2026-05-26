@@ -24,7 +24,7 @@
 #include "../utils/common_utils.h"
 #include "../policy/dispatch_policy.h"
 #include "block_mmad.h"
-#include "include/tensor_api/tensor.h"
+#include "tensor_api/tensor.h"
 #include "../tile/tile_mmad_mx.h"
 #include "../tile/pad_mx_kl1.h"
 
@@ -331,14 +331,18 @@ public:
             auto CopyL12L0A = AscendC::Te::MakeCopy(AscendC::Te::CopyL12L0A{});
             AscendC::Te::Copy(CopyL12L0A, tensorAL0, tensorBlockAL1);
 
+            auto CopyL12L0ScaleA = AscendC::Te::MakeCopy(AscendC::Te::CopyL12L0ScaleA{});
             auto layoutScaleAL0 = AscendC::Te::MakeFrameLayout<AscendC::Te::ZZLayoutPtn, AscendC::Std::Int<SCALE_C0>>(
                 tileL1L0Param.curM, Blaze::Gemm::CeilDiv(curKL0, MXFP_DIVISOR_SIZE) * MXFP_MULTI_BASE_SIZE);
-            auto tensorScaleAL0 =
-                AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<Location::L0A, fp8_e8m0_t>(l0Offset), layoutScaleAL0);
+            auto tensorScaleAL0 = AscendC::Te::MakeTensor(
+                AscendC::Te::MakeMemPtr<Location::L0ScaleA, fp8_e8m0_t>(l0Offset / 16), layoutScaleAL0);
             AscendC::Te::Copy(
-                CopyL12L0A, tensorScaleAL0, tensorBlockScaleAL1,
-                AscendC::Te::MakeCoord(
-                    0, iter1 * Blaze::Gemm::CeilDiv(baseK_, MXFP_DIVISOR_SIZE) * MXFP_MULTI_BASE_SIZE));
+                CopyL12L0ScaleA, tensorScaleAL0,
+                tensorBlockScaleAL1.Slice(
+                    AscendC::Te::MakeCoord(
+                        0, iter1 * Blaze::Gemm::CeilDiv(baseK_, MXFP_DIVISOR_SIZE) * MXFP_MULTI_BASE_SIZE),
+                    AscendC::Te::MakeShape(
+                        tileL1L0Param.curM, Blaze::Gemm::CeilDiv(curKL0, MXFP_DIVISOR_SIZE) * MXFP_MULTI_BASE_SIZE)));
 
             // bias L1->BT
             auto layoutBt = AscendC::Te::MakeFrameLayout<AscendC::Te::NDExtLayoutPtn>(
@@ -360,14 +364,18 @@ public:
             auto CopyL12L0B = AscendC::Te::MakeCopy(AscendC::Te::CopyL12L0B{});
             AscendC::Te::Copy(CopyL12L0B, tensorBL0, tensorBlockBL1);
 
+            auto CopyL12L0ScaleB = AscendC::Te::MakeCopy(AscendC::Te::CopyL12L0ScaleB{});
             auto layoutScaleBL0 = AscendC::Te::MakeFrameLayout<AscendC::Te::NNLayoutPtn, AscendC::Std::Int<SCALE_C0>>(
                 Blaze::Gemm::CeilDiv(curKL0, MXFP_DIVISOR_SIZE) * MXFP_MULTI_BASE_SIZE, tileL1L0Param.curN);
-            auto tensorScaleBL0 =
-                AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<Location::L0B, fp8_e8m0_t>(l0Offset), layoutScaleBL0);
+            auto tensorScaleBL0 = AscendC::Te::MakeTensor(
+                AscendC::Te::MakeMemPtr<Location::L0ScaleB, fp8_e8m0_t>(l0Offset / 16), layoutScaleBL0);
             AscendC::Te::Copy(
-                CopyL12L0B, tensorScaleBL0, tensorBlockScaleBL1,
-                AscendC::Te::MakeCoord(
-                    iter1 * Blaze::Gemm::CeilDiv(baseK_, MXFP_DIVISOR_SIZE) * MXFP_MULTI_BASE_SIZE, 0));
+                CopyL12L0ScaleB, tensorScaleBL0,
+                tensorBlockScaleBL1.Slice(
+                    AscendC::Te::MakeCoord(
+                        iter1 * Blaze::Gemm::CeilDiv(baseK_, MXFP_DIVISOR_SIZE) * MXFP_MULTI_BASE_SIZE, 0),
+                    AscendC::Te::MakeShape(
+                        Blaze::Gemm::CeilDiv(curKL0, MXFP_DIVISOR_SIZE) * MXFP_MULTI_BASE_SIZE, tileL1L0Param.curN)));
 
             AscendC::SetFlag<AscendC::HardEvent::MTE1_M>(l0PingPong_ & 0x1);
             AscendC::WaitFlag<AscendC::HardEvent::MTE1_M>(l0PingPong_ & 0x1);
@@ -445,11 +453,11 @@ public:
         if constexpr (AscendC::Std::is_same_v<AscendC::Te::GetMemLocation<TensorC>, AscendC::Te::Location::UB>) {
             // C L0C->UB
             auto CopyL0C2UB = AscendC::Te::MakeCopy(AscendC::Te::CopyL0C2UB{});
-            AscendC::Te::Copy(CopyL0C2UB, gmC, tensorL0C, AscendC::Te::FixpipeParams{3});
+            AscendC::Te::Copy(CopyL0C2UB.with(AscendC::Te::FixpipeParams(3)), gmC, tensorL0C);
         } else {
             // C L0C->GM
             auto CopyL0C2GM = AscendC::Te::MakeCopy(AscendC::Te::CopyL0C2GM{});
-            AscendC::Te::Copy(CopyL0C2GM, gmC, tensorL0C, AscendC::Te::FixpipeParams{3});
+            AscendC::Te::Copy(CopyL0C2GM.with(AscendC::Te::FixpipeParams(3)), gmC, tensorL0C);
         }
         if (enableL0cPingPong_) {
             l0cPingPong_++;
