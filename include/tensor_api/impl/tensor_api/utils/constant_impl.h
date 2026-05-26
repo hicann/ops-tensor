@@ -28,27 +28,27 @@
 namespace AscendC {
 namespace Te {
 using Std::Int;
-using Std::_0;
-using Std::_1;
-using Std::_2;
-using Std::_3;
-using Std::_4;
-using Std::_5;
-using Std::_6;
-using Std::_7;
-using Std::_8;
-using Std::_9;
-using Std::_10;
-using Std::_16;
-using Std::_24;
-using Std::_32;
-using Std::_64;
-using Std::_128;
-using Std::_256;
-using Std::_512;
-using Std::_1024;
-using Std::_2048;
-using Std::_4096;
+using _0 = Std::Int<0>;
+using _1 = Std::Int<1>;
+using _2 = Std::Int<2>;
+using _3 = Std::Int<3>;
+using _4 = Std::Int<4>;
+using _5 = Std::Int<5>;
+using _6 = Std::Int<6>;
+using _7 = Std::Int<7>;
+using _8 = Std::Int<8>;
+using _9 = Std::Int<9>;
+using _10 = Std::Int<10>;
+using _16 = Std::Int<16>;
+using _24 = Std::Int<24>;
+using _32 = Std::Int<32>;
+using _64 = Std::Int<64>;
+using _128 = Std::Int<128>;
+using _256 = Std::Int<256>;
+using _512 = Std::Int<512>;
+using _1024 = Std::Int<1024>;
+using _2048 = Std::Int<2048>;
+using _4096 = Std::Int<4096>;
 
 constexpr size_t TWO_DIM_DATA = 2;
 constexpr size_t FOUR_DIM_DATA = 4;
