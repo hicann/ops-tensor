@@ -9,7 +9,7 @@
  */
 
 /*!
- * \file block_mmad_basic.h
+ * \file block_mmad_matmul_basic.h
  * \brief
  */
 

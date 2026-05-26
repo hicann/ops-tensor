@@ -171,8 +171,8 @@ blaze/
 │       │
 │       ├── block/               # Block 层组件
 │       │   ├── block_mmad.h          # BlockMmad 基类
-│       │   ├── block_mmad_basic.h    # Basic BlockMmad
-│       │   ├── block_mmad_streamk.h  # StreamK BlockMmad
+│       │   ├── block_mmad_matmul_basic.h    # Matmul Basic BlockMmad
+│       │   ├── block_mmad_matmul_streamk.h  # Matmul StreamK BlockMmad
 │       │   ├── block_mmad_mx.h       # MX BlockMmad
 │       │   ├── block_scheduler_matmul_basic.h
 │       │   ├── block_scheduler_matmul_streamk.h

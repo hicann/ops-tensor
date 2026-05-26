@@ -1,5 +1,5 @@
 # Block Mmad Basic
-> [代码位置](../../../../include/blaze/gemm/block/block_mmad_basic.h)
+> [代码位置](../../../../include/blaze/gemm/block/block_mmad_matmul_basic.h)
 
 ## 功能说明
 基础矩阵乘 Block，基于 Tensor API 实现，仅支持 AIC 计算。支持 L1/L0C 可配置双缓冲、Bias 加法，适用于 Basic Kernel 场景。
