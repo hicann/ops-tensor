@@ -9,7 +9,7 @@
  */
 
 /*!
- * \file block_mmad_mx.h
+ * \file block_mmad_qbmm_mx.h
  * \brief
  */
 
@@ -20,13 +20,13 @@
 #include "kernel_operator.h"
 #include "kernel_operator_intf.h"
 #endif
-#include "../utils/layout_utils.h"
-#include "../utils/common_utils.h"
-#include "../policy/dispatch_policy.h"
+#include "blaze/gemm/utils/layout_utils.h"
+#include "blaze/gemm/utils/common_utils.h"
+#include "blaze/gemm/policy/dispatch_policy.h"
 #include "block_mmad.h"
 #include "tensor_api/tensor.h"
-#include "../tile/tile_mmad_mx.h"
-#include "../tile/pad_mx_kl1.h"
+#include "blaze/gemm/tile/tile_mmad_mx.h"
+#include "blaze/gemm/tile/pad_mx_kl1.h"
 
 namespace Blaze {
 namespace Gemm {
@@ -35,13 +35,11 @@ namespace Block {
 using namespace AscendC::Te;
 
 template <
-    class DispatchPolicy_, class AType_, class LayoutA_, class BType_, class LayoutB_, class CType_, class LayoutC_,
-    class BiasType_, class LayoutBias_>
+    uint64_t A_FULL_LOAD_MODE, bool ATOMIC_ADD, class AType_, class LayoutA_, class BType_, class LayoutB_,
+    class CType_, class LayoutC_, class BiasType_, class LayoutBias_>
 class BlockMmad<
-    DispatchPolicy_, AType_, LayoutA_, BType_, LayoutB_, CType_, LayoutC_, BiasType_, LayoutBias_,
-    AscendC::Std::enable_if_t<
-        AscendC::Std::is_base_of_v<MatmulWithScaleMx<>, DispatchPolicy_> ||
-        AscendC::Std::is_base_of_v<MatmulWithScaleMx<A_FULL_LOAD_MODE>, DispatchPolicy_>>> {
+    MatmulWithScaleMx<A_FULL_LOAD_MODE, ATOMIC_ADD>, AType_, LayoutA_, BType_, LayoutB_, CType_, LayoutC_, BiasType_,
+    LayoutBias_> {
 public:
     using AType = AType_;
     using BType = BType_;
@@ -52,11 +50,9 @@ public:
     using MxL0AType = typename AscendC::GetL0DataType<AType, true>::Type;
     using MxL0BType = typename AscendC::GetL0DataType<BType, true>::Type;
     using BiasType = BiasType_;
-    using DispatchPolicy = DispatchPolicy_;
-    using ProblemShape = AscendC::Te::Shape<uint64_t, uint64_t, uint64_t, uint64_t>;
+    using DispatchPolicy = MatmulWithScaleMx<A_FULL_LOAD_MODE, ATOMIC_ADD>;
+    using ProblemShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
     using BlockShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
-    uint64_t m_;
-    uint64_t n_;
     uint64_t k_;
     uint64_t l1BufNum_{1};
     uint64_t kL1Iter_{0};
@@ -148,8 +144,6 @@ public:
         const ProblemShape& problemShape, const BlockShape& l0TileShape, const L1Params& l1Params, bool isBias,
         bool dbL0C)
     {
-        m_ = AscendC::Te::Get<IDX_M_IDX>(problemShape);
-        n_ = AscendC::Te::Get<IDX_N_IDX>(problemShape);
         k_ = AscendC::Te::Get<IDX_K_IDX>(problemShape);
         kL1_ = l1Params.kL1;
         scaleKL1_ = l1Params.scaleKL1;
@@ -335,7 +329,7 @@ public:
             auto layoutScaleAL0 = AscendC::Te::MakeFrameLayout<AscendC::Te::ZZLayoutPtn, AscendC::Std::Int<SCALE_C0>>(
                 tileL1L0Param.curM, Blaze::Gemm::CeilDiv(curKL0, MXFP_DIVISOR_SIZE) * MXFP_MULTI_BASE_SIZE);
             auto tensorScaleAL0 = AscendC::Te::MakeTensor(
-                AscendC::Te::MakeMemPtr<Location::L0ScaleA, fp8_e8m0_t>(l0Offset / 16), layoutScaleAL0);
+                AscendC::Te::MakeMemPtr<Location::L0ScaleA, fp8_e8m0_t>(l0Offset >> 4), layoutScaleAL0);
             AscendC::Te::Copy(
                 CopyL12L0ScaleA, tensorScaleAL0,
                 tensorBlockScaleAL1.Slice(
@@ -368,7 +362,7 @@ public:
             auto layoutScaleBL0 = AscendC::Te::MakeFrameLayout<AscendC::Te::NNLayoutPtn, AscendC::Std::Int<SCALE_C0>>(
                 Blaze::Gemm::CeilDiv(curKL0, MXFP_DIVISOR_SIZE) * MXFP_MULTI_BASE_SIZE, tileL1L0Param.curN);
             auto tensorScaleBL0 = AscendC::Te::MakeTensor(
-                AscendC::Te::MakeMemPtr<Location::L0ScaleB, fp8_e8m0_t>(l0Offset / 16), layoutScaleBL0);
+                AscendC::Te::MakeMemPtr<Location::L0ScaleB, fp8_e8m0_t>(l0Offset >> 4), layoutScaleBL0);
             AscendC::Te::Copy(
                 CopyL12L0ScaleB, tensorScaleBL0,
                 tensorBlockScaleBL1.Slice(
@@ -483,12 +477,14 @@ private:
         params.cmatrixInitVal = (iter0 == 0 && iter1 == 0 && !isBias_);
         if (NeedBias(iter0, iter1)) {
             AscendC::Te::Mmad(
-                AscendC::Te::MmadAtom<AscendC::Te::MmadTraits<AscendC::Te::MmadOperation, AscendC::Te::MmadTraitMX>>{}
+                AscendC::Te::MmadAtom<
+                    AscendC::Te::MmadTraits<AscendC::Te::MmadOperation, Blaze::Gemm::Tile::MmadTraitMX>>{}
                     .with(params),
                 tensorL0C, tensorAL0, tensorBL0, tensorBt);
         } else {
             AscendC::Te::Mmad(
-                AscendC::Te::MmadAtom<AscendC::Te::MmadTraits<AscendC::Te::MmadOperation, AscendC::Te::MmadTraitMX>>{}
+                AscendC::Te::MmadAtom<
+                    AscendC::Te::MmadTraits<AscendC::Te::MmadOperation, Blaze::Gemm::Tile::MmadTraitMX>>{}
                     .with(params),
                 tensorL0C, tensorAL0, tensorBL0);
         }

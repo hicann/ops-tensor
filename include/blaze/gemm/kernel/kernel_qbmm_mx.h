@@ -14,36 +14,42 @@
  */
 
 #pragma once
+
+#include "kernel_universal.h"
 #if ASC_DEVKIT_MAJOR >= 9
 #include "kernel_basic_intf.h"
 #else
 #include "kernel_operator.h"
 #include "kernel_operator_intf.h"
 #endif
-#include "../utils/common_utils.h"
-#include "../block/block_scheduler_qbmm.h"
+#include "blaze/gemm/utils/common_utils.h"
+#include "blaze/gemm/block/block_scheduler_qbmm.h"
 #include "tensor_api/tensor.h"
 
 namespace Blaze {
 namespace Gemm {
 namespace Kernel {
 #define QBMM_MX_KERNEL_CLASS_TEM_PARAMS \
-    template <class ProblemShape, class BlockMmad, class BlockEpilogue, class BlockScheduler, bool isAtomicAdd>
-#define QBMM_MX_KERNEL_FUN_TEM_PARAMS ProblemShape, BlockMmad, BlockEpilogue, BlockScheduler, isAtomicAdd
+    template <class ProblemShape, class BlockMmad, class BlockEpilogue, class BlockScheduler>
+#define QBMM_MX_KERNEL_TEM_PARAMS                           \
+    ProblemShape, BlockMmad, BlockEpilogue, BlockScheduler, \
+        AscendC::Std::enable_if_t<                          \
+            AscendC::Std::is_same_v<KernelMmadWithScaleMx, typename BlockMmad::DispatchPolicy::ScheduleType>>
 
 using namespace AscendC;
 
 QBMM_MX_KERNEL_CLASS_TEM_PARAMS
-class QuantBatchMmMx {
+class GemmUniversal<QBMM_MX_KERNEL_TEM_PARAMS> {
 public:
-    __aicore__ inline QuantBatchMmMx()
+    __aicore__ inline GemmUniversal()
     {}
-    __aicore__ inline ~QuantBatchMmMx()
+    __aicore__ inline ~GemmUniversal()
     {}
 
     static constexpr bool weightNz = BlockMmad::weightNz;
     static constexpr bool transA = BlockMmad::transA;
     static constexpr bool transB = BlockMmad::transB;
+    static constexpr bool isAtomicAdd = BlockMmad::DispatchPolicy::isAtomicAdd;
 
     using BlockMmadParams = typename BlockMmad::Params;
     using L1Params = typename BlockMmad::L1Params;
@@ -54,7 +60,8 @@ public:
     using LayoutA = typename BlockMmad::LayoutA;
     using LayoutB = typename BlockMmad::LayoutB;
     using LayoutC = typename BlockMmad::LayoutC;
-    static constexpr uint64_t C0_SIZE = IsFp4<AType>() ? C0_SIZE_B4 : C0_SIZE_B8;
+    static constexpr int64_t C0_SIZE = IsFp4<AType>() ? C0_SIZE_B4 : C0_SIZE_B8;
+    static constexpr int64_t kCacheLineAlignMask = IsFp4<AType>() ? 0xff : 0x7f;
     static constexpr int32_t SCALE_C0 = 2;
 
     using BlockShape = Te::Shape<int64_t, int64_t, int64_t, int64_t>;
@@ -119,8 +126,12 @@ private:
 
     template <typename TensorB, typename TensorScaleB, typename TensorC>
     __aicore__ inline void SetL2Cache(
-        const ProblemShape& problemShape, uint64_t curBaseM, uint64_t baseN, TensorB& gmB, TensorScaleB& gmScaleB,
-        TensorC& gmC);
+        const ProblemShape& problemShape, uint64_t curBaseM, uint64_t baseN, uint64_t scaleKL1, TensorB& gmB,
+        TensorScaleB& gmScaleB, TensorC& gmC);
+
+    template <typename TensorScaleB>
+    __aicore__ inline void SetScaleL2Cache(
+        const ProblemShape& problemShape, uint64_t baseN, uint64_t scaleKL1, TensorScaleB& gmScaleB);
 
 private:
     BlockMmad mmadOp_;
@@ -138,11 +149,12 @@ private:
     uint64_t batchBOffset_{0};
     bool isBiasThreeDim_{false};
     bool isBias_{false};
+    bool isSameBatch_{false};
     bool needUpdateTail_{false};
 };
 
 QBMM_MX_KERNEL_CLASS_TEM_PARAMS
-__aicore__ inline void QuantBatchMmMx<QBMM_MX_KERNEL_FUN_TEM_PARAMS>::Run(const Params& params)
+__aicore__ inline void GemmUniversal<QBMM_MX_KERNEL_TEM_PARAMS>::Run(const Params& params)
 {
     if constexpr (isAtomicAdd) {
         AscendC::SetAtomicAdd<float>();
@@ -166,46 +178,69 @@ __aicore__ inline void QuantBatchMmMx<QBMM_MX_KERNEL_FUN_TEM_PARAMS>::Run(const 
 }
 
 QBMM_MX_KERNEL_CLASS_TEM_PARAMS
-template <typename TensorB, typename TensorScaleB, typename TensorC>
-__aicore__ inline void QuantBatchMmMx<QBMM_MX_KERNEL_FUN_TEM_PARAMS>::SetL2Cache(
-    const ProblemShape& problemShape, uint64_t curBaseM, uint64_t baseN, TensorB& gmB, TensorScaleB& gmScaleB,
-    TensorC& gmC)
+template <typename TensorScaleB>
+__aicore__ inline void GemmUniversal<QBMM_MX_KERNEL_TEM_PARAMS>::SetScaleL2Cache(
+    const ProblemShape& problemShape, uint64_t baseN, uint64_t scaleKL1, TensorScaleB& gmScaleB)
 {
-    if constexpr (weightNz) {
-        if (curBaseM >= Te::Get<MNK_M>(problemShape)) {
-            gmB.SetL2CacheHint(Te::CacheMode::CACHE_MODE_DISABLE);
-            gmScaleB.SetL2CacheHint(Te::CacheMode::CACHE_MODE_DISABLE);
-        } else {
-            gmB.SetL2CacheHint(Te::CacheMode::CACHE_MODE_NORMAL);
-            gmScaleB.SetL2CacheHint(Te::CacheMode::CACHE_MODE_NORMAL);
-        }
-    } else {
-        if constexpr (transB) {
-            if (curBaseM >= Te::Get<MNK_M>(problemShape) && (Te::Get<MNK_K>(problemShape) & 0xff) == 0) {
-                gmB.SetL2CacheHint(Te::CacheMode::CACHE_MODE_DISABLE);
-                gmScaleB.SetL2CacheHint(Te::CacheMode::CACHE_MODE_DISABLE);
-            } else {
-                gmB.SetL2CacheHint(Te::CacheMode::CACHE_MODE_NORMAL);
-                gmScaleB.SetL2CacheHint(Te::CacheMode::CACHE_MODE_NORMAL);
-            }
-        } else {
-            if (curBaseM >= Te::Get<MNK_M>(problemShape) && (Te::Get<MNK_N>(problemShape) & 0xff) == 0 &&
-                (baseN & 0xff) == 0) {
-                gmB.SetL2CacheHint(Te::CacheMode::CACHE_MODE_DISABLE);
-                gmScaleB.SetL2CacheHint(Te::CacheMode::CACHE_MODE_DISABLE);
-            } else {
-                gmB.SetL2CacheHint(Te::CacheMode::CACHE_MODE_NORMAL);
-                gmScaleB.SetL2CacheHint(Te::CacheMode::CACHE_MODE_NORMAL);
-            }
-        }
+    if (Te::Get<MNK_B>(problemShape) != 1) {
+        return;
     }
-    if constexpr (isAtomicAdd) {
-        gmC.SetL2CacheHint(Te::CacheMode::CACHE_MODE_DISABLE);
+    if constexpr (transB) {
+        const int64_t scaleKRowBytes =
+            Blaze::Gemm::CeilDiv(Te::Get<MNK_K>(problemShape), static_cast<int64_t>(MXFP_DIVISOR_SIZE)) *
+            MXFP_MULTI_BASE_SIZE;
+        const int64_t scaleKL1RowBytes = Blaze::Gemm::CeilDiv(scaleKL1, MXFP_DIVISOR_SIZE) * MXFP_MULTI_BASE_SIZE;
+        // 0x7f: 128B cache line alignment for mx scale GM streaming
+        const bool scaleAlignForL2Stream = (scaleKRowBytes & 0x7f) == 0 && (scaleKL1RowBytes & 0x7f) == 0;
+        gmScaleB.SetL2CacheHint(
+            scaleAlignForL2Stream ? Te::CacheMode::CACHE_MODE_DISABLE : Te::CacheMode::CACHE_MODE_NORMAL);
+    } else {
+        const int64_t scaleNStrideBytes = Te::Get<MNK_N>(problemShape) * MXFP_MULTI_BASE_SIZE;
+        const int64_t scaleBaseNStrideBytes = baseN * MXFP_MULTI_BASE_SIZE;
+        // 0x7f: 128B cache line alignment for mx scale GM streaming
+        const bool scaleAlignForL2Stream = (scaleNStrideBytes & 0x7f) == 0 && (scaleBaseNStrideBytes & 0x7f) == 0;
+        gmScaleB.SetL2CacheHint(
+            scaleAlignForL2Stream ? Te::CacheMode::CACHE_MODE_DISABLE : Te::CacheMode::CACHE_MODE_NORMAL);
     }
 }
 
 QBMM_MX_KERNEL_CLASS_TEM_PARAMS
-__aicore__ inline void QuantBatchMmMx<QBMM_MX_KERNEL_FUN_TEM_PARAMS>::Init(const Params& params)
+template <typename TensorB, typename TensorScaleB, typename TensorC>
+__aicore__ inline void GemmUniversal<QBMM_MX_KERNEL_TEM_PARAMS>::SetL2Cache(
+    const ProblemShape& problemShape, uint64_t curBaseM, uint64_t baseN, uint64_t scaleKL1, TensorB& gmB,
+    TensorScaleB& gmScaleB, TensorC& gmC)
+{
+    if constexpr (isAtomicAdd) {
+        gmC.SetL2CacheHint(Te::CacheMode::CACHE_MODE_DISABLE);
+    }
+
+    const bool fullMTile = curBaseM >= Te::Get<MNK_M>(problemShape);
+    if (!(isSameBatch_ && fullMTile)) {
+        return;
+    }
+
+    SetScaleL2Cache(problemShape, baseN, scaleKL1, gmScaleB);
+
+    if constexpr (weightNz) {
+        gmB.SetL2CacheHint(Te::CacheMode::CACHE_MODE_DISABLE);
+    } else {
+        // 0xff: 256 cache line alignment for FP4 weight GM streaming
+        // 0x7f: 128 cache line alignment for FP8 weight GM streaming
+        if constexpr (transB) {
+            bool bAlignForL2Stream = (Te::Get<MNK_K>(problemShape) & kCacheLineAlignMask) == 0;
+            gmB.SetL2CacheHint(
+                bAlignForL2Stream ? Te::CacheMode::CACHE_MODE_DISABLE : Te::CacheMode::CACHE_MODE_NORMAL);
+        } else {
+            bool bAlignForL2Stream =
+                (Te::Get<MNK_N>(problemShape) & kCacheLineAlignMask) == 0 && (baseN & kCacheLineAlignMask) == 0;
+            gmB.SetL2CacheHint(
+                bAlignForL2Stream ? Te::CacheMode::CACHE_MODE_DISABLE : Te::CacheMode::CACHE_MODE_NORMAL);
+        }
+    }
+}
+
+QBMM_MX_KERNEL_CLASS_TEM_PARAMS
+__aicore__ inline void GemmUniversal<QBMM_MX_KERNEL_TEM_PARAMS>::Init(const Params& params)
 {
     if ASCEND_IS_AIV {
         return;
@@ -216,12 +251,17 @@ __aicore__ inline void QuantBatchMmMx<QBMM_MX_KERNEL_FUN_TEM_PARAMS>::Init(const
         }
         isBias_ = true;
     }
-
+    if (params.qbmmParams.batchA1 == params.qbmmParams.batchB1 &&
+        params.qbmmParams.batchA2 == params.qbmmParams.batchB2 &&
+        params.qbmmParams.batchA3 == params.qbmmParams.batchB3 &&
+        params.qbmmParams.batchA4 == params.qbmmParams.batchB4) {
+        isSameBatch_ = true;
+    }
     ResetGmAddr(params);
 }
 
 QBMM_MX_KERNEL_CLASS_TEM_PARAMS
-__aicore__ inline void QuantBatchMmMx<QBMM_MX_KERNEL_FUN_TEM_PARAMS>::ResetGmAddr(const Params& params)
+__aicore__ inline void GemmUniversal<QBMM_MX_KERNEL_TEM_PARAMS>::ResetGmAddr(const Params& params)
 {
     if ASCEND_IS_AIV {
         return;
@@ -238,7 +278,7 @@ __aicore__ inline void QuantBatchMmMx<QBMM_MX_KERNEL_FUN_TEM_PARAMS>::ResetGmAdd
 }
 
 QBMM_MX_KERNEL_CLASS_TEM_PARAMS
-__aicore__ inline void QuantBatchMmMx<QBMM_MX_KERNEL_FUN_TEM_PARAMS>::ProcessWithBatch(
+__aicore__ inline void GemmUniversal<QBMM_MX_KERNEL_TEM_PARAMS>::ProcessWithBatch(
     const Params& params, BlockScheduler& bs)
 {
     uint64_t batchC3C4 = static_cast<uint64_t>(params.qbmmParams.batchC3) * params.qbmmParams.batchC4;
@@ -299,7 +339,7 @@ __aicore__ inline void QuantBatchMmMx<QBMM_MX_KERNEL_FUN_TEM_PARAMS>::ProcessWit
 }
 
 QBMM_MX_KERNEL_CLASS_TEM_PARAMS
-__aicore__ inline void QuantBatchMmMx<QBMM_MX_KERNEL_FUN_TEM_PARAMS>::AddBatchOffset(const Params& params)
+__aicore__ inline void GemmUniversal<QBMM_MX_KERNEL_TEM_PARAMS>::AddBatchOffset(const Params& params)
 {
     ResetGmAddr(params);
     constexpr uint64_t sizeShift = IsFp4<AType>() ? 1 : 0;
@@ -307,15 +347,15 @@ __aicore__ inline void QuantBatchMmMx<QBMM_MX_KERNEL_FUN_TEM_PARAMS>::AddBatchOf
         (batchAOffset_ * Te::Get<MNK_M>(params.problemShape) * Te::Get<MNK_K>(params.problemShape)) >> sizeShift;
     if constexpr (weightNz) {
         if constexpr (transB) {
-            bGmAddr_ +=
-                (batchBOffset_ * Blaze::Gemm::CeilDiv(Te::Get<MNK_K>(params.problemShape), C0_SIZE) *
-                 Blaze::Gemm::CeilDiv(Te::Get<MNK_N>(params.problemShape), BLOCK_CUBE) * BLOCK_CUBE * C0_SIZE) >>
-                sizeShift;
+            bGmAddr_ += (batchBOffset_ * Blaze::Gemm::CeilDiv(Te::Get<MNK_K>(params.problemShape), C0_SIZE) *
+                         Blaze::Gemm::CeilDiv(Te::Get<MNK_N>(params.problemShape), static_cast<int64_t>(BLOCK_CUBE)) *
+                         BLOCK_CUBE * C0_SIZE) >>
+                        sizeShift;
         } else {
-            bGmAddr_ +=
-                (batchBOffset_ * Blaze::Gemm::CeilDiv(Te::Get<MNK_N>(params.problemShape), C0_SIZE) *
-                 Blaze::Gemm::CeilDiv(Te::Get<MNK_K>(params.problemShape), BLOCK_CUBE) * BLOCK_CUBE * C0_SIZE) >>
-                sizeShift;
+            bGmAddr_ += (batchBOffset_ * Blaze::Gemm::CeilDiv(Te::Get<MNK_N>(params.problemShape), C0_SIZE) *
+                         Blaze::Gemm::CeilDiv(Te::Get<MNK_K>(params.problemShape), static_cast<int64_t>(BLOCK_CUBE)) *
+                         BLOCK_CUBE * C0_SIZE) >>
+                        sizeShift;
         }
     } else {
         bGmAddr_ +=
@@ -328,11 +368,12 @@ __aicore__ inline void QuantBatchMmMx<QBMM_MX_KERNEL_FUN_TEM_PARAMS>::AddBatchOf
 }
 
 QBMM_MX_KERNEL_CLASS_TEM_PARAMS
-__aicore__ inline void QuantBatchMmMx<QBMM_MX_KERNEL_FUN_TEM_PARAMS>::ProcessSingleBatch(
+__aicore__ inline void GemmUniversal<QBMM_MX_KERNEL_TEM_PARAMS>::ProcessSingleBatch(
     const Params& params, BlockScheduler& bs, uint64_t restBatch, bool isTailRound)
 {
     auto scaleKLen =
-        Blaze::Gemm::CeilDiv(Te::Get<MNK_K>(params.problemShape), MXFP_DIVISOR_SIZE) * MXFP_MULTI_BASE_SIZE;
+        Blaze::Gemm::CeilDiv(Te::Get<MNK_K>(params.problemShape), static_cast<int64_t>(MXFP_DIVISOR_SIZE)) *
+        MXFP_MULTI_BASE_SIZE;
     auto layoutA = MakeLayoutA{}(Te::Get<MNK_M>(params.problemShape), Te::Get<MNK_K>(params.problemShape));
     auto layoutScaleA = MakeLayoutScaleA{}(Te::Get<MNK_M>(params.problemShape), scaleKLen);
     auto layoutB = MakeLayoutB{}(Te::Get<MNK_K>(params.problemShape), Te::Get<MNK_N>(params.problemShape));
@@ -357,7 +398,9 @@ __aicore__ inline void QuantBatchMmMx<QBMM_MX_KERNEL_FUN_TEM_PARAMS>::ProcessSin
         needUpdateTail_ = true;
         bs.UpdateTailTile(mTailTile, nTailTile);
     }
-    SetL2Cache(params.problemShape, params.qbmmParams.baseM, params.qbmmParams.baseN, gmB, gmScaleB, gmC);
+    SetL2Cache(
+        params.problemShape, params.qbmmParams.baseM, params.qbmmParams.baseN, params.l1Params.scaleKL1, gmB, gmScaleB,
+        gmC);
 
     int64_t mPos = 0L;
     int64_t nPos = 0L;

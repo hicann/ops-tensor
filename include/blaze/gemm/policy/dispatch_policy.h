@@ -17,7 +17,7 @@
 namespace Blaze {
 namespace Gemm {
 /* block schedule policies */
-struct KernelMmadWithScale {}; // Multi-block with scale
+struct KernelMmadWithScaleMx {}; // Multi-block with Mx scale
 struct KernelMultiBlockStreamK {}; // Multi-tile transfer with K-axis spliting and caching
 struct KernelMmadMultiBlockBasic {}; // Multi-tile basic
 enum class MatMulL0C2Out : std::uint8_t {
@@ -30,10 +30,11 @@ enum class MatMulL0C2Out : std::uint8_t {
  * @struct MatmulWithScaleMx
  * @brief Mx Matrix multiplication with scaleA and scaleB
  */
-template <uint64_t FULL_LOAD_MODE_ = 0>
+template <uint64_t FULL_LOAD_MODE_ = 0, bool ATOMIC_ADD = false>
 struct MatmulWithScaleMx {
-    using ScheduleType = KernelMmadWithScale;
+    using ScheduleType = KernelMmadWithScaleMx;
     constexpr static uint64_t fullLoadMode = FULL_LOAD_MODE_;
+    constexpr static bool isAtomicAdd = ATOMIC_ADD;
 };
 
 /**
@@ -69,4 +70,3 @@ struct MatmulMultiBlockBasic {
 
 } // namespace Gemm
 } // namespace Blaze
-

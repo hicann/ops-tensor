@@ -16,18 +16,13 @@
 
 #include "tensor_api/tensor.h"
 
-namespace AscendC {
-namespace Te {
+namespace Blaze::Gemm::Tile {
 
-constexpr MmadTrait MX_MMAD_TRAIT = MmadTrait{0, false, false, true, MmadType::MX};
+constexpr AscendC::Te::MmadTrait MX_MMAD_TRAIT =
+    AscendC::Te::MmadTrait{0, false, false, true, AscendC::Te::MmadType::MX};
 struct MmadTraitMX {
-    using TraitType = MmadTrait;
+    using TraitType = AscendC::Te::MmadTrait;
     static constexpr const TraitType value = MX_MMAD_TRAIT;
 };
 
-template <>
-struct MmadTraits<MmadOperation, MmadTraitMX>
-    : public MmadTraits<MmadOperation, MmadTraitDefault, MmadOpWith, MmadTraitMX> {};
-
-} // namespace Te
-} // namespace AscendC
+} // namespace Blaze::Gemm::Tile

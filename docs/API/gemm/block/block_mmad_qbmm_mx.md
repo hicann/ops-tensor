@@ -1,5 +1,5 @@
 # Block Mmad Mx
-> [代码位置](../../../../include/blaze/gemm/block/block_mmad_mx.h)
+> [代码位置](../../../../include/blaze/gemm/block/block_mmad_qbmm_mx.h)
 
 ## 功能说明
 MX 量化矩阵乘 Block，基于 Tensor API 实现，仅支持 AIC 计算。支持 MxFP4/MxFP8 量化、Scale 因子处理（ScaleA + ScaleB）、L1/L0 双缓冲优化，适用于量化 Batch Matmul Kernel 场景。

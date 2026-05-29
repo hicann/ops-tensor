@@ -6,7 +6,7 @@
 | 组件名 | 描述 |
 | :----------------------------------------------------------- | :------: |
 | [block_mmad_matmul_basic](./block_mmad_matmul_basic.md) | 基础矩阵乘 Block，基于 Tensor API，支持 L1/L0 双缓冲 |
-| [block_mmad_qbmm_mx_basic](./block_mmad_qbmm_mx_basic.md) | MX 量化矩阵乘 Block，支持 Scale 因子、MxFP4/MxFP8 量化 |
+| [block_mmad_qbmm_mx](./block_mmad_qbmm_mx.md) | MX 量化矩阵乘 Block，支持 Scale 因子、MxFP4/MxFP8 量化 |
 | [block_mmad_matmul_streamk](./block_mmad_matmul_streamk.md) | StreamK 矩阵乘 Block，支持 workspace 输出、K 轴切分 |
 
 ### BlockScheduler（任务调度）
