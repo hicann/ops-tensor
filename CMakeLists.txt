@@ -73,6 +73,7 @@ target_include_directories(${OPS_TENSOR} PUBLIC
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/lib
     ${ASCEND_HOME_PATH}/include               # acl.h 等核心头文件
+    ${ASCEND_HOME_PATH}/include/op_common/
     ${ASCEND_HOME_PATH}/pkg_inc/op_common/    # ASCEND 公共操作
     ${ASCEND_HOME_PATH}/pkg_inc/base/         # ASCEND 基础类型
     ${ASCEND_HOME_PATH}/pkg_inc/              # ASCEND 头文件

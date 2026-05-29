@@ -52,6 +52,7 @@ target_include_directories(${OPS_TENSOR}_framework PUBLIC
 # 设置编译选项
 target_compile_options(${OPS_TENSOR}_framework PRIVATE
     $<$<COMPILE_LANGUAGE:ASC>:--npu-arch=${ASCEND_NPU_ARCH}>
+    -fPIC
 )
 
 message(STATUS "Framework library '${OPS_TENSOR}_framework' configured successfully")
