@@ -9,7 +9,7 @@
  */
 
 /*!
- * \file kernel_matmul_basic.h
+ * \file kernel_batch_matmul_broadcast.h
  * \brief
  */
 
@@ -39,7 +39,7 @@ template <class ProblemShape_, class BlockMmad_, class BlockEpilogue_, class Blo
 class GemmUniversal<
     ProblemShape_, BlockMmad_, BlockEpilogue_, BlockScheduler_,
     AscendC::Std::enable_if_t<
-        AscendC::Std::is_same_v<KernelMmadMultiBlockBasic, typename BlockMmad_::DispatchPolicy::ScheduleType>>> {
+        AscendC::Std::is_same_v<KernelMmadMultiBlockBmmBroadcast, typename BlockMmad_::DispatchPolicy::ScheduleType>>> {
 public:
     __aicore__ inline GemmUniversal()
     {}
@@ -85,15 +85,33 @@ public:
     __gm__ BiasType* biasGmAddr_ = nullptr; // 可选输入，直接初始化
 
     uint64_t curBatchIdx_ = {0};
+    uint64_t batchAIndex_ = {0};
+    uint64_t batchBIndex_ = {0};
     uint64_t m_{1};
     uint64_t n_{1};
     uint64_t k_{1};
+
+    struct BatchInfo {
+        uint32_t aBatchDim0 = 1UL;
+        uint32_t bBatchDim0 = 1UL;
+        uint32_t aBatchDim1 = 1UL;
+        uint32_t bBatchDim1 = 1UL;
+        uint32_t cBatchDim1 = 1UL;
+        uint32_t aBatchDim2 = 1UL;
+        uint32_t bBatchDim2 = 1UL;
+        uint32_t cBatchDim2 = 1UL;
+        uint32_t aBatchDim3 = 1UL;
+        uint32_t bBatchDim3 = 1UL;
+        uint32_t cBatchDim3 = 1UL;
+        uint32_t biasBatchDimAll = 1UL;
+    };
 
     struct Params {
         ProblemShape problemShape;
         BlockMmadParams mmadParams;
         BlockEpilogueParams epilogueParams;
         BlockSchedulerParams schedulerParams;
+        BatchInfo batchInfo;
         Params() = default;
     };
 
@@ -115,14 +133,17 @@ public:
 
     __aicore__ inline void UpdateBatchOffset(Params const& params)
     {
-        aGmAddr_ = reinterpret_cast<__gm__ AType*>(params.mmadParams.aGmAddr) + curBatchIdx_ * m_ * k_;
+        aGmAddr_ = reinterpret_cast<__gm__ AType*>(params.mmadParams.aGmAddr) + batchAIndex_ * m_ * k_;
         if (!weightNZFormat) {
-            bGmAddr_ = reinterpret_cast<__gm__ BType*>(params.mmadParams.bGmAddr) + curBatchIdx_ * k_ * n_;
+            bGmAddr_ = reinterpret_cast<__gm__ BType*>(params.mmadParams.bGmAddr) + batchBIndex_ * k_ * n_;
         } else {
             bGmAddr_ = reinterpret_cast<__gm__ BType*>(params.mmadParams.bGmAddr) +
-                       Blaze::Gemm::CalWeightNZGmAddrOffset(transB, curBatchIdx_, n_, k_, C0_SIZE);
+                       Blaze::Gemm::CalWeightNZGmAddrOffset(transB, batchBIndex_, n_, k_, C0_SIZE);
         }
         cGmAddr_ = reinterpret_cast<__gm__ CType*>(params.mmadParams.cGmAddr) + curBatchIdx_ * m_ * n_;
+        if (params.batchInfo.biasBatchDimAll != 1UL) {
+            biasGmAddr_ = reinterpret_cast<__gm__ BiasType*>(params.mmadParams.biasGmAddr) + curBatchIdx_ * n_;
+        }
     }
 
     __aicore__ inline void UnsetHf32(bool isHf32)
@@ -173,16 +194,7 @@ public:
         auto gmBias =
             AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(biasGmAddr_), layoutBias);
 
-        // 使能双页表
-        if (bs.GetBL2CacheDisable()) {
-            gmB.SetL2CacheHint(AscendC::Te::CacheMode::CACHE_MODE_DISABLE);
-        }
-        if (bs.GetAL2CacheDisable()) {
-            gmA.SetL2CacheHint(AscendC::Te::CacheMode::CACHE_MODE_DISABLE);
-        }
-
         uint64_t preBatchIdx = 0;
-        // Process tiles in ping-pong mode
         for (int64_t tileIdx = curBlockIdx; tileIdx < tileNum; tileIdx += blockNum) {
             auto tileShape = bs.template GetBlockShape<transB, BType>(tileIdx); // 非全载
             auto tileCoord = bs.GetBlockCoord(tileIdx);                         // (m, n, k, b)
@@ -194,10 +206,42 @@ public:
             curBatchIdx_ = static_cast<uint64_t>(AscendC::Te::Get<MNK_B>(tileCoord));
 
             if (preBatchIdx != curBatchIdx_) {
+                uint64_t batchC1Index = curBatchIdx_ / (params.batchInfo.cBatchDim1 * params.batchInfo.cBatchDim2 *
+                                                        params.batchInfo.cBatchDim3);
+                uint64_t batchC2Index =
+                    curBatchIdx_ %
+                    (params.batchInfo.cBatchDim1 * params.batchInfo.cBatchDim2 * params.batchInfo.cBatchDim3) /
+                    (params.batchInfo.cBatchDim2 * params.batchInfo.cBatchDim3);
+                uint64_t batchC3Index = curBatchIdx_ % (params.batchInfo.cBatchDim2 * params.batchInfo.cBatchDim3) /
+                                        (params.batchInfo.cBatchDim3);
+                uint64_t batchC4Index = curBatchIdx_ % params.batchInfo.cBatchDim3;
+
+                uint64_t batchA1Index = batchC1Index % params.batchInfo.aBatchDim0;
+                uint64_t batchA2Index = batchC2Index % params.batchInfo.aBatchDim1;
+                uint64_t batchA3Index = batchC3Index % params.batchInfo.aBatchDim2;
+                uint64_t batchA4Index = batchC4Index % params.batchInfo.aBatchDim3;
+                batchAIndex_ = batchA1Index * (params.batchInfo.aBatchDim1 * params.batchInfo.aBatchDim2 *
+                                               params.batchInfo.aBatchDim3) +
+                               batchA2Index * (params.batchInfo.aBatchDim2 * params.batchInfo.aBatchDim3) +
+                               batchA3Index * params.batchInfo.aBatchDim3 + batchA4Index;
+
+                uint64_t batchB1Index = batchC1Index % params.batchInfo.bBatchDim0;
+                uint64_t batchB2Index = batchC2Index % params.batchInfo.bBatchDim1;
+                uint64_t batchB3Index = batchC3Index % params.batchInfo.bBatchDim2;
+                uint64_t batchB4Index = batchC4Index % params.batchInfo.bBatchDim3;
+                batchBIndex_ = batchB1Index * (params.batchInfo.bBatchDim1 * params.batchInfo.bBatchDim2 *
+                                               params.batchInfo.bBatchDim3) +
+                               batchB2Index * (params.batchInfo.bBatchDim2 * params.batchInfo.bBatchDim3) +
+                               batchB3Index * params.batchInfo.bBatchDim3 + batchB4Index;
+
                 UpdateBatchOffset(params);
                 gmA = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(aGmAddr_), layoutA);
                 gmB = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(bGmAddr_), layoutB);
                 gmC = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(cGmAddr_), layoutC);
+                if (params.batchInfo.biasBatchDimAll != 1UL) {
+                    gmBias = AscendC::Te::MakeTensor(
+                        AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(biasGmAddr_), layoutBias);
+                }
                 preBatchIdx = curBatchIdx_;
             }
             // Block offset

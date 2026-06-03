@@ -26,6 +26,7 @@ namespace Blaze {
 namespace Gemm {
 constexpr int32_t MATMUL_MNK_ALIGN = 16;
 constexpr int64_t DOUBLE_BUFFER_COUNT = 2LL;
+constexpr int64_t QUADRUPLE_BUFFER_COUNT = 4LL;
 constexpr int32_t MNK_M = 0;
 constexpr int32_t MNK_N = 1;
 constexpr int32_t MNK_K = 2;
@@ -53,6 +54,8 @@ constexpr uint64_t BLOCK_CUBE = 16UL;
 constexpr uint32_t FINAL_ACCUMULATION = 3;
 constexpr uint32_t NON_FINAL_ACCUMULATION = 2;
 
+constexpr uint64_t C0_SIZE_fp16 = 16UL;
+constexpr uint64_t C0_SIZE_fp32 = 8UL;
 constexpr uint64_t C0_SIZE_B8 = 32UL;
 constexpr uint64_t C0_SIZE_B4 = 64UL;
 constexpr uint64_t C0_SIZE_L0C = 16UL;
@@ -135,6 +138,17 @@ __aicore__ inline int64_t GetPerBlockNum(int64_t coreNum, int64_t mTileNum, int6
 {
     int64_t perCoreBlockNum = Blaze::Gemm::CeilDiv(mTileNum * nTileNum * b, coreNum);
     return perCoreBlockNum;
+}
+
+__aicore__ inline uint64_t CalWeightNZGmAddrOffset(bool transB, int64_t batchIdx, int64_t n, int64_t k, int64_t c0_size)
+{
+    if (transB) {
+        return batchIdx * Blaze::Gemm::CeilDiv(k, c0_size) * Blaze::Gemm::CeilDiv(n, static_cast<int64_t>(BLOCK_CUBE)) *
+               BLOCK_CUBE * c0_size;
+    } else {
+        return batchIdx * Blaze::Gemm::CeilDiv(n, c0_size) * Blaze::Gemm::CeilDiv(k, static_cast<int64_t>(BLOCK_CUBE)) *
+               BLOCK_CUBE * c0_size;
+    }
 }
 
 } // namespace Gemm

@@ -26,10 +26,10 @@ namespace Gemm {
 namespace Block {
 
 template <
-    uint64_t FULL_LOAD_MODE_, uint64_t FUSED_OP_TYPE_, class AType_, class LayoutA_, class BType_, class LayoutB_,
+    uint64_t FULL_LOAD_MODE_, uint64_t FUSED_OP_TYPE_, class KernelSchedule_, class AType_, class LayoutA_, class BType_, class LayoutB_,
     class CType_, class LayoutC_, class BiasType_, class LayoutBias_>
 class BlockMmad<
-    MatmulMultiBlockBasic<FULL_LOAD_MODE_, FUSED_OP_TYPE_>, AType_, LayoutA_, BType_, LayoutB_, CType_, LayoutC_,
+    MatmulMultiBlockBasic<FULL_LOAD_MODE_, FUSED_OP_TYPE_, KernelSchedule_>, AType_, LayoutA_, BType_, LayoutB_, CType_, LayoutC_,
     BiasType_, LayoutBias_> {
 public:
     using AType = AType_;
@@ -40,7 +40,7 @@ public:
     using LayoutB = LayoutB_;
     using LayoutC = LayoutC_;
     using LayoutBias = LayoutBias_;
-    using DispatchPolicy = MatmulMultiBlockBasic<FULL_LOAD_MODE_, FUSED_OP_TYPE_>;
+    using DispatchPolicy = MatmulMultiBlockBasic<FULL_LOAD_MODE_, FUSED_OP_TYPE_, KernelSchedule_>;
     using TupleShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
     using TupleL1L0Shape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t, int64_t, int64_t>;
     uint64_t m_{1};
@@ -56,6 +56,7 @@ public:
     constexpr static uint64_t HALF_L0_SIZE = AscendC::TOTAL_L0A_SIZE / DOUBLE_BUFFER_COUNT / sizeof(AType);
     constexpr static uint64_t HALF_L0C_SIZE = AscendC::TOTAL_L0C_SIZE / DOUBLE_BUFFER_COUNT / sizeof(float);
     constexpr static uint64_t HALF_L1_SIZE = AscendC::TOTAL_L1_SIZE / DOUBLE_BUFFER_COUNT;
+    constexpr static uint64_t QUARTER_L1_SIZE = AscendC::TOTAL_L1_SIZE / QUADRUPLE_BUFFER_COUNT;
     constexpr static uint16_t MTE1_MTE2_EVENT_ID_NUM = 4;
 
     // transA and transB
@@ -176,7 +177,8 @@ public:
             // A GM->L1
             auto layoutAL1 = MakeLayoutAL1{}(curM, curKL1);
             auto copyGM2L1 = AscendC::Te::MakeCopy(AscendC::Te::CopyGM2L1{});
-            uint64_t offsetAl1 = HALF_L1_SIZE * l1BufId;
+            uint64_t offsetAl1 =
+                (l1BufNum_ == DOUBLE_BUFFER_COUNT) ? HALF_L1_SIZE * l1BufId : QUARTER_L1_SIZE * l1BufId;
             auto tensorAL1 = AscendC::Te::MakeTensor(
                 AscendC::Te::MakeMemPtr<AscendC::Te::Location::L1, AType>(offsetAl1), layoutAL1);
             auto gmTileA = gmA.Slice(AscendC::Te::MakeCoord(0, iter0 * kL1_), AscendC::Te::MakeShape(curM, curKL1));
@@ -184,7 +186,9 @@ public:
 
             // Bias GM->L1
             uint64_t biasBufId = abL1LoopCnt_ & 0x1;
-            uint64_t offsetBiasL1 = HALF_L1_SIZE * l1BufId + aL1OneBuffer_ + bL1OneBuffer_;
+            uint64_t offsetBiasL1 = (l1BufNum_ == DOUBLE_BUFFER_COUNT) ?
+                                        HALF_L1_SIZE * l1BufId + aL1OneBuffer_ + bL1OneBuffer_ :
+                                        QUARTER_L1_SIZE * l1BufId + aL1OneBuffer_ + bL1OneBuffer_;
             auto layoutBiasL1 = AscendC::Te::MakeFrameLayout<AscendC::Te::NDExtLayoutPtn>(1UL, curN);
             auto tensorBiasL1 = AscendC::Te::MakeTensor(
                 AscendC::Te::MakeMemPtr<AscendC::Te::Location::L1, BiasType>(offsetBiasL1), layoutBiasL1);
@@ -195,7 +199,8 @@ public:
 
             // B GM->L1
             auto layoutBL1 = MakeLayoutBL1{}(curKL1, curN);
-            uint64_t offsetBl1 = HALF_L1_SIZE * l1BufId + aL1OneBuffer_;
+            uint64_t offsetBl1 = (l1BufNum_ == DOUBLE_BUFFER_COUNT) ? HALF_L1_SIZE * l1BufId + aL1OneBuffer_ :
+                                                                      QUARTER_L1_SIZE * l1BufId + aL1OneBuffer_;
             auto tensorBL1 = AscendC::Te::MakeTensor(
                 AscendC::Te::MakeMemPtr<AscendC::Te::Location::L1, BType>(offsetBl1), layoutBL1);
             auto gmTileB = gmB.Slice(AscendC::Te::MakeCoord(iter0 * kL1_, 0), AscendC::Te::MakeShape(curKL1, curN));

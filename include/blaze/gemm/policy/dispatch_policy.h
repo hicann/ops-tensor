@@ -20,6 +20,7 @@ namespace Gemm {
 struct KernelMmadWithScaleMx {}; // Multi-block with Mx scale
 struct KernelMultiBlockStreamK {}; // Multi-tile transfer with K-axis spliting and caching
 struct KernelMmadMultiBlockBasic {}; // Multi-tile basic
+struct KernelMmadMultiBlockBmmBroadcast {}; // Multi-tile batchMatmul broadcast
 enum class MatMulL0C2Out : std::uint8_t {
     ON_THE_FLY = 0,
     ND_FIXPIPE_1_1 = 1,
