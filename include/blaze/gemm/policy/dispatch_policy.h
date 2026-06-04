@@ -17,7 +17,8 @@
 namespace Blaze {
 namespace Gemm {
 /* block schedule policies */
-struct KernelMmadWithScaleMx {}; // Multi-block with Mx scale
+struct KernelMmadWithScaleMx {};   // Multi-block with Mx scale
+struct KernelMmadWithScaleFixpipeQuant {}; // Multi-block with fixpipe quant scale (A8W8 fixpipe)
 struct KernelMultiBlockStreamK {}; // Multi-tile transfer with K-axis spliting and caching
 struct KernelMmadMultiBlockBasic {}; // Multi-tile basic
 struct KernelMmadMultiBlockBmmBroadcast {}; // Multi-tile batchMatmul broadcast
@@ -25,6 +26,19 @@ enum class MatMulL0C2Out : std::uint8_t {
     ON_THE_FLY = 0,
     ND_FIXPIPE_1_1 = 1,
     ND_FIXPIPE_1_2 = 2
+};
+
+/**
+ * @struct MatmulWithScaleFixpipeQuant
+ * @brief Quantized fixpipe matmul with scale and fixpipe dequant (Tensor API / Blaze)
+ * @param [in] FULL_LOAD_MODE_: full-load mode, 0 = none, A_FULL_LOAD_MODE = A full load
+ * @param [in] ATOMIC_ADD: whether to enable atomic add on output
+ */
+template <uint64_t FULL_LOAD_MODE_ = 0, bool ATOMIC_ADD_ = false>
+struct MatmulWithScaleFixpipeQuant {
+    using ScheduleType = KernelMmadWithScaleFixpipeQuant;
+    constexpr static uint64_t fullLoadMode = FULL_LOAD_MODE_;
+    constexpr static bool isAtomicAdd = ATOMIC_ADD_;
 };
 
 /**
