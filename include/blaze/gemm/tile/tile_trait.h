@@ -9,7 +9,7 @@
  */
 
 /*!
- * \file tile_mmad_mx.h
+ * \file tile_trait.h
  * \brief
  */
 #pragma once

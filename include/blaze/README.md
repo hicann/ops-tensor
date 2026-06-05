@@ -22,14 +22,14 @@
 
 ```
 blaze/
-├──epilogue/   # Epilogue 层：后处理策略             （示例：block_epilogue_empty.h
+├──epilogue/   # Epilogue 层：后处理策略
 |   └── block/
 └── gemm/      # 工具库
-    ├── kernel/      # Kernel 层：完整算子内核入口        （示例：kernel_qbmm_mx.h）
-    ├── block/      # Block 层：Block 级矩阵乘抽象与调度  （示例：block_mmad_mx.h、block_scheduler_qbmm.h）
-    ├── tile/       # Tile 层：细粒度搬运与计算原语        （示例：tile_mmad_mx.h、copy_scale_l1_to_l0a.h）
-    ├── policy/     # Dispatch Policy：派发策略定义       （示例：dispatch_policy.h）
-    └── utils/      # 通用工具与常量                      （示例：common_utils.h、layout_utils.h）
+    ├── kernel/      # Kernel 层：完整算子内核入口
+    ├── block/      # Block 层：Block 级矩阵乘抽象与调度
+    ├── tile/       # Tile 层：细粒度搬运与计算原语
+    ├── policy/     # Dispatch Policy：派发策略定义
+    └── utils/      # 通用工具与常量                      
 ```
 
 各层职责（自上而下）：
@@ -39,7 +39,7 @@ blaze/
 | [`kernel/`](kernel/) | `Blaze::Gemm::Kernel` | 完整算子内核入口，组合 Block + Epilogue + Scheduler 形成可启动的 Kernel |
 | [`block/`](block/) | `Blaze::Gemm::Block` | Block 级 Mmad 抽象及其针对不同 Policy 的实现，以及 Block 调度器 |
 | [`epilogue/`](epilogue/) | `Blaze::Gemm::Block` | 后处理策略，可按需扩展 Bias / 激活 / 反量化等 |
-| [`tile/`](tile/) | `Blaze::Gemm::Tile` / `AscendC::Te` | Tile 级原语：MMAD trait、L1↔L0 搬运、K 方向补零等 |
+| [`tile/`](tile/) | `Blaze::Gemm::Tile` / `AscendC::Te` | Tile 级原语：K 方向补零等 |
 | [`policy/`](policy/) | `Blaze::Gemm::` | 派发策略定义，控制全载模式、量化模式等行为 |
 | [`utils/`](utils/) | `Blaze::Gemm::` | 通用工具与常量：CeilDiv、Layout 推导、量化模式常量等 |
 |
