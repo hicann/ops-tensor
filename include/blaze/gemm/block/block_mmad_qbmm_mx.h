@@ -32,8 +32,6 @@ namespace Blaze {
 namespace Gemm {
 namespace Block {
 
-using namespace AscendC::Te;
-
 template <
     uint64_t A_FULL_LOAD_MODE, bool ATOMIC_ADD, class AType_, class LayoutA_, class BType_, class LayoutB_,
     class CType_, class LayoutC_, class BiasType_, class LayoutBias_>
@@ -47,8 +45,6 @@ public:
     using LayoutA = LayoutA_;
     using LayoutB = LayoutB_;
     using LayoutC = LayoutC_;
-    using MxL0AType = typename AscendC::GetL0DataType<AType, true>::Type;
-    using MxL0BType = typename AscendC::GetL0DataType<BType, true>::Type;
     using BiasType = BiasType_;
     using DispatchPolicy = MatmulWithScaleMx<A_FULL_LOAD_MODE, ATOMIC_ADD>;
     using ProblemShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
@@ -207,14 +203,16 @@ public:
         auto layoutScaleBL1 = AscendC::Te::MakeFrameLayout<AscendC::Te::NNLayoutPtn, AscendC::Std::Int<SCALE_C0>>(
             Blaze::Gemm::CeilDiv(scaleKL1_, MXFP_DIVISOR_SIZE) * MXFP_MULTI_BASE_SIZE, tileL1L0Param.curN);
         tensorScaleBL1 = AscendC::Te::MakeTensor(
-            AscendC::Te::MakeMemPtr<Location::L1, fp8_e8m0_t>(l1BufferScaleBOffset_[scaleL1BufId]), layoutScaleBL1);
+            AscendC::Te::MakeMemPtr<AscendC::Te::Location::L1, fp8_e8m0_t>(l1BufferScaleBOffset_[scaleL1BufId]),
+            layoutScaleBL1);
         auto CopyScaleGM2L1 = AscendC::Te::MakeCopy(AscendC::Te::CopyGM2L1{});
         if constexpr (DispatchPolicy::fullLoadMode == 0) {
             // L1上的K需要填完整的K（scaleKL1_），不能是尾块，GM上的填实际大小（可能是尾块）
             auto layoutScaleAL1 = AscendC::Te::MakeFrameLayout<AscendC::Te::ZZLayoutPtn, AscendC::Std::Int<SCALE_C0>>(
                 tileL1L0Param.curM, Blaze::Gemm::CeilDiv(scaleKL1_, MXFP_DIVISOR_SIZE) * MXFP_MULTI_BASE_SIZE);
             tensorScaleAL1 = AscendC::Te::MakeTensor(
-                AscendC::Te::MakeMemPtr<Location::L1, fp8_e8m0_t>(l1BufferScaleAOffset_[scaleL1BufId]), layoutScaleAL1);
+                AscendC::Te::MakeMemPtr<AscendC::Te::Location::L1, fp8_e8m0_t>(l1BufferScaleAOffset_[scaleL1BufId]),
+                layoutScaleAL1);
             if (iter0 % (scaleKL1_ / kL1_) == 0) {
                 AscendC::WaitFlag<AscendC::HardEvent::MTE1_MTE2>(SCALE_BUFFER_FLAG_0 + scaleL1BufId);
                 uint64_t curScaleKL1 = scaleKL1_;
@@ -241,7 +239,8 @@ public:
             auto layoutScaleAL1 = AscendC::Te::MakeFrameLayout<AscendC::Te::ZZLayoutPtn, AscendC::Std::Int<SCALE_C0>>(
                 tileL1L0Param.curM, Blaze::Gemm::CeilDiv(k_, MXFP_DIVISOR_SIZE) * MXFP_MULTI_BASE_SIZE);
             tensorScaleAL1 = AscendC::Te::MakeTensor(
-                AscendC::Te::MakeMemPtr<Location::L1, fp8_e8m0_t>(l1BufferScaleAOffset_[0]), layoutScaleAL1);
+                AscendC::Te::MakeMemPtr<AscendC::Te::Location::L1, fp8_e8m0_t>(l1BufferScaleAOffset_[0]),
+                layoutScaleAL1);
             if (iter0 % (scaleKL1_ / kL1_) == 0) {
                 AscendC::WaitFlag<AscendC::HardEvent::MTE1_MTE2>(SCALE_BUFFER_FLAG_0 + scaleL1BufId);
                 uint64_t curScaleKL1 = scaleKL1_;
@@ -272,13 +271,13 @@ public:
                 AscendC::Te::MakeCoord(0, iter0 * kL1_),
                 AscendC::Te::MakeShape(tileL1L0Param.curM, tileL1L0Param.curGmAKL1));
             tensorAL1 = AscendC::Te::MakeTensor(
-                AscendC::Te::MakeMemPtr<Location::L1, AType>(l1BufferAOffset_[l1BufId]), layoutAL1);
+                AscendC::Te::MakeMemPtr<AscendC::Te::Location::L1, AType>(l1BufferAOffset_[l1BufId]), layoutAL1);
             Blaze::Gemm::Tile::PadMxKAL1::PadZero(tensorAL1, gmBlockA);
             AscendC::Te::Copy(copyGM2L1, tensorAL1, gmBlockA);
         } else {
             auto layoutAL1 = MakeLayoutAL1{}(tileL1L0Param.curM, Blaze::Gemm::CeilAlign(k_, MXFP_DIVISOR_SIZE));
-            auto tensorTotalAL1 =
-                AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<Location::L1, AType>(l1BufferAOffset_[0]), layoutAL1);
+            auto tensorTotalAL1 = AscendC::Te::MakeTensor(
+                AscendC::Te::MakeMemPtr<AscendC::Te::Location::L1, AType>(l1BufferAOffset_[0]), layoutAL1);
             tensorAL1 = tensorTotalAL1.Slice(
                 AscendC::Te::MakeCoord(0, iter0 * kL1_),
                 AscendC::Te::MakeShape(tileL1L0Param.curM, tileL1L0Param.curPadAKL1));
@@ -318,8 +317,8 @@ public:
             // A, ScaleA L1->L0
             auto layoutAL0 = AscendC::Te::MakeFrameLayout<AscendC::Te::NZLayoutPtn, AscendC::Std::Int<C0_SIZE>>(
                 tileL1L0Param.curM, curKL0);
-            auto tensorAL0 =
-                AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<Location::L0A, AType>(l0Offset), layoutAL0);
+            auto tensorAL0 = AscendC::Te::MakeTensor(
+                AscendC::Te::MakeMemPtr<AscendC::Te::Location::L0A, AType>(l0Offset), layoutAL0);
             auto tensorBlockAL1 = tensorAL1.Slice(
                 AscendC::Te::MakeCoord(0, iter1 * baseK_), AscendC::Te::MakeShape(tileL1L0Param.curM, curKL0));
             auto CopyL12L0A = AscendC::Te::MakeCopy(AscendC::Te::CopyL12L0A{});
@@ -329,7 +328,7 @@ public:
             auto layoutScaleAL0 = AscendC::Te::MakeFrameLayout<AscendC::Te::ZZLayoutPtn, AscendC::Std::Int<SCALE_C0>>(
                 tileL1L0Param.curM, Blaze::Gemm::CeilDiv(curKL0, MXFP_DIVISOR_SIZE) * MXFP_MULTI_BASE_SIZE);
             auto tensorScaleAL0 = AscendC::Te::MakeTensor(
-                AscendC::Te::MakeMemPtr<Location::L0ScaleA, fp8_e8m0_t>(l0Offset >> 4), layoutScaleAL0);
+                AscendC::Te::MakeMemPtr<AscendC::Te::Location::L0ScaleA, fp8_e8m0_t>(l0Offset >> 4), layoutScaleAL0);
             AscendC::Te::Copy(
                 CopyL12L0ScaleA, tensorScaleAL0,
                 tensorBlockScaleAL1.Slice(
@@ -342,7 +341,8 @@ public:
             auto layoutBt = AscendC::Te::MakeFrameLayout<AscendC::Te::NDExtLayoutPtn>(
                 1UL, Blaze::Gemm::CeilAlign(tileL1L0Param.curN, BLOCK_CUBE));
             auto tensorBt = AscendC::Te::MakeTensor(
-                AscendC::Te::MakeMemPtr<Location::BIAS, float>(baseN_ * biasBufId_ * sizeof(float)), layoutBt);
+                AscendC::Te::MakeMemPtr<AscendC::Te::Location::BIAS, float>(baseN_ * biasBufId_ * sizeof(float)),
+                layoutBt);
             if (NeedBias(iter0, iter1)) {
                 auto CopyL12BT = AscendC::Te::MakeCopy(AscendC::Te::CopyL12BT{});
                 AscendC::Te::Copy(CopyL12BT, tensorBt, tensorBiasL1);
@@ -351,8 +351,8 @@ public:
             // B, scaleB L1->L0
             auto layoutBL0 = AscendC::Te::MakeFrameLayout<AscendC::Te::ZNLayoutPtn, AscendC::Std::Int<C0_SIZE>>(
                 curKL0, tileL1L0Param.curN);
-            auto tensorBL0 =
-                AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<Location::L0B, BType>(l0Offset), layoutBL0);
+            auto tensorBL0 = AscendC::Te::MakeTensor(
+                AscendC::Te::MakeMemPtr<AscendC::Te::Location::L0B, BType>(l0Offset), layoutBL0);
             auto tensorBlockBL1 = tensorBL1.Slice(
                 AscendC::Te::MakeCoord(iter1 * baseK_, 0), AscendC::Te::MakeShape(curKL0, tileL1L0Param.curN));
             auto CopyL12L0B = AscendC::Te::MakeCopy(AscendC::Te::CopyL12L0B{});
@@ -362,7 +362,7 @@ public:
             auto layoutScaleBL0 = AscendC::Te::MakeFrameLayout<AscendC::Te::NNLayoutPtn, AscendC::Std::Int<SCALE_C0>>(
                 Blaze::Gemm::CeilDiv(curKL0, MXFP_DIVISOR_SIZE) * MXFP_MULTI_BASE_SIZE, tileL1L0Param.curN);
             auto tensorScaleBL0 = AscendC::Te::MakeTensor(
-                AscendC::Te::MakeMemPtr<Location::L0ScaleB, fp8_e8m0_t>(l0Offset >> 4), layoutScaleBL0);
+                AscendC::Te::MakeMemPtr<AscendC::Te::Location::L0ScaleB, fp8_e8m0_t>(l0Offset >> 4), layoutScaleBL0);
             AscendC::Te::Copy(
                 CopyL12L0ScaleB, tensorScaleBL0,
                 tensorBlockScaleBL1.Slice(
@@ -393,7 +393,8 @@ public:
         uint64_t l0cOffset = (l0cPingPong_ & 1) * HALF_L0C_SIZE;
         auto layoutL0C = AscendC::Te::FrameLayoutFormat<AscendC::Te::NZLayoutPtn, AscendC::Std::Int<C0_SIZE_L0C>>{}(
             tileL1L0Param.curM, tileL1L0Param.curN);
-        tensorL0C = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<Location::L0C, float>(l0cOffset), layoutL0C);
+        tensorL0C =
+            AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::L0C, float>(l0cOffset), layoutL0C);
         for (uint64_t iter0 = 0; iter0 < kL1Iter_; ++iter0) {
             uint64_t l1BufId = abL1LoopCnt_ & (l1BufNum_ - 1);
             uint64_t scaleL1BufId = scaleLoopCnt_ & 1;
@@ -418,14 +419,15 @@ public:
                 auto layoutBiasL1 = AscendC::Te::FrameLayoutFormat<AscendC::Te::NDExtLayoutPtn>{}(
                     1UL, Blaze::Gemm::CeilAlign(tileL1L0Param.curN, BLOCK_CUBE));
                 tensorBiasL1 = AscendC::Te::MakeTensor(
-                    AscendC::Te::MakeMemPtr<Location::L1, BiasType>(l1BufferBiasOffset_[biasBufId_]), layoutBiasL1);
+                    AscendC::Te::MakeMemPtr<AscendC::Te::Location::L1, BiasType>(l1BufferBiasOffset_[biasBufId_]),
+                    layoutBiasL1);
                 AscendC::Te::Copy(copyGM2L1, tensorBiasL1, gmBias);
             }
 
             // B GM->L1; 先slice再copy
             auto layoutBL1 = MakeLayoutBL1{}(tileL1L0Param.curPadBKL1, tileL1L0Param.curN);
             tensorBL1 = AscendC::Te::MakeTensor(
-                AscendC::Te::MakeMemPtr<Location::L1, BType>(l1BufferBOffset_[l1BufId]), layoutBL1);
+                AscendC::Te::MakeMemPtr<AscendC::Te::Location::L1, BType>(l1BufferBOffset_[l1BufId]), layoutBL1);
             auto gmBlockB = gmB.Slice(
                 AscendC::Te::MakeCoord(iter0 * kL1_, 0),
                 AscendC::Te::MakeShape(tileL1L0Param.curGmBKL1, tileL1L0Param.curN));
@@ -508,7 +510,8 @@ private:
     uint64_t l1BufferBiasOffset_[2] = {0UL};   // default 2 buffer
 
     template <typename T, typename Layout>
-    using TensorL1 = decltype(AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<Location::L1, T>(0), Layout{}(0UL, 0UL)));
+    using TensorL1 =
+        decltype(AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::L1, T>(0), Layout{}(0UL, 0UL)));
 
     TensorL1<AType, MakeLayoutAL1> tensorAL1;
     TensorL1<BType, MakeLayoutBL1> tensorBL1;
@@ -519,7 +522,7 @@ private:
     TensorL1<BiasType, AscendC::Te::FrameLayoutFormat<AscendC::Te::NDExtLayoutPtn>> tensorBiasL1;
 
     using TensorL0C = decltype(AscendC::Te::MakeTensor(
-        AscendC::Te::MakeMemPtr<Location::L0C, float>(0),
+        AscendC::Te::MakeMemPtr<AscendC::Te::Location::L0C, float>(0),
         AscendC::Te::FrameLayoutFormat<AscendC::Te::NZLayoutPtn, AscendC::Std::Int<C0_SIZE_L0C>>{}(0UL, 0UL)));
     TensorL0C tensorL0C;
 };
