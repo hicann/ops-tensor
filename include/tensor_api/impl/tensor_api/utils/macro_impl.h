@@ -21,25 +21,10 @@
 */
 #ifndef IMPL_TENSOR_API_UTILS_MACRO_IMPL_H
 #define IMPL_TENSOR_API_UTILS_MACRO_IMPL_H
-#include "utils/base/sys_macros.h"
-#include "utils/base/sys_constants.h"
+#include "include/utils/base/sys_macros.h"
+#include "include/utils/base/sys_constants.h"
+#include "include/utils/common_types.h"
 #include "c_api/asc_simd.h"
-
-#if !defined(ASCENDC_CPU_DEBUG)
-#if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
-    using fp4x2_e2m1_t = float4_e2m1x2_t;
-    using fp4x2_e1m2_t = float4_e1m2x2_t;
-    using fp8_e5m2_t = float8_e5m2_t;
-    using fp8_e4m3fn_t = float8_e4m3_t;
-    using fp8_e8m0_t = float8_e8m0_t;
-#else
-    using fp4x2_e2m1_t = uint8_t;
-    using fp4x2_e1m2_t = uint8_t;
-    using fp8_e5m2_t = uint8_t;
-    using fp8_e4m3fn_t = uint8_t;
-    using fp8_e8m0_t = uint8_t;
-#endif
-#endif
 
 #if (__CCE__)
     #ifndef ASCENDC_HOST

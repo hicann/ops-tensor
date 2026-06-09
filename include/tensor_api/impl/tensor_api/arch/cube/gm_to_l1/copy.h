@@ -50,13 +50,17 @@ private:
     {
         using DstPos = GetMemLocation<T>;
         using SrcPos = GetMemLocation<U>;
+        static_assert(Std::is_same_v<DstPos, Location::L1>,
+            "CopyGM2L1 requires destination on L1");
+        static_assert(Std::is_same_v<SrcPos, Location::GM>,
+            "CopyGM2L1 requires source on GM");
         using DstLayout = typename T::layoutType;
         using SrcLayout = typename U::layoutType;
         using DstLayoutPtn = GetLayoutPattern<DstLayout>;
         using SrcLayoutPtn = GetLayoutPattern<SrcLayout>;
-        using Tensor2Tensor =
-            typename CopyGM2L1Tensor2Tensor<DstPos, SrcPos, CURRENT_ARCH_VERSION, DstLayoutPtn, SrcLayoutPtn>::type;
-        Tensor2Tensor::template Run<trait, T, U>(dst, src);
+        using CopyGM2L1Impl =
+            typename CopyGM2L1Routing<CURRENT_ARCH_VERSION, DstLayoutPtn, SrcLayoutPtn>::type;
+        CopyGM2L1Impl::template Run<trait, T, U>(dst, src);
     }
 };
 

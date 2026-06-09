@@ -117,8 +117,6 @@ public:
 template <typename LayoutPattern, typename TraitType = Std::ignore_t, typename... Args>
 __aicore__ inline constexpr decltype(auto) MakeFrameLayout(const Args&... args) {
     using Trait = typename TraitConversion<LayoutPattern, TraitType>::type;
-    static_assert(!(Trait::C0_ELEMENT == 0 || HasZeroIntegralConstant<Args...>::value), 
-                        "MakeFrameLayout does not accept Int<0> arguments.");
     using LayoutMaker = typename LayoutFormatSet::template Get<LayoutPattern>;
     static_assert(!Std::is_same_v<LayoutMaker, Std::ignore_t>, "Unsupported layout pattern.");
     return LayoutMaker::template Make<Trait>(args...);

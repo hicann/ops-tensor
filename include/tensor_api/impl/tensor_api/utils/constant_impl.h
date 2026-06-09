@@ -51,7 +51,9 @@ using _2048 = Std::Int<2048>;
 using _4096 = Std::Int<4096>;
 
 constexpr size_t TWO_DIM_DATA = 2;
+constexpr size_t THREE_DIM_DATA = 3;
 constexpr size_t FOUR_DIM_DATA = 4;
+constexpr size_t FIVE_DIM_DATA = 5;
 constexpr size_t FRACTAL_FIXED = 16;
 constexpr size_t MX_SCALE_K0 = 2;
 constexpr uint32_t BLOCK_CUBE = 16;
@@ -116,10 +118,6 @@ public:
 template <typename T>
 constexpr bool IsHardwareV = IsHardware<T>::value;
 
-template <typename... Ts>
-struct HasZeroIntegralConstant : Std::bool_constant<
-    (... || Std::is_same_v<Std::remove_cvref_t<Ts>, Std::Int<0>>)> {};
-    
 template <typename TupleType>
 using tuple_sequence = Std::make_index_sequence<Std::tuple_size_v<Std::remove_cvref_t<TupleType>>>;
 
@@ -193,32 +191,6 @@ constexpr size_t C0_SIZE = GetC0Size<T>();
 template<typename T>
 constexpr size_t C0_ELEMENT = C0_SIZE<T> / sizeof(T);
 
-template <size_t N, typename = Std::make_index_sequence<N>>
-struct EmptyGenerator;
-
-template <size_t N, size_t... Idx>
-struct EmptyGenerator<N, Std::index_sequence<Idx...>>
-{   
-    using type = Std::tuple<Std::Int<Idx * 0>...>;
-};
-
-template <size_t N>
-struct TupleEmptyGenerator
-{   
-    static_assert((N > 0 && (N & 1) == 0), "N must be greater than 0, and must be even.");
-    using type = Std::tuple<typename EmptyGenerator<N / 2>::type, 
-        typename EmptyGenerator<N / 2>::type>;
-};
-
-template <size_t N>
-using EmptyShape = typename TupleEmptyGenerator<N>::type;
-
-template <size_t N>
-using EmptyStride = typename TupleEmptyGenerator<N>::type;
-
-template <size_t N>
-using EmptyCoord = typename TupleEmptyGenerator<N>::type;
-
 // IsIntegralConstant
 template <typename T>
 struct IsIntegralConstant : Std::false_type {};
@@ -228,6 +200,31 @@ struct IsIntegralConstant<Std::Int<Value>> : Std::true_type {};
 
 template <typename T>
 constexpr bool IsIntegralConstantV = IsIntegralConstant<T>::value;
+
+#if defined(__NPU_ARCH__)
+using VectorTypeTransform = TupleMap<
+    Std::tuple<uint8_t,        vector_uint8_t>,
+    Std::tuple<uint16_t,       vector_uint16_t>,
+    Std::tuple<uint32_t,       vector_uint32_t>,
+    Std::tuple<uint64_t,       vector_uint64_t>,
+    Std::tuple<int8_t,         vector_int8_t>,
+    Std::tuple<int16_t,        vector_int16_t>,
+    Std::tuple<int32_t,        vector_int32_t>,
+    Std::tuple<int64_t,        vector_int64_t>,
+    Std::tuple<bfloat16_t,     vector_bfloat16_t>,
+    Std::tuple<half,           vector_half>,
+    Std::tuple<float,          vector_float>,
+#if  __NPU_ARCH__ == 3510
+    Std::tuple<hifloat8_t,     vector_hifloat8_t>,
+    Std::tuple<fp8_e4m3fn_t,   vector_fp8_e4m3fn_t>,
+    Std::tuple<fp8_e5m2_t,     vector_fp8_e5m2_t>,
+    Std::tuple<fp8_e8m0_t,     vector_fp8_e8m0_t>,
+    Std::tuple<int4x2_t,       vector_int4x2_t>,
+    Std::tuple<fp4x2_e2m1_t,   vector_fp4x2_e2m1_t>,
+    Std::tuple<fp4x2_e1m2_t,   vector_fp4x2_e1m2_t>
+#endif
+    >;
+#endif
 
 } // namespace Te
 } // namespace AscendC

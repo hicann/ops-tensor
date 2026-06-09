@@ -45,6 +45,25 @@ struct ToTupleImpl<T, false> {
 template <typename T>
 using ToTuple = ToTupleImpl<T, Std::is_tuple_v<T>>;
 
+// Selects the (row, col) shape/stride sub-tuples from a layout's top-level (rowPart, colPart) pair.
+// Batched layouts carry a leading Batch axis, so the top-level pair is (Int<B>, matrixTuple): the
+// real row/col live one level down, inside the matrix tuple. Non-batched layouts use the pair as-is.
+template <typename ShapeRows, typename ShapeCols, typename StrideRows, typename StrideCols, bool IsBatched>
+struct SelectRowColTuples {
+    using Rows = ShapeRows;
+    using Cols = ShapeCols;
+    using StrideRowsT = StrideRows;
+    using StrideColsT = StrideCols;
+};
+
+template <typename ShapeRows, typename ShapeCols, typename StrideRows, typename StrideCols>
+struct SelectRowColTuples<ShapeRows, ShapeCols, StrideRows, StrideCols, true> {
+    using Rows = typename Std::tuple_element<0, ShapeCols>::type;
+    using Cols = typename Std::tuple_element<1, ShapeCols>::type;
+    using StrideRowsT = typename Std::tuple_element<0, StrideCols>::type;
+    using StrideColsT = typename Std::tuple_element<1, StrideCols>::type;
+};
+
 template <typename T>
 struct GetTypeFromNDimTrait;
 
@@ -54,10 +73,14 @@ template <template <typename> class TensorType, typename hPos, typename Pointer,
 struct GetTypeFromNDimTrait<
     TensorType<TensorAttribute<ViewEngine<HardwareMemPtr<hPos, Pointer>>,
         Layout<Shape<ShapeRows, ShapeCols>, Stride<StrideRows, StrideCols>, LayoutPattern>>>> {
-    using ShapeRowTuple = typename ToTuple<ShapeRows>::type;
-    using ShapeColTuple = typename ToTuple<ShapeCols>::type;
-    using StrideRowTuple = typename ToTuple<StrideRows>::type;
-    using StrideColTuple = typename ToTuple<StrideCols>::type;
+    // A batched layout has a scalar Batch axis as rowPart and the matrix tuple as colPart.
+    static constexpr bool IsBatched = !Std::is_tuple_v<ShapeRows> && Std::is_tuple_v<ShapeCols>;
+    using Selector = SelectRowColTuples<ShapeRows, ShapeCols, StrideRows, StrideCols, IsBatched>;
+
+    using ShapeRowTuple = typename ToTuple<typename Selector::Rows>::type;
+    using ShapeColTuple = typename ToTuple<typename Selector::Cols>::type;
+    using StrideRowTuple = typename ToTuple<typename Selector::StrideRowsT>::type;
+    using StrideColTuple = typename ToTuple<typename Selector::StrideColsT>::type;
     
     template <size_t Dim>
     using ShapeRowDim = typename Std::tuple_element<Dim, ShapeRowTuple>::type;

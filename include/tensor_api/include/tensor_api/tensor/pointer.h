@@ -26,16 +26,7 @@
 namespace AscendC {
 namespace Te {
 
-template <typename PtrPattern, typename DataType, typename Addr,
-    EnableMakePtrByTrait<PtrPattern, Addr> Enable>
-__aicore__ inline auto MakeMemPtr(Addr addr);
 
-template <typename PtrPattern, typename Iterator,
-    EnableMakeHardwarePtr<PtrPattern, Iterator> Enable>
-__aicore__ inline constexpr auto MakeMemPtr(Iterator iterator);
-
-template <typename Iterator, EnableMakePtrByIter<Iterator> Enable>
-__aicore__ inline constexpr auto MakeMemPtr(Iterator iterator);
 } // namespace Te
 } // namespace AscendC
 

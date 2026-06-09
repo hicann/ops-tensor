@@ -57,10 +57,10 @@ using EnableMakePtrByIter =
 
 template <typename PtrPattern, typename DataType, typename Addr,
     EnableMakePtrByTrait<PtrPattern, Addr> = 0>
-__aicore__ inline auto MakeMemPtr(Addr addr)
+__aicore__ inline auto MakeMemPtr(Addr arg)
 {
      using pointer = typename locationAttr<DataType>::locationMap::template Get<PtrPattern>; 
-     return MakeLocationMemPtr<PtrPattern>(reinterpret_cast<pointer>(asc_get_phy_buf_addr(0) + addr)); 
+     return MakeLocationMemPtr<PtrPattern>(reinterpret_cast<pointer>(asc_get_phy_buf_addr(0) + arg)); 
 }
 
 template <typename PtrPattern, typename Iterator,

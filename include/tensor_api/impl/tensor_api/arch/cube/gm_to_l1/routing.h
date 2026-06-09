@@ -22,19 +22,19 @@
 #ifndef IMPL_TENSOR_API_ARCH_CUBE_GM_TO_L1_ROUTING_H
 #define IMPL_TENSOR_API_ARCH_CUBE_GM_TO_L1_ROUTING_H
 
-#include "impl/tensor_api/arch/cube/gm_to_l1/npu_arch_3510/gm_to_l1/dn2nz.h"
-#include "impl/tensor_api/arch/cube/gm_to_l1/npu_arch_3510/gm_to_l1/dn2zn.h"
-#include "impl/tensor_api/arch/cube/gm_to_l1/npu_arch_3510/gm_to_l1/nd2nd.h"
-#include "impl/tensor_api/arch/cube/gm_to_l1/npu_arch_3510/gm_to_l1/nd2nz.h"
-#include "impl/tensor_api/arch/cube/gm_to_l1/npu_arch_3510/gm_to_l1/nd2zn.h"
-#include "impl/tensor_api/arch/cube/gm_to_l1/npu_arch_3510/gm_to_l1/nz2nz.h"
-#include "impl/tensor_api/arch/cube/gm_to_l1/npu_arch_3510/gm_to_l1/zn2zn.h"
-#include "impl/tensor_api/arch/cube/gm_to_l1/npu_arch_3510/gm_to_l1/scalea_nd2zz.h"
-#include "impl/tensor_api/arch/cube/gm_to_l1/npu_arch_3510/gm_to_l1/scalea_dn2zz.h"
-#include "impl/tensor_api/arch/cube/gm_to_l1/npu_arch_3510/gm_to_l1/scalea_zz2zz.h"
-#include "impl/tensor_api/arch/cube/gm_to_l1/npu_arch_3510/gm_to_l1/scaleb_nd2nn.h"
-#include "impl/tensor_api/arch/cube/gm_to_l1/npu_arch_3510/gm_to_l1/scaleb_dn2nn.h"
-#include "impl/tensor_api/arch/cube/gm_to_l1/npu_arch_3510/gm_to_l1/scaleb_nn2nn.h"
+#include "impl/tensor_api/arch/cube/gm_to_l1/copy_impl/dn2nz.h"
+#include "impl/tensor_api/arch/cube/gm_to_l1/copy_impl/dn2zn.h"
+#include "impl/tensor_api/arch/cube/gm_to_l1/copy_impl/nd2nd.h"
+#include "impl/tensor_api/arch/cube/gm_to_l1/copy_impl/nd2nz.h"
+#include "impl/tensor_api/arch/cube/gm_to_l1/copy_impl/nd2zn.h"
+#include "impl/tensor_api/arch/cube/gm_to_l1/copy_impl/nz2nz.h"
+#include "impl/tensor_api/arch/cube/gm_to_l1/copy_impl/zn2zn.h"
+#include "impl/tensor_api/arch/cube/gm_to_l1/copy_impl/scalea_nd2zz.h"
+#include "impl/tensor_api/arch/cube/gm_to_l1/copy_impl/scalea_dn2zz.h"
+#include "impl/tensor_api/arch/cube/gm_to_l1/copy_impl/scalea_zz2zz.h"
+#include "impl/tensor_api/arch/cube/gm_to_l1/copy_impl/scaleb_nd2nn.h"
+#include "impl/tensor_api/arch/cube/gm_to_l1/copy_impl/scaleb_dn2nn.h"
+#include "impl/tensor_api/arch/cube/gm_to_l1/copy_impl/scaleb_nn2nn.h"
 
 namespace AscendC {
 namespace Te {
@@ -48,98 +48,98 @@ public:
     }
 };
 
-template <typename dstPos, typename srcPos, uint32_t Version, typename DstLayoutPtn, typename SrcLayoutPtn>
-struct CopyGM2L1Tensor2Tensor {
+template <uint32_t Version, typename DstLayoutPtn, typename SrcLayoutPtn>
+struct CopyGM2L1Routing {
     using type = CopyGM2L1Ignore;
 };
 
-template <>
-struct CopyGM2L1Tensor2Tensor<Location::L1, Location::GM, ArchVersion::V3510, NDExtLayoutPtn, NDExtLayoutPtn> {
+template <uint32_t Version>
+struct CopyGM2L1Routing<Version, NDExtLayoutPtn, NDExtLayoutPtn> {
     using type = CopyGmToCbufAlignV2ND;
 };
 
-template <>
-struct CopyGM2L1Tensor2Tensor<Location::L1, Location::GM, ArchVersion::V3510, NDLayoutPtn, NDLayoutPtn> {
+template <uint32_t Version>
+struct CopyGM2L1Routing<Version, NDLayoutPtn, NDLayoutPtn> {
     using type = CopyGmToCbufAlignV2ND;
 };
 
-template <>
-struct CopyGM2L1Tensor2Tensor<Location::L1, Location::GM, ArchVersion::V3510, NZLayoutPtn, NDExtLayoutPtn> {
+template <uint32_t Version>
+struct CopyGM2L1Routing<Version, NZLayoutPtn, NDExtLayoutPtn> {
     using type = CopyGmToCbufMultiND2Nz;
 };
 
-template <>
-struct CopyGM2L1Tensor2Tensor<Location::L1, Location::GM, ArchVersion::V3510, NZLayoutPtn, NDLayoutPtn> {
+template <uint32_t Version>
+struct CopyGM2L1Routing<Version, NZLayoutPtn, NDLayoutPtn> {
     using type = CopyGmToCbufMultiND2Nz;
 };
 
-template <>
-struct CopyGM2L1Tensor2Tensor<Location::L1, Location::GM, ArchVersion::V3510, ZNLayoutPtn, NDExtLayoutPtn> {
+template <uint32_t Version>
+struct CopyGM2L1Routing<Version, ZNLayoutPtn, NDExtLayoutPtn> {
     using type = CopyGmToCbufMultiND2Zn;
 };
 
-template <>
-struct CopyGM2L1Tensor2Tensor<Location::L1, Location::GM, ArchVersion::V3510, ZNLayoutPtn, NDLayoutPtn> {
+template <uint32_t Version>
+struct CopyGM2L1Routing<Version, ZNLayoutPtn, NDLayoutPtn> {
     using type = CopyGmToCbufMultiND2Zn;
 };
 
-template <>
-struct CopyGM2L1Tensor2Tensor<Location::L1, Location::GM, ArchVersion::V3510, NZLayoutPtn, DNExtLayoutPtn> {
+template <uint32_t Version>
+struct CopyGM2L1Routing<Version, NZLayoutPtn, DNExtLayoutPtn> {
     using type = CopyGmToCbufMultiDN2Nz;
 };
 
-template <>
-struct CopyGM2L1Tensor2Tensor<Location::L1, Location::GM, ArchVersion::V3510, NZLayoutPtn, DNLayoutPtn> {
+template <uint32_t Version>
+struct CopyGM2L1Routing<Version, NZLayoutPtn, DNLayoutPtn> {
     using type = CopyGmToCbufMultiDN2Nz;
 };
 
-template <>
-struct CopyGM2L1Tensor2Tensor<Location::L1, Location::GM, ArchVersion::V3510, ZNLayoutPtn, DNExtLayoutPtn> {
+template <uint32_t Version>
+struct CopyGM2L1Routing<Version, ZNLayoutPtn, DNExtLayoutPtn> {
     using type = CopyGmToCbufMultiDN2Zn;
 };
 
-template <>
-struct CopyGM2L1Tensor2Tensor<Location::L1, Location::GM, ArchVersion::V3510, ZNLayoutPtn, DNLayoutPtn> {
+template <uint32_t Version>
+struct CopyGM2L1Routing<Version, ZNLayoutPtn, DNLayoutPtn> {
     using type = CopyGmToCbufMultiDN2Zn;
 };
 
-template <>
-struct CopyGM2L1Tensor2Tensor<Location::L1, Location::GM, ArchVersion::V3510, NZLayoutPtn, NZLayoutPtn> {
+template <uint32_t Version>
+struct CopyGM2L1Routing<Version, NZLayoutPtn, NZLayoutPtn> {
     using type = CopyGmToCbufAlignV2NZ;
 };
 
-template <>
-struct CopyGM2L1Tensor2Tensor<Location::L1, Location::GM, ArchVersion::V3510, ZNLayoutPtn, ZNLayoutPtn> {
+template <uint32_t Version>
+struct CopyGM2L1Routing<Version, ZNLayoutPtn, ZNLayoutPtn> {
     using type = CopyGmToCbufAlignV2ZN;
 };
 
-template <>
-struct CopyGM2L1Tensor2Tensor<Location::L1, Location::GM, ArchVersion::V3510, ZZLayoutPtn, ScaleANDLayoutPtn> {
+template <uint32_t Version>
+struct CopyGM2L1Routing<Version, ZZLayoutPtn, ScaleANDLayoutPtn> {
     using type = CopyGmToCbufScaleAND2Zz;
 };
 
-template <>
-struct CopyGM2L1Tensor2Tensor<Location::L1, Location::GM, ArchVersion::V3510, ZZLayoutPtn, ScaleADNLayoutPtn> {
+template <uint32_t Version>
+struct CopyGM2L1Routing<Version, ZZLayoutPtn, ScaleADNLayoutPtn> {
     using type = CopyGmToCbufScaleADN2Zz;
 };
 
-template <>
-struct CopyGM2L1Tensor2Tensor<Location::L1, Location::GM, ArchVersion::V3510, ZZLayoutPtn, ZZLayoutPtn> {
+template <uint32_t Version>
+struct CopyGM2L1Routing<Version, ZZLayoutPtn, ZZLayoutPtn> {
     using type = CopyGmToCbufScaleAZz2Zz;
 };
 
-template <>
-struct CopyGM2L1Tensor2Tensor<Location::L1, Location::GM, ArchVersion::V3510, NNLayoutPtn, ScaleBNDLayoutPtn> {
+template <uint32_t Version>
+struct CopyGM2L1Routing<Version, NNLayoutPtn, ScaleBNDLayoutPtn> {
     using type = CopyGmToCbufScaleBND2Nn;
 };
 
-template <>
-struct CopyGM2L1Tensor2Tensor<Location::L1, Location::GM, ArchVersion::V3510, NNLayoutPtn, ScaleBDNLayoutPtn> {
+template <uint32_t Version>
+struct CopyGM2L1Routing<Version, NNLayoutPtn, ScaleBDNLayoutPtn> {
     using type = CopyGmToCbufScaleBDN2Nn;
 };
 
-template <>
-struct CopyGM2L1Tensor2Tensor<Location::L1, Location::GM, ArchVersion::V3510, NNLayoutPtn, NNLayoutPtn> {
+template <uint32_t Version>
+struct CopyGM2L1Routing<Version, NNLayoutPtn, NNLayoutPtn> {
     using type = CopyGmToCbufScaleBNn2Nn;
 };
 

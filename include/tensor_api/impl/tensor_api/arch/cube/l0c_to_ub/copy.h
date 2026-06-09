@@ -44,8 +44,14 @@ public:
     {
         using dstPos = GetMemLocation<T>;
         using srcPos = GetMemLocation<U>;
-        using Tensor2Tensor = typename CopyL0C2UBTensor2Tensor<dstPos, srcPos, CURRENT_ARCH_VERSION>::type;
-        Tensor2Tensor{}.template Run<trait>(dst, src, params);
+        static_assert(Std::is_same_v<dstPos, Location::UB>, "When Copy tensor from L0C to UB, dst tensor must on UB");
+        static_assert(Std::is_same_v<srcPos, Location::L0C>, "When Copy tensor from L0C to UB, src tensor must on L0C");
+
+        using DstLayoutPtn = GetLayoutPattern<typename T::layoutType>;
+        using SrcLayoutPtn = GetLayoutPattern<typename U::layoutType>;
+
+        using CopyL0C2UBImpl = typename CopyL0C2UBRouting<CURRENT_ARCH_VERSION, DstLayoutPtn, SrcLayoutPtn>::type;
+        CopyL0C2UBImpl::template Run<trait>(dst, src, params);
     }
 
     template <const CopyL0C2UBTrait& trait = DEFAULT_COPY_L0C2UB_TRAIT, typename T, typename U, typename S>
@@ -54,8 +60,14 @@ public:
     {
         using dstPos = GetMemLocation<T>;
         using srcPos = GetMemLocation<U>;
-        using Tensor2Tensor = typename CopyL0C2UBTensor2Tensor<dstPos, srcPos, CURRENT_ARCH_VERSION>::type;
-        Tensor2Tensor{}.template Run<trait>(dst, src, quant, params);
+        static_assert(Std::is_same_v<dstPos, Location::UB>, "When Copy tensor from L0C to UB, dst tensor must on UB");
+        static_assert(Std::is_same_v<srcPos, Location::L0C>, "When Copy tensor from L0C to UB, src tensor must on L0C");
+
+        using DstLayoutPtn = GetLayoutPattern<typename T::layoutType>;
+        using SrcLayoutPtn = GetLayoutPattern<typename U::layoutType>;
+
+        using CopyL0C2UBImpl = typename CopyL0C2UBRouting<CURRENT_ARCH_VERSION, DstLayoutPtn, SrcLayoutPtn>::type;
+        CopyL0C2UBImpl::template Run<trait>(dst, src, quant, params);
     }
 
     template <const CopyL0C2UBTrait& trait = DEFAULT_COPY_L0C2UB_TRAIT, typename T, typename U, typename S>
@@ -64,8 +76,14 @@ public:
     {
         using dstPos = GetMemLocation<T>;
         using srcPos = GetMemLocation<U>;
-        using Tensor2Tensor = typename CopyL0C2UBVectorQuantTensor2Tensor<dstPos, srcPos, CURRENT_ARCH_VERSION>::type;
-        Tensor2Tensor{}.template Run<trait>(dst, src, quant, params);
+        static_assert(Std::is_same_v<dstPos, Location::UB>, "When Copy tensor from L0C to UB, dst tensor must on UB");
+        static_assert(Std::is_same_v<srcPos, Location::L0C>, "When Copy tensor from L0C to UB, src tensor must on L0C");
+
+        using DstLayoutPtn = GetLayoutPattern<typename T::layoutType>;
+        using SrcLayoutPtn = GetLayoutPattern<typename U::layoutType>;
+
+        using CopyL0C2UBImpl = typename CopyL0C2UBRouting<CURRENT_ARCH_VERSION, DstLayoutPtn, SrcLayoutPtn>::type;
+        CopyL0C2UBImpl::template Run<trait>(dst, src, quant, params);
     }
 };
 

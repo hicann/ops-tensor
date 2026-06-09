@@ -62,6 +62,10 @@ private:
     {
         using dstPos = GetMemLocation<T>;
         using srcPos = GetMemLocation<U>;
+        static_assert(Std::is_same_v<dstPos, Location::L0B>,
+            "When Copy tensor from L1 to L0B, dst tensor must be from L0B.");
+        static_assert(Std::is_same_v<srcPos, Location::L1>,
+            "When Copy tensor from L1 to L0B, src tensor must be from L1.");
         using DstLayout = typename T::layoutType;
         using SrcLayout = typename U::layoutType;
         using DstPattern = GetLayoutPattern<DstLayout>;
@@ -70,8 +74,8 @@ private:
         constexpr auto noTrans = Std::is_same_v<DstPattern, SrcPattern>;
         using CopyL12L0BMode = typename CopyL12L0BModeSet::template Get<Std::tuple<Std::Int<noTrans>, Std::Int<isB8B4Type>>>;
         static_assert(!Std::is_same_v<CopyL12L0BMode, Std::ignore_t>, "Unsupported CopyL12L0BMode.");
-        using Tensor2Tensor = typename CopyL12L0BTensor2Tensor<dstPos, srcPos, CURRENT_ARCH_VERSION, DstPattern, SrcPattern, CopyL12L0BMode>::type;
-        Tensor2Tensor::template Run<trait, T, U>(dst, src);
+        using CopyL12L0BImpl = typename CopyL12L0BRouting<CURRENT_ARCH_VERSION, DstPattern, SrcPattern, CopyL12L0BMode>::type;
+        CopyL12L0BImpl::template Run<trait, T, U>(dst, src);
     }
 
     template<const CopyL12L0BTrait& trait = DEFAULT_COPY_L1_TO_L0B_TRAIT, typename T, typename U, class Coord> 
@@ -79,6 +83,10 @@ private:
     {
         using dstPos = GetMemLocation<T>; 
         using srcPos = GetMemLocation<U>; 
+        static_assert(Std::is_same_v<dstPos, Location::L0B>,
+            "When Copy tensor from L1 to L0B, dst tensor must be from L0B.");
+        static_assert(Std::is_same_v<srcPos, Location::L1>,
+            "When Copy tensor from L1 to L0B, src tensor must be from L1.");
         using DstLayout = typename T::layoutType; 
         using SrcLayout = typename U::layoutType; 
         using DstPattern = GetLayoutPattern<DstLayout>; 
@@ -87,8 +95,8 @@ private:
         constexpr auto noTrans = Std::is_same_v<DstPattern, SrcPattern>; 
         using CopyL12L0BMode = typename CopyL12L0BModeCoordSet::template Get<Std::tuple<Std::Int<noTrans>, Std::Int<isB8B4Type>>>; 
         static_assert(!Std::is_same_v<CopyL12L0BMode, Std::ignore_t>, "Unsupported CopyL12L0BCoordMode."); 
-        using Tensor2Tensor = typename CopyL12L0BTensor2Tensor<dstPos, srcPos, CURRENT_ARCH_VERSION, DstPattern, SrcPattern, CopyL12L0BMode>::type; 
-        Tensor2Tensor::template Run<trait, T, U, Coord>(dst, src, coord); 
+        using CopyL12L0BImpl = typename CopyL12L0BRouting<CURRENT_ARCH_VERSION, DstPattern, SrcPattern, CopyL12L0BMode>::type;
+        CopyL12L0BImpl::template Run<trait, T, U, Coord>(dst, src, coord);
     }
 };
 

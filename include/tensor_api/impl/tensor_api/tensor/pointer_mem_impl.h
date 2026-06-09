@@ -49,6 +49,15 @@ struct IsHardwareMem<PtrPattern, Pointer, void_t<typename Pointer::iterator>>
 template <typename PtrPattern, typename Pointer>
 constexpr bool IsHardwareMemV = IsHardwareMem<PtrPattern, Pointer>::value;
 
+template <typename T>
+struct IsHardwareMemPtr : Std::false_type {};
+
+template <typename PtrPattern, typename Pointer>
+struct IsHardwareMemPtr<HardwareMemPtr<PtrPattern, Pointer>> : Std::true_type {};
+
+template <typename T>
+constexpr bool IsHardwareMemPtrV = IsHardwareMemPtr<Std::remove_cvref_t<T>>::value;
+
 template <typename T, typename = void> 
 struct IsMemPtrIterator : Std::false_type {}; 
 

@@ -23,7 +23,7 @@
 #define IMPL_TENSOR_API_ARCH_CUBE_L0C_TO_GM_ROUTING_H
 
 #include "impl/tensor_api/arch/cube/utils/l0c2out_utils.h"
-#include "impl/tensor_api/arch/cube/l0c_to_gm/npu_arch_3510/data_copy.h"
+#include "impl/tensor_api/arch/cube/l0c_to_gm/copy_impl/data_copy.h"
 
 namespace AscendC {
 namespace Te {
@@ -32,29 +32,36 @@ class CopyL0C2GMIgnore {
 public:
     template <const CopyL0C2GMTrait& trait, typename... Args>
     __aicore__ inline static void Run(const Args&... args)
-    {
-        static_assert(Std::is_same_v<Args..., void>, "CopyL0C2GMIgnore should not be called");
+    { 
+        static_assert(Std::is_same_v<Args..., void>, "CopyL0C2GMIgnore should not be called"); 
     }
 };
 
-template <typename dstTPos, typename srcTpos, uint32_t Version>
-struct CopyL0C2GMTensor2Tensor {
+template <uint32_t Version, typename DstLayoutPtn, typename SrcLayoutPtn>
+struct CopyL0C2GMRouting {
     using type = CopyL0C2GMIgnore;
 };
 
-template <>
-struct CopyL0C2GMTensor2Tensor<Location::GM, Location::L0C, ArchVersion::V3510> {
-    using type = DataCopyL0C2GM3510;
+template <uint32_t Version>
+struct CopyL0C2GMRouting<Version, NDExtLayoutPtn, NZLayoutPtn> {
+    using type = DataCopyL0C2GM;
+};
+template <uint32_t Version>
+struct CopyL0C2GMRouting<Version, DNExtLayoutPtn, NZLayoutPtn> {
+    using type = DataCopyL0C2GM;
+};
+template <uint32_t Version>
+struct CopyL0C2GMRouting<Version, NDLayoutPtn, NZLayoutPtn> {
+    using type = DataCopyL0C2GM;
+};
+template <uint32_t Version>
+struct CopyL0C2GMRouting<Version, DNLayoutPtn, NZLayoutPtn> {
+    using type = DataCopyL0C2GM;
 };
 
-template <typename dstTPos, typename srcTpos, uint32_t Version>
-struct CopyL0C2GMVectorQuantTensor2Tensor {
-    using type = CopyL0C2GMIgnore;
-};
-
-template <>
-struct CopyL0C2GMVectorQuantTensor2Tensor<Location::GM, Location::L0C, ArchVersion::V3510> {
-    using type = DataCopyL0C2GMVectorQuant3510;
+template <uint32_t Version>
+struct CopyL0C2GMRouting<Version, NZLayoutPtn, NZLayoutPtn> {
+    using type = DataCopyL0C2GM;
 };
 
 } // namespace Te

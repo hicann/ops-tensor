@@ -23,8 +23,8 @@
 #ifndef IMPL_TENSOR_API_ARCH_CUBE_L1_TO_L0SCALEB_ROUTING_H
 #define IMPL_TENSOR_API_ARCH_CUBE_L1_TO_L0SCALEB_ROUTING_H
 
-#include "impl/tensor_api/arch/cube/l1_to_l0scaleb/npu_arch_3510/scaleb.h"
-#include "impl/tensor_api/arch/cube/l1_to_l0scaleb/npu_arch_3510/scaleb_with_coord.h"
+#include "impl/tensor_api/arch/cube/l1_to_l0scaleb/copy_impl/scaleb.h"
+#include "impl/tensor_api/arch/cube/l1_to_l0scaleb/copy_impl/scaleb_with_coord.h"
 
 namespace AscendC {
 namespace Te {
@@ -37,21 +37,21 @@ public:
     }
 };
 
-template <typename dstPos, typename srcPos, uint32_t Version, typename DstLayoutPattern, typename SrcLayoutPattern,
+template <uint32_t Version, typename DstLayoutPattern, typename SrcLayoutPattern,
     typename CopyMode>
-struct CopyL12L0ScaleBTensor2Tensor {
+struct CopyL12L0ScaleBRouting {
     using type = CopyL12L0ScaleBIgnore;
 };
 
-template <>
-struct CopyL12L0ScaleBTensor2Tensor<Location::L0ScaleB, Location::L1, ArchVersion::V3510, NNLayoutPtn, NNLayoutPtn,
+template <uint32_t Version>
+struct CopyL12L0ScaleBRouting<Version, NNLayoutPtn, NNLayoutPtn,
     CopyMode::NORMAL>
 {
     using type = LoadDataL12L0MxScaleB3510;
 };
 
-template <>
-struct CopyL12L0ScaleBTensor2Tensor<Location::L0ScaleB, Location::L1, ArchVersion::V3510, NNLayoutPtn, NNLayoutPtn,
+template <uint32_t Version>
+struct CopyL12L0ScaleBRouting<Version, NNLayoutPtn, NNLayoutPtn,
     CopyMode::NORMAL_COORD>
 {
     using type = LoadDataL12L0MxScaleBWithCoord3510;

@@ -28,26 +28,33 @@ namespace AscendC {
 namespace Te {
 
 template <typename... Ts>
-__aicore__ inline constexpr Shape<Ts...> MakeShape(const Ts&... ts)
+struct HasZeroIntegralConstant : Std::bool_constant<
+    (... || Std::is_same_v<Std::remove_cvref_t<Ts>, Std::Int<0>>)> {};
+
+template <typename T, typename... Ts>
+__aicore__ inline constexpr Shape<T, Ts...> MakeShape(const T& t, const Ts&... ts)
 {
-    static_assert(sizeof...(Ts) > 0, "MakeShape requires at least one argument.");
-    static_assert(!HasZeroIntegralConstant<Ts...>::value,
+    static_assert(!HasZeroIntegralConstant<T, Ts...>::value,
         "MakeShape does not accept Int<0> arguments.");
-    return {ts...};
+    return {t, ts...};
 }
 
-template <typename... Ts>
-__aicore__ inline constexpr Stride<Ts...> MakeStride(const Ts&... ts)
+template <typename T, typename... Ts>
+__aicore__ inline constexpr Stride<T, Ts...> MakeStride(const T& t, const Ts&... ts)
 {
-    static_assert(sizeof...(Ts) > 0, "MakeStride requires at least one argument.");
-    return {ts...};
+    return {t, ts...};
 }
 
-template <typename... Ts>
-__aicore__ inline constexpr Coord<Ts...> MakeCoord(const Ts&... ts)
+template <typename T, typename... Ts>
+__aicore__ inline constexpr Tile<T, Ts...> MakeTile(const T& t, const Ts&... ts)
 {
-    static_assert(sizeof...(Ts) > 0, "MakeCoord requires at least one argument.");
-    return {ts...};
+    return {t, ts...};
+}
+
+template <typename T, typename... Ts>
+__aicore__ inline constexpr Coord<T, Ts...> MakeCoord(const T& t, const Ts&... ts)
+{
+    return {t, ts...};
 }
 
 template <typename T, typename U>

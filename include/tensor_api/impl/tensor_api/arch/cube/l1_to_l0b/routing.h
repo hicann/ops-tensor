@@ -23,12 +23,12 @@
 #ifndef IMPL_TENSOR_API_ARCH_CUBE_L1_TO_L0B_ROUTING_H
 #define IMPL_TENSOR_API_ARCH_CUBE_L1_TO_L0B_ROUTING_H
 
-#include "impl/tensor_api/arch/cube/l1_to_l0b/npu_arch_3510/zn2zn.h"
-#include "impl/tensor_api/arch/cube/l1_to_l0b/npu_arch_3510/nz2zn.h"
-#include "impl/tensor_api/arch/cube/l1_to_l0b/npu_arch_3510/nz2znb8b4.h"
-#include "impl/tensor_api/arch/cube/l1_to_l0b/npu_arch_3510/zn2zn_with_coord.h"
-#include "impl/tensor_api/arch/cube/l1_to_l0b/npu_arch_3510/nz2zn_with_coord.h"
-#include "impl/tensor_api/arch/cube/l1_to_l0b/npu_arch_3510/nz2znb8b4_with_coord.h"
+#include "impl/tensor_api/arch/cube/l1_to_l0b/copy_impl/zn2zn.h"
+#include "impl/tensor_api/arch/cube/l1_to_l0b/copy_impl/nz2zn.h"
+#include "impl/tensor_api/arch/cube/l1_to_l0b/copy_impl/nz2znb8b4.h"
+#include "impl/tensor_api/arch/cube/l1_to_l0b/copy_impl/zn2zn_with_coord.h"
+#include "impl/tensor_api/arch/cube/l1_to_l0b/copy_impl/nz2zn_with_coord.h"
+#include "impl/tensor_api/arch/cube/l1_to_l0b/copy_impl/nz2znb8b4_with_coord.h"
 
 namespace AscendC {
 namespace Te {
@@ -41,45 +41,45 @@ public:
     }
 };
 
-template <typename dstPos, typename srcPos, uint32_t Version, typename DstLayoutPattern, typename SrcLayoutPattern, typename CopyMode>
-struct CopyL12L0BTensor2Tensor {
+template <uint32_t Version, typename DstLayoutPattern, typename SrcLayoutPattern, typename CopyMode>
+struct CopyL12L0BRouting {
     using type = CopyL12L0BIgnore;
 };
 
-template <>
-struct CopyL12L0BTensor2Tensor<Location::L0B, Location::L1, ArchVersion::V3510, ZNLayoutPtn, ZNLayoutPtn, CopyMode::NORMAL>
+template <uint32_t Version>
+struct CopyL12L0BRouting<Version, ZNLayoutPtn, ZNLayoutPtn, CopyMode::NORMAL>
 {
-    using type = LoadDataL12L0BZN2ZN3510;
+    using type = LoadDataL12L0BZN2ZN;
 };
 
-template <>
-struct CopyL12L0BTensor2Tensor<Location::L0B, Location::L1, ArchVersion::V3510, ZNLayoutPtn, ZNLayoutPtn, CopyMode::NORMAL_COORD>
+template <uint32_t Version>
+struct CopyL12L0BRouting<Version, ZNLayoutPtn, ZNLayoutPtn, CopyMode::NORMAL_COORD>
 {
-    using type = LoadDataL12L0BZN2ZNWithCoord3510;
+    using type = LoadDataL12L0BZN2ZNWithCoord;
 };
 
-template <>
-struct CopyL12L0BTensor2Tensor<Location::L0B, Location::L1, ArchVersion::V3510, ZNLayoutPtn, NZLayoutPtn, CopyMode::TRANS>
+template <uint32_t Version>
+struct CopyL12L0BRouting<Version, ZNLayoutPtn, NZLayoutPtn, CopyMode::TRANS>
 {
-    using type = LoadDataL12L0BNZ2ZN3510;
+    using type = LoadDataL12L0BNZ2ZN;
 };
 
-template <>
-struct CopyL12L0BTensor2Tensor<Location::L0B, Location::L1, ArchVersion::V3510, ZNLayoutPtn, NZLayoutPtn, CopyMode::TRANS_COORD>
+template <uint32_t Version>
+struct CopyL12L0BRouting<Version, ZNLayoutPtn, NZLayoutPtn, CopyMode::TRANS_COORD>
 {
-    using type = LoadDataL12L0BNZ2ZNWithCoord3510;
+    using type = LoadDataL12L0BNZ2ZNWithCoord;
 };
 
-template <>
-struct CopyL12L0BTensor2Tensor<Location::L0B, Location::L1, ArchVersion::V3510, ZNLayoutPtn, NZLayoutPtn, CopyMode::TRANS_B8B4>
+template <uint32_t Version>
+struct CopyL12L0BRouting<Version, ZNLayoutPtn, NZLayoutPtn, CopyMode::TRANS_B8B4>
 {
-    using type = LoadDataL12L0BNZ2ZNB8B43510;
+    using type = LoadDataL12L0BNZ2ZNB8B4;
 };
 
-template <>
-struct CopyL12L0BTensor2Tensor<Location::L0B, Location::L1, ArchVersion::V3510, ZNLayoutPtn, NZLayoutPtn, CopyMode::TRANS_B8B4_COORD>
+template <uint32_t Version>
+struct CopyL12L0BRouting<Version, ZNLayoutPtn, NZLayoutPtn, CopyMode::TRANS_B8B4_COORD>
 {
-    using type = LoadDataL12L0BNZ2ZNB8B4WithCoord3510;
+    using type = LoadDataL12L0BNZ2ZNB8B4WithCoord;
 };
 
 } // namespace Te
