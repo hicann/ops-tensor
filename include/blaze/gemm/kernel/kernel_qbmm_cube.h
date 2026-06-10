@@ -188,13 +188,13 @@ __aicore__ inline void GemmUniversal<QBMM_CUBE_KERNEL_TEM_PARAMS>::Init(const Pa
     bGmBase_ = reinterpret_cast<__gm__ BType*>(params.mmadParams.bGmAddr);
     cGmBase_ = reinterpret_cast<__gm__ CType*>(params.mmadParams.cGmAddr);
     if (static_cast<QuantMode>(params.qbmmParams.x2QuantMode) == QuantMode::PERCHANNEL_MODE) {
-        scaleGmBase_ = reinterpret_cast<__gm__ uint64_t*>(params.mmadParams.scaleGmAddr);
+        scaleGmBase_ = reinterpret_cast<__gm__ uint64_t*>(params.mmadParams.scaleBGmAddr);
     } else if (
         static_cast<QuantMode>(params.qbmmParams.x1QuantMode) == QuantMode::PERTENSOR_MODE) {
         auto pertokenScale = AscendC::GlobalTensor<float>();
         auto scale = AscendC::GlobalTensor<float>();
-        pertokenScale.SetGlobalBuffer((__gm__ float*)params.mmadParams.pertokenScaleGmAddr);
-        scale.SetGlobalBuffer((__gm__ float*)params.mmadParams.scaleGmAddr);
+        pertokenScale.SetGlobalBuffer((__gm__ float*)params.mmadParams.scaleAGmAddr);
+        scale.SetGlobalBuffer((__gm__ float*)params.mmadParams.scaleBGmAddr);
         float deqScale = pertokenScale.GetValue(0) * scale.GetValue(0);
         uint32_t uint32Scale = *(reinterpret_cast<uint32_t*>(&deqScale));
         scaleScalar_ = static_cast<uint64_t>(uint32Scale & DEQ_SCALE_MUL);
@@ -203,17 +203,17 @@ __aicore__ inline void GemmUniversal<QBMM_CUBE_KERNEL_TEM_PARAMS>::Init(const Pa
                       AscendC::IsSameType<ScaleGmType, int64_t>::value) {
             // Use GlobalTensor GM load (same as CMCT); do not dereference GM_ADDR directly on AICore.
             auto scale = AscendC::GlobalTensor<uint64_t>();
-            scale.SetGlobalBuffer(reinterpret_cast<__gm__ uint64_t*>(params.mmadParams.scaleGmAddr));
+            scale.SetGlobalBuffer(reinterpret_cast<__gm__ uint64_t*>(params.mmadParams.scaleBGmAddr));
             scaleScalar_ = scale.GetValue(0);
         } else if constexpr (AscendC::IsSameType<ScaleGmType, bfloat16_t>::value) {
             auto scale = AscendC::GlobalTensor<uint16_t>();
-            scale.SetGlobalBuffer((__gm__ uint16_t*)params.mmadParams.scaleGmAddr);
+            scale.SetGlobalBuffer((__gm__ uint16_t*)params.mmadParams.scaleBGmAddr);
             uint16_t uint16Scale = scale.GetValue(0);
             uint32_t uint32Scale = static_cast<uint32_t>(uint16Scale << LEFT_SHIFT_16);
             scaleScalar_ = static_cast<uint64_t>(uint32Scale & DEQ_SCALE_MUL);
         } else {
             auto scale = AscendC::GlobalTensor<uint32_t>();
-            scale.SetGlobalBuffer((__gm__ uint32_t*)params.mmadParams.scaleGmAddr);
+            scale.SetGlobalBuffer((__gm__ uint32_t*)params.mmadParams.scaleBGmAddr);
             uint32_t uint32Scale = scale.GetValue(0);
             scaleScalar_ = static_cast<uint64_t>(uint32Scale & DEQ_SCALE_MUL);
         }

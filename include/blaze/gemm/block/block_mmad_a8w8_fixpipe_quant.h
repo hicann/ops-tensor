@@ -84,8 +84,8 @@ public:
         GM_ADDR bGmAddr{nullptr};
         GM_ADDR cGmAddr{nullptr};
         GM_ADDR biasGmAddr{nullptr};
-        GM_ADDR pertokenScaleGmAddr{nullptr};
-        GM_ADDR scaleGmAddr{nullptr};
+        GM_ADDR scaleAGmAddr{nullptr};
+        GM_ADDR scaleBGmAddr{nullptr};
     };
 
     __aicore__ inline BlockMmad()

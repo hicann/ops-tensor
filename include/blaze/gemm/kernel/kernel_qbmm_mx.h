@@ -138,8 +138,8 @@ private:
     __gm__ BType* bGmAddr_;
     __gm__ CType* cGmAddr_;
     __gm__ BiasType* biasGmAddr_ = nullptr; // 可选输入，直接初始化
-    __gm__ fp8_e8m0_t* pertokenScaleGmAddr_;
-    __gm__ fp8_e8m0_t* scaleGmAddr_;
+    __gm__ fp8_e8m0_t* scaleAGmAddr_;
+    __gm__ fp8_e8m0_t* scaleBGmAddr_;
 
     uint64_t blockIdx_;
     uint64_t batchCOffset_{0};
@@ -272,8 +272,8 @@ __aicore__ inline void GemmUniversal<QBMM_MX_KERNEL_TEM_PARAMS>::ResetGmAddr(con
     aGmAddr_ = reinterpret_cast<__gm__ AType*>(params.mmadParams.aGmAddr);
     bGmAddr_ = reinterpret_cast<__gm__ BType*>(params.mmadParams.bGmAddr);
     cGmAddr_ = reinterpret_cast<__gm__ CType*>(params.mmadParams.cGmAddr);
-    pertokenScaleGmAddr_ = reinterpret_cast<__gm__ fp8_e8m0_t*>(params.mmadParams.pertokenScaleGmAddr);
-    scaleGmAddr_ = reinterpret_cast<__gm__ fp8_e8m0_t*>(params.mmadParams.scaleGmAddr);
+    scaleAGmAddr_ = reinterpret_cast<__gm__ fp8_e8m0_t*>(params.mmadParams.scaleAGmAddr);
+    scaleBGmAddr_ = reinterpret_cast<__gm__ fp8_e8m0_t*>(params.mmadParams.scaleBGmAddr);
     if (isBias_) {
         biasGmAddr_ = reinterpret_cast<__gm__ BiasType*>(params.mmadParams.biasGmAddr);
     }
@@ -396,10 +396,10 @@ __aicore__ inline void GemmUniversal<QBMM_MX_KERNEL_TEM_PARAMS>::ProcessSingleBa
 
     auto gmA = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(aGmAddr_), layoutA);
     auto gmScaleA =
-        AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(pertokenScaleGmAddr_), layoutScaleA);
+        AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(scaleAGmAddr_), layoutScaleA);
     auto gmB = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(bGmAddr_), layoutB);
     auto gmScaleB =
-        AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(scaleGmAddr_), layoutScaleB);
+        AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(scaleBGmAddr_), layoutScaleB);
     auto gmBias = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(biasGmAddr_), layoutBias);
     auto gmC = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(cGmAddr_), layoutC);
 
