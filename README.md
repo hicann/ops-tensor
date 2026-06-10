@@ -1,7 +1,7 @@
 # ops-tensor
 
 ## 🔥 最新动态
-- [2026/04] 新增 `tensor_api`、`Blaze`（**B**asic **L**inear **A**lgebra **O**ptimized **E**ngine）公共模块，分别为算子开发提供张量结构抽象与高性能线性代数加速能力。
+- [2026/04] 新增 `tensor_api`、`Blaze`（**B**asic **L**inear **A**lgebra optimi**Z**ed **E**ngine）公共模块，分别为算子开发提供张量结构抽象与高性能线性代数加速能力。
 - [2026/03] 完成项目基础架构搭建，支持 Add 算子实现和测试，支持一键编译、测试和打包。
 - [2026/03] 建立完整的测试框架，支持单元测试、超时控制和自动化测试统计。
 - [2026/03] 实现标准化的打包流程，生成 .run 安装包，支持 install/uninstall/upgrade 完整生命周期管理。

@@ -4,7 +4,7 @@
 ## 概述
 Block 层后处理组件，用于矩阵乘计算后的额外处理。不同实现（Empty、StreamK）提供不同功能：Empty 为空实现，StreamK 支持 workspace 汇聚、类型转换、ReLU 激活。
 
-详见：[README.md](./README.md) 查看 API 清单和实现对比。
+详见：[README.md](../README.md) 查看 API 清单和实现对比。
 
 ## 类概述
 

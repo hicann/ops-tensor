@@ -6,6 +6,14 @@
 
 ```
 docs/
+├── API/                           # API文档目录
+    ├── README.md                  # 本文档
+    ├── epilogue/                  # Epilogue 层文档
+    |   └── block/                 # Block 层文档
+    └── gemm/                      # Gemm 层文档
+        ├── kernel/                # Kernel 层文档
+        ├── block/                 # Block 层文档
+        └── tile/                  # Tile 层文档  
 ├── zh/                                # 中文文档目录
 │   ├── context/                       # 公共文档目录
 │   │   ├── build.md                   # build.sh 参数说明
@@ -27,6 +35,7 @@ docs/
 
 | 文档 | 说明 |
 | :--- | :--- |
+| [blaze接口文档](API/README.md) | 介绍项目包含的所有算子清单 |
 | [算子列表](zh/op_list.md) | 介绍项目包含的所有算子清单 |
 | [环境部署](zh/context/quick_install.md) | 介绍项目的基础环境搭建 |
 | [build 参数说明](zh/context/build.md) | 介绍 build.sh 脚本功能和参数含义 |

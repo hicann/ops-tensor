@@ -1,5 +1,5 @@
 # Tile Mmad MX
-> [代码位置](../../../../include/blaze/gemm/tile/tile_mmad_mx.h)
+> [代码位置](../../../../include/blaze/gemm/tile/tile_trait.h)
 
 ## 功能说明
 MX 量化矩阵乘 Tile，定义 MmadTraitMX trait，用于支持 MxFP4/MxFP8 量化矩阵乘计算。

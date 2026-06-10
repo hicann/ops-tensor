@@ -1,8 +1,8 @@
-# Blaze GEMM Library 架构概述
+# Blaze 架构概述
 
 ## 简介
 
-Blaze (Basic Linear Algebra optimized Engine) 是一个高性能矩阵乘库，专为华为 Ascend NPU 平台优化。采用分层架构设计，提供灵活的组件组装能力，支持多种矩阵乘场景（Basic、StreamK、MX 量化）。
+Blaze (**B**asic **L**inear **A**lgebra optimi**Z**ed **E**ngine) 是一个高性能矩阵乘库，专为华为 Ascend NPU 平台优化。采用分层架构设计，提供灵活的组件组装能力，支持多种矩阵乘场景（Basic、StreamK、MX 量化）。
 
 ## 整体架构
 
@@ -13,10 +13,10 @@ Blaze (Basic Linear Algebra optimized Engine) 是一个高性能矩阵乘库，�
 +-----------------------------------------------------------------------+
 |  +--------------------------------------------------------------+      |
 |  |                         Kernel Layer                         |      |
-|  |  +-------------+  +-------------+  +-------------+           |      |
-|  |  |KernelMatmul |  |KernelStreamK|  |KernelQbmmMx |           |      |
-|  |  |   Basic     |  |             |  |             |           |      |
-|  |  |+------------+  +-------------+  +-------------+           |      |
+|  |  +------------------+  +-------------+  +-------------+      |      |
+|  |  |KernelMatmulBasic |  |KernelStreamK|  |KernelQbmmMx |      |      |
+|  |  |                  |  |             |  |             |      |      |
+|  |  |+-----------------+  +-------------+  +-------------+      |      |
 |  +--------------------------------------------------------------+      |
 |
 |        |                 |                 |                           |
@@ -67,28 +67,28 @@ Blaze (Basic Linear Algebra optimized Engine) 是一个高性能矩阵乘库，�
 ### Kernel Layer（Kernel 层）
 职责：整体计算流程编排，GM Tensor 创建，多 Block 并行调度。
 
-详细文档：[Kernel 层 API](kernel/README.md)
+详细文档：[Kernel 层 API](gemm/kernel/README.md)
 
 ### Block Layer（Block 层）
 职责：单个 Block 的矩阵乘计算、任务调度、后处理。
 
-详细文档：[Block 层 API](block/README.md) | [Epilogue 层 API](epilogue/README.md)
+详细文档：[Block 层 API](gemm/block/README.md) | [Epilogue 层 API](epilogue/README.md)
 
 ### Tile Layer（Tile 层）
 职责：底层辅助组件，数据对齐、Scale 搬运、Trait 定义。
 
-详细文档：[Tile 层 API](tile/README.md)
+详细文档：[Tile 层 API](gemm/tile/README.md)
 
 ### Policy Layer（策略层）
 职责：调度策略、配置模式定义。
 
-详细文档：[Policy 层](../include/blaze/policy/dispatch_policy.h)
+详细文档：[Policy 层](../../include/blaze/gemm/policy/dispatch_policy.h)
 
 ### Utils Layer（工具层）
 职责：公共工具函数、布局判断、常量定义。
 
 
-详细文档：[Utils 层](../include/blaze/utils/)
+详细文档：[Utils 层](../../include/blaze/gemm/utils/)
 
 ## 数据流示意图
 
@@ -208,13 +208,13 @@ blaze/
 了解 Blaze 分层设计和数据流 → 本文档
 
 ### 2. 选择 Kernel 类型
-根据场景选择 Basic、StreamK 或 MX → [Kernel 层 API](kernel/README.md)
+根据场景选择 Basic、StreamK 或 MX → [Kernel 层 API](gemm/kernel/README.md)
 
 ### 3. 组装 Block 组件
-选择 BlockScheduler、BlockMmad、BlockEpilogue → [Block 层 API](block/README.md)
+选择 BlockScheduler、BlockMmad、BlockEpilogue → [Block 层 API](gemm/block/README.md)
 
 ### 4. 了解底层组件
-Tile 层辅助组件 → [Tile 层 API](tile/README.md)
+Tile 层辅助组件 → [Tile 层 API](gemm/tile/README.md)
 
 ### 5. 配置策略
 调度策略和配置 → [Policy 层](../../include/blaze/gemm/policy/dispatch_policy.h)

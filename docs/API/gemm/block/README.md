@@ -15,7 +15,7 @@
 | [block_scheduler](./block_scheduler.md) | 公共框架：tile 切分、Z 型扫描、尾块处理 |
 | [block_scheduler_matmul_basic](./block_scheduler_matmul_basic.md) | Basic 调度器：尾块切分、SplitK 切分、L2Cache 配置 |
 | [block_scheduler_matmul_streamk](./block_scheduler_matmul_streamk.md) | StreamK 调度器：DP+SK 混合策略、K 轴切分 |
-| [block_scheduler_qbmm_basic](./block_scheduler_qbmm_basic.md) | QBMM 调度器：Batch 维度切分、量化对齐 |
+| [block_scheduler_qbmm_basic](./block_scheduler_qbmm_mx_basic.md) | QBMM 调度器：Batch 维度切分、量化对齐 |
 
 ## 公共框架
 

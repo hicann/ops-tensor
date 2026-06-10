@@ -4,17 +4,17 @@
 
 | 组件名 | 描述 |
 | :----------------------------------------------------------- | :------: |
-| [block_epilogue_empty](./block_epilogue_empty.md) | 空后处理组件，用于不支持后处理的 Kernel |
-| [block_epilogue_streamk](./block_epilogue_streamk.md) | StreamK 后处理组件，支持 workspace 汇聚、类型转换、ReLU |
+| [block_epilogue_empty](./block/block_epilogue_empty.md) | 空后处理组件，用于不支持后处理的 Kernel |
+| [block_epilogue_streamk](./block/block_epilogue_matmul_streamk.md) | StreamK 后处理组件，支持 workspace 汇聚、类型转换、ReLU |
 
 ## 公共框架
 
-所有 BlockEpilogue 组件基于 [block_epilogue.md](./block_epilogue.md) 公共框架实现，包含统一的：
+所有 BlockEpilogue 组件基于 [block_epilogue.md](./block/block_epilogue.md) 公共框架实现，包含统一的：
 - 类型别名
 - 数据结构（Arguments、Params）
 - 核心方法（Init、Run、operator）
 
-详见：[block_epilogue.md](./block_epilogue.md)
+详见：[block_epilogue.md](./block/block_epilogue.md)
 
 ## 核心组件关系
 
@@ -38,7 +38,7 @@ BlockEpilogue
 
 ## 使用流程
 
-1. **查看公共框架**：了解类型别名和核心接口 → [block_epilogue.md](./block_epilogue.md)
+1. **查看公共框架**：了解类型别名和核心接口 → [block_epilogue.md](./block/block_epilogue.md)
 2. **选择具体实现**：根据 Kernel 类型选择 Empty 或 StreamK
 3. **组装组件**：在 Kernel 模板参数中定义 BlockEpilogue 类型
 4. **初始化**：调用 Init 设置参数（StreamK 需要额外参数）
