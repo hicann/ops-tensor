@@ -57,8 +57,8 @@ public:
         using type = GetAttributeElementType<typename T::elementType*>;
         uint32_t dataSize = dst.Size();
 
-        constexpr uint16_t VECTOR_REG_WIDTH = asc_get_vf_len();
-        constexpr uint16_t oneRepSize = VECTOR_REG_WIDTH / sizeof(type);
+        uint16_t VECTOR_REG_WIDTH = asc_get_vf_len();
+        uint16_t oneRepSize = VECTOR_REG_WIDTH / sizeof(type);
         uint16_t repeat = Std::ceil_division(dataSize, oneRepSize);
 
         UnaryVF<CalcFunc, TraitType>::template Run<type>(dst.Data().Get(), src.Data().Get(), repeat, oneRepSize, dataSize);

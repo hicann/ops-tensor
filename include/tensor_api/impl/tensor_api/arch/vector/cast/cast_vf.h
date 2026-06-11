@@ -64,9 +64,9 @@ public:
 
         uint32_t dstSize = dst.Size();
 
-        constexpr uint16_t VECTOR_REG_WIDTH = asc_get_vf_len();
+        uint16_t VECTOR_REG_WIDTH = asc_get_vf_len();
         using greaterType = Std::conditional_t<(sizeof(dstType) > sizeof(srcType)), dstType, srcType>;
-        constexpr uint16_t oneRepSize = VECTOR_REG_WIDTH / sizeof(greaterType);
+        uint16_t oneRepSize = VECTOR_REG_WIDTH / sizeof(greaterType);
 
         uint16_t repeat = Std::ceil_division(dstSize, oneRepSize);
         

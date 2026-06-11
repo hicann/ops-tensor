@@ -63,8 +63,8 @@ public:
   		using dstType = GetAttributeElementType<typename T::elementType*>;
         uint32_t dataSize = dst.Size();
 
-        constexpr uint16_t VECTOR_REG_WIDTH = asc_get_vf_len();
-        constexpr uint16_t oneRepSize = VECTOR_REG_WIDTH / sizeof(srcType);
+        uint16_t VECTOR_REG_WIDTH = asc_get_vf_len();
+        uint16_t oneRepSize = VECTOR_REG_WIDTH / sizeof(srcType);
         uint16_t repeat = Std::ceil_division(dataSize, oneRepSize);
 
         AxpyVF<CalcFunc, TraitType>::template Run<dstType, srcType>(dst.Data().Get(), src.Data().Get(), value, repeat, oneRepSize, dataSize);
