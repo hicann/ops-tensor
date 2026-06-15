@@ -167,7 +167,8 @@ blaze/
 │       ├── kernel/              # Kernel 层组件
 │       │   ├── kernel_matmul_basic.h
 │       │   ├── kernel_matmul_streamk.h
-│       │   └── kernel_qbmm_mx.h
+│       │   ├── kernel_qbmm_mx.h
+│       │   └── kernel_qbmm_mx_without_batch.h
 │       │
 │       ├── block/               # Block 层组件
 │       │   ├── block_mmad.h          # BlockMmad 基类

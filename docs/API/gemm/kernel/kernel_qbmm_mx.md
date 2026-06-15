@@ -15,8 +15,8 @@ MX 量化 Batch Matmul Kernel，仅支持 AIC 计算，支持 MxFP4/MxFP8 量化
 
 ### Scale 因子要求
 必须提供两个 Scale 因子：
-- `pertokenScaleGmAddr`：A 矩阵的 per-token scale（`fp8_e8m0_t` 类型）
-- `scaleGmAddr`：B 矩阵的 per-group scale（`fp8_e8m0_t` 类型）
+- `scaleAGmAddr`：A 矩阵的 per-token scale（`fp8_e8m0_t` 类型）
+- `scaleBGmAddr`：B 矩阵的 per-group scale（`fp8_e8m0_t` 类型）
 
 ### 计算模式
 仅支持 AIC 模式，不支持 AIV 计算（AIV 核直接返回）。
@@ -39,15 +39,15 @@ MX 量化 Batch Matmul Kernel，仅支持 AIC 计算，支持 MxFP4/MxFP8 量化
 
 ### 构造函数
 ```
-__aicore__ inline QuantBatchMmMx()
+__aicore__ inline GemmUniversal()
 ```
-功能：构造 QuantBatchMmMx 对象。
+功能：构造 GemmUniversal 对象。
 
 ### 析构函数
 ```
-__aicore__ inline ~QuantBatchMmMx()
+__aicore__ inline ~GemmUniversal()
 ```
-功能：析构 QuantBatchMmMx 对象。
+功能：析构 GemmUniversal 对象。
 
 ### 特殊模板参数
 
@@ -56,8 +56,7 @@ template <
     class ProblemShape,      // 问题形状类型
     class BlockMmad,         // BlockMmadMX 组件
     class BlockEpilogue,     // 后处理组件（通常为 void）
-    class BlockScheduler,    // BlockSchedulerQbmm 调度器
-    bool isAtomicAdd>        // 是否启用 Atomic Add
+    class BlockScheduler>    // BlockSchedulerQbmm 调度器
 ```
 
 ### 模板参数说明
@@ -67,7 +66,6 @@ template <
 | BlockMmad | BlockMmadMX 组件，基于 `MatmulWithScaleMx` 调度策略 |
 | BlockEpilogue | 后处理组件（通常不使用，传 void） |
 | BlockScheduler | BlockSchedulerQbmm 调度器 |
-| isAtomicAdd | 是否启用 Atomic Add 模式（多核并行累加） |
 
 ## 特殊类型别名
 
@@ -76,6 +74,7 @@ template <
 | weightNz | B 矩阵是否为 NZ 格式（继承自 BlockMmad） |
 | transA | A 矩阵是否转置（继承自 BlockMmad） |
 | transB | B 矩阵是否转置（继承自 BlockMmad） |
+| isAtomicAdd | 是否启用 Atomic Add 模式（继承自 BlockMmad::DispatchPolicy） |
 | C0_SIZE | C0 对齐大小（FP4: 64，FP8: 32） |
 | SCALE_C0 | Scale C0 对齐大小（固定为 2） |
 | MakeLayoutScaleA | ScaleA Layout 构建器（根据 transA 选择） |
@@ -114,8 +113,8 @@ struct Params {
     GM_ADDR bGmAddr;             // B 矩阵 GM 地址
     GM_ADDR cGmAddr;             // C 矩阵 GM 地址
     GM_ADDR biasGmAddr;          // Bias GM 地址（可选）
-    GM_ADDR pertokenScaleGmAddr; // A 矩阵 Scale GM 地址
-    GM_ADDR scaleGmAddr;         // B 矩阵 Scale GM 地址
+    GM_ADDR scaleAGmAddr;        // A 矩阵 Scale GM 地址
+    GM_ADDR scaleBGmAddr;        // B 矩阵 Scale GM 地址
 };
 ```
 
@@ -177,15 +176,16 @@ __aicore__ inline void ProcessWithBatch(const Params& params, BlockScheduler& bs
 
 ### SetL2Cache函数
 ```
-template <typename TensorB, typename TensorScaleB, typename TensorC>
+template <typename TensorB, typename TensorC>
 __aicore__ inline void SetL2Cache(
     const ProblemShape& problemShape,
-    uint64_t curBaseM, uint64_t baseN,
-    TensorB& gmB, TensorScaleB& gmScaleB, TensorC& gmC)
+    uint64_t baseM, uint64_t baseN,
+    TensorB& gmB, TensorC& gmC)
 ```
 功能：动态配置 L2 Cache。
 说明：
-- 大 tile 场景：禁用 B 和 ScaleB 的 L2 Cache
+- 同 Batch 且 M tile 覆盖完整 M 维时，根据 B 的布局和对齐情况配置 B 的 L2 Cache
+- 当前实现不再配置 ScaleB 的 L2 Cache hint，ScaleB 使用 Tensor API 默认 Cache 策略
 - Atomic Add 模式：禁用 C 的 L2 Cache
 
 ## 调用示例
@@ -216,8 +216,8 @@ using BlockMmad = Blaze::Gemm::Block::BlockMmad<
 using BlockScheduler = Blaze::Gemm::Block::BlockSchedulerQbmm<ProblemShape>;
 
 // 定义 Kernel
-using QBMMKernel = Blaze::Gemm::Kernel::QuantBatchMmMx<
-    ProblemShape, BlockMmad, void, BlockScheduler, false>;
+using QBMMKernel = Blaze::Gemm::Kernel::GemmUniversal<
+    ProblemShape, BlockMmad, void, BlockScheduler>;
 ```
 
 ### 参数准备

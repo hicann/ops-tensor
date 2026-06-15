@@ -35,9 +35,9 @@ constexpr int32_t MNK_M0 = 4;
 constexpr int32_t MNK_N0 = 5;
 constexpr int32_t EVEN_NUMBER = 2;
 
-constexpr static uint64_t A_FULL_LOAD_MODE = 1UL;
-constexpr static uint64_t B_FULL_LOAD_MODE = 2UL;
-constexpr static uint64_t NONE_FULL_LOAD_MODE = 0UL;
+static constexpr uint64_t A_FULL_LOAD_MODE = 1UL;
+static constexpr uint64_t B_FULL_LOAD_MODE = 2UL;
+static constexpr uint64_t NONE_FULL_LOAD_MODE = 0UL;
 
 constexpr uint16_t ZERO_FLAG = 0;
 constexpr uint16_t FIRST_FLAG = 1;
@@ -47,7 +47,7 @@ constexpr uint16_t FOURTH_FLAG = 4;
 constexpr uint16_t FIFTH_FLAG = 5;
 constexpr uint16_t SIXTH_FLAG = 6;
 constexpr uint16_t SEVENTH_FLAG = 7;
-constexpr static int64_t PER_BLOCK_SIZE = 128LL;
+static constexpr int64_t PER_BLOCK_SIZE = 128LL;
 constexpr uint64_t MXFP_DIVISOR_SIZE = 64UL;
 constexpr uint64_t MXFP_MULTI_BASE_SIZE = 2UL;
 constexpr uint64_t BLOCK_CUBE = 16UL;
@@ -59,6 +59,12 @@ constexpr uint64_t C0_SIZE_fp32 = 8UL;
 constexpr uint64_t C0_SIZE_B8 = 32UL;
 constexpr uint64_t C0_SIZE_B4 = 64UL;
 constexpr uint64_t C0_SIZE_L0C = 16UL;
+
+constexpr uint64_t ALIGN_MASK_64 = 63UL;
+constexpr uint64_t ALIGN_MASK_32 = 31UL;
+constexpr uint64_t ALIGN_MASK_16 = 15UL;
+constexpr uint16_t ALIGN_64_BYTES_SHIFT = 6;
+constexpr uint16_t ALIGN_32_BYTES_SHIFT = 5;
 
 // FusedMatMul OpType
 constexpr uint64_t OP_TYPE_EMPTY = 0UL;
@@ -120,6 +126,21 @@ __aicore__ inline T CeilAlign(T a, T b)
         return a;
     }
     return (a + b - 1) / b * b;
+}
+
+__aicore__ inline uint64_t Align64(uint64_t x)
+{
+    return (x + ALIGN_MASK_64) & ~ALIGN_MASK_64;
+}
+
+__aicore__ inline uint64_t Align32(uint64_t x)
+{
+    return (x + ALIGN_MASK_32) & ~ALIGN_MASK_32;
+}
+
+__aicore__ inline uint64_t Align16(uint64_t x)
+{
+    return (x + ALIGN_MASK_16) & ~ALIGN_MASK_16;
 }
 
 template <typename T>

@@ -26,9 +26,6 @@ namespace Block {
 template <class ProblemShape_, uint64_t FullLoadMode_, class LayoutA_, class LayoutB_, class AType_>
 class BlockSchedulerQuantBatchMatmulV3 {
 public:
-    int64_t m_{0};
-    int64_t n_{0};
-    int64_t k_{0};
     int64_t baseM_{0};
     int64_t baseN_{0};
     int64_t mCnt_{0};
@@ -51,19 +48,18 @@ public:
     int64_t mTailTile_{1};     // init value must be 1
     int64_t nTailTile_{1};     // init value must be 1
     int64_t totalTailTile_{1}; // init value must be 1
+    int64_t mainRow_{0};
     int64_t mSplitAddrOffset_{0};
     int64_t nSplitAddrOffset_{0};
-    int64_t mainRow_{0};
 
     using BlockShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
     using BlockCoord = AscendC::Te::Coord<int64_t, int64_t, int64_t, int64_t>;
     using ProblemShape = ProblemShape_;
     using AType = AType_;
 
-    constexpr static bool transA = IsTrans<LayoutA_>::value;
-    constexpr static bool transB = IsTrans<LayoutB_>::value;
-    constexpr static int64_t C0_SIZE = IsFp4<AType>() ? C0_SIZE_B4 : C0_SIZE_B8;
-    constexpr static int64_t WINDOW_LEN = 4;
+    static constexpr bool transA = IsTrans<LayoutA_>::value;
+    static constexpr bool transB = IsTrans<LayoutB_>::value;
+    static constexpr int64_t WINDOW_LEN = 4;
 
     struct Params {
         int64_t baseM;
@@ -79,13 +75,12 @@ public:
 public:
     __aicore__ inline BlockSchedulerQuantBatchMatmulV3(const ProblemShape& shape, const Params& params)
     {
-        m_ = AscendC::Te::Get<MNK_M>(shape);
-        n_ = AscendC::Te::Get<MNK_N>(shape);
-        k_ = AscendC::Te::Get<MNK_K>(shape);
+        const int64_t m = AscendC::Te::Get<MNK_M>(shape);
+        const int64_t n = AscendC::Te::Get<MNK_N>(shape);
         baseM_ = static_cast<int64_t>(params.baseM);
         baseN_ = static_cast<int64_t>(params.baseN);
-        mCnt_ = Blaze::Gemm::CeilDiv(m_, baseM_);
-        nCnt_ = Blaze::Gemm::CeilDiv(n_, baseN_);
+        mCnt_ = Blaze::Gemm::CeilDiv(m, baseM_);
+        nCnt_ = Blaze::Gemm::CeilDiv(n, baseN_);
         totalCnt_ = mCnt_ * nCnt_;
         mCoreNum_ = Blaze::Gemm::Min(WINDOW_LEN, mCnt_);
         if (mCoreNum_ != 0) {
@@ -99,19 +94,19 @@ public:
         }
         if constexpr (!transA) {
             mBaseNormCnt_ = mCnt_ - params.mBaseTailSplitCnt;
-            int64_t mMergeSize = m_ - mBaseNormCnt_ * baseM_;
+            int64_t mMergeSize = m - mBaseNormCnt_ * baseM_;
             mBaseTailMain_ = params.mBaseTailSplitCnt == 1 ? mMergeSize : params.mTailMain;
             mBaseTailLast_ = mMergeSize - (params.mBaseTailSplitCnt - 1) * mBaseTailMain_;
         } else {
-            mBaseTailMain_ = m_ - (mCnt_ - 1) * baseM_;
+            mBaseTailMain_ = m - (mCnt_ - 1) * baseM_;
         }
         if constexpr (transB) {
             nBaseNormCnt_ = nCnt_ - params.nBaseTailSplitCnt;
-            int64_t nMergeSize = n_ - nBaseNormCnt_ * baseN_;
+            int64_t nMergeSize = n - nBaseNormCnt_ * baseN_;
             nBaseTailMain_ = params.nBaseTailSplitCnt == 1 ? nMergeSize : params.nTailMain;
             nBaseTailLast_ = nMergeSize - (params.nBaseTailSplitCnt - 1) * nBaseTailMain_;
         } else {
-            nBaseTailMain_ = n_ - (nCnt_ - 1) * baseN_;
+            nBaseTailMain_ = n - (nCnt_ - 1) * baseN_;
         }
     }
 
@@ -146,14 +141,13 @@ public:
     /**
      * @brief Round the input value up to the smallest power of two.
      *
-     * Modifies the input value in place so that it becomes the smallest
-     * power of two greater than or equal to its original value.
+     * Returns the smallest power of two greater than or equal to the input value.
      * This implementation uses a bit-smearing technique and assumes
      * the input value is in the range [1, 256].
      *
      * @param inputValue  Input value to be rounded up.
      */
-    __aicore__ inline void CeilPowerOfTwo(int64_t& inputValue)
+    __aicore__ inline int64_t CeilPowerOfTwo(int64_t inputValue)
     {
         inputValue--;
         inputValue |= inputValue >> 1; // Propagate the highest set bit to the right by 1 position,ensuring the most
@@ -163,26 +157,29 @@ public:
         inputValue |= inputValue >> 4; // Further propagate the highest set bit by 4 positions, resulting in all bits
                                        // below the MSB (up to 7 positions) being set.
         inputValue++;
+        return inputValue;
     }
 
     __aicore__ inline void CalSingleCoreShapeByCoord(
-        int64_t& singleCoreM, int64_t& singleCoreN, const BlockCoord& blockCoord)
+        int64_t& singleCoreM, int64_t& singleCoreN, BlockCoord blockCoord)
     {
+        const int64_t mIdx = AscendC::Te::Get<MNK_M>(blockCoord);
+        const int64_t nIdx = AscendC::Te::Get<MNK_N>(blockCoord);
         if constexpr (!transA) {
-            if (AscendC::Te::Get<MNK_M>(blockCoord) >= mBaseNormCnt_) {
-                singleCoreM = AscendC::Te::Get<MNK_M>(blockCoord) < mCnt_ - 1 ? mBaseTailMain_ : mBaseTailLast_;
+            if (mIdx >= mBaseNormCnt_) {
+                singleCoreM = mIdx < mCnt_ - 1 ? mBaseTailMain_ : mBaseTailLast_;
             }
         } else {
-            if (AscendC::Te::Get<MNK_M>(blockCoord) == mCnt_ - 1) {
+            if (mIdx == mCnt_ - 1) {
                 singleCoreM = mBaseTailMain_;
             }
         }
         if constexpr (transB) {
-            if (AscendC::Te::Get<MNK_N>(blockCoord) >= nBaseNormCnt_) {
-                singleCoreN = AscendC::Te::Get<MNK_N>(blockCoord) < nCnt_ - 1 ? nBaseTailMain_ : nBaseTailLast_;
+            if (nIdx >= nBaseNormCnt_) {
+                singleCoreN = nIdx < nCnt_ - 1 ? nBaseTailMain_ : nBaseTailLast_;
             }
         } else {
-            if (AscendC::Te::Get<MNK_N>(blockCoord) == nCnt_ - 1) {
+            if (nIdx == nCnt_ - 1) {
                 singleCoreN = nBaseTailMain_;
             }
         }
@@ -210,30 +207,35 @@ public:
         if constexpr ((aQuantMode == QuantMode::PERGROUP_MODE || aQuantMode == QuantMode::PERBLOCK_MODE) && transA) {
             singleCoreMSplit = PER_BLOCK_SIZE << (singleCoreMSplit > PER_BLOCK_SIZE);
         } else if constexpr (aQuantMode == QuantMode::PERBLOCK_MODE) {
-            CeilPowerOfTwo(singleCoreMSplit);
+            singleCoreMSplit = CeilPowerOfTwo(singleCoreMSplit);
         }
         if constexpr (bQuantMode == QuantMode::PERBLOCK_MODE) {
             if constexpr (!transB) { // (k, n)
                 singleCoreNSplit = PER_BLOCK_SIZE << (singleCoreNSplit > PER_BLOCK_SIZE);
             } else {
-                CeilPowerOfTwo(singleCoreNSplit);
+                singleCoreNSplit = CeilPowerOfTwo(singleCoreNSplit);
             }
         }
 
         if constexpr (weightNz) {
             if constexpr (!transB) {
-                singleCoreNSplit = Blaze::Gemm::CeilAlign(singleCoreNSplit, static_cast<int64_t>(C0_SIZE));
+                if constexpr (IsFp4<AType>()) {
+                    singleCoreNSplit = Align64(singleCoreNSplit);
+                } else {
+                    singleCoreNSplit = Align32(singleCoreNSplit);
+                }
             } else {
-                singleCoreNSplit = Blaze::Gemm::CeilAlign(singleCoreNSplit, static_cast<int64_t>(BLOCK_CUBE));
+                singleCoreNSplit = Align16(singleCoreNSplit);
             }
         }
 
-        int64_t mSplitIdx = (blockIdx_ % totalTailTile_) % mTailTile_;
+        const int64_t tailSplitIdx = blockIdx_ % totalTailTile_;
+        int64_t mSplitIdx = tailSplitIdx % mTailTile_;
         int64_t nSplitIdx = 0;
         if constexpr (FullLoadMode_ == A_FULL_LOAD_MODE) {
             nSplitIdx = blockIdx_ / mCnt_ % nTailTile_;
         } else {
-            nSplitIdx = (blockIdx_ % totalTailTile_) / mTailTile_;
+            nSplitIdx = tailSplitIdx / mTailTile_;
         }
         mSplitAddrOffset_ = mSplitIdx * singleCoreMSplit;
         nSplitAddrOffset_ = nSplitIdx * singleCoreNSplit;
@@ -243,13 +245,6 @@ public:
         singleCoreM = Blaze::Gemm::Min(singleCoreM - mSplitAddrOffset_, singleCoreMSplit);
         singleCoreN = Blaze::Gemm::Min(singleCoreN - nSplitAddrOffset_, singleCoreNSplit);
         return {singleCoreM, singleCoreN, mSplitAddrOffset_, nSplitAddrOffset_};
-    }
-
-    __aicore__ inline AscendC::Std::tuple<uint32_t, uint32_t, uint32_t, uint32_t> GetLoadBalanceInfo()
-    {
-        return {
-            static_cast<uint32_t>(mBaseNormCnt_), static_cast<uint32_t>(mBaseTailMain_),
-            static_cast<uint32_t>(nBaseNormCnt_), static_cast<uint32_t>(nBaseTailMain_)};
     }
 
     __aicore__ inline void UpdateNextBatchBlockRoundParams()
@@ -272,8 +267,8 @@ public:
             return false;
         }
 
-        int64_t blockCoordM = AscendC::Te::Get<IDX_M_TILEIDX>(blockCoord);
-        int64_t blockCoordN = AscendC::Te::Get<IDX_N_TILEIDX>(blockCoord);
+        int64_t blockCoordM = 0;
+        int64_t blockCoordN = 0;
 
         int64_t newBlockIdx = (roundIdx_ == round_ - 1) ? blockIdx_ / totalTailTile_ : blockIdx_;
         int64_t tileIdx = newBlockIdx + roundIdx_ * blockNum_;
@@ -282,9 +277,7 @@ public:
             int64_t curNTailTile = (roundIdx_ == round_ - 1) ? nTailTile_ : 1;
             blockCoordN = roundIdx_ * blockNum_ / mCnt_ % nCnt_ + blockIdx_ / mCnt_ / curNTailTile;
             roundIdx_++;
-            blockCoord = BlockCoord{
-                blockCoordM, blockCoordN, AscendC::Te::Get<IDX_M_TAIL_SPLIT_TILEIDX>(blockCoord),
-                AscendC::Te::Get<IDX_N_TAIL_SPLIT_TILEIDX>(blockCoord)};
+            blockCoord = BlockCoord{blockCoordM, blockCoordN, 0, 0};
             return true;
         }
         if (blockIdx_ < startBlockIdx_) {
@@ -295,26 +288,26 @@ public:
             tileIdx -= startBlockIdx_;
         }
         int64_t rowIdx = tileIdx / nCnt_ / mCoreNum_;
+        int64_t nIdx = 0;
         if (rowIdx < mainRow_) {
             blockCoordM = rowIdx * mCoreNum_ + tileIdx % mCoreNum_;
-            blockCoordN = (tileIdx / mCoreNum_) % nCnt_;
+            nIdx = (tileIdx / mCoreNum_) % nCnt_;
         } else {
             rowIdx = mainRow_;
             int64_t tailIdx = tileIdx - mainRow_ * mCoreNum_ * nCnt_;
             blockCoordM = mainRow_ * mCoreNum_ + tailIdx % mTailCoreNum_;
-            blockCoordN = (tailIdx / mTailCoreNum_) % nCnt_;
+            nIdx = (tailIdx / mTailCoreNum_) % nCnt_;
         }
         if (rowIdx & 1) {
-            blockCoordN = nCnt_ - 1 - blockCoordN;
+            nIdx = nCnt_ - 1 - nIdx;
         }
+        blockCoordN = nIdx;
         roundIdx_++;
-        blockCoord = BlockCoord{
-            blockCoordM, blockCoordN, AscendC::Te::Get<IDX_M_TAIL_SPLIT_TILEIDX>(blockCoord),
-            AscendC::Te::Get<IDX_N_TAIL_SPLIT_TILEIDX>(blockCoord)};
+        blockCoord = BlockCoord{blockCoordM, blockCoordN, 0, 0};
         return true;
     }
 
-    __aicore__ inline void GetTileCoord(const BlockCoord& blockCoord, int64_t& mPos, int64_t& nPos)
+    __aicore__ inline void GetTileCoord(BlockCoord blockCoord, int64_t& mPos, int64_t& nPos)
     {
         auto mTileIdx = AscendC::Te::Get<MNK_M>(blockCoord);
         auto nTileIdx = AscendC::Te::Get<MNK_N>(blockCoord);

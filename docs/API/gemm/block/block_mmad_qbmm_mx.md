@@ -10,8 +10,12 @@ MX 量化矩阵乘 Block，基于 Tensor API 实现，仅支持 AIC 计算。支
 
 ### 调度策略限制
 仅支持以下调度策略：
-- `MatmulWithScaleMx<>`（非全载模式）
-- `MatmulWithScaleMx<A_FULL_LOAD_MODE>`（A 矩阵全载模式）
+- `MatmulWithScaleMx<>`（Batch 路径非全载模式）
+- `MatmulWithScaleMx<A_FULL_LOAD_MODE>`（Batch 路径 A 矩阵全载模式）
+- `MatmulWithScaleMx<0, false, KernelMmadWithScaleMxWithoutBatch>`（单 Batch 标量路径）
+- `MatmulWithScaleMx<A_FULL_LOAD_MODE, false, KernelMmadWithScaleMxWithoutBatch>`（单 Batch A 矩阵全载模式）
+
+`MatmulWithScaleMx` 第三个模板参数为 `ScheduleType`，默认 `KernelMmadWithScaleMx`；单 Batch 标量路径需显式传 `KernelMmadWithScaleMxWithoutBatch`。
 
 不支持 `MatmulMultiBlockBasic` 或 `MatmulMultiBlockWithStreamK`。
 
@@ -59,7 +63,7 @@ AscendC::Te::Mmad(
 | transB | B 矩阵是否转置 |
 | C0_SIZE | C0 对齐大小（FP4: 64，FP8: 32） |
 | SCALE_C0 | Scale C0 对齐大小（固定为 2） |
-| SCALE_BUFFER_NUM | Scale 缓冲数量（固定为 2） |
+| DOUBLE_BUFFER_COUNT | Scale 缓冲数量（固定为 2） |
 | HALF_L0_SIZE | L0 缓冲区半大小 |
 | HALF_L0C_SIZE | L0C 缓冲区半大小 |
 
@@ -67,8 +71,6 @@ AscendC::Te::Mmad(
 
 | 类型 | 说明 |
 |------|------|
-| MxL0AType | A 矩阵 L0 数据类型（通过 GetL0DataType 获取） |
-| MxL0BType | B 矩阵 L0 数据类型（通过 GetL0DataType 获取） |
 | MakeLayoutScaleA | ScaleA Layout 构建器（根据 transA 选择 ScaleADN/ScaleAND） |
 | MakeLayoutScaleB | ScaleB Layout 构建器（根据 transB 选择 ScaleBDN/ScaleBND） |
 
@@ -81,8 +83,8 @@ struct Params {
     GM_ADDR bGmAddr;             // B 矩阵 GM 起始地址
     GM_ADDR cGmAddr;             // C 矩阵 GM 起始地址
     GM_ADDR biasGmAddr;          // Bias GM 起始地址（可选）
-    GM_ADDR pertokenScaleGmAddr; // A 矩阵 Scale GM 地址
-    GM_ADDR scaleGmAddr;         // B 矩阵 Scale GM 地址
+    GM_ADDR scaleAGmAddr;        // A 矩阵 Scale GM 地址
+    GM_ADDR scaleBGmAddr;        // B 矩阵 Scale GM 地址
 };
 ```
 
@@ -100,10 +102,8 @@ struct L1Params {
 struct TileL1L0Param {
     uint64_t curM;        // 当前 M 维大小
     uint64_t curN;        // 当前 N 维大小
-    uint64_t curGmAKL1;   // A 矩阵 GM K 维大小
-    uint64_t curGmBKL1;   // B 矩阵 GM K 维大小
-    uint64_t curPadAKL1;  // A 矩阵对齐后的 K 维大小（对齐到 64）
-    uint64_t curPadBKL1;  // B 矩阵对齐后的 K 维大小（对齐到 64）
+    uint64_t curGmKL1;    // A/B 矩阵当前 GM K 维大小
+    uint64_t curPadKL1;   // A/B 矩阵对齐后的 K 维大小（对齐到 64）
 };
 ```
 
@@ -151,9 +151,11 @@ template <typename TensorScaleA, typename TensorScaleB>
 __aicore__ inline void CopyScalesInL1(
     TensorScaleA const& gmScaleA,    // ScaleA GM Tensor
     TensorScaleB const& gmScaleB,    // ScaleB GM Tensor
-    TileL1L0Param& tileL1L0Param,    // Tile 参数
+    const TileL1L0Param& tileL1L0Param, // Tile 参数
     uint64_t scaleL1BufId,           // Scale L1 缓冲 ID
-    uint64_t iter0)                  // K 轴迭代索引
+    uint64_t kL1Offset,              // 当前 K 轴 GM 偏移
+    uint64_t scaleGmOffset,          // 当前 Scale GM 偏移
+    bool needCopyScale)              // 是否需要重新搬运 Scale
 ```
 功能：搬运 ScaleA 和 ScaleB 到 L1。
 说明：
@@ -165,9 +167,9 @@ __aicore__ inline void CopyScalesInL1(
 template <typename TensorA>
 __aicore__ inline void CopyAInL1(
     TensorA const& gmA,              // A 矩阵 GM Tensor
-    TileL1L0Param& tileL1L0Param,    // Tile 参数
+    const TileL1L0Param& tileL1L0Param, // Tile 参数
     uint64_t l1BufId,                // L1 缓冲 ID
-    uint64_t iter0)                  // K 轴迭代索引
+    uint64_t kL1Offset)              // 当前 K 轴 GM 偏移
 ```
 功能：搬运 A 矩阵到 L1，包含 MXFP K 轴 Padding。
 说明：
@@ -177,8 +179,12 @@ __aicore__ inline void CopyAInL1(
 ### Iterate函数
 ```
 __aicore__ inline void Iterate(
-    TileL1L0Param& tileL1L0Param,    // Tile 参数
-    uint64_t iter0)                  // K 轴迭代索引
+    const TileL1L0Param& tileL1L0Param, // Tile 参数
+    uint64_t iter0,                  // K 轴迭代索引
+    uint64_t scaleKL1Len,            // 当前 Scale L1 窗口长度
+    uint64_t scaleKOffset,           // ScaleB L1 窗口偏移
+    uint64_t scaleAKOffset,          // ScaleA L1 窗口偏移
+    uint64_t biasBtOffset)           // Bias BT 偏移
 ```
 功能：执行 K 轴内层循环，搬运数据到 L0 并执行 Mmad。
 执行流程：
@@ -219,7 +225,6 @@ __aicore__ inline void operator()(
 |------|------|
 | MTE1_MTE2 (0-3) | 数据缓冲双缓冲同步（4 个标志） |
 | MTE1_MTE2 (4-5) | Scale 缓冲双缓冲同步（2 个标志） |
-| FIX_M (0-1) | L0C 双缓冲同步（2 个标志） |
 | M_MTE1 | L0 双缓冲同步 |
 
 说明：

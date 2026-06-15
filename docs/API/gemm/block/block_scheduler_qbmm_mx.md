@@ -13,7 +13,7 @@ template <
     uint64_t FullLoadMode_,  // 全载模式（0=非全载，1=A全载）
     class LayoutA_,          // A 矩阵布局类型
     class LayoutB_,          // B 矩阵布局类型
-    class AType_>            // A 矩阵数据类型（用于判断 C0_SIZE）
+    class AType_>            // A 矩阵数据类型（用于判断 NZ 对齐粒度）
 class BlockSchedulerQuantBatchMatmulV3;
 ```
 
@@ -22,10 +22,12 @@ class BlockSchedulerQuantBatchMatmulV3;
 - **FullLoadMode_ = 0**：非全载模式（默认）
 - **FullLoadMode_ = A_FULL_LOAD_MODE（1）**：A 矩阵全载模式
 
-### C0_SIZE 计算
-根据数据类型自动计算 C0 对齐大小：
-- **FP4（fp4x2_e2m1_t, fp4x2_e1m2_t）**：C0_SIZE = 64
-- **FP8（fp8_e5m2_t, fp8_e4m3fn_t）**：C0_SIZE = 32
+### NZ 对齐粒度
+`AType_` 用于在 `weightNz = true` 且 `!transB` 时选择 N 轴对齐粒度：
+- **FP4（fp4x2_e2m1_t, fp4x2_e1m2_t）**：调用 `Align64`
+- **FP8（fp8_e5m2_t, fp8_e4m3fn_t）**：调用 `Align32`
+
+当 `transB = true` 时，N 轴按 `BLOCK_CUBE` 对齐，当前实现调用 `Align16`。
 
 ### 转置判断
 根据布局类型判断转置：
@@ -55,7 +57,6 @@ class BlockSchedulerQuantBatchMatmulV3;
 
 | 常量 | 说明 |
 |------|------|
-| C0_SIZE | C0 对齐大小（FP4: 64，FP8: 32） |
 | WINDOW_LEN | Z 型扫描窗口长度（4） |
 | transA | A 矩阵是否转置 |
 | transB | B 矩阵是否转置 |
@@ -65,7 +66,7 @@ class BlockSchedulerQuantBatchMatmulV3;
 | 类型 | 说明 |
 |------|------|
 | BlockShape | Block 形状：`Shape<int64_t, int64_t, int64_t, int64_t>` |
-| BlockCoord | Block 坐标：`Coord<int64_t, int64_t, int64_t, int64_t>` |
+| BlockCoord | Block 坐标：`Coord<int64_t, int64_t>`，仅包含 `(mTileIdx, nTileIdx)` |
 | ProblemShape | 问题规模类型（模板参数） |
 | AType | A 矩阵数据类型（模板参数） |
 
@@ -89,7 +90,6 @@ struct Params {
 
 | 变量 | 说明 |
 |------|------|
-| m_, n_, k_ | 问题规模 |
 | baseM_, baseN_ | L0 base 形状 |
 | mCnt_, nCnt_, totalCnt_ | tile 数量 |
 | mBaseNormCnt_, nBaseNormCnt_ | 正常 tile 数量 |
@@ -100,8 +100,9 @@ struct Params {
 | startBlockIdx_, endBlockIdx_ | 起始/结束 Block 索引 |
 | roundIdx_, round_ | 当前轮次、总轮次 |
 | mTailTile_, nTailTile_, totalTailTile_ | 尾块切分数量 |
-| mSplitAddrOffset_, nSplitAddrOffset_ | 尾块切分偏移 |
 | mainRow_ | 主行数 |
+
+尾块切分偏移由 Scheduler 成员保存；`GetBlockShape` 计算当前 tile 形状并刷新偏移，随后调用 `GetTileCoord` 获取包含尾块切分偏移的 GM 坐标。
 
 ## 特殊成员方法
 
@@ -117,7 +118,7 @@ __aicore__ inline BlockSchedulerQuantBatchMatmulV3(const ProblemShape& shape, co
 | params | Params | 调度参数 |
 
 执行流程：
-1. 设置问题规模：`m_`, `n_`, `k_`, `baseM_`, `baseN_`
+1. 读取问题规模中的 `m`, `n`，设置 `baseM_`, `baseN_`
 2. 计算 tile 数量：`mCnt_`, `nCnt_`, `totalCnt_`
 3. 计算扫描窗口：`mCoreNum_`, `mainRow_`, `mTailCoreNum_`
 4. 计算轮次：`endBlockIdx_`, `round_`
@@ -149,7 +150,7 @@ __aicore__ inline int64_t GetEndBlockIdx()
 
 ### CalSingleCoreShapeByCoord
 ```
-__aicore__ inline void CalSingleCoreShapeByCoord(int64_t& singleCoreM, int64_t& singleCoreN, const BlockCoord& blockCoord)
+__aicore__ inline void CalSingleCoreShapeByCoord(int64_t& singleCoreM, int64_t& singleCoreN, BlockCoord blockCoord)
 ```
 功能：根据 Block 坐标计算单核形状（处理尾块）。
 参数说明：
@@ -161,7 +162,7 @@ __aicore__ inline void CalSingleCoreShapeByCoord(int64_t& singleCoreM, int64_t& 
 
 ### GetBlockShape
 ```
-template <QuantBatchMatmul::QuantMode aQuantMode, QuantBatchMatmul::QuantMode bQuantMode, bool weightNz = false>
+template <QuantMode aQuantMode, QuantMode bQuantMode, bool weightNz = false>
 __aicore__ inline BlockShape GetBlockShape(BlockCoord blockCoord)
 ```
 功能：返回当前 Block 的形状，支持量化模式和 NZ 格式。
@@ -173,19 +174,14 @@ __aicore__ inline BlockShape GetBlockShape(BlockCoord blockCoord)
 | weightNz | bool | B 矩阵是否为 NZ 格式 |
 | blockCoord | BlockCoord | Block 坐标 |
 
-返回值：`BlockShape {singleCoreM, singleCoreN, mSplitAddrOffset_, nSplitAddrOffset_}`
+返回值：`BlockShape {singleCoreM, singleCoreN, mSplitAddrOffset, nSplitAddrOffset}`。
+其中 `mSplitAddrOffset`、`nSplitAddrOffset` 为当前尾块切分的 GM 坐标增量，同时会记录在 Scheduler 内部供 `GetTileCoord` 使用。
 
 特殊逻辑：
 - **尾块切分判断**：`totalTailTile_ > 1 && roundIdx_ == round_`
 - **FP4 对齐**：FP4 + transA 时 M 对齐到 2，FP4 + !transB 时 N 对齐到 2
 - **PERBLOCK 模式**：对齐到 PER_BLOCK_SIZE 或 2 的幂次方
-- **NZ 格式对齐**：根据 transB 对齐到 C0_SIZE 或 BLOCK_CUBE
-
-### GetLoadBalanceInfo
-```
-__aicore__ inline AscendC::Std::tuple<uint32_t, uint32_t, uint32_t, uint32_t> GetLoadBalanceInfo()
-```
-功能：返回负载均衡信息 `{mBaseNormCnt_, mBaseTailMain_, nBaseNormCnt_, nBaseTailMain_}`。
+- **NZ 格式对齐**：`!transB` 时根据 AType 对齐到 64/32，`transB` 时对齐到 BLOCK_CUBE（16）
 
 ### UpdateNextBatchBlockRoundParams
 ```
@@ -220,9 +216,9 @@ __aicore__ inline bool GetTileIdx(BlockCoord& blockCoord)
 
 ### GetTileCoord
 ```
-__aicore__ inline void GetTileCoord(const BlockCoord& blockCoord, int64_t& mPos, int64_t& nPos)
+__aicore__ inline void GetTileCoord(BlockCoord blockCoord, int64_t& mPos, int64_t& nPos)
 ```
-功能：根据 Block 坐标计算 GM 地址偏移。
+功能：根据 Block 坐标和 Scheduler 内部记录的尾块切分偏移计算 GM 地址偏移。
 参数说明：
 | 参数 | 类型 | 说明 |
 |------|------|------|
@@ -276,11 +272,11 @@ int64_t totalCnt = scheduler.GetTotalCnt();
 
 ### Tile 循环处理
 ```
-BlockCoord blockCoord{0, 0, 0, 0};
+BlockCoord blockCoord{0, 0};
 while (scheduler.GetTileIdx(blockCoord)) {
     // 获取 Block 形状
-    constexpr auto aQuantMode = QuantBatchMatmul::QuantMode::PERGROUP_MODE;
-    constexpr auto bQuantMode = QuantBatchMatmul::QuantMode::PERGROUP_MODE;
+    constexpr auto aQuantMode = QuantMode::MX_PERGROUP_MODE;
+    constexpr auto bQuantMode = QuantMode::MX_PERGROUP_MODE;
     constexpr bool weightNz = true;
     auto blockShape = scheduler.GetBlockShape<aQuantMode, bQuantMode, weightNz>(blockCoord);
 
@@ -303,15 +299,6 @@ while (scheduler.GetTileIdx(blockCoord)) {
 scheduler.UpdateNextBatchBlockRoundParams();
 ```
 
-### 获取负载均衡信息
-```
-auto loadBalanceInfo = scheduler.GetLoadBalanceInfo();
-uint32_t mBaseNormCnt = std::get<0>(loadBalanceInfo);
-uint32_t mBaseTailMain = std::get<1>(loadBalanceInfo);
-uint32_t nBaseNormCnt = std::get<2>(loadBalanceInfo);
-uint32_t nBaseTailMain = std::get<3>(loadBalanceInfo);
-```
-
 ## 数据流
 
 ### Tile 切分流程
@@ -331,6 +318,8 @@ Z 型扫描 (mCoreNum, mainRow, mTailCoreNum)
 Block 形状/坐标 (singleCoreM, singleCoreN, mPos, nPos)
 ```
 
+尾块切分时，`GetBlockShape` 会刷新 Scheduler 内部的切分偏移；调用方随后直接调用 `GetTileCoord(blockCoord, mPos, nPos)` 即可得到包含尾块切分偏移的 GM 坐标。
+
 ### 量化模式对齐流程
 ```
 GetBlockShape<QuantMode, QuantMode, weightNz>
@@ -341,7 +330,7 @@ FP4 对齐：transA → M 对齐到 2，!transB → N 对齐到 2
     ↓
 PERBLOCK 模式：对齐到 PER_BLOCK_SIZE 或 2 的幂次方
     ↓
-NZ 格式对齐：!transB → C0_SIZE，transB → BLOCK_CUBE
+NZ 格式对齐：!transB → FP4 Align64 / FP8 Align32，transB → Align16
     ↓
 返回 BlockShape {singleCoreM, singleCoreN, mSplitAddrOffset, nSplitAddrOffset}
 ```
@@ -363,7 +352,7 @@ rowIdx & 1：反向扫描（blockCoordN = nCnt - 1 - blockCoordN）
 
 ### baseM/baseN 配置
 - **建议值**：根据量化数据类型选择（如 128）
-- **C0 对齐**：确保 baseM/baseN 对齐到 C0_SIZE（FP4: 64，FP8: 32）
+- **NZ 对齐**：`weightNz` 场景下，`!transB` 时 N 轴按 FP4 64 / FP8 32 对齐，`transB` 时按 16 对齐
 
 ### 尾块切分配置
 - **mTailTile/nTailTile**：建议尾块切分数量不超过 4
@@ -379,7 +368,7 @@ rowIdx & 1：反向扫描（blockCoordN = nCnt - 1 - blockCoordN）
 
 ### NZ 格式优化
 - **weightNz = true**：B 矩阵 NZ 格式，提升 L1/L0 搬运效率
-- 对齐要求：根据 transB 选择 C0_SIZE 或 BLOCK_CUBE
+- 对齐要求：`!transB` 时根据 AType 选择 64/32 对齐，`transB` 时对齐到 16
 
 ### 适用场景
 - **Quant Batch Matmul MX Kernel**：量化 Batch Matmul

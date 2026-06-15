@@ -18,6 +18,7 @@ namespace Blaze {
 namespace Gemm {
 /* block schedule policies */
 struct KernelMmadWithScaleMx {};   // Multi-block with Mx scale
+struct KernelMmadWithScaleMxWithoutBatch {}; // Multi-block with Mx scale, without batch broadcast
 struct KernelMmadWithScaleFixpipeQuant {}; // Multi-block with fixpipe quant scale (A8W8 fixpipe)
 struct KernelMultiBlockStreamK {}; // Multi-tile transfer with K-axis spliting and caching
 struct KernelMmadMultiBlockBasic {}; // Multi-tile basic
@@ -45,9 +46,9 @@ struct MatmulWithScaleFixpipeQuant {
  * @struct MatmulWithScaleMx
  * @brief Mx Matrix multiplication with scaleA and scaleB
  */
-template <uint64_t FULL_LOAD_MODE_ = 0, bool ATOMIC_ADD = false>
+template <uint64_t FULL_LOAD_MODE_ = 0, bool ATOMIC_ADD = false, class ScheduleType_ = KernelMmadWithScaleMx>
 struct MatmulWithScaleMx {
-    using ScheduleType = KernelMmadWithScaleMx;
+    using ScheduleType = ScheduleType_;
     constexpr static uint64_t fullLoadMode = FULL_LOAD_MODE_;
     constexpr static bool isAtomicAdd = ATOMIC_ADD;
 };

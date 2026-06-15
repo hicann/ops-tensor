@@ -29,14 +29,19 @@ class BlockScheduler;
 ### 通用类型
 ```cpp
 using BlockShape = Shape<int64_t, int64_t, int64_t, int64_t>;
-using BlockCoord = Coord<int64_t, int64_t, int64_t, int64_t>;
 using ProblemShape = ProblemShape_;
+
+// BlockSchedulerMatmulBasic / BlockSchedulerStreamK
+using BlockCoord = Coord<int64_t, int64_t, int64_t, int64_t>;
+
+// BlockSchedulerQuantBatchMatmulV3
+using BlockCoord = Coord<int64_t, int64_t>;
 ```
 
 | 类型 | 说明 |
 |------|------|
 | BlockShape | Block 形状 `(m, n, k, batch)` |
-| BlockCoord | Block 坐标 `(mTileIdx, nTileIdx, kTileIdx, batchIdx)` |
+| BlockCoord | Block 坐标，Matmul Basic/StreamK 为 `(mTileIdx, nTileIdx, kTileIdx, batchIdx)`；QuantBatchMatmulV3 为 `Coord<int64_t, int64_t>`，仅包含 `(mTileIdx, nTileIdx)` |
 | ProblemShape | 问题规模类型 |
 
 ## Params 结构体
@@ -88,9 +93,12 @@ __aicore__ inline int64_t GetBlockNum(ProblemShape shape, int64_t blockNum)
 ```cpp
 __aicore__ inline BlockShape GetBlockShape(int64_t tileIdx, ...);       // BlockSchedulerMatmulBasic
 __aicore__ inline BlockShape GetSingleCoreShape(int64_t tileIdx);       // BlockSchedulerStreamK
+template <QuantMode aQuantMode, QuantMode bQuantMode, bool weightNz = false>
 __aicore__ inline BlockShape GetBlockShape(BlockCoord blockCoord);      // BlockSchedulerQuantBatchMatmulV3
 ```
 功能：返回当前 tile 的 Block 形状。
+
+QuantBatchMatmulV3 的 `BlockShape` 第 3、4 个字段用于携带 M/N 尾块切分偏移。
 
 ### GetBlockCoord / GetSingleCoreCoord / GetTileIdx
 ```cpp
@@ -99,6 +107,12 @@ __aicore__ inline BlockCoord GetSingleCoreCoord(int64_t tileIdx);       // Block
 __aicore__ inline bool GetTileIdx(BlockCoord& blockCoord);              // BlockSchedulerQuantBatchMatmulV3
 ```
 功能：返回当前 tile 的 Block 坐标。
+
+### GetTileCoord
+```cpp
+__aicore__ inline void GetTileCoord(BlockCoord blockCoord, int64_t& mPos, int64_t& nPos);
+```
+功能：QuantBatchMatmulV3 根据 2D Block 坐标和 Scheduler 内部记录的尾块切分偏移计算 GM 地址偏移。
 
 ## Z 型扫描
 
