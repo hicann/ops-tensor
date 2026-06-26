@@ -64,7 +64,7 @@ public:
     using X2ScaleType = uint64_t;
     using ScaleGmType = typename BlockMmad::X2ScaleType;
 
-    static constexpr int64_t C0_SIZE = AscendC::AuxGetC0Size<AType>();
+    static constexpr int64_t C0_SIZE = AscendC::Te::C0_ELEMENT<AType>;
     static constexpr uint64_t DEQ_SCALE_MUL = 0xFFFFE000;
     static constexpr uint32_t LEFT_SHIFT_16 = 16;
 
@@ -74,7 +74,7 @@ public:
 
     using MakeLayoutA = AscendC::Te::FrameLayoutFormat<LayoutA, AscendC::Std::Int<C0_SIZE>>;
     using MakeLayoutB = AscendC::Te::FrameLayoutFormat<LayoutB, AscendC::Std::Int<C0_SIZE>>;
-    using MakeLayoutC = AscendC::Te::FrameLayoutFormat<LayoutC, AscendC::Std::Int<AscendC::AuxGetC0Size<CType>()>>;
+    using MakeLayoutC = AscendC::Te::FrameLayoutFormat<LayoutC, AscendC::Std::Int<AscendC::Te::C0_ELEMENT<CType>>>;
 
     struct QBMMTiling {
         uint32_t batchA1;

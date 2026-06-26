@@ -31,8 +31,6 @@ public:
     using DataTypeIn = DataTypeIn_;
     __aicore__ inline DefaultFusion(){};
 
-    struct Arguments {};
-
     struct Params {};
 
     __aicore__ inline void Init(Params const& params, int64_t calcM, int64_t calcN, int64_t n) {}

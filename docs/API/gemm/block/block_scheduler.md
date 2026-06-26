@@ -71,28 +71,16 @@ __aicore__ inline int64_t GetTotalTileNum(); // BlockSchedulerStreamK
 ```
 功能：返回总 tile 数量（含 batch）。
 
-### GetTileL1Shape
-```cpp
-__aicore__ inline Shape<int64_t, int64_t, int64_t, int64_t> GetTileL1Shape()
-```
-功能：返回 L1 tile 形状 `{mL1, nL1, kL1, 1}`。
-
-### GetTileL0Shape
-```cpp
-__aicore__ inline Shape<int64_t, int64_t, int64_t, int64_t> GetTileL0Shape()
-```
-功能：返回 L0 tile 形状 `{baseM, baseN, baseK, 1}`。
-
 ### GetBlockNum
 ```cpp
 __aicore__ inline int64_t GetBlockNum(ProblemShape shape, int64_t blockNum)
 ```
 功能：返回实际使用的 Block 数量（不超过 tile 总数）。
 
-### GetBlockShape / GetSingleCoreShape
+### GetBlockShape
 ```cpp
 __aicore__ inline BlockShape GetBlockShape(int64_t tileIdx, ...);       // BlockSchedulerMatmulBasic
-__aicore__ inline BlockShape GetSingleCoreShape(int64_t tileIdx);       // BlockSchedulerStreamK
+__aicore__ inline BlockShape GetBlockShape(int64_t tileIdx);       // BlockSchedulerStreamK
 template <QuantMode aQuantMode, QuantMode bQuantMode, bool weightNz = false>
 __aicore__ inline BlockShape GetBlockShape(BlockCoord blockCoord);      // BlockSchedulerQuantBatchMatmulV3
 ```
@@ -100,10 +88,10 @@ __aicore__ inline BlockShape GetBlockShape(BlockCoord blockCoord);      // Block
 
 QuantBatchMatmulV3 的 `BlockShape` 第 3、4 个字段用于携带 M/N 尾块切分偏移。
 
-### GetBlockCoord / GetSingleCoreCoord / GetTileIdx
+### GetBlockCoord / GetTileIdx
 ```cpp
 __aicore__ inline BlockCoord GetBlockCoord(int64_t tileIdx);            // BlockSchedulerMatmulBasic
-__aicore__ inline BlockCoord GetSingleCoreCoord(int64_t tileIdx);       // BlockSchedulerStreamK
+__aicore__ inline BlockCoord GetBlockCoord(int64_t tileIdx);       // BlockSchedulerStreamK
 __aicore__ inline bool GetTileIdx(BlockCoord& blockCoord);              // BlockSchedulerQuantBatchMatmulV3
 ```
 功能：返回当前 tile 的 Block 坐标。
@@ -198,7 +186,10 @@ BlockScheduler::Params params = {
 };
 
 ProblemShape shape{m, n, k, batch};
-BlockScheduler scheduler(shape, blockIdx, blockNum, params, isFp32, isNdFormat);
+BlockScheduler scheduler(shape, params);
+
+int64_t blockIdx = AscendC::GetBlockIdx();
+int64_t blockNum = scheduler.GetBlockNum(shape);
 
 for (int64_t tileIdx = blockIdx; tileIdx < scheduler.GetTileNum(); tileIdx += blockNum) {
     auto blockShape = scheduler.GetBlockShape<transB, BType>(tileIdx);

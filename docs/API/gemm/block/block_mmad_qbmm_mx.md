@@ -79,12 +79,12 @@ AscendC::Te::Mmad(
 ### Params
 ```
 struct Params {
-    GM_ADDR aGmAddr;             // A 矩阵 GM 起始地址
-    GM_ADDR bGmAddr;             // B 矩阵 GM 起始地址
-    GM_ADDR cGmAddr;             // C 矩阵 GM 起始地址
-    GM_ADDR biasGmAddr;          // Bias GM 起始地址（可选）
-    GM_ADDR scaleAGmAddr;        // A 矩阵 Scale GM 地址
-    GM_ADDR scaleBGmAddr;        // B 矩阵 Scale GM 地址
+    GM_ADDR aGmAddr{nullptr};     // A 矩阵 GM 地址
+    GM_ADDR bGmAddr{nullptr};     // B 矩阵 GM 地址
+    GM_ADDR cGmAddr{nullptr};     // C 矩阵 GM 地址
+    GM_ADDR biasGmAddr{nullptr};  // Bias GM 地址
+    GM_ADDR scaleAGmAddr{nullptr}; // A 矩阵 Scale GM 地址
+    GM_ADDR scaleBGmAddr{nullptr}; // B 矩阵 Scale GM 地址
 };
 ```
 
@@ -93,17 +93,17 @@ struct Params {
 struct L1Params {
     uint64_t kL1;        // L1 K 轴切分大小
     uint64_t scaleKL1;   // Scale K 轴切分大小
-    uint64_t l1BufNum;   // L1 缓冲数量（2 或 4）
+    uint64_t l1BufNum;   // L1 缓冲数量
 };
 ```
 
 ### TileL1L0Param
 ```
 struct TileL1L0Param {
-    uint64_t curM;        // 当前 M 维大小
-    uint64_t curN;        // 当前 N 维大小
-    uint64_t curGmKL1;    // A/B 矩阵当前 GM K 维大小
-    uint64_t curPadKL1;   // A/B 矩阵对齐后的 K 维大小（对齐到 64）
+    uint64_t curM = 0;        // 当前 M 维大小
+    uint64_t curN = 0;        // 当前 N 维大小
+    uint64_t curGmKL1 = 0;    // A/B 矩阵当前 GM K 维大小
+    uint64_t curPadKL1 = 0;   // pad to 64 align
 };
 ```
 

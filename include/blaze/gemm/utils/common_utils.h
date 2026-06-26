@@ -39,6 +39,12 @@ static constexpr uint64_t A_FULL_LOAD_MODE = 1UL;
 static constexpr uint64_t B_FULL_LOAD_MODE = 2UL;
 static constexpr uint64_t NONE_FULL_LOAD_MODE = 0UL;
 
+static constexpr int64_t WINDOW_LEN = 4UL;
+
+constexpr static uint16_t DIMENSION_M = 0;
+constexpr static uint16_t DIMENSION_N = 1;
+constexpr static uint16_t DIMENSION_K = 2;
+
 constexpr uint16_t ZERO_FLAG = 0;
 constexpr uint16_t FIRST_FLAG = 1;
 constexpr uint16_t SECOND_FLAG = 2;
@@ -48,6 +54,11 @@ constexpr uint16_t FIFTH_FLAG = 5;
 constexpr uint16_t SIXTH_FLAG = 6;
 constexpr uint16_t SEVENTH_FLAG = 7;
 static constexpr int64_t PER_BLOCK_SIZE = 128LL;
+
+constexpr uint32_t L2_CACHE_DEFAULT = 0U;
+constexpr uint32_t A_L2_CACHE_DISABLE = 1U;
+constexpr uint32_t B_L2_CACHE_DISABLE = 2U;
+constexpr uint32_t ALL_L2_CACHE_DISABLE = 3U;
 constexpr uint64_t MXFP_DIVISOR_SIZE = 64UL;
 constexpr uint64_t MXFP_MULTI_BASE_SIZE = 2UL;
 constexpr uint64_t BLOCK_CUBE = 16UL;

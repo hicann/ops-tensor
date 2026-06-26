@@ -59,8 +59,6 @@ public:
 
     static constexpr bool transA = IsTrans<LayoutA_>::value;
     static constexpr bool transB = IsTrans<LayoutB_>::value;
-    static constexpr int64_t WINDOW_LEN = 4;
-
     struct Params {
         int64_t baseM;
         int64_t baseN;
@@ -82,6 +80,9 @@ public:
         mCnt_ = Blaze::Gemm::CeilDiv(m, baseM_);
         nCnt_ = Blaze::Gemm::CeilDiv(n, baseN_);
         totalCnt_ = mCnt_ * nCnt_;
+        if (blockNum_ <= 0) {
+            return;
+        }
         mCoreNum_ = Blaze::Gemm::Min(WINDOW_LEN, mCnt_);
         if (mCoreNum_ != 0) {
             mainRow_ = mCnt_ / mCoreNum_ - 1;

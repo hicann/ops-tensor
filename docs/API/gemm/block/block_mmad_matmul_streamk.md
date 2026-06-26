@@ -30,12 +30,24 @@ StreamK 矩阵乘 Block，基于 Tensor API 实现，仅支持 AIC 计算。支�
 
 ### L1/L0 缓冲
 - **L1 双缓冲**：固定使用 2 个缓冲（`BUFFER_NUM = 2`）
-- **L0 双缓冲**：固定使用 2 个缓冲（`HALF_L0_SIZE`）
+- **L0 双缓冲**：固定使用 2 个缓冲
 - **L0C 单缓冲**：固定使用单缓冲（offset = 0）
+
+### L1 缓冲布局
+```
+L1 空间布局：
+a1|b1|bias1|a2|b2|bias2|
+```
+
+说明：
+- `a1|a2`：A 矩阵双缓冲（ping-pong）
+- `b1|b2`：B 矩阵双缓冲（ping-pong）
+- `bias1|bias2`：Bias 双缓冲
+- 优势：避免 A/B 缓冲区 bank conflict
 
 ### Bias 处理
 Bias 仅在首次 K 轴切分（`kCntIndex = 0`）时加载并累加：
-- 首次 `iter0 = 0` 且 `iter1 = 0` 且 `kCntIndex = 0`：加载 Bias
+- 首次迭代且 `kCntIndex = 0`：加载 Bias
 - 后续迭代：不加载 Bias，累加计算
 
 ### CmatrixInitVal
@@ -49,15 +61,23 @@ cmatrixInitVal = (iter0 == 0 && iter1 == 0 && (!isBias_ || (isBias_ && kCntIndex
 - 有 Bias 且首次 K 切分：不初始化（Bias 提供初始值）
 - 有 Bias 且后续 K 切分：初始化为 0
 
-### unitFlag
-Mmad 计算的 unitFlag 根据迭代位置确定：
-```
-unitFlag = (iter0 + 1 == curKL1Iter && iter1 + 1 == kL0Iter) ? FINAL_ACCUMULATION : NON_FINAL_ACCUMULATION
-```
+### Layout Trait
+使用 `IsTrans` 和 `IsWeightNz` traits 判断 Layout：
+- `IsTrans<LayoutA>`：判断 A 矩阵是否转置
+- `IsTrans<LayoutB>`：判断 B 矩阵是否转置
+- `IsWeightNz<LayoutB>`：判断 B 矩阵是否为 NZ 格式
 
-说明：
-- 最后一次迭代：FINAL_ACCUMULATION（最终累加）
-- 其他迭代：NON_FINAL_ACCUMULATION（非最终累加）
+说明：通过 trait 自动判断 transpose 信息，无需模板参数传递。
+
+### MM Layout Transform
+构造函数和析构函数中设置 MM Layout Transform：
+```
+// 构造函数（ASCEND_IS_NOT_AIV）
+SetMMLayoutTransform(true);  // 适配 Fixpipe 输出
+
+// 析构函数（ASCEND_IS_NOT_AIV）
+SetMMLayoutTransform(false); // 关闭
+```
 
 ## 特殊静态常量
 
@@ -70,30 +90,27 @@ unitFlag = (iter0 + 1 == curKL1Iter && iter1 + 1 == kL0Iter) ? FINAL_ACCUMULATIO
 
 ## 特殊数据结构
 
-### GmParams
+### Params
 ```
-struct GmParams {
+struct Params {
     GM_ADDR aGmAddr{nullptr};         // A 矩阵 GM 地址
     GM_ADDR bGmAddr{nullptr};         // B 矩阵 GM 地址
     GM_ADDR cGmAddr{nullptr};         // C 矩阵 GM 地址（DP 模式）
-    GM_ADDR biasGmAddr{nullptr};      // Bias GM 地址（可选）
+    GM_ADDR biasGmAddr{nullptr};      // Bias GM 地址
+    GM_ADDR groupListGmAddr{nullptr}; // GroupList 地址（预留扩展）
     GM_ADDR workspaceGmAddr{nullptr}; // Workspace GM 地址（SK 模式）
+    uint64_t ml1{0};                  // L1 M 维度尺寸
+    uint64_t nl1{0};                  // L1 N 维度尺寸
+    uint64_t kl1{0};                  // L1 K 维度尺寸
+    uint32_t ml0{0};                  // L0 M 维度尺寸
+    uint32_t nl0{0};                  // L0 N 维度尺寸
+    uint32_t kl0{0};                  // L0 K 维度尺寸
+    uint32_t l1Stages{2};             // L1 缓冲数量
+    uint16_t l0cStages{1};            // L0C 缓冲数量
 };
 ```
 
 说明：`cGmAddr` 和 `workspaceGmAddr` 均需提供，根据 `checkIsSkScene` 选择输出目标。
-
-### L1 缓冲布局
-```
-L1 空间布局：
-Bias0|A0|A1|BInit|B0|B1|
-```
-
-说明：
-- `Bias0`：Bias 缓冲（`nL1 × sizeof(BiasType) × BUFFER_NUM`）
-- `A0|A1`：A 矩阵双缓冲（`mL1 × kL1 × BUFFER_NUM`）
-- `BInit`：B 缓冲起始偏移（`biasL1Offset + aL1OneBuffer × BUFFER_NUM`）
-- `B0|B1`：B 矩阵双缓冲（`nL1 × kL1 × BUFFER_NUM`）
 
 ## 特殊成员方法
 
@@ -101,46 +118,44 @@ Bias0|A0|A1|BInit|B0|B1|
 ```
 __aicore__ inline BlockMmad()
 ```
-功能：构造 BlockMmad 对象，初始化硬件事件标志。
-执行流程：设置 4 个 MTE1_MTE2 标志、2 个 M_MTE1 标志。
+功能：构造 BlockMmad 对象，初始化硬件事件标志和 MM Layout Transform。
+执行流程：
+1. 设置 4 个 MTE1_MTE2 标志、2 个 M_MTE1 标志
+2. ASCEND_IS_NOT_AIV 时调用 `SetMMLayoutTransform(true)`（适配 Fixpipe）
 
 ### 析构函数
 ```
 __aicore__ inline ~BlockMmad()
 ```
-功能：析构 BlockMmad 对象，等待硬件事件完成。
-执行流程：等待 4 个 MTE1_MTE2 标志、2 个 M_MTE1 标志。
+功能：析构 BlockMmad 对象，等待硬件事件完成并关闭 MM Layout Transform。
+执行流程：
+1. 等待 4 个 MTE1_MTE2 标志、2 个 M_MTE1 标志
+2. ASCEND_IS_NOT_AIV 时调用 `SetMMLayoutTransform(false)`（关闭）
 
 ### Init函数
 ```
 __aicore__ inline void Init(
     const TupleShape& shape,     // 问题规模
-    const TupleShape& tileL1,    // L1 切分形状
-    const TupleShape& tileL0,    // L0 切分形状
-    bool isBias)                 // 是否启用 bias
+    const Params& params)        // mmad 参数
 ```
-功能：初始化 BlockMmadMatmulStreamK 组件。
+功能：初始化 BlockMmad 组件。
 参数说明：
 | 参数 | 类型 | 说明 |
 |------|------|------|
 | shape | TupleShape | 问题规模 |
-| tileL1 | TupleShape | L1 tile 形状 |
-| tileL0 | TupleShape | L0 tile 形状 |
-| isBias | bool | 是否包含 bias 计算 |
+| params | Params | mmad 参数（包含 isBias 判断） |
 
 说明：
-- L1 缓冲数量固定为 2
-- Bias L1 偏移计算：`biasL1Offset_ = nL1 × sizeof(BiasType) × BUFFER_NUM`
-- B 缓冲起始偏移：`bL1Init_ = biasL1Offset + aL1OneBuffer × BUFFER_NUM`
+- isBias 通过 `params.biasGmAddr != nullptr` 判断
 
 ### operator函数
 ```
 template <typename TensorC, typename TensorA, typename TensorB, typename TensorBias, typename TensorWorkspace>
 __aicore__ inline void operator()(
-    TensorC gmC,                // C 矩阵 GM Tensor（DP 模式输出）
     TensorA gmA,                // A 矩阵 GM Tensor
     TensorB gmB,                // B 矩阵 GM Tensor
     TensorBias gmBias,          // Bias GM Tensor
+    TensorC gmC,                // C 矩阵 GM Tensor（DP 模式输出）
     TensorWorkspace gmWorkspace, // Workspace GM Tensor（SK 模式输出）
     TupleShape tileShape,       // Tile 形状
     int64_t kCntIndex,          // K 轴切分索引
@@ -150,10 +165,10 @@ __aicore__ inline void operator()(
 参数说明：
 | 参数 | 类型 | 说明 |
 |------|------|------|
-| gmC | TensorC | C 矩阵输出 Tensor（DP 模式） |
 | gmA | TensorA | A 矩阵输入 Tensor（已 Slice） |
 | gmB | TensorB | B 矩阵输入 Tensor（已 Slice） |
 | gmBias | TensorBias | Bias 输入 Tensor（已 Slice） |
+| gmC | TensorC | C 矩阵输出 Tensor（DP 模式） |
 | gmWorkspace | TensorWorkspace | Workspace 输出 Tensor（SK 模式） |
 | tileShape | TupleShape | Tile 形状 `(m, n, k)` |
 | kCntIndex | int64_t | K 轴切分索引（0 = 首次切分） |
@@ -162,8 +177,8 @@ __aicore__ inline void operator()(
 执行流程：
 1. **K 轴外层循环**：按 kL1 切分
 2. **搬运 Bias 到 L1**：首次切分且首次迭代时搬运
-3. **搬运 A 到 L1**：双缓冲模式
-4. **搬运 B 到 L1**：双缓冲模式（事件偏移 +2）
+3. **搬运 A 到 L1**：双缓冲模式（事件 0、1）
+4. **搬运 B 到 L1**：双缓冲模式（事件 2、3，偏移 L1_EVENT_ID_OFFSET）
 5. **K 轴内层循环**：按 baseK 切分（Iterate）
 6. **搬运 A/B/Bias 到 L0**：双缓冲模式
 7. **Mmad 计算**：根据 `kCntIndex` 决定是否加载 Bias
@@ -173,7 +188,6 @@ __aicore__ inline void operator()(
 
 ### L1 B 缓冲事件偏移
 ```
-uint64_t offsetBL1 = (bL1Init + bL1OneBuffer * l1BufId) * sizeof(BType);
 AscendC::WaitFlag<AscendC::HardEvent::MTE1_MTE2>(l1BufId + L1_EVENT_ID_OFFSET);  // B 使用事件 2、3
 ```
 
@@ -202,20 +216,29 @@ using BiasType = float;
 using LayoutA = AscendC::Te::NDExtLayoutPtn;
 using LayoutB = AscendC::Te::NZLayoutPtn;
 using LayoutC = AscendC::Te::NDExtLayoutPtn;
+using LayoutBias = LayoutC;
 
 using DispatchPolicy = Blaze::Gemm::MatmulMultiBlockWithStreamK<Blaze::Gemm::MatMulL0C2Out::ON_THE_FLY>;
 using BlockMmad = Blaze::Gemm::Block::BlockMmad<
     DispatchPolicy, AType, LayoutA, BType, LayoutB, CType, LayoutC, BiasType, LayoutBias>;
 ```
 
+### 参数准备
+```
+BlockMmad::Params params = {
+    aGM,           // A 矩阵 GM 地址
+    bGM,           // B 矩阵 GM 地址
+    cGM,           // C 矩阵 GM 地址（DP 模式）
+    biasGM,        // Bias GM 地址（nullptr 表示无 bias）
+    workspaceGM    // Workspace GM 地址（SK 模式）
+};
+```
+
 ### 组件初始化
 ```
 BlockMmad blockMmad;
 TupleShape problemShape{m, n, k};
-TupleShape tileL1{mL1, nL1, kL1};
-TupleShape tileL0{baseM, baseN, baseK};
-bool isBias = true;
-blockMmad.Init(problemShape, tileL1, tileL0, isBias);
+blockMmad.Init(problemShape, params);
 ```
 
 ### 组件执行
@@ -231,21 +254,21 @@ auto gmBias = AscendC::Te::MakeTensor(...);
 auto gmBlockA = gmA.Slice(...);
 auto gmBlockB = gmB.Slice(...);
 auto gmBlockC = gmC.Slice(...);
-auto gmWorkspace = gmWorkspace.Slice(...);
+auto gmBlockWorkspace = gmWorkspace.Slice(...);
 auto gmBlockBias = gmBias.Slice(...);
 
 // 执行矩阵乘
 TupleShape tileShape{shapeM, shapeN, shapeK};
 int64_t kCntIndex = 0;  // K 轴切分索引
 bool checkIsSkScene = true;  // SK 模式（输出到 workspace）
-blockMmad(gmBlockC, gmBlockA, gmBlockB, gmBlockBias, gmWorkspace, tileShape, kCntIndex, checkIsSkScene);
+blockMmad(gmBlockA, gmBlockB, gmBlockBias, gmBlockC, gmBlockWorkspace, tileShape, kCntIndex, checkIsSkScene);
 ```
 
 ## 数据流
 
 ### 存储层次
 ```
-GM (A/B/Bias) → L1 (双缓冲) → L0A/L0B (双缓冲) → L0C → GM/Workspace
+GM (A/B/Bias) → L1 (双缓冲: a1|b1|bias1|a2|b2|bias2) → L0A/L0B (双缓冲) → L0C → GM/Workspace
 ```
 
 ### DP 模式流程
@@ -278,6 +301,7 @@ Mmad 计算（根据 kCntIndex 决定 Bias 加载）
 ### L1 缓冲配置
 - 固定双缓冲（BUFFER_NUM = 2）
 - A 和 B 使用不同事件 ID（0-1 vs 2-3），最大化并行度
+- L1 布局：`a1|b1|bias1|a2|b2|bias2`，避免 bank conflict
 
 ### K 轴切分策略
 - `kCntIndex` 用于标识当前 K 轴切分索引
@@ -288,6 +312,11 @@ Mmad 计算（根据 kCntIndex 决定 Bias 加载）
 - **DP 模式**：完整 tile，输出到 GM
 - **SK 模式**：K 轴切分，输出到 workspace
 - workspace 大小：`skKTileNum × BLOCK_BASE_M × BLOCK_BASE_N × sizeof(float)`
+
+### MM Layout Transform
+- 构造函数中设置 `SetMMLayoutTransform(true)`
+- 析构函数中关闭 `SetMMLayoutTransform(false)`
+- 仅在 ASCEND_IS_NOT_AIV 时执行
 
 ### L0C 单缓冲
 - StreamK BlockMmad 固定使用 L0C 单缓冲

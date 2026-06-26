@@ -70,15 +70,6 @@ struct Params {
 };
 ```
 
-#### Arguments
-```
-struct Arguments {
-    ProblemShape problemShape;             // 问题 shape (m, n, k, batch)
-    BlockMmadArguments mmadArgs;           // mmad 参数
-    BlockEpilogueArguments epilogueArgs;   // epilogue 参数
-};
-```
-
 ### 核心成员变量
 | 变量 | 类型 | 说明 |
 |------|------|------|

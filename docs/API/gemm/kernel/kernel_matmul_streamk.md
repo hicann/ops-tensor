@@ -47,24 +47,30 @@ BlockEpilogueStreamK<float, bfloat16_t, ...>
 - **ON_THE_FLY**：实时输出模式
 - **ND_FIXPIPE_1_2**：ND 1v2 优化模式（stride 对齐到 32B）
 
+### L2 Cache 配置
+可选禁用 A/B 矩阵的 L2 Cache，避免大矩阵场景下的缓存污染：
+```
+SetL2Cache(gmA, gmB, params.schParams.l2CacheMode);
+```
+
 ## 特殊静态常量
 
 | 常量 | 说明 |
 |------|------|
 | AIC_SYNC_AIV_MODE_4 | 同步模式（MODE_4） |
-| AIV_SYNC_AIC_FLAG | AIV 同步 AIC 标志 ID |
-| AIC_SYNC_AIV_FLAG | AIC 同步 AIV 标志 ID |
+| AIC_SYNC_AIV_FLAG | AIC 同步 AIV 标志 ID（8） |
 | FLAG_ID_MAX | 标志 ID 最大值（16） |
 | BLOCK_BASE_M | Block 基础 M 维度（256） |
 | BLOCK_BASE_N | Block 基础 N 维度（256） |
+| BLOCK_BYTE_SIZE | Block 字节对齐大小（32） |
 
 ## 特殊类型别名
 
 | 类型 | 说明 |
 |------|------|
-| BlockMmadOp | BlockMmadStreamK 组件 |
+| BlockMmad | BlockMmadStreamK 组件 |
 | BlockEpilogueParams | BlockEpilogueStreamK 参数 |
-| WorkspaceType | Workspace 数据类型（float） |
+| BlockMmadParams | BlockMmad::Params |
 
 ## 特殊数据结构
 
@@ -80,7 +86,7 @@ struct Params {
 
 ### BlockMmadParams（StreamK 特有）
 ```
-struct GmParams {
+struct Params {  // BlockMmad::Params
     GM_ADDR aGmAddr;         // A 矩阵 GM 地址
     GM_ADDR bGmAddr;         // B 矩阵 GM 地址
     GM_ADDR cGmAddr;         // C 矩阵 GM 地址（可选，DP 模式）
@@ -95,15 +101,15 @@ struct GmParams {
 
 ### 构造函数
 ```
-__aicore__ inline KernelMatmulStreamK()
+__aicore__ inline GemmUniversal()
 ```
-功能：构造 KernelMatmulStreamK 对象。
+功能：构造 GemmUniversal（KernelMatmulStreamK）对象。
 
 ### 析构函数
 ```
-__aicore__ inline ~KernelMatmulStreamK()
+__aicore__ inline ~GemmUniversal()
 ```
-功能：析构 KernelMatmulStreamK 对象。
+功能：析构 GemmUniversal（KernelMatmulStreamK）对象。
 
 ### Init函数
 ```
@@ -111,10 +117,28 @@ __aicore__ inline void Init(Params const& params)
 ```
 功能：初始化 Kernel，提取问题规模、GM 地址、workspace 地址。
 执行流程：
-1. 设置问题规模 `problemShape_`
-2. 提取 BlockMmad 参数（包含 workspace 地址）
-3. 设置 A、B、C、workspace 的 GM 地址
-4. 判断 bias 地址是否为 nullptr
+1. 提取 BlockMmad 参数（包含 workspace 地址）
+2. 设置 A、B、C、workspace 的 GM 地址
+3. 判断 bias 地址是否为 nullptr
+
+### SetL2Cache函数
+```
+template <typename TensorA, typename TensorB>
+__aicore__ inline void SetL2Cache(TensorA& gmA, TensorB& gmB, uint32_t l2CacheMode)
+```
+功能：根据 L2CacheMode 配置 A/B 矩阵的 L2 Cache。
+参数说明：
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| gmA | TensorA | A 矩阵 GM Tensor |
+| gmB | TensorB | B 矩阵 GM Tensor |
+| l2CacheMode | uint32_t | L2 Cache 配置模式 |
+
+支持的 L2CacheMode：
+- `L2_CACHE_DEFAULT`：L2 Cache 使能（默认）
+- `A_L2_CACHE_DISABLE`：禁用 A 矩阵 L2 Cache
+- `B_L2_CACHE_DISABLE`：禁用 B 矩阵 L2 Cache
+- `ALL_L2_CACHE_DISABLE`：禁用所有 L2 Cache
 
 ### operator函数
 ```
@@ -133,12 +157,13 @@ __aicore__ inline void operator()(Params const& params)
 3. BlockMmadStreamK 初始化
 4. Layout 构建：A、B、C、Bias
 5. GM Tensor 创建
-6. Tile 循环处理：
+6. L2 Cache 配置（通过 SetL2Cache）
+7. Tile 循环处理：
    - **DP 模式**：结果输出到 GM
    - **SK 模式**：结果输出到 workspace
    - **Preload**：SK 模式下预加载下一轮 tile
-7. AIC-AIV 同步：设置 `AIC_SYNC_AIV_FLAG`
-8. 清理：关闭 HF32/MM Layout Transform
+8. AIC-AIV 同步：设置 `AIC_SYNC_AIV_FLAG`
+9. 清理：关闭 HF32 模式
 
 **AIV 核执行流程**：
 1. Block 索引检查：超出处理范围则等待同步并返回
@@ -165,9 +190,9 @@ __aicore__ inline void operator()(Params const& params)
 ### Preload 优化
 ```
 if (!bs.CheckIsSkScene(0)) { // SK Preload in DP+SK
-    if (tileIdx % usedCoreNum_ < tailSKTotalTileNum &&
-        (CeilDiv(tileIdx + 1, usedCoreNum_) == (CeilDiv(tileNum, usedCoreNum_) - 1))) {
-        tmpTileIdx = tileIdx + usedCoreNum_;  // Preload 下一轮 SK tile
+    if (tileIdx % usedCoreNum < tailSKTotalTileNum &&
+        (CeilDiv(tileIdx + 1, usedCoreNum) == (CeilDiv(tileNum, usedCoreNum) - 1))) {
+        tmpTileIdx = tileIdx + usedCoreNum;  // Preload 下一轮 SK tile
     }
 }
 ```
@@ -188,11 +213,12 @@ using BiasType = float;
 using LayoutA = AscendC::Te::NDExtLayoutPtn;
 using LayoutB = AscendC::Te::NZLayoutPtn;
 using LayoutC = AscendC::Te::NDExtLayoutPtn;
+using LayoutBias = LayoutC;
 
 // 定义调度策略（ON_THE_FLY 或 ND_FIXPIPE_1_2）
 using DispatchPolicy = Blaze::Gemm::MatmulMultiBlockWithStreamK<Blaze::Gemm::MatMulL0C2Out::ON_THE_FLY>;
 
-// 定义 BlockMmadStreamK
+// 定义 BlockMmad
 using BlockMmad = Blaze::Gemm::Block::BlockMmad<
     DispatchPolicy, AType, LayoutA, BType, LayoutB, CType, LayoutC, BiasType, LayoutBias>;
 
@@ -203,7 +229,7 @@ using BlockEpilogue = Blaze::Gemm::Block::BlockEpilogueStreamK<float, half, Disp
 using BlockScheduler = Blaze::Gemm::Block::BlockSchedulerStreamK<ProblemShape>;
 
 // 定义 Kernel
-using StreamKKernel = Blaze::Gemm::Kernel::KernelMatmulStreamK<
+using StreamKKernel = Blaze::Gemm::Kernel::GemmUniversal<
     ProblemShape, BlockMmad, BlockEpilogue, BlockScheduler>;
 ```
 
@@ -214,7 +240,7 @@ Params params = {
     {m, n, k, batch},               // problem shape
     {aGM, bGM, cGM, biasGM, workspaceGM}, // mmad params（包含 workspace）
     {cGM, workspaceGM},              // epilogue params
-    {usedCoreNum, baseM, baseN, baseK, singleCoreK, kL1, isHf32} // scheduler params
+    {usedCoreNum, baseM, baseN, baseK, singleCoreK, kL1, isHf32, l2CacheMode} // scheduler params
 };
 ```
 
@@ -229,9 +255,9 @@ streamk(params);
 ### 存储层次
 ```
 GM (A/B/Bias) → BlockScheduler (DP+SK 混合调度) → L1 → L0 → L0C
-                                                         ↓
-                                         DP: → GM (C)
-                                         SK: → Workspace → AIV → GM (C)
+                                                          ↓
+                                          DP: → GM (C)
+                                          SK: → Workspace → AIV → GM (C)
 ```
 
 ### DP 模式流程
@@ -288,6 +314,11 @@ offsetWorkspace = ((tileIdx % usedCoreNum) / skKTileNum) * skKTileNum + kCntInde
 ### AIC-AIV 同步
 - 使用 `CrossCoreSetFlag`（AIC 设置）和 `CrossCoreWaitFlag`（AIV 等待）
 - 使用 `SyncAll` 全核同步
+
+### L2 Cache 配置
+- **大矩阵场景**：建议禁用 L2 Cache 避免缓存污染
+- **小矩阵场景**：可保留 L2 Cache 提升数据复用
+- 使用 `ALL_L2_CACHE_DISABLE` 禁用所有 L2 Cache
 
 ### Workspace 配置
 - workspace 大小：`tailMNTileNum × skKTileNum × BLOCK_BASE_M × BLOCK_BASE_N × sizeof(float)`

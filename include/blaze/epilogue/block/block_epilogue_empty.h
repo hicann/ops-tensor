@@ -25,10 +25,6 @@ public:
     using BlockShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
     using BlockCoord = AscendC::Te::Coord<int64_t, int64_t, int64_t, int64_t>;
 
-    struct Arguments {
-        Arguments() = default;
-    };
-
     struct Params {
         Params() = default;
     };
@@ -41,7 +37,7 @@ public:
         return;
     }
 
-    __aicore__ inline void operator()(Arguments const& params)
+    __aicore__ inline void operator()(Params const& params)
     {
         Run();
     }

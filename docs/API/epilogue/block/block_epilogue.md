@@ -16,21 +16,11 @@ Block 层后处理组件，用于矩阵乘计算后的额外处理。不同实�
 
 ### 核心数据结构
 
-#### Arguments
-```
-struct Arguments {
-    // 具体成员根据实现不同
-    GM_ADDR cGmAddr;         // C 矩阵 GM 地址（可选）
-    GM_ADDR workspaceGmAddr; // Workspace 地址（可选）
-};
-```
-说明：Host 端参数结构体，传递给 Kernel。
-
 #### Params
 ```
 struct Params {
     // 具体成员根据实现不同
-    // 通常与 Arguments 相同或包含更多运行时参数
+    // 通常为运行时参数
 };
 ```
 说明：Kernel 运行时参数结构体。

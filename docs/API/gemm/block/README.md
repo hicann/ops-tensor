@@ -22,7 +22,7 @@
 ### BlockMmad 公共框架
 所有 BlockMmad 组件基于 [block_mmad.md](./block_mmad.md) 公共框架实现，包含统一的：
 - 模板参数
-- 数据结构（Arguments、Params）
+- 数据结构（Params）
 - 核心方法（Init、operator）
 
 详见：[block_mmad.md](./block_mmad.md)
