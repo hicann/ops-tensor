@@ -1,0 +1,233 @@
+/**
+ * Copyright (c) 2026 Huawei Technologies Co., Ltd.
+ * This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+ * CANN Open Software License Agreement Version 2.0 (the "License").
+ * Please refer to the License for details. You may not use this file except in compliance with the License.
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+ * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+ * See LICENSE in the root of the software repository for the full text of the License.
+ */
+
+/**
+ * \file test_mat_mul.cpp
+ * \brief MatMulV3 Kernel UT测试用例
+ */
+
+#include <fstream>
+#include <string>
+#include "gtest/gtest.h"
+#include "../blaze_kernel_stub.h"
+#include "tikicpulib.h"
+#include "kernel_operator.h"
+
+#include "mat_mul.cpp"
+
+class MatMulV3Test : public testing::Test {
+protected:
+    static void SetUpTestCase()
+    {
+    }
+
+    static void TearDownTestCase()
+    {
+        std::string cleanCmd = std::string("cd ") + UT_KERNEL_SRC_DIR + "/mat_mul/matmul_data && rm -rf *.bin";
+        system(cleanCmd.c_str());
+    }
+
+    void SetUp() override
+    {
+        aGM = nullptr;
+        bGM = nullptr;
+        biasGM = nullptr;
+        cGM = nullptr;
+        workspaceGM = nullptr;
+        tilingGM = nullptr;
+    }
+
+    void TearDown() override
+    {
+        if (aGM)
+            AscendC::GmFree((void*)aGM);
+        if (bGM)
+            AscendC::GmFree((void*)bGM);
+        if (biasGM)
+            AscendC::GmFree((void*)biasGM);
+        if (cGM)
+            AscendC::GmFree((void*)cGM);
+        if (workspaceGM)
+            AscendC::GmFree((void*)workspaceGM);
+        if (tilingGM)
+            AscendC::GmFree((void*)tilingGM);
+    }
+
+    GM_ADDR aGM;
+    GM_ADDR bGM;
+    GM_ADDR biasGM;
+    GM_ADDR cGM;
+    GM_ADDR workspaceGM;
+    GM_ADDR tilingGM;
+};
+
+constexpr size_t WORKSPACE_TILE_SIZE = 256UL * 256 * 4;
+constexpr size_t WORKSPACE_OVERHEAD = 20UL * 1024 * 1024;
+
+TEST_F(MatMulV3Test, Test_FP16_StreamK)
+{
+    const int64_t M = 16;
+    const int64_t N = 16;
+    const int64_t K = 16;
+    const uint32_t blockNum = 1;
+
+    size_t aSize = M * K * sizeof(half);
+    size_t bSize = K * N * sizeof(half);
+    size_t biasSize = N * sizeof(float);
+    size_t cSize = M * N * sizeof(half);
+    size_t workspaceSize = blockNum * WORKSPACE_TILE_SIZE + WORKSPACE_OVERHEAD;
+
+    aGM = (GM_ADDR)AscendC::GmAlloc(aSize);
+    bGM = (GM_ADDR)AscendC::GmAlloc(bSize);
+    biasGM = (GM_ADDR)AscendC::GmAlloc(biasSize);
+    cGM = (GM_ADDR)AscendC::GmAlloc(cSize);
+    workspaceGM = (GM_ADDR)AscendC::GmAlloc(workspaceSize);
+    tilingGM = (GM_ADDR)AscendC::GmAlloc(sizeof(MatMulV3BasicTilingData));
+
+    ASSERT_NE(aGM, nullptr);
+    ASSERT_NE(bGM, nullptr);
+    ASSERT_NE(biasGM, nullptr);
+    ASSERT_NE(cGM, nullptr);
+    ASSERT_NE(workspaceGM, nullptr);
+    ASSERT_NE(tilingGM, nullptr);
+
+    std::string dataDir = std::string(UT_KERNEL_SRC_DIR) + "/mat_mul/matmul_data";
+    std::string genCmd = std::string("cd ") + dataDir + " && rm -rf *.bin";
+    std::string genDataCmd = std::string("cd ") + dataDir + " && python3 gen_data.py --m 16 --n 16 --k 16 --dtype float16";
+    int genRet = system(genCmd.c_str());
+    ASSERT_EQ(genRet, 0) << "Failed to clean old .bin files in matmul_data";
+    genRet = system(genDataCmd.c_str());
+    ASSERT_EQ(genRet, 0) << "gen_data.py failed with exit code " << genRet;
+
+    std::ifstream aFile(dataDir + "/input_a.bin", std::ios::binary);
+    ASSERT_TRUE(aFile.is_open()) << "Failed to open input_a.bin";
+    std::ifstream bFile(dataDir + "/input_b.bin", std::ios::binary);
+    ASSERT_TRUE(bFile.is_open()) << "Failed to open input_b.bin";
+    aFile.read(reinterpret_cast<char*>(aGM), aSize);
+    ASSERT_TRUE(aFile.good()) << "Failed to read input_a.bin (expected " << aSize << " bytes)";
+    bFile.read(reinterpret_cast<char*>(bGM), bSize);
+    ASSERT_TRUE(bFile.good()) << "Failed to read input_b.bin (expected " << bSize << " bytes)";
+
+    MatMulV3BasicTilingData* tilingData = reinterpret_cast<MatMulV3BasicTilingData*>(tilingGM);
+    tilingData->usedCoreNum = blockNum;
+    tilingData->m = 16;
+    tilingData->n = 16;
+    tilingData->k = 16;
+    tilingData->mL1 = 16;
+    tilingData->nL1 = 16;
+    tilingData->kL1 = 16;
+    tilingData->baseM = 16;
+    tilingData->baseN = 16;
+    tilingData->baseK = 16;
+    tilingData->skSingleCoreK = 16;
+    tilingData->mTailCnt = 1;
+    tilingData->nTailCnt = 1;
+    tilingData->mBaseTailSplitCnt = 1;
+    tilingData->nBaseTailSplitCnt = 1;
+    tilingData->mTailMain = 0;
+    tilingData->nTailMain = 0;
+    tilingData->isHf32 = 0;
+    tilingData->l1BufferNum = 2;
+    tilingData->l0cDB = 1;
+    tilingData->ubDB = 1;
+    tilingData->l2CacheDisable = L2CacheMode::L2_CACHE_DEFAULT;
+    tilingData->sliceM = 16;
+    tilingData->srcNdStride = 1;
+    tilingData->innerBatch = 0;
+
+    AscendC::SetKernelMode(KernelMode::MIX_MODE);
+
+    auto kernelFunc = mat_mul_v3_kernel_entry<
+        OP_TYPE_MATMUL_STREAMK, half, half, half, half, CubeFormat::ND, CubeFormat::ND, CubeFormat::ND,
+        Blaze::Gemm::MatMulL0C2Out::ON_THE_FLY, 0>;
+    ICPU_RUN_KF(kernelFunc, blockNum, aGM, bGM, biasGM, cGM, workspaceGM, tilingGM);
+
+    SUCCEED() << "Kernel executed successfully (PV_MEM stubbed, output not verified)";
+}
+
+TEST_F(MatMulV3Test, Test_FP16_Basic)
+{
+    const int64_t M = 16;
+    const int64_t N = 16;
+    const int64_t K = 16;
+    const uint32_t blockNum = 1;
+
+    size_t aSize = M * K * sizeof(half);
+    size_t bSize = K * N * sizeof(half);
+    size_t biasSize = N * sizeof(float);
+    size_t cSize = M * N * sizeof(half);
+    size_t workspaceSize = blockNum * WORKSPACE_TILE_SIZE + WORKSPACE_OVERHEAD;
+
+    aGM = (GM_ADDR)AscendC::GmAlloc(aSize);
+    bGM = (GM_ADDR)AscendC::GmAlloc(bSize);
+    biasGM = (GM_ADDR)AscendC::GmAlloc(biasSize);
+    cGM = (GM_ADDR)AscendC::GmAlloc(cSize);
+    workspaceGM = (GM_ADDR)AscendC::GmAlloc(workspaceSize);
+    tilingGM = (GM_ADDR)AscendC::GmAlloc(sizeof(MatMulV3BasicTilingData));
+
+    ASSERT_NE(aGM, nullptr);
+    ASSERT_NE(bGM, nullptr);
+    ASSERT_NE(biasGM, nullptr);
+    ASSERT_NE(cGM, nullptr);
+    ASSERT_NE(workspaceGM, nullptr);
+    ASSERT_NE(tilingGM, nullptr);
+
+    std::string dataDir = std::string(UT_KERNEL_SRC_DIR) + "/mat_mul/matmul_data";
+    std::string genCmd = std::string("cd ") + dataDir + " && rm -rf *.bin";
+    std::string genDataCmd = std::string("cd ") + dataDir + " && python3 gen_data.py --m 16 --n 16 --k 16 --dtype float16";
+    int genRet = system(genCmd.c_str());
+    ASSERT_EQ(genRet, 0) << "Failed to clean old .bin files in matmul_data";
+    genRet = system(genDataCmd.c_str());
+    ASSERT_EQ(genRet, 0) << "gen_data.py failed with exit code " << genRet;
+
+    std::ifstream aFile(dataDir + "/input_a.bin", std::ios::binary);
+    ASSERT_TRUE(aFile.is_open()) << "Failed to open input_a.bin";
+    std::ifstream bFile(dataDir + "/input_b.bin", std::ios::binary);
+    ASSERT_TRUE(bFile.is_open()) << "Failed to open input_b.bin";
+    aFile.read(reinterpret_cast<char*>(aGM), aSize);
+    ASSERT_TRUE(aFile.good()) << "Failed to read input_a.bin (expected " << aSize << " bytes)";
+    bFile.read(reinterpret_cast<char*>(bGM), bSize);
+    ASSERT_TRUE(bFile.good()) << "Failed to read input_b.bin (expected " << bSize << " bytes)";
+
+    MatMulV3BasicTilingData* tilingData = reinterpret_cast<MatMulV3BasicTilingData*>(tilingGM);
+    tilingData->usedCoreNum = blockNum;
+    tilingData->m = 16;
+    tilingData->n = 16;
+    tilingData->k = 16;
+    tilingData->mL1 = 16;
+    tilingData->nL1 = 16;
+    tilingData->kL1 = 16;
+    tilingData->baseM = 16;
+    tilingData->baseN = 16;
+    tilingData->baseK = 16;
+    tilingData->skSingleCoreK = 16;
+    tilingData->mTailCnt = 1;
+    tilingData->nTailCnt = 1;
+    tilingData->mBaseTailSplitCnt = 1;
+    tilingData->nBaseTailSplitCnt = 1;
+    tilingData->mTailMain = 0;
+    tilingData->nTailMain = 0;
+    tilingData->isHf32 = 0;
+    tilingData->l1BufferNum = 1;
+    tilingData->l0cDB = 1;
+    tilingData->ubDB = 1;
+    tilingData->l2CacheDisable = L2CacheMode::L2_CACHE_DEFAULT;
+    tilingData->sliceM = 16;
+    tilingData->srcNdStride = 1;
+    tilingData->innerBatch = 0;
+
+    AscendC::SetKernelMode(KernelMode::MIX_MODE);
+
+    auto kernelFunc = mat_mul_v3_kernel_entry<
+        OP_TYPE_MATMUL_BASIC, half, half, half, half, CubeFormat::ND, CubeFormat::ND, CubeFormat::ND>;
+    ICPU_RUN_KF(kernelFunc, blockNum, aGM, bGM, biasGM, cGM, workspaceGM, tilingGM);
+
+    SUCCEED() << "Basic kernel executed successfully (PV_MEM stubbed, output not verified)";
+}

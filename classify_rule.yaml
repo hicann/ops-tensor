@@ -6,15 +6,21 @@
 # INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 # See LICENSE in the root of the software repository for the full text of the License.
 # ============================================================================
-
-ops_tensor:
-  commiter:
-    "ops_tensor_team"
-  team: "ops_tensor"
+matmul@ops-tensor:
   src:
     release:
-      - src
+      style:
+        - ops/ops-tensor/include/blaze
+        - ops/ops-tensor/docs
+      opensource_style: null
+      kernel_style: null
     unrelease:
-  llt:
-    ut_check: true
-    st_check: false
+      test_code:
+        - ops/ops-tensor/include/tensor_api
+        - ops/ops-tensor/lib
+        - ops/ops-tensor/src
+        - ops/ops-tensor/scripts
+        - ops/ops-tensor/tests
+        - ops/ops-tensor/classify_rule.yaml
+      non_delivery: null
+      open_source: null
