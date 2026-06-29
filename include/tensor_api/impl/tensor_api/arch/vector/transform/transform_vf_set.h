@@ -37,7 +37,7 @@ template<typename CalcFunc, typename TraitType>
 struct Transform2VFSet {
     using binarySet = Std::tuple<Inst::Add, Inst::Sub, Inst::Madd, Inst::And, Inst::Select, Inst::AbsSub, Inst::Min, Inst::Max,
         Inst::Or, Inst::Mul, Inst::ExpSubEven, Inst::ExpSubOdd, Inst::ShiftLeft, Inst::ShiftRight, Inst::Div, Inst::Xor, Inst::Prelu>;
-    using castSet = Std::tuple<Inst::Cast, Inst::Ceil>;
+    using castSet = Std::tuple<Inst::Cast, Inst::Ceil, Inst::Rint, Inst::Round, Inst::Floor, Inst::Trunc>;
     using binaryScalarSet = Std::tuple<Inst::MulScalar, Inst::AddScalar, Inst::MaxScalar, Inst::MinScalar,
         Inst::ShiftLeftScalar, Inst::ShiftRightScalar, Inst::MulsEven, Inst::MulsOdd>;
     using unarySet = Std::tuple<Inst::Not, Inst::Ln, Inst::Abs, Inst::Sqrt, Inst::Exp>;
