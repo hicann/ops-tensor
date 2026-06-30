@@ -37,15 +37,19 @@ SK 模式：CeilDiv((tileIdx + 1), usedCoreNum_) == CeilDiv(tileNum_, usedCoreNu
 - **Batch 索引**：在 tile 循环中由 Kernel 层处理
 
 ### Z 型扫描
-与 Swat 调度器相同，使用 Z 型扫描策略：
-- **WINDOW_LEN = 4**：扫描窗口大小
+使用 Z 型扫描策略：
 - **正向扫描**：偶数行（rowIdx % 2 == 0）
 - **反向扫描**：奇数行（rowIdx % 2 != 0）
 
 ### HF32 模式
 支持 HF32 计算模式：
-- **isHf32_**：HF32 标志（从 params 传入）
+- **isHf32_**：HF32 标志（uint8_t，从 params 传入）
 - **GetHf32Flag()**：返回 HF32 标志
+
+### L2 Cache 配置
+支持 L2 Cache 配置：
+- **l2CacheMode_**：L2 Cache 模式（从 params 传入）
+- **GetL2CacheMode()**：返回 L2 Cache 模式
 
 ## 特殊静态常量
 
@@ -61,25 +65,30 @@ SK 模式：CeilDiv((tileIdx + 1), usedCoreNum_) == CeilDiv(tileNum_, usedCoreNu
 | BlockCoord | Block 坐标：`Coord<int64_t, int64_t, int64_t, int64_t>` (mTileIdx, nTileIdx, kTileIdx, 0) |
 | ProblemShape | 问题规模类型（模板参数） |
 
-## 特殊数据结构
+## Params 参数结构
 
-### Params
-```
+### 结构定义
+```cpp
 struct Params {
-    int64_t usedCoreNum{0};    // 使用的核数
-    int64_t baseM{0};          // L0 M 维度 base 大小
-    int64_t baseN{0};          // L0 N 维度 base 大小
-    int64_t baseK{0};          // L0 K 维度 base 大小（固定 32）
-    int64_t singleCoreK{0};    // SK 模式下单核处理的 K 大小
-    int64_t kL1{0};            // L1 K 维度大小
-    int64_t isHf32{0};         // HF32 模式标志
+    int64_t usedCoreNum{0};                                   // 使用的核数
+    int64_t baseM{0};                                         // L0 M 维度 base 大小
+    int64_t baseN{0};                                         // L0 N 维度 base 大小
+    int64_t baseK{0};                                         // L0 K 维度 base 大小
+    int64_t singleCoreK{0};                                   // SK 模式下单核处理的 K 大小
+    int64_t kL1{0};                                           // L1 K 维度大小
+    uint8_t isHf32{0};                                        // HF32 模式标志
+    uint32_t l2CacheMode = L2_CACHE_DEFAULT; // L2 Cache 配置
 };
 ```
 
 说明：
 - `usedCoreNum`：参与计算的 AIC 核数量
-- `singleCoreK`：SK 模式下每个核处理的 K 维大小（用于 K 轴切分）
+- `baseM` / `baseN` / `baseK`：L0 base 形状
+- `singleCoreK`：SK 模式下单核处理的 K 维大小（用于 K 轴切分）
+- `kL1`：L1 K 维度大小
 - `baseK`：固定为 32，需根据 baseM, baseN, L0 调整
+- `isHf32`：HF32 模式标志（uint8_t 类型）
+- `l2CacheMode`：L2 Cache 配置模式
 
 ## 特殊成员变量
 
@@ -94,7 +103,8 @@ struct Params {
 | kTileIdx_ | 当前 K 轴切分索引（SK 模式） |
 | curKTileNum_ | 当前 K 轴 tile 数量（DP=1, SK=skKTileNum_） |
 | skSingleCoreK_ | SK 模式单核 K 大小 |
-| isHf32_ | HF32 模式标志 |
+| isHf32_ | HF32 模式标志（uint8_t） |
+| l2CacheMode_ | L2 Cache 配置模式 |
 
 ## 特殊成员方法
 
@@ -107,7 +117,7 @@ __aicore__ inline BlockSchedulerMatmulStreamK(const ProblemShape& shape, const P
 | 参数 | 类型 | 说明 |
 |------|------|------|
 | shape | ProblemShape | 问题规模 `(m, n, k, batch)` |
-| params | Params | 调度参数（usedCoreNum, baseM, baseN, baseK, singleCoreK, kL1, isHf32） |
+| params | Params | 调度参数（usedCoreNum, baseM, baseN, baseK, singleCoreK, kL1, isHf32, l2CacheMode） |
 
 执行流程：
 1. 设置问题规模：`m_`, `n_`, `k_`, `batch_`
@@ -117,30 +127,26 @@ __aicore__ inline BlockSchedulerMatmulStreamK(const ProblemShape& shape, const P
    - `tailMNTileNum = (mTileNum_ × nTileNum_) % usedCoreNum_`（SK 模式 tile 数量）
    - `totalMNTileNumInDP_ = mTileNum_ × nTileNum_ - tailMNTileNum`（DP 模式 tile 数量）
    - `tileNum_ = totalMNTileNumInDP_ + tailMNTileNum × skKTileNum_`（总 tile 数量）
+5. 设置 HF32 和 L2 Cache 模式：`isHf32_`, `l2CacheMode_`
 
-### GetTotalTileNum
+### GetTileNum
 ```
-__aicore__ inline int64_t GetTotalTileNum()
+__aicore__ inline int64_t GetTileNum()
 ```
 功能：返回总 tile 数量（`tileNum_ × batch_`）。
 
 ### GetHf32Flag
 ```
-__aicore__ inline int64_t GetHf32Flag()
+__aicore__ inline uint8_t GetHf32Flag()
 ```
 功能：返回 HF32 模式标志（`isHf32_`）。
 
-### GetTileL1Shape
+### GetL2CacheMode
 ```
-__aicore__ inline Shape<int64_t, int64_t, int64_t, int64_t> GetTileL1Shape()
+__aicore__ inline uint32_t GetL2CacheMode()
 ```
-功能：返回 L1 tile 形状 `{mL1_, nL1_, kL1_, 1}`。
+功能：返回 L2 Cache 配置模式（`l2CacheMode_`）。
 
-### GetTileL0Shape
-```
-__aicore__ inline Shape<int64_t, int64_t, int64_t, int64_t> GetTileL0Shape()
-```
-功能：返回 L0 tile 形状 `{baseM_, baseN_, baseK_, 1}`。
 
 ### GetMNKTileNum
 ```
@@ -168,9 +174,9 @@ __aicore__ inline int64_t GetCurKSingleCore(int64_t tileIdx)
 - **DP 模式**：`k_`（完整 K）
 - **SK 模式**：`skSingleCoreK_`（切分 K）
 
-### GetSingleCoreShape
+### GetBlockShape
 ```
-__aicore__ inline BlockShape GetSingleCoreShape(int64_t tileIdx)
+__aicore__ inline BlockShape GetBlockShape(int64_t tileIdx)
 ```
 功能：返回当前 tile 的单核形状。
 参数说明：
@@ -185,9 +191,9 @@ __aicore__ inline BlockShape GetSingleCoreShape(int64_t tileIdx)
 - **DP 模式**：`blkK = k_`（完整 K）
 - **SK 模式**：`blkK = skSingleCoreK_` 或 `tailSingleCoreK`
 
-### GetSingleCoreCoord
+### GetBlockCoord
 ```
-__aicore__ inline BlockCoord GetSingleCoreCoord(int64_t tileIdx)
+__aicore__ inline BlockCoord GetBlockCoord(int64_t tileIdx)
 ```
 功能：返回当前 tile 的单核坐标。
 参数说明：
@@ -253,7 +259,8 @@ BlockScheduler::Params params = {
     baseK,           // L0 K 维度 base（如 32）
     singleCoreK,     // SK 模式单核 K 大小（如 k_ / 4）
     kL1,             // L1 K 维度（如 baseK）
-    isHf32           // HF32 模式（0 或 1）
+    isHf32,          // HF32 模式（uint8_t，0 或 1）
+    l2CacheMode      // L2 Cache 配置
 };
 ```
 
@@ -265,7 +272,7 @@ BlockScheduler scheduler(shape, params);
 
 ### 获取 tile 数量
 ```
-int64_t tileNum = scheduler.GetTotalTileNum();
+int64_t tileNum = scheduler.GetTileNum();
 int64_t blockNum = scheduler.GetBlockNum(GetBlockNum());
 for (int64_t tileIdx = GetBlockIdx(); tileIdx < tileNum; tileIdx += blockNum) {
     // 处理 tile
@@ -284,7 +291,7 @@ if (isSkScene) {
 
 ### 获取单核形状
 ```
-auto singleCoreShape = scheduler.GetSingleCoreShape(tileIdx);
+auto singleCoreShape = scheduler.GetBlockShape(tileIdx);
 int64_t blkM = Get<0>(singleCoreShape);
 int64_t blkN = Get<1>(singleCoreShape);
 int64_t blkK = Get<2>(singleCoreShape);
@@ -292,7 +299,7 @@ int64_t blkK = Get<2>(singleCoreShape);
 
 ### 获取单核坐标
 ```
-auto singleCoreCoord = scheduler.GetSingleCoreCoord(tileIdx);
+auto singleCoreCoord = scheduler.GetBlockCoord(tileIdx);
 int64_t mTileIdx = Get<0>(singleCoreCoord);
 int64_t nTileIdx = Get<1>(singleCoreCoord);
 int64_t kTileIdx = Get<2>(singleCoreCoord);  // SK 模式有效
@@ -307,9 +314,8 @@ int64_t curK = scheduler.GetCurKSingleCore(tileIdx);
 
 ### 获取配置
 ```
-int64_t hf32Flag = scheduler.GetHf32Flag();
-auto tileL1Shape = scheduler.GetTileL1Shape();
-auto tileL0Shape = scheduler.GetTileL0Shape();
+uint8_t hf32Flag = scheduler.GetHf32Flag();
+uint32_t l2CacheMode = scheduler.GetL2CacheMode();
 auto mnkTileNum = scheduler.GetMNKTileNum();
 ```
 
@@ -341,7 +347,7 @@ curKTileNum = 1（不切分 K）
     ↓
 kTileIdx = 0
     ↓
-GetSingleCoreShape：blkK = k_（完整 K）
+GetBlockShape：blkK = k_（完整 K）
     ↓
 BlockMmad：输出到 GM
 ```
@@ -354,7 +360,7 @@ curKTileNum = skKTileNum（K 轴切分）
     ↓
 kTileIdx = (tileIdx % usedCoreNum) % curKTileNum
     ↓
-GetSingleCoreShape：blkK = skSingleCoreK_ 或 tailSingleCoreK
+GetBlockShape：blkK = skSingleCoreK_ 或 tailSingleCoreK
     ↓
 BlockMmad：输出到 workspace
     ↓
@@ -400,6 +406,13 @@ rowIdx % 2 != 0：反向扫描（nTileIdx = nTileNum - 1 - nTileIdx）
 ### HF32 模式配置
 - **isHf32 = 1**：启用 HF32 计算模式
 - **适用场景**：需要高精度计算的 FP32 场景
+
+### L2 Cache 配置
+- **L2_CACHE_DEFAULT**：L2 Cache 使能（默认）
+- **A_L2_CACHE_DISABLE**：禁用 A 矩阵 L2 Cache
+- **B_L2_CACHE_DISABLE**：禁用 B 矩阵 L2 Cache
+- **ALL_L2_CACHE_DISABLE**：禁用所有 L2 Cache
+- **适用场景**：大矩阵场景建议禁用 L2 Cache 避免缓存污染
 
 ### 适用场景
 - **StreamK Kernel**：AIC + AIV 双核协同

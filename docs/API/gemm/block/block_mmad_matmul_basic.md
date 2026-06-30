@@ -2,9 +2,9 @@
 > [代码位置](../../../../include/blaze/gemm/block/block_mmad_matmul_basic.h)
 
 ## 功能说明
-基础矩阵乘 Block，基于 Tensor API 实现，仅支持 AIC 计算。支持 L1/L0C 可配置双缓冲、Bias 加法，适用于 Basic Kernel 场景。
+基础矩阵乘 Block，基于 Tensor API 实现，仅支持 AIC 计算。支持 L1/L0C 可配置缓冲、Bias 加法，适用于 Basic Kernel 场景。
 
-**继承自**：[Block Mmad 基础框架](./block_mmad.md)
+**继承自**：BlockMmad 基础模板（特化实现）
 
 ## 特殊约束
 
@@ -22,150 +22,248 @@
 ### 输出目标
 结果直接输出到 GM，不支持 workspace。
 
-### weightNZFormat
-支持 B 矩阵 NZ 格式，通过 `weightNZFormat` 静态常量标识。
+### Layout Trait
+使用 `IsTrans` 和 `IsWeightNz` traits 判断 Layout：
+- `IsTrans<LayoutA>::value`：判断 A 矩阵是否转置
+- `IsTrans<LayoutB>::value`：判断 B 矩阵是否转置
+- `IsWeightNz<LayoutB>::value`：判断 B 矩阵是否为 NZ 格式
 
-### HF32 模式
-HF32 模式由 Kernel 层控制，BlockMmad 层不直接处理。
+### L1 缓冲布局
+```
+L1 空间布局（2 buffer）：
+AL1Ping|BL1Ping|BiasPing|AL1Pong|BL1Pong|BiasPong
+
+L1 空间布局（4 buffer）：
+AL1Buf0|BL1Buf0|BiasBuf0|AL1Buf1|BL1Buf1|BiasBuf1|AL1Buf2|BL1Buf2|BiasBuf2|AL1Buf3|BL1Buf3|BiasBuf3
+```
+
+### MM Layout Transform
+构造函数和析构函数中设置 MM Layout Transform：
+```
+// 构造函数（ASCEND_IS_NOT_AIV）
+SetMMLayoutTransform(true);  // 适配 Fixpipe 输出
+
+// 析构函数（ASCEND_IS_NOT_AIV）
+SetMMLayoutTransform(false); // 关闭
+```
+
+## 模板参数
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| FULL_LOAD_MODE_ | uint64_t | 全载模式：0=非全载, 1=A全载, 2=B全载 |
+| FUSED_OP_TYPE_ | uint64_t | 融合操作类型 |
+| KernelSchedule_ | class | Kernel 调度类型 |
+| AType_ | class | A 矩阵数据类型 |
+| LayoutA_ | class | A 矩阵布局类型 |
+| BType_ | class | B 矩阵数据类型 |
+| LayoutB_ | class | B 矩阵布局类型 |
+| CType_ | class | C 矩阵输出类型 |
+| LayoutC_ | class | C 矩阵布局类型 |
+| BiasType_ | class | Bias 数据类型 |
+| LayoutBias_ | class | Bias 布局类型 |
+
+## 类型别名
+
+| 类型 | 说明 |
+|------|------|
+| AType | A 矩阵数据类型 |
+| BType | B 矩阵数据类型 |
+| CType | C 矩阵输出类型 |
+| BiasType | Bias 数据类型 |
+| LayoutA | A 矩阵布局类型 |
+| LayoutB | B 矩阵布局类型 |
+| LayoutC | C 矩阵布局类型 |
+| LayoutBias | Bias 布局类型 |
+| DispatchPolicy | 调度策略类型 |
+| TupleShape | 问题规模：`Shape<int64_t, int64_t, int64_t, int64_t>` |
+| TupleL1L0Shape | Tile 形状：`Shape<int64_t, int64_t, int64_t, int64_t, int64_t, int64_t>` |
+| TileShape | Tile 形状：`Shape<int64_t, int64_t, int64_t>` |
 
 ## 特殊静态常量
 
 | 常量 | 说明 |
 |------|------|
-| weightNZFormat | B 矩阵是否为 NZ 格式（继承自 BlockMmad，用于 Kernel 层判断） |
-| HALF_L0_SIZE | L0 缓冲区半大小（按 A 类型计算） |
-| HALF_L0C_SIZE | L0C 缓冲区半大小（按 float 计算） |
-| HALF_L1_SIZE | L1 缓冲区半大小 |
+| transA | A 矩阵是否转置（通过 IsTrans trait 判断） |
+| transB | B 矩阵是否转置（通过 IsTrans trait 判断） |
+| weightNZFormat | B 矩阵是否为 NZ 格式（通过 IsWeightNz trait 判断） |
 | MTE1_MTE2_EVENT_ID_NUM | L1 双缓冲事件标志数量（固定 4 个） |
 
-## 特殊成员方法
+## Params 参数结构
+
+### 结构定义
+```cpp
+struct Params {
+    GM_ADDR aGmAddr{nullptr};         // A 矩阵 GM 地址
+    GM_ADDR bGmAddr{nullptr};         // B 矩阵 GM 地址
+    GM_ADDR cGmAddr{nullptr};         // C 矩阵 GM 地址
+    GM_ADDR biasGmAddr{nullptr};      // Bias GM 地址
+    GM_ADDR groupListGmAddr{nullptr}; // GroupList 地址（预留扩展）
+    GM_ADDR workspaceGmAddr{nullptr}; // Workspace 地址（预留扩展）
+    uint64_t ml1{0};                  // L1 M 维度尺寸
+    uint64_t nl1{0};                  // L1 N 维度尺寸
+    uint64_t kl1{0};                  // L1 K 维度尺寸
+    uint32_t ml0{0};                  // L0 M 维度尺寸
+    uint32_t nl0{0};                  // L0 N 维度尺寸
+    uint32_t kl0{0};                  // L0 K 维度尺寸
+    uint32_t l1Stages{1};             // L1 缓冲数量
+    uint16_t l0cStages{1};            // L0C 缓冲数量
+};
+```
+
+### 参数详解
+
+#### GM 地址参数
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| aGmAddr | GM_ADDR | A 矩阵 GM 地址 |
+| bGmAddr | GM_ADDR | B 矩阵 GM 地址 |
+| cGmAddr | GM_ADDR | C 矩阵 GM 地址 |
+| biasGmAddr | GM_ADDR | Bias GM 地址（nullptr 表示无 bias） |
+
+#### L1/L0 形状参数
+| 参数 | 类型 | 说明 | 建议值 |
+|------|------|------|--------|
+| ml1 | uint64_t | L1 M 维度尺寸 | 128~256 |
+| nl1 | uint64_t | L1 N 维度尺寸 | 128~256 |
+| kl1 | uint64_t | L1 K 维度尺寸 | 64~128 |
+| ml0 | uint32_t | L0 M 维度尺寸 | 64~128 |
+| nl0 | uint32_t | L0 N 维度尺寸 | 64~128 |
+| kl0 | uint32_t | L0 K 维度尺寸 | 32~64 |
+
+#### 缓冲配置参数
+| 参数 | 类型 | 说明 | 建议值 |
+|------|------|------|--------|
+| l1Stages | uint32_t | L1 缓冲数量 | 1、2 或 4（默认 1） |
+| l0cStages | uint16_t | L0C 缓冲数量 | 1 或 2（默认 1） |
+
+## 公共成员方法（Public API）
 
 ### 构造函数
-```
+```cpp
 __aicore__ inline BlockMmad()
 ```
-功能：构造 BlockMmad 对象，初始化硬件事件标志。
-执行流程：设置 4 个 MTE1_MTE2 标志、2 个 FIX_M 标志、2 个 M_MTE1 标志。
+功能：构造 BlockMmad 对象，初始化硬件事件标志和 MM Layout Transform。
+执行流程：
+1. ASCEND_IS_NOT_AIV 时设置 4 个 MTE1_MTE2 标志、2 个 FIX_M 标志、2 个 M_MTE1 标志
+2. ASCEND_IS_NOT_AIV 时调用 `SetMMLayoutTransform(true)`（适配 Fixpipe）
 
 ### 析构函数
-```
+```cpp
 __aicore__ inline ~BlockMmad()
 ```
-功能：析构 BlockMmad 对象，等待硬件事件完成。
-执行流程：等待 4 个 MTE1_MTE2 标志、2 个 FIX_M 标志、2 个 M_MTE1 标志。
+功能：析构 BlockMmad 对象，等待硬件事件完成并关闭 MM Layout Transform。
+执行流程：
+1. ASCEND_IS_NOT_AIV 时等待 4 个 MTE1_MTE2 标志、2 个 FIX_M 标志、2 个 M_MTE1 标志
+2. ASCEND_IS_NOT_AIV 时调用 `SetMMLayoutTransform(false)`（关闭）
 
 ### Init函数
-```
-template <uint64_t FULL_LOAD_MODE_ = B_FULL_LOAD_MODE>
+```cpp
 __aicore__ inline void Init(
     const TupleShape& shape,     // 问题规模
-    const TupleShape& tileL1,    // L1 切分形状
-    const TupleShape& tileL0,    // L0 切分形状
-    bool isBias,                 // 是否启用 bias
-    uint64_t l1BufNum,           // L1 缓冲数量（1 或 2）
-    bool l0cDB)                  // 是否启用 L0C 双缓冲
+    const Params& params)        // BlockMmad 参数
 ```
 功能：初始化 BlockMmad 组件。
 参数说明：
 | 参数 | 类型 | 说明 |
 |------|------|------|
-| shape | TupleShape | 问题规模 |
-| tileL1 | TupleShape | L1 tile 形状 |
-| tileL0 | TupleShape | L0 tile 形状 |
-| isBias | bool | 是否包含 bias 计算 |
-| l1BufNum | uint64_t | L1 双缓冲数量，1 或 2 |
-| l0cDB | bool | 是否启用 L0C 双缓冲优化 |
+| shape | TupleShape | 问题规模 `(m, n, k, batch)` |
+| params | Params | BlockMmad 参数 |
 
-说明：
-- 模板参数 `FULL_LOAD_MODE_` 用于指定全载模式（默认 B_FULL_LOAD_MODE）
-- L1 缓冲数量可配置（1 或 2），影响 GM→L1 流水线并行度
-- L0C 双缓冲可配置，实现 L0C 搬出与写入的并行
+执行流程：
+1. 设置问题规模：m_, n_, k_
+2. 设置 L1/L0 形状：mL1_, nL1_, kL1_, baseM_, baseN_, baseK_
+3. 判断 Bias：`isBias_ = params.biasGmAddr != nullptr`
+4. 设置缓冲策略：l1Stages_, enableL0cPingPong_
+5. 计算缓冲偏移：aL1Buffer_[i], bL1Buffer_[i], biasL1Buffer_[i]
 
 ### operator函数
-```
-template <typename TensorC, typename TensorA, typename TensorB, typename TensorBias>
+```cpp
+template <typename TensorA, typename TensorB, typename TensorBias, typename TensorC>
 __aicore__ inline void operator()(
-    TensorC gmC,                // C 矩阵 GM Tensor
-    TensorA gmA,                // A 矩阵 GM Tensor
-    TensorB gmB,                // B 矩阵 GM Tensor
-    TensorBias gmBias,          // Bias GM Tensor
-    TupleL1L0Shape tileShape)   // Tile 形状
+    TensorA& gmA,                // A 矩阵 GM Tensor
+    TensorB& gmB,                // B 矩阵 GM Tensor
+    TensorBias& gmBias,          // Bias GM Tensor
+    TensorC& gmC,                // C 矩阵 GM Tensor
+    TupleL1L0Shape& tileShape)   // Tile 形状
 ```
 功能：执行单个 block 的矩阵乘计算。
 参数说明：
 | 参数 | 类型 | 说明 |
 |------|------|------|
-| gmC | TensorC | C 矩阵输出 Tensor（已 Slice 到当前 block） |
 | gmA | TensorA | A 矩阵输入 Tensor（已 Slice 到当前 block） |
 | gmB | TensorB | B 矩阵输入 Tensor（已 Slice 到当前 block） |
 | gmBias | TensorBias | Bias 输入 Tensor（已 Slice） |
-| tileShape | TupleL1L0Shape | Tile 形状 `(m, n, k, m0, n0, k0)` |
+| gmC | TensorC | C 矩阵输出 Tensor（已 Slice 到当前 block） |
+| tileShape | TupleL1L0Shape | Tile 形状 `(mL1, nL1, k, batch, mL0, nL0)` |
 
-## 特殊数据结构
+执行流程：
+1. **K 轴外层循环**：按 kL1 切分
+2. **搬运 A/B/Bias 到 L1**：根据 l1Stages 决定缓冲数量
+3. **K 轴内层循环**：按 baseK 切分
+4. **搬运 A/B 到 L0**：双缓冲模式
+5. **Mmad 计算**：首次迭代时加载 Bias
+6. **结果搬出**：L0C → GM（通过 Fixpipe）
 
-### Arguments / Params
-```
-struct Arguments {
-    GM_ADDR aGmAddr;         // A 矩阵 GM 起始地址
-    GM_ADDR bGmAddr;         // B 矩阵 GM 起始地址
-    GM_ADDR cGmAddr;         // C 矩阵 GM 起始地址
-    GM_ADDR biasGmAddr;      // Bias GM 起始地址（可选）
-    GM_ADDR groupListGmAddr; // GroupList 地址（预留扩展）
-    GM_ADDR workspaceGmAddr; // 工作空间地址（预留扩展）
-};
-```
-
-说明：`Params` 同 `Arguments`，无 workspace 实际使用。
-
-## 事件同步（Basic 特有）
+## 事件同步
 
 | 事件 | 用途 |
 |------|------|
-| MTE1_MTE2 | L1 双缓冲同步（4 个标志） |
-| FIX_M | L0C 双缓冲同步（2 个标志） |
-| M_MTE1 | L0 双缓冲同步（2 个标志） |
+| MTE1_MTE2 (0-3) | L1 缓冲同步（4 个标志） |
+| FIX_M (0-1) | L0C 双缓冲同步（2 个标志） |
+| M_MTE1 (6-7) | L0 双缓冲同步（2 个标志） |
 | MTE2_MTE1 | GM→L1 完成同步 |
 | MTE1_M | L1→L0 完成同步 |
-| M_FIX | Mmad 计算完成同步 |
-
-说明：事件数量可通过 Init 参数配置启用/禁用。
 
 ## 调用示例
 
 ### 组件组装
-```
+```cpp
 using AType = half;
 using BType = half;
 using CType = float;
 using BiasType = float;
-using LayoutA = AscendC::Te::Layout::RowMajor;
-using LayoutB = AscendC::Te::Layout::ColMajor;
-using LayoutC = AscendC::Te::Layout::RowMajor;
+using LayoutA = AscendC::Te::NZLayoutPtn;
+using LayoutB = AscendC::Te::NZLayoutPtn;
+using LayoutC = AscendC::Te::NDLayoutPtn;
 using LayoutBias = LayoutC;
 
-using DispatchPolicy = Blaze::Gemm::MatmulMultiBlockBasic<B_FULL_LOAD_MODE>;
+using DispatchPolicy = Blaze::Gemm::MatmulMultiBlockBasic<0>;  // 非全载
 using BlockMmad = Blaze::Gemm::Block::BlockMmad<
     DispatchPolicy, AType, LayoutA, BType, LayoutB, CType, LayoutC, BiasType, LayoutBias>;
 ```
 
-### 组件实例化
+### 参数准备
+```cpp
+BlockMmad::Params params = {
+    .aGmAddr = aGM,
+    .bGmAddr = bGM,
+    .cGmAddr = cGM,
+    .biasGmAddr = biasGM,  // nullptr 表示无 bias
+    .ml1 = 256,
+    .nl1 = 256,
+    .kl1 = 128,
+    .ml0 = 128,
+    .nl0 = 128,
+    .kl0 = 64,
+    .l1Stages = 2,         // L1 双缓冲
+    .l0cStages = 1         // L0C 单缓冲
+};
 ```
+
+### 组件实例化
+```cpp
 BlockMmad blockMmad;
 ```
 
 ### 组件初始化
-```
+```cpp
 TupleShape problemShape{m, n, k, batch};
-TupleShape tileL1{mL1, nL1, kL1, 0, 0, 0};
-TupleShape tileL0{baseM, baseN, baseK, 0, 0, 0};
-bool isBias = true;
-uint64_t l1BufNum = 2;  // L1 双缓冲
-bool l0cDB = true;       // L0C 双缓冲
-blockMmad.Init(problemShape, tileL1, tileL0, isBias, l1BufNum, l0cDB);
+blockMmad.Init(problemShape, params);
 ```
 
 ### 组件执行
-```
+```cpp
 // 准备 GM Tensor（已在 kernel 层创建）
 auto gmA = AscendC::Te::MakeTensor(...);
 auto gmB = AscendC::Te::MakeTensor(...);
@@ -179,48 +277,56 @@ auto gmBlockC = gmC.Slice(AscendC::MakeCoord(coordM, coordN), AscendC::MakeShape
 auto gmBlockBias = gmBias.Slice(AscendC::MakeCoord(0, coordN), AscendC::MakeShape(1, shapeN));
 
 // 执行矩阵乘
-TupleL1L0Shape tileShape{shapeM, shapeN, shapeK, baseM, baseN, baseK};
-blockMmad(gmBlockC, gmBlockA, gmBlockB, gmBlockBias, tileShape);
+TupleL1L0Shape tileShape{shapeM, shapeN, shapeK, batch, mL0, nL0};
+blockMmad(gmBlockA, gmBlockB, gmBlockBias, gmBlockC, tileShape);
 ```
 
 ## 数据流
 
-### 存储层次（Basic 特有）
+### 存储层次
 ```
-GM → L1 (双缓冲) → L0A/L0B (双缓冲) → L0C (双缓冲) → GM
-                    ↓
-                  BIAS → L1 → BIAS Buffer
+GM (A/B/Bias) → L1 (多缓冲) → L0A/L0B (双缓冲) → L0C (单缓冲或双缓冲) → GM (C)
 ```
 
 ### 执行流程
 ```
 K 轴外层循环：按 kL1 切分
     ↓
-搬运 A、B、Bias 到 L1
+搬运 A、B、Bias 到 L1（多缓冲）
     ↓
 K 轴内层循环：按 baseK 切分
     ↓
-搬运 A、B 到 L0
+搬运 A、B 到 L0（双缓冲）
     ↓
 Mmad 计算：C += A × B + Bias（首次迭代）
     ↓
-结果搬出：L0C → GM
+结果搬出：L0C → GM（Fixpipe）
 ```
 
-## 性能优化建议（Basic 特有）
+## 性能优化建议
 
 ### L1 缓冲配置
-- 大矩阵场景：建议 `l1BufNum = 2` 最大化流水线并行度
-- 小矩阵场景：可使用 `l1BufNum = 1` 减少缓冲开销
+- **单缓冲（l1Stages=1）**：小矩阵场景，减少缓冲开销
+- **双缓冲（l1Stages=2）**：中等矩阵场景，平衡并行度和开销
+- **四缓冲（l1Stages=4）**：大矩阵场景，最大化流水线并行度
 
 ### L0C 双缓冲
-- 启用 L0C 双缓冲（`l0cDB = true`）可隐藏搬出延迟
-- 禁用时（`l0cDB = false`）可减少事件同步开销
+- **单缓冲（l0cStages=1）**：小矩阵场景，默认配置
+- **双缓冲（l0cStages=2）**：大矩阵场景，隐藏搬出延迟
+
+### L1/L0 形状配置
+- **mL1/baseM 成倍数关系**：减少尾块开销
+- **nL1/baseN 成倍数关系**：减少尾块开销
+- **kL1/baseK 成倍数关系**：减少尾块开销
 
 ### 全载模式选择
-- **非全载模式**：每次迭代重新加载 A/B 块，适用于小 K 场景
-- **B 全载模式**：B 矩阵常驻 L1，适用于大 K、小 N 场景
-- **A 全载模式**：A 矩阵常驻 L1，适用于大 K、小 M 场景
+- **非全载模式（FULL_LOAD_MODE=0）**：通用场景，支持 SplitK
+- **B 全载模式（FULL_LOAD_MODE=2）**：B 矩阵较小，可完全载入 L1
+- **A 全载模式（FULL_LOAD_MODE=1）**：A 矩阵较小，可完全载入 L1
+
+### NZ 格式优化
+- **权重矩阵（B）**：优先使用 NZ 格式，提升 L1/L0 搬运效率
+- **激活矩阵（A）**：使用 ND 格式即可
 
 ### 适用场景
 - Basic Kernel 的 BlockMmad 实现

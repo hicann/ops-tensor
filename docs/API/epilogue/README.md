@@ -11,7 +11,7 @@
 
 所有 BlockEpilogue 组件基于 [block_epilogue.md](./block/block_epilogue.md) 公共框架实现，包含统一的：
 - 类型别名
-- 数据结构（Arguments、Params）
+- 数据结构（Params）
 - 核心方法（Init、Run、operator）
 
 详见：[block_epilogue.md](./block/block_epilogue.md)
@@ -22,7 +22,7 @@
 BlockEpilogue
     ├── BlockShape (Block 形状)
     ├── BlockCoord (Block 坐标)
-    ├── Arguments (参数结构)
+    ├── Params (参数结构)
     └── 核心方法
             ├── Init (初始化)
             ├── Run (执行后处理)

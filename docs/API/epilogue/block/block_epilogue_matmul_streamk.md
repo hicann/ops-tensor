@@ -62,17 +62,12 @@ StreamK 矩阵乘后处理 Block，运行在 AIV 核。从 workspace 读取 AIC 
 
 ## 特殊数据结构
 
-### Arguments
+### Params
 ```
-struct Arguments {
+struct Params {
     GM_ADDR cGmAddr{nullptr};         // C 矩阵 GM 地址
     GM_ADDR workspaceGmAddr{nullptr}; // Workspace GM 地址
 };
-```
-
-### Params
-```
-using Params = Arguments;
 ```
 
 ### AivParams

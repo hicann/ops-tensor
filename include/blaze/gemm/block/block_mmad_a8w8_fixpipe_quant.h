@@ -63,7 +63,7 @@ public:
     static constexpr bool weightNz = IsWeightNz<LayoutB>::value;
     static constexpr bool transA = IsTrans<LayoutA>::value;
     static constexpr bool transB = IsTrans<LayoutB>::value;
-    static constexpr int32_t C0_SIZE = AscendC::AuxGetC0Size<AType>();
+    static constexpr int32_t C0_SIZE = AscendC::Te::C0_ELEMENT<AType>;
     static constexpr uint16_t L0C_C0 = 16;
     static constexpr uint16_t SCALE_BUFFER_NUM = 2;
     static constexpr uint16_t AB_L1_TWO_BUFFER = 2;

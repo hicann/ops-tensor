@@ -15,14 +15,8 @@
 
 #pragma once
 
-#define ASCENDC_CUBE_ONLY
 
-#if ASC_DEVKIT_MAJOR >= 9
 #include "kernel_basic_intf.h"
-#else
-#include "kernel_operator.h"
-#include "kernel_operator_intf.h"
-#endif
 
 #include "blaze/epilogue/block/block_epilogue_empty.h"
 #include "blaze/gemm/block/block_mmad.h"
@@ -50,9 +44,7 @@ public:
     using ProblemShape = ProblemShape_;
     using BlockScheduler = BlockScheduler_;
     using BlockEpilogue = BlockEpilogue_;
-    static constexpr bool transA = BlockMmad::transA;
-    static constexpr bool transB = BlockMmad::transB;
-    static constexpr bool weightNZFormat = BlockMmad::weightNZFormat;
+
     // mmad
     using BlockMmadParams = typename BlockMmad::Params;
     using BlockEpilogueParams = typename BlockEpilogue::Params;
@@ -66,30 +58,11 @@ public:
     using LayoutC = typename BlockMmad::LayoutC;
     using LayoutBias = typename BlockMmad::LayoutBias;
     using TupleShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
-    using MakeLayoutA = AscendC::Te::FrameLayoutFormat<LayoutA, AscendC::Std::Int<AscendC::AuxGetC0Size<AType>()>>;
-    using MakeLayoutB = AscendC::Te::FrameLayoutFormat<LayoutB, AscendC::Std::Int<AscendC::AuxGetC0Size<BType>()>>;
-    using MakeLayoutC = AscendC::Te::FrameLayoutFormat<LayoutC, AscendC::Std::Int<AscendC::AuxGetC0Size<CType>()>>;
+    using MakeLayoutA = AscendC::Te::FrameLayoutFormat<LayoutA, AscendC::Std::Int<AscendC::Te::C0_ELEMENT<AType>>>;
+    using MakeLayoutB = AscendC::Te::FrameLayoutFormat<LayoutB, AscendC::Std::Int<AscendC::Te::C0_ELEMENT<BType>>>;
+    using MakeLayoutC = AscendC::Te::FrameLayoutFormat<LayoutC, AscendC::Std::Int<AscendC::Te::C0_ELEMENT<CType>>>;
     using MakeLayoutBias =
-        AscendC::Te::FrameLayoutFormat<LayoutBias, AscendC::Std::Int<AscendC::AuxGetC0Size<BiasType>()>>;
-    static constexpr bool isFp32 = (std::is_same_v<BType, float>);
-    static constexpr int64_t C0_SIZE = isFp32 ? C0_SIZE_fp32 : C0_SIZE_fp16;
-
-    // shape
-    TupleShape problemShape_{};
-    BlockMmadParams blockMmadParams_{};
-    bool isBias_ = false;
-
-    __gm__ AType* aGmAddr_;
-    __gm__ BType* bGmAddr_;
-    __gm__ CType* cGmAddr_;
-    __gm__ BiasType* biasGmAddr_ = nullptr; // 可选输入，直接初始化
-
-    uint64_t curBatchIdx_ = {0};
-    uint64_t batchAIndex_ = {0};
-    uint64_t batchBIndex_ = {0};
-    uint64_t m_{1};
-    uint64_t n_{1};
-    uint64_t k_{1};
+        AscendC::Te::FrameLayoutFormat<LayoutBias, AscendC::Std::Int<AscendC::Te::C0_ELEMENT<BiasType>>>;
 
     struct BatchInfo {
         uint32_t aBatchDim0 = 1UL;
@@ -110,77 +83,33 @@ public:
         ProblemShape problemShape;
         BlockMmadParams mmadParams;
         BlockEpilogueParams epilogueParams;
-        BlockSchedulerParams schedulerParams;
+        BlockSchedulerParams schParams;
         BatchInfo batchInfo;
         Params() = default;
     };
-
-    __aicore__ inline void Init(Params const& params)
-    {
-        problemShape_ = params.problemShape;
-        blockMmadParams_ = params.mmadParams;
-        m_ = static_cast<uint64_t>(AscendC::Te::Get<MNK_M>(problemShape_));
-        n_ = static_cast<uint64_t>(AscendC::Te::Get<MNK_N>(problemShape_));
-        k_ = static_cast<uint64_t>(AscendC::Te::Get<MNK_K>(problemShape_));
-        aGmAddr_ = reinterpret_cast<__gm__ AType*>(params.mmadParams.aGmAddr);
-        bGmAddr_ = reinterpret_cast<__gm__ BType*>(params.mmadParams.bGmAddr);
-        cGmAddr_ = reinterpret_cast<__gm__ CType*>(params.mmadParams.cGmAddr);
-        if (blockMmadParams_.biasGmAddr != nullptr) {
-            isBias_ = true;
-            biasGmAddr_ = reinterpret_cast<__gm__ BiasType*>(params.mmadParams.biasGmAddr);
-        }
-    }
-
-    __aicore__ inline void UpdateBatchOffset(Params const& params)
-    {
-        aGmAddr_ = reinterpret_cast<__gm__ AType*>(params.mmadParams.aGmAddr) + batchAIndex_ * m_ * k_;
-        if (!weightNZFormat) {
-            bGmAddr_ = reinterpret_cast<__gm__ BType*>(params.mmadParams.bGmAddr) + batchBIndex_ * k_ * n_;
-        } else {
-            bGmAddr_ = reinterpret_cast<__gm__ BType*>(params.mmadParams.bGmAddr) +
-                       Blaze::Gemm::CalWeightNZGmAddrOffset(transB, batchBIndex_, n_, k_, C0_SIZE);
-        }
-        cGmAddr_ = reinterpret_cast<__gm__ CType*>(params.mmadParams.cGmAddr) + curBatchIdx_ * m_ * n_;
-        if (params.batchInfo.biasBatchDimAll != 1UL) {
-            biasGmAddr_ = reinterpret_cast<__gm__ BiasType*>(params.mmadParams.biasGmAddr) + curBatchIdx_ * n_;
-        }
-    }
-
-    __aicore__ inline void UnsetHf32(bool isHf32)
-    {
-        if (isHf32) {
-            AscendC::SetHF32Mode(0);
-        }
-    }
 
     __aicore__ inline void operator()(Params const& params)
     {
         if ASCEND_IS_AIV {
             return;
         }
-        // 初始化mmad
-        BlockMmad blockMmad;
-        int64_t curBlockIdx = AscendC::GetBlockIdx();
-        int64_t blockNum = AscendC::GetBlockNum();
         Init(params);
 
         // 初始化blockScheduler
-        BlockScheduler bs(params.problemShape, curBlockIdx, blockNum, params.schedulerParams, isFp32, !weightNZFormat);
-
-        int64_t tileNum = bs.GetTileNum();
-        TupleShape tileL1 = bs.GetTileL1Shape();
-        TupleShape tileL0 = bs.GetTileL0Shape();
-        int64_t realBlockNum = bs.GetBlockNum(params.problemShape, blockNum);
+        BlockScheduler bs(params.problemShape, params.schParams);
+        int64_t curBlockIdx = AscendC::GetBlockIdx();
+        int64_t realBlockNum = bs.GetBlockNum(params.problemShape);
         if (curBlockIdx >= realBlockNum) {
             return;
         }
-        bool isHf32 = bs.Gethf32Flag();
-        if (isHf32) {
+
+        if (params.schParams.isHf32) {
             AscendC::SetHF32Mode(1);
             AscendC::SetHF32TransMode(1);
         }
-        SetMMLayoutTransform(true); // Set Mmad output as cloumn major for Fixpipe
-        blockMmad.Init(problemShape_, tileL1, tileL0, isBias_, bs.GetL1BuferNum_(), bs.GetL0cDB());
+
+        BlockMmad blockMmad;
+        blockMmad.Init(params.problemShape, params.mmadParams);
 
         // 默认ND Format
         auto layoutA = MakeLayoutA{}(m_, k_);       // ND layout for A
@@ -194,7 +123,13 @@ public:
         auto gmBias =
             AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(biasGmAddr_), layoutBias);
 
+        // 使能双页表
+        SetL2Cache(gmA, gmB, params.schParams.l2CacheMode);
+
         uint64_t preBatchIdx = 0;
+        int64_t tileNum = bs.GetTileNum();
+        int64_t blockNum = AscendC::GetBlockNum();
+        // Process tiles in ping-pong mode
         for (int64_t tileIdx = curBlockIdx; tileIdx < tileNum; tileIdx += blockNum) {
             auto tileShape = bs.template GetBlockShape<transB, BType>(tileIdx); // 非全载
             auto tileCoord = bs.GetBlockCoord(tileIdx);                         // (m, n, k, b)
@@ -249,11 +184,72 @@ public:
             auto gmBlockB = gmB.Slice(AscendC::MakeCoord(0L, coordN), AscendC::MakeShape(shapeK, shapeN));
             auto gmBlockC = gmC.Slice(AscendC::MakeCoord(coordM, coordN), AscendC::MakeShape(shapeM, shapeN));
             auto gmBlockBias = gmBias.Slice(AscendC::MakeCoord(0L, coordN), AscendC::MakeShape(1L, shapeN));
-            blockMmad(gmBlockC, gmBlockA, gmBlockB, gmBlockBias, tileShape);
+            blockMmad(gmBlockA, gmBlockB, gmBlockBias, gmBlockC, tileShape);
         }
-        SetMMLayoutTransform(false);
-        UnsetHf32(isHf32);
+
+        UnsetHf32();
     }
+
+private:
+    __aicore__ inline void Init(Params const& params)
+    {
+        auto blockMmadParams = params.mmadParams;
+        m_ = static_cast<uint64_t>(AscendC::Te::Get<MNK_M>(params.problemShape));
+        n_ = static_cast<uint64_t>(AscendC::Te::Get<MNK_N>(params.problemShape));
+        k_ = static_cast<uint64_t>(AscendC::Te::Get<MNK_K>(params.problemShape));
+        aGmAddr_ = reinterpret_cast<__gm__ AType*>(blockMmadParams.aGmAddr);
+        bGmAddr_ = reinterpret_cast<__gm__ BType*>(blockMmadParams.bGmAddr);
+        cGmAddr_ = reinterpret_cast<__gm__ CType*>(blockMmadParams.cGmAddr);
+        biasGmAddr_ = reinterpret_cast<__gm__ BiasType*>(blockMmadParams.biasGmAddr);
+    }
+
+    __aicore__ inline void UpdateBatchOffset(Params const& params)
+    {
+        aGmAddr_ = reinterpret_cast<__gm__ AType*>(params.mmadParams.aGmAddr) + batchAIndex_ * m_ * k_;
+        if (!weightNZFormat) {
+            bGmAddr_ = reinterpret_cast<__gm__ BType*>(params.mmadParams.bGmAddr) + batchBIndex_ * k_ * n_;
+        } else {
+            bGmAddr_ = reinterpret_cast<__gm__ BType*>(params.mmadParams.bGmAddr) +
+                       Blaze::Gemm::CalWeightNZGmAddrOffset(transB, batchBIndex_, n_, k_, C0_SIZE);
+        }
+        cGmAddr_ = reinterpret_cast<__gm__ CType*>(params.mmadParams.cGmAddr) + curBatchIdx_ * m_ * n_;
+        if (params.batchInfo.biasBatchDimAll != 1UL) {
+            biasGmAddr_ = reinterpret_cast<__gm__ BiasType*>(params.mmadParams.biasGmAddr) + curBatchIdx_ * n_;
+        }
+    }
+
+    __aicore__ inline void UnsetHf32()
+    {
+        AscendC::SetHF32Mode(0);
+    }
+
+    template <typename TensorA, typename TensorB>
+    __aicore__ inline void SetL2Cache(TensorA& gmA, TensorB& gmB, uint32_t l2CacheMode) {
+        if (l2CacheMode == ALL_L2_CACHE_DISABLE || l2CacheMode == B_L2_CACHE_DISABLE) {
+            gmB.SetL2CacheHint(AscendC::Te::CacheMode::CACHE_MODE_DISABLE);
+        }
+        if (l2CacheMode == ALL_L2_CACHE_DISABLE || l2CacheMode == A_L2_CACHE_DISABLE) {
+            gmA.SetL2CacheHint(AscendC::Te::CacheMode::CACHE_MODE_DISABLE);
+        }
+    }
+
+private:
+    static constexpr bool isFp32 = (AscendC::Std::is_same_v<BType, float>);
+    static constexpr int64_t C0_SIZE = isFp32 ? C0_SIZE_fp32 : C0_SIZE_fp16;
+    static constexpr bool transA = BlockMmad::transA;
+    static constexpr bool transB = BlockMmad::transB;
+    static constexpr bool weightNZFormat = BlockMmad::weightNZFormat;
+    __gm__ AType* aGmAddr_;
+    __gm__ BType* bGmAddr_;
+    __gm__ CType* cGmAddr_;
+    __gm__ BiasType* biasGmAddr_ = nullptr; // 可选输入，直接初始化
+
+    uint64_t curBatchIdx_ = {0};
+    uint64_t batchAIndex_ = {0};
+    uint64_t batchBIndex_ = {0};
+    uint64_t m_{1};
+    uint64_t n_{1};
+    uint64_t k_{1};
 };
 
 } // namespace Kernel

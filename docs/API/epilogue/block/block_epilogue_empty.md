@@ -31,14 +31,6 @@ using MatmulKernel = Blaze::Gemm::Kernel::KernelMatmulBasic<
 
 ## 特殊数据结构
 
-### Arguments
-```
-struct Arguments {
-    Arguments() = default;
-};
-```
-说明：空参数结构体，无任何成员。
-
 ### Params
 ```
 struct Params {
@@ -66,7 +58,7 @@ __aicore__ inline void Run()
 
 ### operator函数（参数版本）
 ```
-__aicore__ inline void operator()(Arguments const& params)
+__aicore__ inline void operator()(Params const& params)
 {
     Run();  // 调用空的 Run()
 }
@@ -141,11 +133,11 @@ BlockEpilogueStreamK       ← 实际实现（用于 StreamK Kernel）
 // 自定义 Epilogue 示例（伪代码）
 class BlockEpilogueRelu {
 public:
-    struct Arguments {
+    struct Params {
         float threshold;  // ReLU 参数
     };
 
-    __aicore__ inline void Init(Arguments const& args) {
+    __aicore__ inline void Init(Params const& args) {
         threshold_ = args.threshold;
     }
 
@@ -153,7 +145,7 @@ public:
         AscendC::Relu(outputTensor, inputTensor, threshold_);
     }
 
-    __aicore__ inline void operator()(Arguments const& args) {
+    __aicore__ inline void operator()(Params const& args) {
         Init(args);
         Run();
     }

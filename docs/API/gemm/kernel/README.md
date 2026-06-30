@@ -12,7 +12,7 @@
 
 所有 Kernel 组件基于 [kernel.md](./kernel.md) 公共框架实现，包含统一的：
 - 模板参数
-- 数据结构（Params、Arguments）
+- 数据结构（Params）
 - 核心方法（Init、operator）
 
 详见：[kernel.md](./kernel.md)

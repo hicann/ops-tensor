@@ -53,13 +53,13 @@ Block 层矩阵乘计算组件，执行单个 block 的矩阵乘计算。基于 
 
 ### 核心数据结构
 
-#### Arguments / Params / GmParams
+#### Params
 ```
-struct Arguments {
-    GM_ADDR aGmAddr;         // A 矩阵 GM 起始地址
-    GM_ADDR bGmAddr;         // B 矩阵 GM 起始地址
-    GM_ADDR cGmAddr;         // C 矩阵 GM 起始地址
-    GM_ADDR biasGmAddr;      // Bias GM 起始地址（可选）
+struct Params {
+    GM_ADDR aGmAddr;         // A 矩阵 GM 地址
+    GM_ADDR bGmAddr;         // B 矩阵 GM 地址
+    GM_ADDR cGmAddr;         // C 矩阵 GM 地址
+    GM_ADDR biasGmAddr;      // Bias GM 地址（可选）
     GM_ADDR workspaceGmAddr; // Workspace 地址（可选，StreamK）
 };
 ```
@@ -90,20 +90,17 @@ __aicore__ inline ~BlockMmad()
 ```
 __aicore__ inline void Init(
     const TupleShape& shape,     // 问题规模
-    const TupleShape& tileL1,    // L1 切分形状
-    const TupleShape& tileL0,    // L0 切分形状
-    bool isBias,                 // 是否启用 bias
-    ... 其他参数 )
+    const Params& params)        // BlockMmad 参数
 ```
 功能：初始化 BlockMmad 组件，设置问题规模、tile 形状和缓冲策略。
 
 ### operator函数
 ```
 __aicore__ inline void operator()(
-    TensorC gmC,                // C 矩阵输出 Tensor
     TensorA gmA,                // A 矩阵输入 Tensor
     TensorB gmB,                // B 矩阵输入 Tensor
     TensorBias gmBias,          // Bias 输入 Tensor
+    TensorC gmC,                // C 矩阵输出 Tensor
     TupleShape tileShape,       // Tile 形状
     ... 其他参数)
 ```
@@ -159,15 +156,23 @@ using BlockMmad = Blaze::Gemm::Block::BlockMmad<
 ```
 BlockMmad blockMmad;
 TupleShape problemShape{m, n, k, batch};
-TupleShape tileL1{mL1, nL1, kL1, 0, 0, 0};
-TupleShape tileL0{baseM, baseN, baseK, 0, 0, 0};
-blockMmad.Init(problemShape, tileL1, tileL0, isBias, ...);
+BlockMmad::Params params = {
+    .aGmAddr = aGM,
+    .bGmAddr = bGM,
+    .cGmAddr = cGM,
+    .biasGmAddr = biasGM,
+    .ml1 = mL1, .nl1 = nL1, .kl1 = kL1,
+    .ml0 = baseM, .nl0 = baseN, .kl0 = baseK,
+    .l1Stages = 2,
+    .l0cStages = 1
+};
+blockMmad.Init(problemShape, params);
 ```
 
 ### 执行模板
 ```
-TupleL1L0Shape tileShape{shapeM, shapeN, shapeK, baseM, baseN, baseK};
-blockMmad(gmC, gmA, gmB, gmBias, tileShape, ...);
+TupleL1L0Shape tileShape{shapeM, shapeN, shapeK, batch, baseM, baseN};
+blockMmad(gmA, gmB, gmBias, gmC, tileShape);
 ```
 
 ## 数据流与流水线

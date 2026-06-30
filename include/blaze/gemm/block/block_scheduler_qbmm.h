@@ -60,10 +60,9 @@ public:
     using ProblemShape = ProblemShape_;
     using AType = AType_;
 
-    constexpr static bool transA = IsTrans<LayoutA_>::value;
-    constexpr static bool transB = IsTrans<LayoutB_>::value;
-    constexpr static int64_t C0_SIZE = IsFp4<AType>() ? C0_SIZE_B4 : C0_SIZE_B8;
-    constexpr static int64_t WINDOW_LEN = 4;
+    static constexpr bool transA = IsTrans<LayoutA_>::value;
+    static constexpr bool transB = IsTrans<LayoutB_>::value;
+    static constexpr int64_t C0_SIZE = IsFp4<AType>() ? C0_SIZE_B4 : C0_SIZE_B8;
 
     struct Params {
         int64_t baseM;
@@ -87,6 +86,9 @@ public:
         mCnt_ = Blaze::Gemm::CeilDiv(m_, baseM_);
         nCnt_ = Blaze::Gemm::CeilDiv(n_, baseN_);
         totalCnt_ = mCnt_ * nCnt_;
+        if (blockNum_ <= 0) {
+            return;
+        }
         mCoreNum_ = Blaze::Gemm::Min(WINDOW_LEN, mCnt_);
         if (mCoreNum_ != 0) {
             mainRow_ = mCnt_ / mCoreNum_ - 1;
