@@ -47,15 +47,6 @@ public:
     using TupleShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
     using TupleL1L0Shape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t, int64_t, int64_t>;
     using TileShape = AscendC::Te::Shape<int64_t, int64_t, int64_t>;
-    uint64_t m_{1};
-    uint64_t n_{1};
-    uint64_t k_{1};
-    uint64_t mL1_{1};
-    uint64_t nL1_{1};
-    uint64_t kL1_{1};
-    uint64_t baseM_{16};
-    uint64_t baseN_{16};
-    uint64_t baseK_{16};
 
     // transA and transB
     static constexpr bool transA = IsTrans<LayoutA>::value;
@@ -152,7 +143,6 @@ public:
     {
         constexpr static uint64_t HALF_L0C_SIZE = AscendC::TOTAL_L0C_SIZE / DOUBLE_BUFFER_COUNT;
         constexpr static uint64_t HALF_L0_SIZE = AscendC::TOTAL_L0A_SIZE / DOUBLE_BUFFER_COUNT;
-        // m0 n0
         int64_t curM = AscendC::Te::Get<MNK_M0>(tileShape);
         int64_t curN = AscendC::Te::Get<MNK_N0>(tileShape);
         uint64_t l0cOffset = (l0cPingPong_ & 0x1) * HALF_L0C_SIZE;
@@ -335,6 +325,16 @@ private:
 
 private:
     constexpr static uint16_t MTE1_MTE2_EVENT_ID_NUM = 4;
+
+    uint64_t m_{1};
+    uint64_t n_{1};
+    uint64_t k_{1};
+    uint64_t mL1_{1};
+    uint64_t nL1_{1};
+    uint64_t kL1_{1};
+    uint64_t baseM_{16};
+    uint64_t baseN_{16};
+    uint64_t baseK_{16};
 
     uint64_t aL1OneBuffer_ = 0;
     uint64_t bL1OneBuffer_ = 0;
