@@ -13,6 +13,7 @@
 - `MatmulMultiBlockBasic<>`（非全载模式）
 - `MatmulMultiBlockBasic<B_FULL_LOAD_MODE>`（B 矩阵全载）
 - `MatmulMultiBlockBasic<A_FULL_LOAD_MODE>`（A 矩阵全载）
+- `MatmulMultiBlockBasic<FULL_LOAD_MODE_, FUSED_OP_TYPE_, KernelSchedule_, NON_CONTIGUOUS_TYPE_SLICE>`（A 矩阵 ND slice 非连续场景）
 
 不支持 `MatmulMultiBlockWithStreamK` 等其他调度策略。
 
@@ -54,6 +55,7 @@ SetMMLayoutTransform(false); // 关闭
 | FULL_LOAD_MODE_ | uint64_t | 全载模式：0=非全载, 1=A全载, 2=B全载 |
 | FUSED_OP_TYPE_ | uint64_t | 融合操作类型 |
 | KernelSchedule_ | class | Kernel 调度类型 |
+| NON_CONTIGIOUS_TYPE_ | uint64_t | 非连续类型：0=连续路径，`NON_CONTIGUOUS_TYPE_SLICE`=A 矩阵 ND slice 非连续路径 |
 | AType_ | class | A 矩阵数据类型 |
 | LayoutA_ | class | A 矩阵布局类型 |
 | BType_ | class | B 矩阵数据类型 |
@@ -87,6 +89,7 @@ SetMMLayoutTransform(false); // 关闭
 | transA | A 矩阵是否转置（通过 IsTrans trait 判断） |
 | transB | B 矩阵是否转置（通过 IsTrans trait 判断） |
 | weightNZFormat | B 矩阵是否为 NZ 格式（通过 IsWeightNz trait 判断） |
+| NON_CONTIGIOUS_TYPE | 非连续类型，来自 `DispatchPolicy` |
 | MTE1_MTE2_EVENT_ID_NUM | L1 双缓冲事件标志数量（固定 4 个） |
 
 ## Params 参数结构
@@ -199,7 +202,7 @@ __aicore__ inline void operator()(
 
 执行流程：
 1. **K 轴外层循环**：按 kL1 切分
-2. **搬运 A/B/Bias 到 L1**：根据 l1Stages 决定缓冲数量
+2. **搬运 A/B/Bias 到 L1**：根据 l1Stages 决定缓冲数量；slice 非连续场景下 A 矩阵使用 `CopySliceGM2L1`
 3. **K 轴内层循环**：按 baseK 切分
 4. **搬运 A/B 到 L0**：双缓冲模式
 5. **Mmad 计算**：首次迭代时加载 Bias
@@ -229,6 +232,9 @@ using LayoutC = AscendC::Te::NDLayoutPtn;
 using LayoutBias = LayoutC;
 
 using DispatchPolicy = Blaze::Gemm::MatmulMultiBlockBasic<0>;  // 非全载
+// A 矩阵 ND slice 非连续场景可使用：
+// using DispatchPolicy = Blaze::Gemm::MatmulMultiBlockBasic<
+//     0, 0, Blaze::Gemm::KernelMmadMultiBlockBasic, Blaze::Gemm::NON_CONTIGUOUS_TYPE_SLICE>;
 using BlockMmad = Blaze::Gemm::Block::BlockMmad<
     DispatchPolicy, AType, LayoutA, BType, LayoutB, CType, LayoutC, BiasType, LayoutBias>;
 ```

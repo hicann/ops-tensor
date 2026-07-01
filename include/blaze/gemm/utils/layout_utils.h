@@ -20,6 +20,9 @@
 namespace Blaze {
 namespace Gemm {
 
+// Slice 3D Layout Pattern
+struct NDSliceLayoutPtn {};
+
 // IsTrans
 template <typename LayoutPattern>
 constexpr bool GetTransValue()

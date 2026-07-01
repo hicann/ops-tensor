@@ -18,6 +18,7 @@
 #include "blaze/gemm/utils/common_utils.h"
 #include "blaze/gemm/utils/layout_utils.h"
 #include "blaze/gemm/policy/dispatch_policy.h"
+#include "blaze/gemm/tile/copy_gm_to_l1.h"
 #include "block_mmad.h"
 #include "tensor_api/tensor.h"
 
@@ -26,11 +27,12 @@ namespace Gemm {
 namespace Block {
 
 template <
-    uint64_t FULL_LOAD_MODE_, uint64_t FUSED_OP_TYPE_, class KernelSchedule_, class AType_, class LayoutA_, class BType_, class LayoutB_,
-    class CType_, class LayoutC_, class BiasType_, class LayoutBias_>
+    uint64_t FULL_LOAD_MODE_, uint64_t FUSED_OP_TYPE_, class KernelSchedule_, uint64_t NON_CONTIGIOUS_TYPE_,
+    class AType_, class LayoutA_, class BType_, class LayoutB_, class CType_, class LayoutC_, class BiasType_,
+    class LayoutBias_>
 class BlockMmad<
-    MatmulMultiBlockBasic<FULL_LOAD_MODE_, FUSED_OP_TYPE_, KernelSchedule_>, AType_, LayoutA_, BType_, LayoutB_, CType_, LayoutC_,
-    BiasType_, LayoutBias_> {
+    MatmulMultiBlockBasic<FULL_LOAD_MODE_, FUSED_OP_TYPE_, KernelSchedule_, NON_CONTIGIOUS_TYPE_>, AType_, LayoutA_,
+    BType_, LayoutB_, CType_, LayoutC_, BiasType_, LayoutBias_> {
 public:
     using AType = AType_;
     using BType = BType_;
@@ -40,7 +42,8 @@ public:
     using LayoutB = LayoutB_;
     using LayoutC = LayoutC_;
     using LayoutBias = LayoutBias_;
-    using DispatchPolicy = MatmulMultiBlockBasic<FULL_LOAD_MODE_, FUSED_OP_TYPE_, KernelSchedule_>;
+    using DispatchPolicy = MatmulMultiBlockBasic<FULL_LOAD_MODE_, FUSED_OP_TYPE_, KernelSchedule_, NON_CONTIGIOUS_TYPE_>;
+    constexpr static uint64_t NON_CONTIGIOUS_TYPE = DispatchPolicy::nonContiguousType;
     using TupleShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
     using TupleL1L0Shape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t, int64_t, int64_t>;
     using TileShape = AscendC::Te::Shape<int64_t, int64_t, int64_t>;
@@ -236,8 +239,18 @@ private:
         auto copyGM2L1 = AscendC::Te::MakeCopy(AscendC::Te::CopyGM2L1{});
         auto tensorAL1 = AscendC::Te::MakeTensor(
             AscendC::Te::MakeMemPtr<AscendC::Te::Location::L1, AType>(aL1Buffer_[l1BufId]), layoutAL1);
-        auto gmTileA = tensorA.Slice(AscendC::Te::MakeCoord(0, kIdx * kL1_), AscendC::Te::MakeShape(curM, curKL1));
-        AscendC::Te::Copy(copyGM2L1, tensorAL1, gmTileA);
+        if constexpr (NON_CONTIGIOUS_TYPE == NON_CONTIGUOUS_TYPE_SLICE) {
+            auto layoutGmA = tensorA.Layout();
+            auto sliceM = AscendC::Te::Get<0>(AscendC::Te::Get<1>(layoutGmA.Shape()));
+            auto gmTileASlice = tensorA.Slice(
+                AscendC::Te::MakeCoord(0, AscendC::Te::MakeCoord(0, kIdx * kL1_)),
+                AscendC::Te::MakeShape(curM / sliceM, AscendC::Te::MakeShape(sliceM, curKL1)));
+            auto copyGM2L1Slice = AscendC::Te::MakeCopy(Blaze::Gemm::Tile::CopySliceGM2L1{});
+            AscendC::Te::Copy(copyGM2L1Slice, tensorAL1, gmTileASlice);
+        } else {
+            auto gmTileA = tensorA.Slice(AscendC::Te::MakeCoord(0, kIdx * kL1_), AscendC::Te::MakeShape(curM, curKL1));
+            AscendC::Te::Copy(copyGM2L1, tensorAL1, gmTileA);
+        }
 
         // B GM->L1
         auto layoutBL1 = MakeLayoutBL1{}(curKL1, curN);

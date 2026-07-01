@@ -74,12 +74,17 @@ struct MatmulMultiBlockWithStreamK {
  * @brief Matrix multiplication multi-block structure, no quant, implemented based on Layout
  * @param [in] FULL_LOAD_MODE: mode of full load, default is 0(no full load)
  * @param [in] FUSED_OP_TYPE_: execute fusion after mmad , default is 0
+ * @param [in] KernelSchedule_: mmad dispatch policy
+ * @param [in] NonContiguousType_: matmul support non-contiguous scene such as: slice, transpose
  */
-template <uint64_t FULL_LOAD_MODE_ = 0, uint64_t FUSED_OP_TYPE_ = 0, class KernelSchedule_ = KernelMmadMultiBlockBasic>
+template <
+    uint64_t FULL_LOAD_MODE_ = 0, uint64_t FUSED_OP_TYPE_ = 0, class KernelSchedule_ = KernelMmadMultiBlockBasic,
+    uint64_t NonContiguousType_ = 0>
 struct MatmulMultiBlockBasic {
     using ScheduleType = KernelSchedule_;
     constexpr static uint64_t fullLoadMode = FULL_LOAD_MODE_;
     constexpr static uint64_t fusedOpType = FUSED_OP_TYPE_;
+    constexpr static uint64_t nonContiguousType = NonContiguousType_;
 };
 
 } // namespace Gemm

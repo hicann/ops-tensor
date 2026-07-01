@@ -77,6 +77,7 @@ constexpr uint64_t ALIGN_MASK_16 = 15UL;
 constexpr uint16_t ALIGN_64_BYTES_SHIFT = 6;
 constexpr uint16_t ALIGN_32_BYTES_SHIFT = 5;
 
+constexpr uint64_t NON_CONTIGUOUS_TYPE_SLICE = 1UL;
 // FusedMatMul OpType
 constexpr uint64_t OP_TYPE_EMPTY = 0UL;
 constexpr uint64_t OP_TYPE_ADD = 1UL;

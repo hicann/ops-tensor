@@ -45,8 +45,8 @@ public:
         uint32_t nTailMain = 1;
         uint8_t isHf32 = 0;                                        // HF32开启标志
         uint32_t l2CacheMode = L2_CACHE_DEFAULT;
-        uint32_t sliceM;                                            // 非连续场景m轴
-        uint32_t srcNdStride;                                       // 非连续场景m轴stride
+        uint32_t sliceM = 0;                                        // 非连续场景m轴
+        uint32_t srcNdStride = 1;                                   // 非连续场景m轴stride
         uint32_t innerBatch = 1;                                    // 非连续transpose场景内轴batch值
     };
 
@@ -171,6 +171,9 @@ public:
         // SplitM and SplitN
         int64_t splitBlkM = CeilDiv(blkM, mTailCnt_);
         int64_t splitBlkN = CeilDiv(blkN, nTailCnt_);
+        if (isSlice_) {
+            splitBlkM = CeilAlign(splitBlkM, sliceM_);
+        }
         if constexpr (!IsNdFormat_) {
             splitBlkN = CeilAlign(splitBlkN, nAlignSize);
             nTailCnt_ = CeilDiv(blkN, splitBlkN);
@@ -199,7 +202,6 @@ public:
 
         int64_t mOffset = mTileIdx_ * mL1_ + mSplitOffset_;
         int64_t nOffset = nTileIdx_ * nL1_ + nSplitOffset_;
-        int64_t ndNum = mL1_ > sliceM_ ? mL1_ / sliceM_ : 1;
         int64_t kOffset = 0; // 当前不切K
 
         if (mTileIdx_ > mL1NormCnt_) {

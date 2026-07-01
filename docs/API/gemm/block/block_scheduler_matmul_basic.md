@@ -155,7 +155,7 @@ mTailCnt=2, nTailCnt=2  // 尾块切为 4 份，4 个 Block 并行处理
 | 参数 | 说明 | 使用场景 |
 |------|------|----------|
 | sliceM | M 轴 slice 尺寸 | 非 ND 连续格式 |
-| srcNdStride | M 轴 stride | 非 ND 连续格式 |
+| srcNdStride | A 矩阵 GM layout 第一维 stride | 非 ND 连续格式 |
 | innerBatch | 非 transpose 场景内轴 batch | transpose 场景 |
 
 **判断逻辑**：
@@ -163,13 +163,15 @@ mTailCnt=2, nTailCnt=2  // 尾块切为 4 份，4 个 Block 并行处理
 isSlice_ = (srcNdStride != 1 && sliceM != 0)
 ```
 
+slice 路径不新增调度器接口，Kernel 通过 `Params::sliceM`、`Params::srcNdStride` 和 `ProblemShape` 构造 A 矩阵三维 GM layout：shape 为 `[m / sliceM, [sliceM, k]]`，stride 为 `[srcNdStride, [k, 1]]`。
+
 ## 类型别名
 
 | 类型 | 说明 |
 |------|------|
 | BlockShape | Block 形状：`Shape<int64_t, int64_t, int64_t, int64_t>` |
 | BlockL1L0Shape | Block L1/L0 形状：`Shape<int64_t, int64_t, int64_t, int64_t, int64_t, int64_t>` |
-| BlockCoord | Block 坐标：`Coord<int64_t, int64_t, int64_t, int64_t>` (mOffset, nOffset, mOffsetNonContiguous, batchIdx) |
+| BlockCoord | Block 坐标：`Coord<int64_t, int64_t, int64_t, int64_t>` (mOffset, nOffset, kOffset, batchIdx) |
 | ProblemShape | 问题规模类型（模板参数） |
 
 ## 构造函数
@@ -241,7 +243,7 @@ __aicore__ inline BlockL1L0Shape GetBlockShape(
 __aicore__ inline BlockCoord GetBlockCoord(int tileIdx)
 ```
 功能：返回当前 tile 的 Block 坐标。
-返回值：`BlockCoord {mOffset, nOffset, mOffsetNonContiguous, batchIdx}`
+返回值：`BlockCoord {mOffset, nOffset, kOffset, batchIdx}`
 
 参数说明：
 | 参数 | 类型 | 说明 |
@@ -288,7 +290,7 @@ BlockScheduler::Params params = {
 
     // 非连续场景（连续 ND 格式不需要设置）
     .sliceM = 0,
-    .srcNdStride = 0,
+    .srcNdStride = 1,
     .innerBatch = 1
 };
 ```

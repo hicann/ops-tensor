@@ -22,6 +22,7 @@
 #include "blaze/gemm/block/block_mmad.h"
 #include "blaze/gemm/block/block_mmad_matmul_basic.h"
 #include "blaze/gemm/utils/common_utils.h"
+#include "blaze/gemm/utils/layout_utils.h"
 #include "kernel_universal.h"
 #include "tensor_api/tensor.h"
 
@@ -94,6 +95,20 @@ public:
         BlockMmad blockMmad;
         blockMmad.Init(params.problemShape, params.mmadParams);
 
+        if constexpr (nonContiguousType == NON_CONTIGUOUS_TYPE_SLICE) {
+            MatmulSliceProcess(params, blockMmad, bs, curBlockIdx, AscendC::GetBlockNum(), bs.GetTileNum());
+        } else {
+            MatmulProcess(params, blockMmad, bs, curBlockIdx, AscendC::GetBlockNum(), bs.GetTileNum());
+        }
+
+        UnsetHf32();
+    }
+
+private:
+    __aicore__ inline void MatmulProcess(
+        Params const& params, BlockMmad& blockMmad, BlockScheduler& bs, int64_t curBlockIdx, int64_t blockNum,
+        int64_t tileNum)
+    {
         // 默认ND Format
         auto layoutA = MakeLayoutA{}(m_, k_);       // ND layout for A
         auto layoutB = MakeLayoutB{}(k_, n_);       // ND layout for B
@@ -110,8 +125,6 @@ public:
         SetL2Cache(gmA, gmB, params.schParams.l2CacheMode);
 
         uint64_t preBatchIdx = 0;
-        int64_t tileNum = bs.GetTileNum();
-        int64_t blockNum = AscendC::GetBlockNum();
         // Process tiles in ping-pong mode
         for (int64_t tileIdx = curBlockIdx; tileIdx < tileNum; tileIdx += blockNum) {
             auto tileShape = bs.template GetBlockShape<transB, BType>(tileIdx); // 非全载
@@ -137,11 +150,50 @@ public:
             auto gmBlockBias = gmBias.Slice(AscendC::MakeCoord(0L, coordN), AscendC::MakeShape(1L, shapeN));
             blockMmad(gmBlockA, gmBlockB, gmBlockBias, gmBlockC, tileShape);
         }
-
-        UnsetHf32();
     }
 
-private:
+    __aicore__ inline void MatmulSliceProcess(
+        Params const& params, BlockMmad& blockMmad, BlockScheduler& bs, int64_t curBlockIdx, int64_t blockNum,
+        int64_t tileNum)
+    {
+        int64_t sliceM = static_cast<int64_t>(params.schParams.sliceM);
+        int64_t sliceBatch = static_cast<int64_t>(m_) / sliceM;
+        int64_t srcNdStride = static_cast<int64_t>(params.schParams.srcNdStride);
+
+        auto layoutA = AscendC::Te::MakePatternLayout<
+            NDSliceLayoutPtn, AscendC::Te::LayoutTrait<AType, AscendC::Std::Int<AscendC::Te::C0_ELEMENT<AType>>>>(
+            AscendC::Te::MakeShape(sliceBatch, AscendC::Te::MakeShape(sliceM, k_)),
+            AscendC::Te::MakeStride(srcNdStride, AscendC::Te::MakeStride(k_, 1L)));
+        auto layoutB = MakeLayoutB{}(k_, n_);
+        auto layoutC = MakeLayoutC{}(m_, n_);
+        auto layoutBias = MakeLayoutBias{}(1L, n_);
+
+        auto gmA = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(aGmAddr_), layoutA);
+        auto gmB = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(bGmAddr_), layoutB);
+        auto gmC = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(cGmAddr_), layoutC);
+        auto gmBias =
+            AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(biasGmAddr_), layoutBias);
+        SetL2Cache(gmA, gmB, params.schParams.l2CacheMode);
+
+        for (int64_t tileIdx = curBlockIdx; tileIdx < tileNum; tileIdx += blockNum) {
+            auto tileShape = bs.template GetBlockShape<transB, BType>(tileIdx);
+            auto tileCoord = bs.GetBlockCoord(tileIdx);
+            auto coordM = AscendC::Te::Get<MNK_M>(tileCoord);
+            auto coordN = AscendC::Te::Get<MNK_N>(tileCoord);
+            auto shapeM = AscendC::Te::Get<MNK_M>(tileShape);
+            auto shapeN = AscendC::Te::Get<MNK_N>(tileShape);
+            auto shapeK = AscendC::Te::Get<MNK_K>(tileShape);
+
+            auto gmBlockA = gmA.Slice(
+                AscendC::Te::MakeCoord(coordM / sliceM, AscendC::Te::MakeCoord(0L, 0L)),
+                AscendC::Te::MakeShape(shapeM / sliceM, AscendC::Te::MakeShape(sliceM, shapeK)));
+            auto gmBlockB = gmB.Slice(AscendC::Te::MakeCoord(0L, coordN), AscendC::Te::MakeShape(shapeK, shapeN));
+            auto gmBlockC = gmC.Slice(AscendC::Te::MakeCoord(coordM, coordN), AscendC::Te::MakeShape(shapeM, shapeN));
+            auto gmBlockBias = gmBias.Slice(AscendC::Te::MakeCoord(0L, coordN), AscendC::Te::MakeShape(1L, shapeN));
+            blockMmad(gmBlockA, gmBlockB, gmBlockBias, gmBlockC, tileShape);
+        }
+    }
+
     __aicore__ inline void Init(Params const& params)
     {
         auto blockMmadParams = params.mmadParams;
@@ -187,6 +239,7 @@ private:
     static constexpr bool transA = BlockMmad::transA;
     static constexpr bool transB = BlockMmad::transB;
     static constexpr bool weightNZFormat = BlockMmad::weightNZFormat;
+    static constexpr uint64_t nonContiguousType = BlockMmad::NON_CONTIGIOUS_TYPE;
     __gm__ AType* aGmAddr_;
     __gm__ BType* bGmAddr_;
     __gm__ CType* cGmAddr_;

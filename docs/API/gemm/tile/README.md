@@ -6,6 +6,7 @@
 | :----------------------------------------------------------- | :------: |
 | [tile_mmad_mx](./tile_mmad_mx.md) | MX Mmad Trait 定义，用于量化矩阵乘计算 |
 | [pad_mx_k_l1](./pad_mx_kl1.md) | MX K 轴 Padding，用于 L1 数据对齐补零 |
+| [copy_gm_to_l1](./copy_gm_to_l1.md) | A 矩阵 ND slice 非连续场景的 GM->L1 搬运 |
 
 ## 核心组件关系
 

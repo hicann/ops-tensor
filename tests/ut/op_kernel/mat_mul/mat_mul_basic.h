@@ -34,7 +34,9 @@ using AscendC::Std::Int;
 
 namespace MatMulV3UT {
 
-template <typename A_TYPE, typename B_TYPE, typename C_TYPE, typename BIAS_TYPE, CubeFormat FORMAT_A, CubeFormat FORMAT_B, CubeFormat FORMAT_C>
+template <
+    typename A_TYPE, typename B_TYPE, typename C_TYPE, typename BIAS_TYPE, CubeFormat FORMAT_A, CubeFormat FORMAT_B,
+    CubeFormat FORMAT_C, uint64_t NON_CONTIGUOUS_TYPE = 0>
 __aicore__ inline void MatMulBasicWrapper(
     GM_ADDR aGM, GM_ADDR bGM, GM_ADDR biasGM, GM_ADDR cGM, GM_ADDR workspaceGM, const MatMulV3BasicTilingData& tilingData)
 {
@@ -53,8 +55,9 @@ __aicore__ inline void MatMulBasicWrapper(
     using BlockScheduler = Blaze::Gemm::Block::BlockSchedulerMatmulBasic<ProblemShape>;
 
     using BlockMmad = Blaze::Gemm::Block::BlockMmad<
-        Blaze::Gemm::MatmulMultiBlockBasic<0, 0>, AType, LayoutA, BType, LayoutB, OutType, LayoutC,
-        BiasType, LayoutBias>;
+        Blaze::Gemm::MatmulMultiBlockBasic<
+            0, 0, Blaze::Gemm::KernelMmadMultiBlockBasic, NON_CONTIGUOUS_TYPE>,
+        AType, LayoutA, BType, LayoutB, OutType, LayoutC, BiasType, LayoutBias>;
 
     using BlockEpilogue = Blaze::Gemm::Block::BlockEpilogueEmpty;
 

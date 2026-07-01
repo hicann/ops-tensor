@@ -26,7 +26,8 @@ if ASCEND_IS_AIV {
 不支持 workspace，无法存储中间结果，适用于完整 tile 计算场景。
 
 ### 非连续输入
-不支持带 stride 的非连续输入（仅支持连续 ND/NZ layout）。
+默认路径不支持带 stride 的非连续输入（仅支持连续 ND/NZ layout）。
+当 `DispatchPolicy` 的 `NonContiguousType_` 设置为 `NON_CONTIGUOUS_TYPE_SLICE` 时，支持 A 矩阵 ND slice 非连续输入；该路径通过 `NDSliceLayoutPtn` 构造三维 GM layout，并使用 `CopySliceGM2L1` 完成 A 矩阵 GM->L1 搬运。
 
 ### FP32 大 K
 不支持 FP32 大 K 场景（K 轴切分受硬件限制），K 值过大时需使用 StreamK Kernel。
@@ -178,6 +179,9 @@ using BlockScheduler = Blaze::Gemm::Block::BlockSchedulerMatmulBasic<ProblemShap
 // DispatchPolicy: 调度策略，FusedOpType: 融合操作类型
 constexpr uint64_t FUSED_OP_TYPE = 0;
 using DispatchPolicy = Blaze::Gemm::MatmulMultiBlockBasic<FULL_LOAD_MODE, FUSED_OP_TYPE>;
+// A 矩阵 ND slice 非连续场景可使用：
+// using DispatchPolicy = Blaze::Gemm::MatmulMultiBlockBasic<
+//     FULL_LOAD_MODE, FUSED_OP_TYPE, Blaze::Gemm::KernelMmadMultiBlockBasic, Blaze::Gemm::NON_CONTIGUOUS_TYPE_SLICE>;
 using BlockMmad = Blaze::Gemm::Block::BlockMmad<
     DispatchPolicy, AType, LayoutA,
     BType, LayoutB, CType, LayoutC,
