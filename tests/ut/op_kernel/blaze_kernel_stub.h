@@ -43,7 +43,3 @@ constexpr int32_t POS_LOWEST = 0;
 #ifndef POS_HIGHEST
 constexpr int32_t POS_HIGHEST = 1;
 #endif
-
-#ifndef BLOCK_SIZE
-constexpr uint64_t BLOCK_SIZE = 32UL;
-#endif

@@ -1,6 +1,13 @@
+# Copyright (c) 2026 Huawei Technologies Co., Ltd.
+# This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+# CANN Open Software License Agreement Version 2.0 (the "License").
+# Please refer to the License for details. You may not use this file except in compliance with the License.
+# THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+# INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE.
+# See LICENSE in the root of the software repository for the full text of the License.
+
 cmake_minimum_required(VERSION 3.16)
 
-# 设置三方库路径（fetch_cann_cmake 使用此变量）
 if(NOT OPS_TENSOR_ROOT)
     set(OPS_TENSOR_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 endif()
@@ -8,13 +15,30 @@ if(NOT CANN_3RD_LIB_PATH)
     set(CANN_3RD_LIB_PATH ${OPS_TENSOR_ROOT}/third_party CACHE STRING "CANN third party lib path")
 endif()
 
-# 获取 cann-cmake 模块集合（提供 add_cann_third_party 等宏）
 include(${OPS_TENSOR_ROOT}/cmake/third_party/fetch_cann_cmake.cmake)
 
 project(ops_tensor_kernel_ut LANGUAGES CXX)
 
-set(SOC_VERSION "ascend950")
-set(TIKICPULIB_TARGET "ascend950pr_9599")
+set(ALL_SUPPORTED_SOCS "ascend950")
+
+if(NOT KERNEL_UT_SOC)
+    set(KERNEL_UT_SOC_LIST ${ALL_SUPPORTED_SOCS})
+else()
+    string(REPLACE "," ";" KERNEL_UT_SOC_LIST "${KERNEL_UT_SOC}")
+endif()
+
+function(map_compute_unit compute_unit compute_unit_long)
+    set(_keys "ascend950")
+    set(_values "ascend950pr_9599")
+    list(FIND _keys ${compute_unit} _idx)
+    if(NOT _idx EQUAL -1)
+        list(GET _values ${_idx} _mapped)
+        set(${compute_unit_long} ${_mapped} PARENT_SCOPE)
+    else()
+        set(${compute_unit_long} ${compute_unit} PARENT_SCOPE)
+    endif()
+endfunction()
+
 set(UT_EXE_NAME "ops_tensor_kernel_ut")
 
 if(NOT ASCEND_HOME_PATH)
@@ -28,7 +52,6 @@ endif()
 set(SYSTEM_PREFIX "x86_64-linux")
 set(UT_KERNEL_INC ${CMAKE_CURRENT_SOURCE_DIR})
 
-# GTest: 通过 cann-cmake 统一管理三方库
 add_cann_third_party(gtest)
 
 list(APPEND CMAKE_PREFIX_PATH
@@ -38,63 +61,154 @@ list(APPEND CMAKE_PREFIX_PATH
 
 find_package(tikicpulib REQUIRED)
 
-set(OP_TEST_OBJECTS "")
-
 include_directories(${GTEST_INCLUDE})
 set(KERNEL_UT_GTEST_DEP third_party_gtest)
 
-# Support OP_KERNEL_OPS variable for operator filtering
+set_property(GLOBAL PROPERTY KERNEL_UT_REG_NAMES "")
+
+function(AddOpTestCase opName supportedSocVersions extraCompileOptions)
+    file(GLOB _test_srcs ${CMAKE_CURRENT_SOURCE_DIR}/test_*.cpp)
+    if(NOT _test_srcs)
+        message(WARNING "  [opkernel] ${opName}: no test_*.cpp found, skipping")
+        return()
+    endif()
+
+    set_property(GLOBAL APPEND PROPERTY KERNEL_UT_REG_NAMES "${opName}")
+    set_property(GLOBAL PROPERTY KERNEL_UT_REG_${opName}_SRCS "${_test_srcs}")
+    set_property(GLOBAL PROPERTY KERNEL_UT_REG_${opName}_SOCS "${supportedSocVersions}")
+    set_property(GLOBAL PROPERTY KERNEL_UT_REG_${opName}_FLAGS "${extraCompileOptions}")
+    set_property(GLOBAL PROPERTY KERNEL_UT_REG_${opName}_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
+
+    message(STATUS "  [opkernel] Registered ${opName} (supports: ${supportedSocVersions})")
+endfunction()
+
 if(OP_KERNEL_OPS)
-    # Specified operator list: build only the requested operators
     string(REPLACE "," ";" OP_LIST ${OP_KERNEL_OPS})
     foreach(OP_NAME ${OP_LIST})
         if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/${OP_NAME}/CMakeLists.txt)
             add_subdirectory(${OP_NAME})
-            message(STATUS "  [opkernel] Added operator: ${OP_NAME}")
         else()
-            message(WARNING "  [opkernel] Operator '${OP_NAME}' not found under ${CMAKE_CURRENT_SOURCE_DIR}, skipping")
+            message(WARNING "  [opkernel] Operator '${OP_NAME}' not found, skipping")
         endif()
     endforeach()
 else()
-    # No operator list specified: auto-discover all operators with CMakeLists.txt
     file(GLOB OP_SUBDIRS RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/*)
     foreach(OP_DIR ${OP_SUBDIRS})
         if(IS_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/${OP_DIR} AND
            EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/${OP_DIR}/CMakeLists.txt)
             add_subdirectory(${OP_DIR})
-            message(STATUS "  [opkernel] Added operator: ${OP_DIR}")
         endif()
     endforeach()
 endif()
 
-add_executable(${UT_EXE_NAME}_${SOC_VERSION}
-    ${CMAKE_CURRENT_SOURCE_DIR}/test_op_kernel_main.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/k3_pvwrap.cpp
-    ${OP_TEST_OBJECTS}
-)
+get_property(REG_NAMES GLOBAL PROPERTY KERNEL_UT_REG_NAMES)
+if(NOT REG_NAMES)
+    message(FATAL_ERROR "No kernel UT operators registered")
+endif()
 
-target_compile_options(${UT_EXE_NAME}_${SOC_VERSION} PRIVATE
-    -D_GLIBCXX_USE_CXX11_ABI=0
-)
+set(BUILT_SOC_LIST "")
 
-target_link_libraries(${UT_EXE_NAME}_${SOC_VERSION} PRIVATE
-    GTest::gtest
-    GTest::gtest_main
-    tikicpulib::${TIKICPULIB_TARGET}
-    pthread
-)
+foreach(_soc_short ${KERNEL_UT_SOC_LIST})
+    map_compute_unit(${_soc_short} _soc_long)
 
-target_include_directories(${UT_EXE_NAME}_${SOC_VERSION} PRIVATE
-    ${OPS_TENSOR_ROOT}/include
-    ${ASCEND_HOME_PATH}/${SYSTEM_PREFIX}/asc/include
-    ${ASCEND_HOME_PATH}/include
-    ${UT_KERNEL_INC}
-)
+    set(_matched_ops "")
+    foreach(_op ${REG_NAMES})
+        get_property(_op_socs GLOBAL PROPERTY KERNEL_UT_REG_${_op}_SOCS)
+        list(FIND _op_socs "${_soc_long}" _idx)
+        if(NOT _idx EQUAL -1)
+            list(APPEND _matched_ops ${_op})
+        endif()
+    endforeach()
 
-target_link_directories(${UT_EXE_NAME}_${SOC_VERSION} PRIVATE
-    ${ASCEND_HOME_PATH}/${SYSTEM_PREFIX}/lib64
-    ${ASCEND_HOME_PATH}/${SYSTEM_PREFIX}/simulator/dav_3510/lib
-)
+    if(NOT _matched_ops)
+        message(STATUS "  [opkernel] No operators matched SoC=${_soc_short}(${_soc_long}), skipping")
+        continue()
+    endif()
 
-message(STATUS "ops_tensor Kernel UT configured: ${SOC_VERSION}")
+    set(_obj_targets "")
+    foreach(_op ${_matched_ops})
+        get_property(_op_srcs GLOBAL PROPERTY KERNEL_UT_REG_${_op}_SRCS)
+        get_property(_op_flags GLOBAL PROPERTY KERNEL_UT_REG_${_op}_FLAGS)
+        get_property(_op_dir GLOBAL PROPERTY KERNEL_UT_REG_${_op}_DIR)
+
+        set(_tgt "opkernel_${_op}_${_soc_short}")
+        add_library(${_tgt} OBJECT ${_op_srcs})
+
+        target_compile_options(${_tgt} PRIVATE
+            -g
+            -DUT_SOC_VERSION="${_soc_long}"
+            -DKERNELUT=1
+            -DBLAZE_UT=1
+            -DASCENDC_CPU_DEBUG=1
+            -DUT_KERNEL_SRC_DIR="${UT_KERNEL_INC}"
+            -fPIC
+            -std=c++17
+            ${_op_flags}
+        )
+
+        target_include_directories(${_tgt} PRIVATE
+            ${OPS_TENSOR_ROOT}/include
+            ${OPS_TENSOR_ROOT}/include/tensor_api/include
+            ${OPS_TENSOR_ROOT}/include/tensor_api
+            ${ASCEND_HOME_PATH}/${SYSTEM_PREFIX}/asc/include
+            ${ASCEND_HOME_PATH}/${SYSTEM_PREFIX}/asc/include/basic_api
+            ${ASCEND_HOME_PATH}/${SYSTEM_PREFIX}/asc/include/c_api
+            ${ASCEND_HOME_PATH}/${SYSTEM_PREFIX}/asc/impl/basic_api
+            ${ASCEND_HOME_PATH}/${SYSTEM_PREFIX}/asc/impl/c_api
+            ${ASCEND_HOME_PATH}/${SYSTEM_PREFIX}/asc/impl/utils
+            ${ASCEND_HOME_PATH}/include/base
+            ${ASCEND_HOME_PATH}/include/register
+            ${ASCEND_HOME_PATH}/include
+            ${UT_KERNEL_INC}
+            ${_op_dir}
+        )
+
+        target_link_libraries(${_tgt} PRIVATE
+            tikicpulib::${_soc_long}
+        )
+
+        if(KERNEL_UT_GTEST_DEP AND TARGET ${KERNEL_UT_GTEST_DEP})
+            add_dependencies(${_tgt} ${KERNEL_UT_GTEST_DEP})
+        endif()
+
+        list(APPEND _obj_targets "$<TARGET_OBJECTS:${_tgt}>")
+    endforeach()
+
+    set(_exe "${UT_EXE_NAME}_${_soc_short}")
+    add_executable(${_exe}
+        ${CMAKE_CURRENT_SOURCE_DIR}/test_op_kernel_main.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/k3_pvwrap.cpp
+        ${_obj_targets}
+    )
+
+    target_compile_options(${_exe} PRIVATE -D_GLIBCXX_USE_CXX11_ABI=0)
+
+    target_link_libraries(${_exe} PRIVATE
+        GTest::gtest
+        GTest::gtest_main
+        tikicpulib::${_soc_long}
+        pthread
+    )
+
+    target_include_directories(${_exe} PRIVATE
+        ${OPS_TENSOR_ROOT}/include
+        ${ASCEND_HOME_PATH}/${SYSTEM_PREFIX}/asc/include
+        ${ASCEND_HOME_PATH}/include
+        ${UT_KERNEL_INC}
+    )
+
+    target_link_directories(${_exe} PRIVATE
+        ${ASCEND_HOME_PATH}/${SYSTEM_PREFIX}/lib64
+        ${ASCEND_HOME_PATH}/${SYSTEM_PREFIX}/simulator/dav_3510/lib
+    )
+
+    list(APPEND BUILT_SOC_LIST "${_soc_short}")
+    message(STATUS "  [opkernel] Built SoC=${_soc_short}(${_soc_long}): ${_matched_ops}")
+endforeach()
+
+if(NOT BUILT_SOC_LIST)
+    message(FATAL_ERROR "No SoC targets produced any executables. KERNEL_UT_SOC=${KERNEL_UT_SOC_LIST}")
+endif()
+
+message(STATUS "ops_tensor Kernel UT configured: SoCs=[${BUILT_SOC_LIST}]")
 message(STATUS "ops_tensor Kernel UT configuration completed")

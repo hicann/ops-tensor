@@ -29,6 +29,11 @@ def gen_matmul_data(m, n, k, dtype='float16', output_dir='./'):
 
     if dtype == 'float16':
         golden = np.matmul(a.astype(np.float32), b.astype(np.float32)).astype(np.float16)
+    elif dtype == 'bfloat16':
+        golden = np.matmul(a, b)
+        a = float32_to_bfloat16(a)
+        b = float32_to_bfloat16(b)
+        golden = float32_to_bfloat16(golden)
     else:
         golden = np.matmul(a, b)
 
@@ -37,6 +42,16 @@ def gen_matmul_data(m, n, k, dtype='float16', output_dir='./'):
     golden.tofile(os.path.join(output_dir, 'golden_c.bin'))
 
     return a, b, golden
+
+
+def float32_to_bfloat16(arr):
+    """Convert float32 array to bfloat16 binary format (uint16).
+    
+    bfloat16 = float32 truncated to upper 16 bits (1 sign + 8 exponent + 7 mantissa).
+    """
+    float32_view = arr.view(np.uint32)
+    bfloat16_bits = (float32_view >> 16).astype(np.uint16)
+    return bfloat16_bits
 
 
 def main():

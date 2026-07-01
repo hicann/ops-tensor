@@ -15,14 +15,9 @@
 
 #pragma once
 
-#include "../blaze_kernel_stub.h"
+#include "blaze_kernel_stub.h"
 #include "kernel_operator.h"
 #include "tensor_api/tensor.h"
-
-using namespace AscendC;
-
-using AscendC::Te::Get;
-using AscendC::Std::Int;
 
 #if defined(ASCENDC_CPU_DEBUG)
 namespace AscendC {

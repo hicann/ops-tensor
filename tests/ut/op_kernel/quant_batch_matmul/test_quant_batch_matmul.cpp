@@ -16,7 +16,8 @@
 #include <fstream>
 #include <string>
 #include "gtest/gtest.h"
-#include "../blaze_kernel_stub.h"
+#include "blaze_kernel_stub.h"
+#include "kernel_ut_runner.h"
 #include "tikicpulib.h"
 #include "kernel_operator.h"
 
@@ -182,7 +183,6 @@ TEST_F(QBMMV3Test, Test_INT8_A8W8_PERTENSOR)
 
     auto kernelFunc = qbmm_kernel_entry<
         OP_TYPE_QBMM_CUBE, int8_t, int8_t, half, int32_t>;
-    ICPU_RUN_KF(kernelFunc, blockNum, x1GM, x2GM, pertokenScaleGM, scaleGM, biasGM, yGM, tilingGM);
-
-    SUCCEED() << "QBMM kernel executed successfully (PV_MEM stubbed, output not verified)";
+    ASSERT_TRUE(KERNEL_RUN_KF(kernelFunc, blockNum, x1GM, x2GM, pertokenScaleGM, scaleGM, biasGM, yGM, tilingGM))
+        << "Kernel execution failed: one or more cores exited with non-zero status";
 }

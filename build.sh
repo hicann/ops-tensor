@@ -67,7 +67,8 @@ NC='\033[0m' # No Color
 BUILD_OPERATORS="all"
 RUN_TESTS=false
 ENABLE_PACKAGE=false
-SOC_NAME="Ascend950"  # 默认 SoC 型号 (仅支持 Ascend950)
+SOC_NAME="Ascend950"
+SOC_EXPLICIT=false
 BUILD_DIR="build"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 THREAD_NUM=8  # 默认编译线程数
@@ -125,6 +126,7 @@ get_soc_version() {
             ;;
     esac
 }
+
 
 # 检查 ASCEND 环境变量
 check_ascend_env() {
@@ -465,28 +467,38 @@ run_tests() {
 run_kernel_ut() {
     log_info "Running Kernel UT tests (timeout: ${TEST_TIMEOUT}s)..."
 
-    local EXECUTABLE="ops_tensor_kernel_ut_ascend950"
-
-    if [ ! -f "./${EXECUTABLE}" ]; then
-        log_error "Kernel UT executable not found: ./${EXECUTABLE}"
+    local executables=($(ls ops_tensor_kernel_ut_* 2>/dev/null | grep -v '\.' || true))
+    if [ ${#executables[@]} -eq 0 ]; then
+        log_error "No kernel UT executables found"
         exit 1
     fi
 
-    log_info "Found executable, starting..."
+    log_info "Found ${#executables[@]} executable(s): ${executables[*]}"
 
-    set +e
-    timeout -k 1s ${TEST_TIMEOUT}s ./${EXECUTABLE} 2>&1
-    local test_result=$?
-    set -e
+    local failed=0
+    for exe in "${executables[@]}"; do
+        log_info "Running ${exe}..."
+        set +e
+        timeout -k 1s ${TEST_TIMEOUT}s ./${exe} 2>&1
+        local test_result=$?
+        set -e
 
-    if [ $test_result -ge 124 ]; then
-        log_error "Kernel UT timeout (${TEST_TIMEOUT}s exceeded)"
-        exit 1
-    elif [ $test_result -ne 0 ]; then
-        log_error "Kernel UT tests failed (exit code: $test_result)"
+        if [ $test_result -ge 124 ]; then
+            log_error "${exe} timeout (${TEST_TIMEOUT}s exceeded)"
+            failed=$((failed + 1))
+        elif [ $test_result -ne 0 ]; then
+            log_error "${exe} failed (exit code: $test_result)"
+            failed=$((failed + 1))
+        else
+            log_success "${exe} passed"
+        fi
+    done
+
+    if [ $failed -gt 0 ]; then
+        log_error "${failed}/${#executables[@]} SoC test(s) failed"
         exit 1
     else
-        log_success "Kernel UT all tests passed"
+        log_success "Kernel UT all SoC tests passed"
     fi
 }
 
@@ -499,12 +511,16 @@ build_kernel_ut() {
     mkdir -p "$KERNEL_UT_BUILD"
     cd "$KERNEL_UT_BUILD"
 
-    # Clean stale CMake cache to avoid operator list mismatch
     [ -f "CMakeCache.txt" ] && rm -f CMakeCache.txt
 
     local cmake_args=()
     cmake_args+=(-DASCEND_HOME_PATH="${ASCEND_HOME_PATH}")
     cmake_args+=(-DOPS_TENSOR_ROOT="${SCRIPT_DIR}")
+
+    if [ "$SOC_EXPLICIT" = true ]; then
+        local _soc_lower=$(echo "${SOC_NAME}" | tr '[:upper:]' '[:lower:]')
+        cmake_args+=(-DKERNEL_UT_SOC="${_soc_lower}")
+    fi
 
     if [ "$BUILD_OPERATORS" != "all" ]; then
         cmake_args+=(-DOP_KERNEL_OPS="${BUILD_OPERATORS}")
@@ -513,7 +529,11 @@ build_kernel_ut() {
         log_info "Kernel UT operators: all"
     fi
 
-    log_info "Kernel UT SoC: ascend950"
+    if [ "$SOC_EXPLICIT" = true ]; then
+        log_info "Kernel UT SoC: ${_soc_lower}"
+    else
+        log_info "Kernel UT SoC: all"
+    fi
 
     cmake_args+=(-DCANN_3RD_LIB_PATH="${CANN_3RD_LIB_PATH}")
 
@@ -560,9 +580,9 @@ parse_arguments() {
                 shift
                 ;;
             --soc=*)
-                # 提取 SoC 型号并标准化（支持小写输入）
                 SOC_INPUT="${1#*=}"
                 SOC_NAME=$(normalize_soc_name "${SOC_INPUT}")
+                SOC_EXPLICIT=true
                 shift
                 ;;
             -j*)
@@ -747,7 +767,11 @@ main() {
         else
             log_info "Kernel UT operators: ${BUILD_OPERATORS}"
         fi
-        log_info "Kernel UT SoC: ascend950"
+        if [ "$SOC_EXPLICIT" = true ]; then
+            log_info "Kernel UT SoC: $(echo "${SOC_NAME}" | tr '[:upper:]' '[:lower:]')"
+        else
+            log_info "Kernel UT SoC: all"
+        fi
         if [ "$RUN_TESTS" = true ]; then
             log_success "Run Kernel UT tests: YES"
             log_info "Test timeout: ${TEST_TIMEOUT}s"

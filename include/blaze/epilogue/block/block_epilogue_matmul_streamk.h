@@ -99,19 +99,19 @@ public:
         Params const& params, BlockShape blockShapeInAiv, BlockShape tileL1ShapeInAiv, BlockCoord coordInAiv,
         uint64_t usedCoreNum, bool checkIsSkScene)
     {
-        m_ = Get<MNK_M>(blockShapeInAiv);
-        n_ = Get<MNK_N>(blockShapeInAiv);
-        mL1_ = Get<MNK_M>(tileL1ShapeInAiv);
-        nL1_ = Get<MNK_N>(tileL1ShapeInAiv);
-        mCnt_ = Get<MNK_M>(coordInAiv);
-        nCnt_ = Get<MNK_N>(coordInAiv);
-        kCnt_ = Get<MNK_K>(coordInAiv);
+        m_ = AscendC::Te::Get<MNK_M>(blockShapeInAiv);
+        n_ = AscendC::Te::Get<MNK_N>(blockShapeInAiv);
+        mL1_ = AscendC::Te::Get<MNK_M>(tileL1ShapeInAiv);
+        nL1_ = AscendC::Te::Get<MNK_N>(tileL1ShapeInAiv);
+        mCnt_ = AscendC::Te::Get<MNK_M>(coordInAiv);
+        nCnt_ = AscendC::Te::Get<MNK_N>(coordInAiv);
+        kCnt_ = AscendC::Te::Get<MNK_K>(coordInAiv);
         usedCoreNum_ = usedCoreNum;
         // Decrease tile size of per vector core to prevent data race of cube and vector
         aivMte2Num_ = checkIsSkScene ? AscendC::GetTaskRation() : AscendC::BLOCK_CUBE;
         cGlobal_.SetGlobalBuffer(reinterpret_cast<__gm__ OutType*>(params.cGmAddr));
         workspaceGlobal_.SetGlobalBuffer(reinterpret_cast<__gm__ WorkspaceType*>(params.workspaceGmAddr));
-        ICachePreLoad(NUM_TWO);
+        AscendC::ICachePreLoad(NUM_TWO);
         // Ensure cube to pair with vector, add sync flag in dp+sk scene
         if (!checkIsSkScene) {
             AscendC::SetFlag<AscendC::HardEvent::MTE3_MTE2>(ZERO_FLAG);
@@ -125,24 +125,24 @@ public:
         UpdateAivBasicBlock();
         for (uint64_t index = 0; index < aivMte2Num_; ++index) {
             UpdateAivParams(index);
-            LocalTensor<float> ubAddTensor{AscendC::TPosition::VECIN, 0, AscendC::TOTAL_UB_SIZE};
-            DataCopyExtParams dataCopyExtParams{
+            AscendC::LocalTensor<float> ubAddTensor{AscendC::TPosition::VECIN, 0, AscendC::TOTAL_UB_SIZE};
+            AscendC::DataCopyExtParams dataCopyExtParams{
                 static_cast<uint16_t>(copyGm2UbParams_.kCnt),
                 static_cast<uint32_t>(copyGm2UbParams_.burstLen * sizeof(float)),
                 static_cast<uint32_t>(copyGm2UbParams_.srcGap * sizeof(float)), 0, 0};
             if (copyGm2UbParams_.mBurst == 0) {
                 return;
             }
-            DataCopyPad<float>(
+            AscendC::DataCopyPad<float>(
                 ubAddTensor, workspaceGlobal_[copyGm2UbParams_.offsetWorkspaceGM], dataCopyExtParams, {false, 0, 0, 0});
             AscendC::SetFlag<AscendC::HardEvent::MTE2_V>(ZERO_FLAG);
             AscendC::WaitFlag<AscendC::HardEvent::MTE2_V>(ZERO_FLAG);
 
             for (uint64_t i = 1; i < copyGm2UbParams_.kCnt; ++i) {
-                Add(ubAddTensor, ubAddTensor, ubAddTensor[i * copyGm2UbParams_.burstLen], copyGm2UbParams_.burstLen);
+                AscendC::Add(ubAddTensor, ubAddTensor, ubAddTensor[i * copyGm2UbParams_.burstLen], copyGm2UbParams_.burstLen);
             }
 
-            DataCopyExtParams ub2gmExtParams{
+            AscendC::DataCopyExtParams ub2gmExtParams{
                 static_cast<uint16_t>(copyUb2GmParams_.mLength),
                 static_cast<uint32_t>(copyUb2GmParams_.burstLen * sizeof(OutType)),
                 static_cast<uint32_t>(copyUb2GmParams_.srcGap * sizeof(OutType) / UB2GM_SRCGAP_UNIT),
@@ -154,8 +154,8 @@ public:
                 AscendC::Relu(ubAddTensor, ubAddTensor, copyGm2UbParams_.burstLen);
             }
             if constexpr (sizeof(OutType) == sizeof(half)) {
-                LocalTensor<OutType> ubCastDst{AscendC::TPosition::VECIN, 0, AscendC::TOTAL_UB_SIZE};
-                Cast(ubCastDst, ubAddTensor, RoundMode::CAST_RINT, copyGm2UbParams_.burstLen);
+                AscendC::LocalTensor<OutType> ubCastDst{AscendC::TPosition::VECIN, 0, AscendC::TOTAL_UB_SIZE};
+                AscendC::Cast(ubCastDst, ubAddTensor, AscendC::RoundMode::CAST_RINT, copyGm2UbParams_.burstLen);
                 if constexpr (
                     DispatchPolicy::fusedOpType == OP_TYPE_RELU && !AscendC::IsSameType<OutType, bfloat16_t>::value) {
                     // Relu not support bfloat16_t
@@ -163,16 +163,16 @@ public:
                 }
                 AscendC::SetFlag<AscendC::HardEvent::V_MTE3>(ZERO_FLAG);
                 AscendC::WaitFlag<AscendC::HardEvent::V_MTE3>(ZERO_FLAG);
-                DataCopyPad<
-                    OutType, (DispatchPolicy::fixpOpti == MatMulL0C2Out::ND_FIXPIPE_1_2) ? PaddingMode::Normal :
-                                                                                           PaddingMode::Compact>(
+                AscendC::DataCopyPad<
+                    OutType, (DispatchPolicy::fixpOpti == MatMulL0C2Out::ND_FIXPIPE_1_2) ? AscendC::PaddingMode::Normal :
+                                                                                           AscendC::PaddingMode::Compact>(
                     cGlobal_[copyUb2GmParams_.offsetCGm], ubCastDst, ub2gmExtParams);
             } else {
                 AscendC::SetFlag<AscendC::HardEvent::V_MTE3>(ZERO_FLAG);
                 AscendC::WaitFlag<AscendC::HardEvent::V_MTE3>(ZERO_FLAG);
-                DataCopyPad<
-                    OutType, (DispatchPolicy::fixpOpti == MatMulL0C2Out::ND_FIXPIPE_1_2) ? PaddingMode::Normal :
-                                                                                           PaddingMode::Compact>(
+                AscendC::DataCopyPad<
+                    OutType, (DispatchPolicy::fixpOpti == MatMulL0C2Out::ND_FIXPIPE_1_2) ? AscendC::PaddingMode::Normal :
+                                                                                           AscendC::PaddingMode::Compact>(
                     cGlobal_[copyUb2GmParams_.offsetCGm], ubAddTensor, ub2gmExtParams);
             }
         }
@@ -248,7 +248,7 @@ public:
         }
         // datasize for moving in ub, align to 32B
         copyGm2UbParams_.burstLen =
-            Blaze::Gemm::CeilAlign(copyGm2UbParams_.mBurst * aivParams_.curAlignedNInAiv, BLOCK_SIZE);
+            Blaze::Gemm::CeilAlign(copyGm2UbParams_.mBurst * aivParams_.curAlignedNInAiv, BLOCK_BYTE_SIZE);
         // gap of src between cur burst and next burst
         copyGm2UbParams_.srcGap = BLOCK_BASE_M * BLOCK_BASE_N - copyGm2UbParams_.burstLen;
 

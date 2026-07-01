@@ -83,7 +83,7 @@ constexpr uint64_t OP_TYPE_EMPTY = 0UL;
 constexpr uint64_t OP_TYPE_ADD = 1UL;
 constexpr uint64_t OP_TYPE_MUL = 2UL;
 constexpr uint64_t OP_TYPE_RELU = 5UL;
-constexpr int64_t BLOCK_BYTE_SIZE = 32L;
+constexpr uint64_t BLOCK_BYTE_SIZE = 32UL;
 
 constexpr uint64_t IDX_M_TILEIDX = 0UL;
 constexpr uint64_t IDX_N_TILEIDX = 1UL;
