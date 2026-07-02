@@ -178,6 +178,8 @@ public:
                         AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(biasGmAddr_), layoutBias);
                 }
                 preBatchIdx = curBatchIdx_;
+                // 重复MakeTensor后需再次SetL2Cache
+                SetL2Cache(gmA, gmB, params.schParams.l2CacheMode);
             }
             // Block offset
             auto gmBlockA = gmA.Slice(AscendC::MakeCoord(coordM, 0L), AscendC::MakeShape(shapeM, shapeK));
