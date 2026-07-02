@@ -1,0 +1,210 @@
+# Block Mmad Qgmm Mx
+> [代码位置](../../../../include/blaze/gemm/block/block_mmad_qgmm_mx.h)
+
+## 功能说明
+MX 量化 Grouped Matmul 的 Block 组件，基于 Tensor API 实现，仅支持 AIC 计算。
+组件负责单个 tile 的 A/B 搬运、ScaleA/ScaleB 搬运、MX Mmad 计算以及 bias 处理，适用于 grouped matmul 的 mx tensor_api kernel。
+
+**继承思路参考**：[Block Mmad 公共框架](./block_mmad.md)
+
+## 特殊约束
+
+### 调度策略限制
+仅支持 `GroupedMatmulWithScaleMx` 调度策略，不用于 Basic、QBMM 或 StreamK 路径。
+
+### 量化数据类型支持
+支持以下典型 MX 量化输入类型：
+- `fp4x2_e2m1_t`
+- `fp4x2_e1m2_t`
+- `fp8_e5m2_t`
+- `fp8_e4m3fn_t`
+
+### Scale 类型
+ScaleA 和 ScaleB 固定使用 `fp8_e8m0_t`。
+
+### 计算模式
+仅支持 AIC 模式，不支持 AIV 计算。
+
+### 输出目标
+结果直接输出到 GM，不依赖 workspace。
+
+## 特殊静态常量
+
+| 常量 | 说明 |
+|------|------|
+| `transA` | A 是否转置 |
+| `transB` | B 是否转置 |
+| `C0_SIZE` | 数据 C0 对齐大小，FP4 为 64，FP8 为 32 |
+| `SCALE_C0` | Scale 布局的 C0 对齐大小，固定为 2 |
+| `SCALE_BUFFER_NUM` | Scale 双缓冲数量 |
+| `HALF_L0_SIZE` | L0A/L0B 半缓冲大小 |
+| `HALF_L0C_SIZE` | L0C 半缓冲大小 |
+
+## 特殊类型别名
+
+| 别名 | 含义 |
+|------|------|
+| `ProblemShape` | 当前 group 的问题规模 |
+| `BlockShape` | 单 tile 形状 |
+| `MxL0AType` | A 在 L0 中的数据类型 |
+| `MxL0BType` | B 在 L0 中的数据类型 |
+
+## 特殊数据结构
+
+### Params
+```cpp
+struct Params {
+    GM_ADDR aGmAddr;
+    GM_ADDR bGmAddr;
+    GM_ADDR cGmAddr;
+    GM_ADDR biasGmAddr;
+    GM_ADDR scaleAGmAddr;
+    GM_ADDR scaleBGmAddr;
+};
+```
+
+参数说明：
+
+| 参数 | 说明 |
+|------|------|
+| `aGmAddr` | A 的 GM 地址 |
+| `bGmAddr` | B 的 GM 地址 |
+| `cGmAddr` | C 的 GM 地址 |
+| `biasGmAddr` | bias 的 GM 地址，可为空 |
+| `scaleAGmAddr` | A 对应的 per-token scale 地址 |
+| `scaleBGmAddr` | B 对应的 per-group scale 地址 |
+
+### L1Params
+```cpp
+struct L1Params {
+    uint64_t kAL1;
+    uint64_t kBL1;
+    uint64_t scaleKL1;
+};
+```
+
+参数说明：
+
+| 参数 | 说明 |
+|------|------|
+| `kAL1` | A 的 L1 K 轴切分 |
+| `kBL1` | B 的 L1 K 轴切分 |
+| `scaleKL1` | ScaleA/ScaleB 共享的 L1 K 轴切分 |
+
+参数约束：
+
+- `kAL1`、`kBL1`、`scaleKL1` 均需大于 0。
+- `kAL1`、`kBL1` 建议按 `MXFP_DIVISOR_SIZE`（64）对齐；末尾 K tail 由实现内部 padding 处理。
+- 当 `kAL1 >= kBL1` 时，外层按 `kAL1` 复用 A，要求 `kAL1` 是 `kBL1` 的整数倍。
+- 当 `kBL1 > kAL1` 时，外层按 `kBL1` 复用 B，要求 `kBL1` 是 `kAL1` 的整数倍。
+- `scaleKL1` 必须不小于外层 L1 K 窗口 `max(kAL1, kBL1)`，且应为该外层窗口的整数倍；Scale 只在 `scaleKL1` 边界搬运一次，并在窗口内复用。
+
+### MmadParams
+```cpp
+struct MmadParams {
+    BlockShape l0TileShape;
+    L1Params l1Params;
+    bool isBias;
+    bool enableL0cPingPong;
+};
+```
+
+## 特殊成员方法
+
+### Init 函数
+```cpp
+__aicore__ inline void Init(
+    const ProblemShape& problemShape,
+    const MmadParams& params)
+```
+
+功能：
+- 初始化当前 group 的 `m/n/k`
+- 设置 L0 tile 和 L1 切分参数
+- 重置组内双缓冲状态
+
+### UpdateParamsForNextProblem 函数
+```cpp
+__aicore__ inline void UpdateParamsForNextProblem(const ProblemShape& problemShape)
+```
+
+功能：
+- 在 grouped matmul 切换到下一个 group 时刷新 `m/n/k`
+- 保持同一个 block 组件在不同 group 间复用
+
+### operator() 函数
+```cpp
+template <typename TensorA, typename TensorB, typename TensorScaleA,
+          typename TensorScaleB, typename TensorBias, typename TensorC>
+__aicore__ inline void operator()(
+    TensorA gmA,
+    TensorB gmB,
+    TensorScaleA gmScaleA,
+    TensorScaleB gmScaleB,
+    TensorBias gmBias,
+    TensorC gmC,
+    const BlockShape& singleShape)
+```
+
+功能：
+- 处理一个 tile 的 MX grouped matmul 计算
+- 输入 tensor 由 kernel 层完成 slice 后传入
+
+## 调用示例
+
+### 组件组装
+```cpp
+using AType = fp8_e4m3fn_t;
+using BType = fp8_e4m3fn_t;
+using CType = float;
+using BiasType = float;
+
+using LayoutA = AscendC::Te::NDExtLayoutPtn;
+using LayoutB = AscendC::Te::NZLayoutPtn;
+using LayoutC = AscendC::Te::NDExtLayoutPtn;
+using LayoutBias = AscendC::Te::NDExtLayoutPtn;
+
+using DispatchPolicy = Blaze::Gemm::GroupedMatmulWithScaleMx<0>;
+using BlockMmad = Blaze::Gemm::Block::BlockMmad<
+    DispatchPolicy, AType, LayoutA, BType, LayoutB, CType, LayoutC, BiasType, LayoutBias>;
+```
+
+### 组件初始化
+```cpp
+BlockMmad blockMmad;
+
+BlockMmad::ProblemShape problemShape{m, n, k, 0};
+BlockMmad::BlockShape l0TileShape{baseM, baseN, baseK, 0};
+BlockMmad::L1Params l1Params{kAL1, kBL1, scaleKL1};
+BlockMmad::MmadParams params{l0TileShape, l1Params, isBias, enableL0cPingPong};
+
+blockMmad.Init(problemShape, params);
+```
+
+### 组件执行
+```cpp
+auto gmBlockA = gmA.Slice(...);
+auto gmBlockB = gmB.Slice(...);
+auto gmBlockScaleA = gmScaleA.Slice(...);
+auto gmBlockScaleB = gmScaleB.Slice(...);
+auto gmBlockBias = gmBias.Slice(...);
+auto gmBlockC = gmC.Slice(...);
+
+BlockMmad::BlockShape singleShape{tileM, tileN, tileK, 0};
+blockMmad(gmBlockA, gmBlockB, gmBlockScaleA, gmBlockScaleB, gmBlockBias, gmBlockC, singleShape);
+```
+
+## 数据流
+```text
+GM(A/B) + GM(ScaleA/ScaleB) + GM(Bias)
+    -> L1
+    -> L0A/L0B + Scale Buffer
+    -> MmadTraitMX
+    -> L0C
+    -> GM(C)
+```
+
+## 适用场景
+- MX 量化 grouped matmul 的 tensor_api kernel
+- group 间 `m/n/k` 动态变化的场景
+- 同时处理输入 scale 与权重 scale 的 grouped matmul 场景

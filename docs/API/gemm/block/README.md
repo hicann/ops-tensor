@@ -7,6 +7,7 @@
 | :----------------------------------------------------------- | :------: |
 | [block_mmad_matmul_basic](./block_mmad_matmul_basic.md) | 基础矩阵乘 Block，基于 Tensor API，支持 L1/L0 双缓冲 |
 | [block_mmad_qbmm_mx](./block_mmad_qbmm_mx.md) | MX 量化矩阵乘 Block，支持 Scale 因子、MxFP4/MxFP8 量化 |
+| [block_mmad_qgmm_mx](./block_mmad_qgmm_mx.md) | MX 量化 Grouped Matmul Block，支持 group list、ScaleA/ScaleB |
 | [block_mmad_matmul_streamk](./block_mmad_matmul_streamk.md) | StreamK 矩阵乘 Block，支持 workspace 输出、K 轴切分 |
 
 ### BlockScheduler（任务调度）
@@ -16,6 +17,7 @@
 | [block_scheduler_matmul_basic](./block_scheduler_matmul_basic.md) | Basic 调度器：尾块切分、SplitK 切分、L2Cache 配置 |
 | [block_scheduler_matmul_streamk](./block_scheduler_matmul_streamk.md) | StreamK 调度器：DP+SK 混合策略、K 轴切分 |
 | [block_scheduler_qbmm_mx](./block_scheduler_qbmm_mx.md) | QBMM 调度器：Batch 维度切分、量化对齐 |
+| [block_scheduler_gmm_aswt_with_tail_split](./block_scheduler_gmm_aswt_with_tail_split.md) | QGMM 调度器：group 间连续分核、SWAT 扫描、末组 tail split |
 
 ## 公共框架
 
@@ -43,7 +45,8 @@ BlockMmad
     ├── DispatchPolicy (调度策略)
     │       ├── MatmulMultiBlockBasic (Basic)
     │       ├── MatmulMultiBlockWithStreamK (StreamK)
-    │       └── MatmulWithScaleMx (MX 量化)
+    │       ├── MatmulWithScaleMx (QBMM MX 量化)
+    │       └── GroupedMatmulWithScaleMx (QGMM MX 量化)
     ├── 数据类型 (AType, BType, CType, BiasType)
     ├── 布局类型 (LayoutA, LayoutB, LayoutC, LayoutBias)
     └── 计算流程
@@ -59,6 +62,7 @@ BlockMmad
 | BlockMmadBasic | MatmulMultiBlockBasic | GM | 不支持 | 不支持 | 可配置 (1 或 2) | 可配置 | 支持 | 无 | Basic Kernel |
 | BlockMmadStreamK | MatmulMultiBlockWithStreamK | GM 或 workspace | 不支持 | 不支持 | 固定双缓冲 | 固定单缓冲 | 支持 | 无（Kernel 层处理） | StreamK Kernel |
 | BlockMmadMx | MatmulWithScaleMx | GM | MxFP4/MxFP8 | ScaleA + ScaleB | 可配置 (2 或 4) | 可配置 | 支持 | 无 | QBMM MX Kernel |
+| BlockMmadQGmmMx | GroupedMatmulWithScaleMx | GM | MxFP4/MxFP8 | ScaleA + ScaleB | 固定双缓冲 | 可配置 | 支持 | 无 | QGMM MX Kernel |
 
 ## 使用流程
 

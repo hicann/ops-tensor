@@ -76,6 +76,10 @@ constexpr uint64_t ALIGN_MASK_32 = 31UL;
 constexpr uint64_t ALIGN_MASK_16 = 15UL;
 constexpr uint16_t ALIGN_64_BYTES_SHIFT = 6;
 constexpr uint16_t ALIGN_32_BYTES_SHIFT = 5;
+constexpr uint16_t MXFP_DIVISOR_SHIFT = 6;
+constexpr uint16_t MXFP_MULTI_BASE_SHIFT = 1;
+constexpr uint64_t SCALE_C0 = 2UL;
+constexpr uint64_t SCALE_BUFFER_NUM = 2UL;
 
 constexpr uint64_t NON_CONTIGUOUS_TYPE_SLICE = 1UL;
 // FusedMatMul OpType
@@ -98,6 +102,10 @@ constexpr uint16_t INPUT_BUFFER_FLAG_0 = 0;
 constexpr uint16_t INPUT_BUFFER_FLAG_1 = 1;
 constexpr uint16_t INPUT_BUFFER_FLAG_2 = 2;
 constexpr uint16_t INPUT_BUFFER_FLAG_3 = 3;
+constexpr uint16_t SCALE_BUFFER_FLAG_0 = FOURTH_FLAG;
+constexpr uint16_t SCALE_BUFFER_FLAG_1 = FIFTH_FLAG;
+constexpr uint16_t M_MTE1_FLAG_0 = FOURTH_FLAG;
+constexpr uint16_t M_MTE1_FLAG_1 = FIFTH_FLAG;
 
 enum class QuantMode : uint32_t
 {
