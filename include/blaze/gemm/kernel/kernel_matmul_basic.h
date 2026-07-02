@@ -129,6 +129,13 @@ public:
                 gmB = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(bGmAddr_), layoutB);
                 gmC = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(cGmAddr_), layoutC);
                 preBatchIdx = curBatchIdx_;
+                // 重复MakeTensor后需再次SetL2Cache
+                if (bs.GetBL2CacheDisable()) {
+                    gmB.SetL2CacheHint(AscendC::Te::CacheMode::CACHE_MODE_DISABLE);
+                }
+                if (bs.GetAL2CacheDisable()) {
+                    gmA.SetL2CacheHint(AscendC::Te::CacheMode::CACHE_MODE_DISABLE);
+                }
             }
             // Block offset
             auto gmBlockA = gmA.Slice(AscendC::MakeCoord(coordM, 0L), AscendC::MakeShape(shapeM, shapeK));
