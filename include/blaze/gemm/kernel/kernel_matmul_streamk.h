@@ -96,8 +96,8 @@ public:
             int64_t curBlockIdx = AscendC::GetBlockIdx();
 
             if (curBlockIdx >= bs.GetBlockNum(params.problemShape)) {
-                CrossCoreSetFlag<AIC_SYNC_AIV_MODE_4, PIPE_FIX>(AIC_SYNC_AIV_FLAG);
-                CrossCoreSetFlag<AIC_SYNC_AIV_MODE_4, PIPE_FIX>(AIC_SYNC_AIV_FLAG + FLAG_ID_MAX);
+                AscendC::CrossCoreSetFlag<AIC_SYNC_AIV_MODE_4, PIPE_FIX>(AIC_SYNC_AIV_FLAG);
+                AscendC::CrossCoreSetFlag<AIC_SYNC_AIV_MODE_4, PIPE_FIX>(AIC_SYNC_AIV_FLAG + FLAG_ID_MAX);
                 return;
             }
 
@@ -188,8 +188,8 @@ public:
                     AscendC::Te::Get<MNK_K>(singleCoreCoord), bs.CheckIsSkScene(tmpTileIdx));
 
                 if (tmpTileIdx + usedCoreNum >= tileNum) {
-                    CrossCoreSetFlag<AIC_SYNC_AIV_MODE_4, PIPE_FIX>(AIC_SYNC_AIV_FLAG);
-                    CrossCoreSetFlag<AIC_SYNC_AIV_MODE_4, PIPE_FIX>(AIC_SYNC_AIV_FLAG + FLAG_ID_MAX);
+                    AscendC::CrossCoreSetFlag<AIC_SYNC_AIV_MODE_4, PIPE_FIX>(AIC_SYNC_AIV_FLAG);
+                    AscendC::CrossCoreSetFlag<AIC_SYNC_AIV_MODE_4, PIPE_FIX>(AIC_SYNC_AIV_FLAG + FLAG_ID_MAX);
                 }
             }
 
@@ -202,13 +202,13 @@ public:
             uint64_t lastLoopTotalCnt = (mTileNum * nTileNum % usedCoreNum) * skKTileNum;
             uint64_t curBlockIdxInAiv = AscendC::GetBlockIdx();
             if (curBlockIdxInAiv >= lastLoopTotalCnt * AscendC::GetTaskRation()) {
-                CrossCoreWaitFlag<AIC_SYNC_AIV_MODE_4, PIPE_MTE3>(AIC_SYNC_AIV_FLAG);
-                SyncAll();
+                AscendC::CrossCoreWaitFlag<AIC_SYNC_AIV_MODE_4, PIPE_MTE3>(AIC_SYNC_AIV_FLAG);
+                AscendC::SyncAll();
                 return;
             }
 
-            CrossCoreWaitFlag<AIC_SYNC_AIV_MODE_4, PIPE_MTE3>(AIC_SYNC_AIV_FLAG);
-            SyncAll();
+            AscendC::CrossCoreWaitFlag<AIC_SYNC_AIV_MODE_4, PIPE_MTE3>(AIC_SYNC_AIV_FLAG);
+            AscendC::SyncAll();
             BlockEpilogue epilogueOp;
             TupleShape tileL1 = {params.schParams.baseM, params.schParams.baseN, params.schParams.kL1, 1};
             epilogueOp.Init(
@@ -251,7 +251,6 @@ private:
     static constexpr uint16_t FLAG_ID_MAX = 16;
     static constexpr uint16_t BLOCK_BASE_M = 256;
     static constexpr uint16_t BLOCK_BASE_N = 256;
-    static constexpr uint16_t BLOCK_BYTE_SIZE = 32;
 
     __gm__ AType* aGmAddr_;
     __gm__ BType* bGmAddr_;

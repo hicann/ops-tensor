@@ -25,9 +25,9 @@ namespace Block {
 template <class ProblemShape_, int64_t FullLoadMode_ = 0, bool IsFp32_ = false, bool IsNdFormat_ = true>
 class BlockSchedulerMatmulBasic {
 public:
-    using BlockShape = Shape<int64_t, int64_t, int64_t, int64_t>;
-    using BlockL1L0Shape = Shape<int64_t, int64_t, int64_t, int64_t, int64_t, int64_t>;
-    using BlockCoord = Coord<int64_t, int64_t, int64_t, int64_t>;
+    using BlockShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
+    using BlockL1L0Shape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t, int64_t, int64_t>;
+    using BlockCoord = AscendC::Te::Coord<int64_t, int64_t, int64_t, int64_t>;
     using ProblemShape = ProblemShape_;
 
     struct Params {

@@ -10,6 +10,7 @@
 #pragma once
 
 #include "tensor_api/tensor.h"
+#include "blaze/gemm/utils/common_utils.h"
 
 namespace Blaze {
 namespace Gemm {

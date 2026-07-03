@@ -81,7 +81,7 @@ public:
         return tilingBlockNum;
     }
 
-    __aicore__ inline Shape<int64_t, int64_t, int64_t, int64_t> GetMNKTileNum()
+    __aicore__ inline AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t> GetMNKTileNum()
     {
         return {mTileNum_, nTileNum_, skKTileNum_, 1};
     }

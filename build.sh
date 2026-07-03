@@ -35,6 +35,8 @@
 #   --ops=add --pkg       编译 add 算子并打包成 .run 文件
 #   --soc=ascend950 --pkg  为 Ascend950 芯片打包 (支持小写)
 #   -j16                  使用 16 个线程编译
+#   --opkernel -u          构建并执行 Kernel UT (必须组合使用)
+#   --opkernel -u --ops=OP 构建并执行指定算子的 Kernel UT (tests/ut/op_kernel/ 下子目录名)
 #
 # 示例:
 #   ./build.sh                        # 编译所有算子 (默认 8 线程)
@@ -45,6 +47,8 @@
 #   ./build.sh --pkg                  # 编译所有算子并打包 (默认: Ascend950)
 #   ./build.sh --ops=add --pkg        # 编译 add 算子并打包
 #   ./build.sh --soc=ascend950 --pkg  # 为 Ascend950 打包 (支持小写输入)
+#   ./build.sh --opkernel -u --ops=mat_mul              # 构建并执行 mat_mul Kernel UT
+#   ./build.sh --opkernel -u                            # 构建并执行所有 Kernel UT
 #
 # 支持的 SoC 型号:
 #   Ascend950 (默认)
@@ -63,7 +67,8 @@ NC='\033[0m' # No Color
 BUILD_OPERATORS="all"
 RUN_TESTS=false
 ENABLE_PACKAGE=false
-SOC_NAME="Ascend950"  # 默认 SoC 型号 (仅支持 Ascend950)
+SOC_NAME="Ascend950"
+SOC_EXPLICIT=false
 BUILD_DIR="build"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 THREAD_NUM=8  # 默认编译线程数
@@ -72,6 +77,7 @@ TEST_TIMEOUT=300  # 默认测试超时时间（秒）
 BUILD_OUT_DIR=build_out
 VERBOSE=""
 CANN_3RD_LIB_PATH="${SCRIPT_DIR}/third_party"
+OP_KERNEL_MODE=false
 
 # 设置 _ASCEND_INSTALL_PATH（优先级：ASCEND_INSTALL_PATH > ASCEND_HOME_PATH > 默认值）
 if [ -n "$ASCEND_INSTALL_PATH" ]; then
@@ -120,6 +126,7 @@ get_soc_version() {
             ;;
     esac
 }
+
 
 # 检查 ASCEND 环境变量
 check_ascend_env() {
@@ -226,6 +233,17 @@ Examples:
   $(basename "$0") --test-timeout=600 --run  # Run tests with 600s timeout
   $(basename "$0") --make_clean             # Clean build artifacts
 
+Kernel UT:
+  --opkernel -u          Build and run kernel unit tests (required combination)
+  --opkernel -u --ops=OP Build and run kernel UT for specified operators
+                         Operators are subdirectories under tests/ut/op_kernel/
+                         Examples: mat_mul, quant_batch_matmul
+
+Kernel UT Examples:
+  $(basename "$0") --opkernel -u --ops=mat_mul
+  $(basename "$0") --opkernel -u --ops=mat_mul,quant_batch_matmul
+  $(basename "$0") --opkernel -u
+
 EOF
 }
 
@@ -267,6 +285,36 @@ validate_operators() {
     if [ ${#invalid_ops[@]} -gt 0 ]; then
         log_error "Invalid operators: ${invalid_ops[*]}"
         log_info "Available operators: ${available_ops[*]}"
+        exit 1
+    fi
+}
+
+get_available_kernel_ut_operators() {
+    find "$SCRIPT_DIR/tests/ut/op_kernel" -mindepth 1 -maxdepth 1 -type d \
+        -exec test -f {}/CMakeLists.txt \; -printf "%f\n" 2>/dev/null | sort
+}
+
+validate_kernel_ut_operators() {
+    local ops=($1)
+    local available_ops=($(get_available_kernel_ut_operators))
+    local invalid_ops=()
+
+    for op in "${ops[@]}"; do
+        local found=false
+        for avail_op in "${available_ops[@]}"; do
+            if [ "$op" = "$avail_op" ]; then
+                found=true
+                break
+            fi
+        done
+        if [ "$found" = false ]; then
+            invalid_ops+=("$op")
+        fi
+    done
+
+    if [ ${#invalid_ops[@]} -gt 0 ]; then
+        log_error "Invalid kernel UT operators: ${invalid_ops[*]}"
+        log_info "Available kernel UT operators: ${available_ops[*]}"
         exit 1
     fi
 }
@@ -416,6 +464,104 @@ run_tests() {
     fi
 }
 
+run_kernel_ut() {
+    log_info "Running Kernel UT tests (timeout: ${TEST_TIMEOUT}s)..."
+
+    local executables=($(ls ops_tensor_kernel_ut_* 2>/dev/null | grep -v '\.' || true))
+    if [ ${#executables[@]} -eq 0 ]; then
+        log_error "No kernel UT executables found"
+        exit 1
+    fi
+
+    log_info "Found ${#executables[@]} executable(s): ${executables[*]}"
+
+    local failed=0
+    for exe in "${executables[@]}"; do
+        log_info "Running ${exe}..."
+        set +e
+        timeout -k 1s ${TEST_TIMEOUT}s ./${exe} 2>&1
+        local test_result=$?
+        set -e
+
+        if [ $test_result -ge 124 ]; then
+            log_error "${exe} timeout (${TEST_TIMEOUT}s exceeded)"
+            failed=$((failed + 1))
+        elif [ $test_result -ne 0 ]; then
+            log_error "${exe} failed (exit code: $test_result)"
+            failed=$((failed + 1))
+        else
+            log_success "${exe} passed"
+        fi
+    done
+
+    if [ $failed -gt 0 ]; then
+        log_error "${failed}/${#executables[@]} SoC test(s) failed"
+        exit 1
+    else
+        log_success "Kernel UT all SoC tests passed"
+    fi
+}
+
+build_kernel_ut() {
+    log_info "Starting Kernel UT build..."
+
+    local KERNEL_UT_SRC="${SCRIPT_DIR}/tests/ut/op_kernel"
+    local KERNEL_UT_BUILD="${SCRIPT_DIR}/build/kernel_ut"
+
+    mkdir -p "$KERNEL_UT_BUILD"
+    cd "$KERNEL_UT_BUILD"
+
+    [ -f "CMakeCache.txt" ] && rm -f CMakeCache.txt
+
+    local cmake_args=()
+    cmake_args+=(-DASCEND_HOME_PATH="${ASCEND_HOME_PATH}")
+    cmake_args+=(-DOPS_TENSOR_ROOT="${SCRIPT_DIR}")
+
+    if [ "$SOC_EXPLICIT" = true ]; then
+        local _soc_lower=$(echo "${SOC_NAME}" | tr '[:upper:]' '[:lower:]')
+        cmake_args+=(-DKERNEL_UT_SOC="${_soc_lower}")
+    fi
+
+    if [ "$BUILD_OPERATORS" != "all" ]; then
+        cmake_args+=(-DOP_KERNEL_OPS="${BUILD_OPERATORS}")
+        log_info "Kernel UT operators: ${BUILD_OPERATORS}"
+    else
+        log_info "Kernel UT operators: all"
+    fi
+
+    if [ "$SOC_EXPLICIT" = true ]; then
+        log_info "Kernel UT SoC: ${_soc_lower}"
+    else
+        log_info "Kernel UT SoC: all"
+    fi
+
+    cmake_args+=(-DCANN_3RD_LIB_PATH="${CANN_3RD_LIB_PATH}")
+
+    log_info "Configuring Kernel UT CMake..."
+    cmake "${cmake_args[@]}" "$KERNEL_UT_SRC"
+
+    if [ $? -ne 0 ]; then
+        log_error "Kernel UT CMake configuration failed"
+        exit 1
+    fi
+
+    log_info "Compiling Kernel UT with ${THREAD_NUM} threads..."
+    cmake --build . -j${THREAD_NUM} ${VERBOSE}
+
+    if [ $? -ne 0 ]; then
+        log_error "Kernel UT build failed"
+        exit 1
+    fi
+
+    log_success "Kernel UT build succeeded"
+
+    if [ "$RUN_TESTS" = true ]; then
+        run_kernel_ut
+    fi
+
+    cd "$SCRIPT_DIR"
+}
+
 # 解析命令行参数
 parse_arguments() {
     while [[ $# -gt 0 ]]; do
@@ -434,9 +580,9 @@ parse_arguments() {
                 shift
                 ;;
             --soc=*)
-                # 提取 SoC 型号并标准化（支持小写输入）
                 SOC_INPUT="${1#*=}"
                 SOC_NAME=$(normalize_soc_name "${SOC_INPUT}")
+                SOC_EXPLICIT=true
                 shift
                 ;;
             -j*)
@@ -485,6 +631,14 @@ parse_arguments() {
                 CANN_3RD_LIB_PATH="$(realpath ${1#*=})"
                 shift
                 ;;
+            --opkernel)
+                OP_KERNEL_MODE=true
+                shift
+                ;;
+            -u)
+                RUN_TESTS=true
+                shift
+                ;;
             *)
                 log_error "Unknown option: $1"
                 echo ""
@@ -527,13 +681,17 @@ check_dependencies() {
         log_success "g++ is installed ($gcc_version)"
     fi
 
-    # 检查ASC编译器
-    if ! command -v bisheng &> /dev/null; then
-        log_error "bisheng compiler (bisheng) is not installed"
-        missing_deps=$((missing_deps + 1))
+    # 检查ASC编译器（Kernel UT 不需要 bisheng）
+    if [ "$OP_KERNEL_MODE" != true ]; then
+        if ! command -v bisheng &> /dev/null; then
+            log_error "bisheng compiler (bisheng) is not installed"
+            missing_deps=$((missing_deps + 1))
+        else
+            local asc_version=$(bisheng --version | head -n1)
+            log_success "bisheng compiler is installed ($asc_version)"
+        fi
     else
-        local asc_version=$(bisheng --version | head -n1)
-        log_success "bisheng compiler is installed ($asc_version)"
+        log_info "Skipping bisheng compiler check (Kernel UT mode)"
     fi
 
     # 检查Python (用于测试脚本)
@@ -568,6 +726,18 @@ main() {
 
     parse_arguments "$@"
 
+    # --opkernel validation
+    if [ "$OP_KERNEL_MODE" = true ]; then
+        if [ "$RUN_TESTS" != true ]; then
+            log_error "--opkernel requires -u (only --opkernel -u is supported)"
+            exit 1
+        fi
+        if [ "$ENABLE_PACKAGE" = true ]; then
+            log_error "--opkernel cannot be used with --pkg"
+            exit 1
+        fi
+    fi
+
     # 依赖检查
     check_dependencies
 
@@ -580,50 +750,75 @@ main() {
     # 验证算子
     if [ "$BUILD_OPERATORS" != "all" ]; then
         IFS=',' read -ra OPS <<< "$BUILD_OPERATORS"
-        validate_operators "${OPS[*]}"
+        if [ "$OP_KERNEL_MODE" = true ]; then
+            validate_kernel_ut_operators "${OPS[*]}"
+        else
+            validate_operators "${OPS[*]}"
+        fi
     fi
 
     # 显示执行计划
     echo ""
     log_info "========== Build Plan =========="
-    if [ "$BUILD_OPERATORS" = "all" ]; then
-        log_info "Build operators: all"
-    else
-        log_info "Build operators: ${BUILD_OPERATORS}"
-    fi
-
-    if [ "$RUN_TESTS" = true ]; then
-        log_success "Run tests: YES"
-        log_info "Test timeout: ${TEST_TIMEOUT}s"
-        if [ "$BUILD_OPERATORS" != "all" ]; then
-            log_info "Test operators: ${BUILD_OPERATORS}"
+    if [ "$OP_KERNEL_MODE" = true ]; then
+        log_info "Build mode: Kernel UT"
+        if [ "$BUILD_OPERATORS" = "all" ]; then
+            log_info "Kernel UT operators: all"
         else
-            log_info "Test operators: all built operators"
+            log_info "Kernel UT operators: ${BUILD_OPERATORS}"
+        fi
+        if [ "$SOC_EXPLICIT" = true ]; then
+            log_info "Kernel UT SoC: $(echo "${SOC_NAME}" | tr '[:upper:]' '[:lower:]')"
+        else
+            log_info "Kernel UT SoC: all"
+        fi
+        if [ "$RUN_TESTS" = true ]; then
+            log_success "Run Kernel UT tests: YES"
+            log_info "Test timeout: ${TEST_TIMEOUT}s"
+        else
+            log_info "Run Kernel UT tests: NO (build only)"
         fi
     else
-        log_info "Run tests: NO"
-    fi
+        if [ "$BUILD_OPERATORS" = "all" ]; then
+            log_info "Build operators: all"
+        else
+            log_info "Build operators: ${BUILD_OPERATORS}"
+        fi
 
-    if [ "$ENABLE_PACKAGE" = true ]; then
-        log_success "Build package: YES"
-        log_info "Target SoC: ${SOC_NAME}"
-    else
-        log_info "Build package: NO"
+        if [ "$RUN_TESTS" = true ]; then
+            log_success "Run tests: YES"
+            log_info "Test timeout: ${TEST_TIMEOUT}s"
+            if [ "$BUILD_OPERATORS" != "all" ]; then
+                log_info "Test operators: ${BUILD_OPERATORS}"
+            else
+                log_info "Test operators: all built operators"
+            fi
+        else
+            log_info "Run tests: NO"
+        fi
+
+        if [ "$ENABLE_PACKAGE" = true ]; then
+            log_success "Build package: YES"
+            log_info "Target SoC: ${SOC_NAME}"
+        else
+            log_info "Build package: NO"
+        fi
     fi
     echo "=================================="
     echo ""
 
-    # 构建项目
-    build_project
+    if [ "$OP_KERNEL_MODE" = true ]; then
+        build_kernel_ut
+    else
+        build_project
 
-    # 运行测试（如果指定）
-    if [ "$RUN_TESTS" = true ]; then
-        run_tests
-    fi
+        if [ "$RUN_TESTS" = true ]; then
+            run_tests
+        fi
 
-    # 打包（如果指定）
-    if [ "$ENABLE_PACKAGE" = true ]; then
-        build_package
+        if [ "$ENABLE_PACKAGE" = true ]; then
+            build_package
+        fi
     fi
 
     log_success "All operations completed!"

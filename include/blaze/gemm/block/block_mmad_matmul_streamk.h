@@ -24,7 +24,6 @@
 namespace Blaze {
 namespace Gemm {
 namespace Block {
-
 template <
     MatMulL0C2Out FixpOpti_, uint64_t FUSED_OP_TYPE_, class AType_, class LayoutA_, class BType_, class LayoutB_,
     class CType_, class LayoutC_, class BiasType_, class LayoutBias_>
@@ -62,12 +61,12 @@ public:
         GM_ADDR biasGmAddr{nullptr};
         GM_ADDR groupListGmAddr{nullptr};
         GM_ADDR workspaceGmAddr{nullptr};
-        uint64_t ml1{0};
-        uint64_t nl1{0};
-        uint64_t kl1{0};
-        uint32_t ml0{0};
-        uint32_t nl0{0};
-        uint32_t kl0{0};
+        uint64_t mL1{0};
+        uint64_t nL1{0};
+        uint64_t kL1{0};
+        uint32_t mL0{0};
+        uint32_t nL0{0};
+        uint32_t kL0{0};
         uint32_t l1Stages{2};
         uint16_t l0cStages{1};
     };
@@ -81,7 +80,7 @@ public:
             }
             AscendC::SetFlag<AscendC::HardEvent::M_MTE1>(ZERO_FLAG);
             AscendC::SetFlag<AscendC::HardEvent::M_MTE1>(FIRST_FLAG);
-            SetMMLayoutTransform(true);
+            AscendC::SetMMLayoutTransform(true);
         }
     }
 
@@ -93,7 +92,7 @@ public:
             }
             AscendC::WaitFlag<AscendC::HardEvent::M_MTE1>(ZERO_FLAG);
             AscendC::WaitFlag<AscendC::HardEvent::M_MTE1>(FIRST_FLAG);
-            SetMMLayoutTransform(false);
+            AscendC::SetMMLayoutTransform(false);
         }
     }
 
@@ -103,12 +102,12 @@ public:
         n_ = AscendC::Te::Get<DIMENSION_N>(shape);
         k_ = AscendC::Te::Get<DIMENSION_K>(shape);
 
-        mL1_ = params.ml1;
-        nL1_ = params.nl1;
-        kL1_ = params.kl1;
-        baseM_ = params.ml0;
-        baseN_ = params.nl0;
-        baseK_ = params.kl0;
+        mL1_ = params.mL1;
+        nL1_ = params.nL1;
+        kL1_ = params.kL1;
+        baseM_ = params.mL0;
+        baseN_ = params.nL0;
+        baseK_ = params.kL0;
 
         isBias_ = params.biasGmAddr != nullptr;
         l1Stages_ = params.l1Stages;
@@ -133,11 +132,11 @@ public:
         int64_t kCntIndex, bool checkIsSkScene)
     {
         constexpr static uint64_t HALF_L0_SIZE = AscendC::TOTAL_L0A_SIZE / DOUBLE_BUFFER_COUNT;
-        uint64_t curML1 = AscendC::Te::Get<MNK_M>(tileShape);
-        uint64_t curNL1 = AscendC::Te::Get<MNK_N>(tileShape);
+        int64_t curML1 = AscendC::Te::Get<MNK_M>(tileShape);
+        int64_t curNL1 = AscendC::Te::Get<MNK_N>(tileShape);
         uint64_t curSingleCoreK = AscendC::Te::Get<MNK_K>(tileShape);
         uint64_t curKL1Iter = Blaze::Gemm::CeilDiv(curSingleCoreK, kL1_);
-        uint64_t nl1Align = Blaze::Gemm::CeilAlign(curNL1, static_cast<uint64_t>(AscendC::BLOCK_CUBE));
+        uint64_t nL1Align = Blaze::Gemm::CeilAlign(curNL1, static_cast<int64_t>(AscendC::BLOCK_CUBE));
 
         auto layoutL0C =
             AscendC::Te::FrameLayoutFormat<AscendC::Te::NZLayoutPtn, AscendC::Std::Int<C0_SIZE_L0C>>{}(curML1, curNL1);
@@ -150,7 +149,7 @@ public:
 
             AscendC::WaitFlag<AscendC::HardEvent::MTE1_MTE2>(l1BufId);
 
-            TileShape l1Shape{curML1, curNL1, curKL1};
+            TileShape l1Shape{curML1, curNL1, static_cast<int64_t>(curKL1)};
             // Copy L1 From GM
             auto l1TensorTuple = CopyL1FromGM(gmA, gmB, gmBias, l1Shape, l1BufId, iter0, kCntIndex);
             auto tensorAL1 = AscendC::Te::Get<0>(l1TensorTuple);
@@ -171,7 +170,7 @@ public:
 
                 AscendC::WaitFlag<AscendC::HardEvent::M_MTE1>(static_cast<uint16_t>(mte1Flag));
 
-                TileShape l0Shape{curML1, curNL1, curK0};
+                TileShape l0Shape{curML1, curNL1, static_cast<int64_t>(curK0)};
                 bool needBias = NeedProcessBias(iter0, iter1, kCntIndex);
                 // Copy L0 From L1
                 auto l0TensorTuple = CopyL0FromL1(
@@ -270,8 +269,8 @@ private:
             AscendC::WaitFlag<AscendC::HardEvent::MTE2_MTE1>(biasBufId + L1_EVENT_ID_OFFSET);
         }
 
-        uint64_t nl1Align = Blaze::Gemm::CeilAlign(curN, static_cast<uint64_t>(AscendC::BLOCK_CUBE));
-        auto layoutBiasL0 = AscendC::Te::MakeFrameLayout<AscendC::Te::NDExtLayoutPtn>(1UL, nl1Align);
+        uint64_t nL1Align = Blaze::Gemm::CeilAlign(curN, static_cast<uint64_t>(AscendC::BLOCK_CUBE));
+        auto layoutBiasL0 = AscendC::Te::MakeFrameLayout<AscendC::Te::NDExtLayoutPtn>(1UL, nL1Align);
         auto offsetBiasL0 = nL1_ * biasBufId * sizeof(float);
         auto tensorBiasL0 = AscendC::Te::MakeTensor(
             AscendC::Te::MakeMemPtr<AscendC::Te::Location::BIAS, float>(offsetBiasL0), layoutBiasL0);

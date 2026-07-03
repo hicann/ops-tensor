@@ -18,6 +18,14 @@ cmake_minimum_required(VERSION 3.16)
 # 一、基础配置
 ##############################################################################
 
+# 设置三方库路径（fetch_cann_cmake 使用此变量）
+if(NOT CANN_3RD_LIB_PATH)
+    set(CANN_3RD_LIB_PATH ${CMAKE_CURRENT_SOURCE_DIR}/third_party CACHE STRING "CANN third party lib path")
+endif()
+
+# 获取 cann-cmake 模块集合（提供 add_cann_third_party 等宏）
+include(cmake/third_party/fetch_cann_cmake.cmake)
+
 # 项目声明
 project(ops_tensor)
 
@@ -93,6 +101,9 @@ set_source_files_properties(${LIB_TARGET_SOURCE} PROPERTIES LANGUAGE ASC)
 
 # 3.6 编译测试
 if(BUILD_TESTING)
+    # 引入 GTest（通过 cann-cmake 统一管理三方库）
+    add_cann_third_party(gtest)
+
     add_subdirectory(tests)
 endif()
 
