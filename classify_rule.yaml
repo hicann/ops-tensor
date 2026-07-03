@@ -10,8 +10,8 @@ matmul@ops-tensor:
   src:
     release:
       style:
-        - ops/ops-tensor/include/blaze
-        - ops/ops-tensor/docs
+        - ops/ops-tensor/include/blaze/
+        - ops/ops-tensor/docs/
       opensource_style: null
       kernel_style: null
     unrelease:
