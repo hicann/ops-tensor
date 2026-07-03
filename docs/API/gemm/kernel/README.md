@@ -9,6 +9,7 @@
 | [kernel_qbmm_mx_without_batch](./kernel_qbmm_mx_without_batch.md) | MX 量化单 Batch Matmul，裁剪 Batch 广播路径 |
 | [kernel_qgmm_mx_basic](./kernel_qgmm_mx_basic.md) | MX 量化 Grouped Matmul，支持 group list 与 tail split |
 | [kernel_matmul_streamk](./kernel_matmul_streamk.md) | StreamK 矩阵乘 Kernel，AIC+AIV 双核计算，支持 workspace |
+| [kernel_qbmm_streamk](./kernel_qbmm_streamk.md) | MX 量化 StreamK Kernel，支持单 Batch MxFP4/MxFP8 workspace 归约 |
 
 ## 公共框架
 
@@ -36,11 +37,12 @@ KernelMatmul
 | KernelQbmmMx | AIC | 是 | 否 | 量化 Batch Matmul |
 | GemmUniversal | AIC | 是 | 否 | 量化 Grouped Matmul |
 | KernelMatmulStreamK | AIC + AIV | 否 | 是 | 大 K 或 StreamK 场景 |
+| KernelQbmmStreamK | AIC + AIV | 是 | 是 | 量化切 K 场景 Matmul |
 
 ## 使用流程
 
 1. 查看公共框架：[kernel.md](./kernel.md)
-2. 选择具体实现：Basic、QBMM MX、QGMM MX 或 StreamK
+2. 选择具体实现：Basic、QBMM MX、QGMM MX、StreamK 或 QBMM StreamK
 3. 组装 `ProblemShape`、`BlockMmad`、`BlockEpilogue`、`BlockScheduler`
 4. 构造 `Params`
 5. 实例化 Kernel 并调用 `operator()`
