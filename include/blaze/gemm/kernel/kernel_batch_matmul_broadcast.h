@@ -123,9 +123,6 @@ public:
         auto gmBias =
             AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(biasGmAddr_), layoutBias);
 
-        // 使能双页表
-        SetL2Cache(gmA, gmB, params.schParams.l2CacheMode);
-
         uint64_t preBatchIdx = 0;
         int64_t tileNum = bs.GetTileNum();
         int64_t blockNum = AscendC::GetBlockNum();
@@ -178,8 +175,6 @@ public:
                         AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(biasGmAddr_), layoutBias);
                 }
                 preBatchIdx = curBatchIdx_;
-                // 重复MakeTensor后需再次SetL2Cache
-                SetL2Cache(gmA, gmB, params.schParams.l2CacheMode);
             }
             // Block offset
             auto gmBlockA = gmA.Slice(AscendC::MakeCoord(coordM, 0L), AscendC::MakeShape(shapeM, shapeK));
