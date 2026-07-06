@@ -177,6 +177,7 @@ blaze/
 │       │   ├── block_mmad_matmul_basic.h    # Matmul Basic BlockMmad
 │       │   ├── block_mmad_matmul_streamk.h  # Matmul StreamK BlockMmad
 │       │   ├── block_mmad_qbmm_mx.h         # Qbmm MX BlockMmad
+│       │   ├── block_mmad_qbmm_mx_l0c_pingpong.h # L0C PingPong Qbmm MX BlockMmad
 │       │   ├── block_scheduler_matmul_basic.h
 │       │   ├── block_scheduler_matmul_streamk.h
 │       │   └── block_scheduler_qbmm.h

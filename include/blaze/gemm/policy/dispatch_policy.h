@@ -70,6 +70,17 @@ struct GroupedMatmulWithScaleMx {
 };
 
 /**
+ * @struct MatmulWithScaleMxL0CPingpong
+ * @brief Mx matrix multiplication with L0C ping-pong perf schedule.
+ */
+template <uint64_t FullLoadMode_ = 0, bool AtomicAdd_ = false, class ScheduleType_ = KernelMmadWithScaleMx>
+struct MatmulWithScaleMxL0CPingpong {
+    using ScheduleType = ScheduleType_;
+    constexpr static uint64_t fullLoadMode = FullLoadMode_;
+    constexpr static bool isAtomicAdd = AtomicAdd_;
+};
+
+/**
  * @struct MatmulMultiBlockWithStreamK
  * @brief Matrix multiplication split k axis processing structure, no quant, no bias, implemented base on layout
  * @param [in] FixpOpti_: enum, judge if enabling fixp align optimize, default is ON_THE_FLY

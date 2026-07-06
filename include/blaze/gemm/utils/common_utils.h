@@ -25,7 +25,7 @@
 namespace Blaze {
 namespace Gemm {
 constexpr int32_t MATMUL_MNK_ALIGN = 16;
-constexpr int64_t DOUBLE_BUFFER_COUNT = 2LL;
+constexpr uint64_t DOUBLE_BUFFER_COUNT = 2UL;
 constexpr int64_t QUADRUPLE_BUFFER_COUNT = 4LL;
 constexpr int32_t MNK_M = 0;
 constexpr int32_t MNK_N = 1;

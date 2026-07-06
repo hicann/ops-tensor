@@ -8,6 +8,7 @@
 | [block_mmad_matmul_basic](./block_mmad_matmul_basic.md) | 基础矩阵乘 Block，基于 Tensor API，支持 L1/L0 双缓冲 |
 | [block_mmad_qbmm_mx](./block_mmad_qbmm_mx.md) | MX 量化矩阵乘 Block，支持 Scale 因子、MxFP4/MxFP8 量化 |
 | [block_mmad_qgmm_mx](./block_mmad_qgmm_mx.md) | MX 量化 Grouped Matmul Block，支持 group list、ScaleA/ScaleB |
+| [block_mmad_qbmm_mx_l0c_pingpong](./block_mmad_qbmm_mx_l0c_pingpong.md) | MX 量化矩阵乘 L0C PingPong Block，支持 N 方向拆分、Scale 复用和 SplitK 写回控制 |
 | [block_mmad_matmul_streamk](./block_mmad_matmul_streamk.md) | StreamK 矩阵乘 Block，支持 workspace 输出、K 轴切分 |
 
 ### BlockScheduler（任务调度）
@@ -46,6 +47,7 @@ BlockMmad
     │       ├── MatmulMultiBlockBasic (Basic)
     │       ├── MatmulMultiBlockWithStreamK (StreamK)
     │       ├── MatmulWithScaleMx (QBMM MX 量化)
+    │       ├── MatmulWithScaleMxL0CPingpong (QBMM MX L0C PingPong)
     │       └── GroupedMatmulWithScaleMx (QGMM MX 量化)
     ├── 数据类型 (AType, BType, CType, BiasType)
     ├── 布局类型 (LayoutA, LayoutB, LayoutC, LayoutBias)
@@ -63,12 +65,13 @@ BlockMmad
 | BlockMmadStreamK | MatmulMultiBlockWithStreamK | GM 或 workspace | 不支持 | 不支持 | 固定双缓冲 | 固定单缓冲 | 支持 | 无（Kernel 层处理） | StreamK Kernel |
 | BlockMmadMx | MatmulWithScaleMx | GM | MxFP4/MxFP8 | ScaleA + ScaleB | 可配置 (2 或 4) | 可配置 | 支持 | 无 | QBMM MX Kernel |
 | BlockMmadQGmmMx | GroupedMatmulWithScaleMx | GM | MxFP4/MxFP8 | ScaleA + ScaleB | 固定双缓冲 | 可配置 | 支持 | 无 | QGMM MX Kernel |
+| BlockMmadMxL0CPingpong | MatmulWithScaleMxL0CPingpong | GM | MxFP4/MxFP8 | ScaleA + ScaleB | 可配置 (2 或 4) | 固定双缓冲 | 支持 | 无 | QBMM MX L0C PingPong Kernel |
 
 ## 使用流程
 
 1. **查看公共框架**：了解模板参数和核心接口 → [block_mmad.md](./block_mmad.md)
-2. **选择具体实现**：根据 Kernel 类型选择 Basic、StreamK 或 MX
-3. **定义调度策略**：选择 DispatchPolicy（TensorApi、StreamK 或 ScaleMx）
+2. **选择具体实现**：根据 Kernel 类型选择 Basic、StreamK、MX 或 L0C PingPong MX
+3. **定义调度策略**：选择 DispatchPolicy（TensorApi、StreamK、ScaleMx 或 ScaleMxL0CPingpong）
 4. **组装组件**：定义数据类型、布局类型
 5. **初始化**：调用 Init 设置 tile 形状、缓冲策略
 6. **执行计算**：调用 operator 执行矩阵乘
