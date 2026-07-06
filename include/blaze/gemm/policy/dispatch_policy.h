@@ -27,7 +27,9 @@ struct KernelMultiBlockStreamK {}; // Multi-tile transfer with K-axis spliting a
 struct KernelQbmmMultiBlockStreamK {}; // QBMM MX StreamK schedule
 struct KernelMmadMultiBlockBasic {}; // Multi-tile basic
 struct KernelMmadMultiBlockBmmBroadcast {}; // Multi-tile batchMatmul broadcast
-enum class MatMulL0C2Out : std::uint8_t {
+struct KernelMmadMultiBlockAFullLoad {};     // Multi-tile aFullLoad
+enum class MatMulL0C2Out : std::uint8_t
+{
     ON_THE_FLY = 0,
     ND_FIXPIPE_1_1 = 1,
     ND_FIXPIPE_1_2 = 2
@@ -147,6 +149,21 @@ struct MatmulMultiBlockBasicSplitK {
     static constexpr uint64_t fullLoadMode = FullLoadMode_;
     static constexpr bool isSplitSingleCoreK = IsSplitSinglecoreK_;
     static constexpr uint64_t nonContiguousType = NonContiguousType_;
+};
+
+/**
+ * @struct MatmulMultiBlockAFullLoad
+ * @brief Matrix multiplication multi-block structure, no quant, implemented based on Layout
+ * @param [in] FullLoadMode_: mode of full load, default is 0(no full load)
+ * @param [in] FusedOpType_: execute fusion after mmad , default is 0
+ */
+template <
+    uint64_t FullLoadMode_ = A_FULL_LOAD_MODE, uint64_t FusedOpType_ = 0,
+    class KernelSchedule_ = KernelMmadMultiBlockAFullLoad>
+struct MatmulMultiBlockAFullLoad {
+    using ScheduleType = KernelSchedule_;
+    static constexpr uint64_t FULL_LOAD_MODE = FullLoadMode_;
+    static constexpr uint64_t FUSED_OP_TYPE = FusedOpType_;
 };
 
 } // namespace Gemm
