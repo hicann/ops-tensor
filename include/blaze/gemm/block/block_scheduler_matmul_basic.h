@@ -22,7 +22,7 @@ namespace Blaze {
 namespace Gemm {
 namespace Block {
 
-template <class ProblemShape_, int64_t FullLoadMode_ = 0, bool IsNdFormat_ = true>
+template <class ProblemShape_, int64_t FullLoadMode_ = 0, bool IsFp32_ = false, bool IsNdFormat_ = true>
 class BlockSchedulerMatmulBasic {
 public:
     using BlockShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
@@ -225,6 +225,7 @@ private:
     static constexpr uint64_t BLOCK_SIZE_32 = 32UL;
     static constexpr int64_t FullLoadMode = FullLoadMode_;
     static constexpr bool IS_ND_FORMAT = IsNdFormat_;
+    static constexpr bool IS_FP32 = IsFp32_;
 
     int64_t mTileNum_{0};
     int64_t nTileNum_{0};
