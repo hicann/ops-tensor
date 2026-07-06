@@ -26,6 +26,7 @@ struct KernelMmadWithScaleFixpipeQuant {}; // Multi-block with fixpipe quant sca
 struct KernelMultiBlockStreamK {}; // Multi-tile transfer with K-axis spliting and caching
 struct KernelQbmmMultiBlockStreamK {}; // QBMM MX StreamK schedule
 struct KernelMmadMultiBlockBasic {}; // Multi-tile basic
+struct KernelIterBatchBroadcast {}; // Multi-tile batchMatmul broadcast + iterbatch
 struct KernelMmadMultiBlockBmmBroadcast {}; // Multi-tile batchMatmul broadcast
 struct KernelMmadMultiBlockAFullLoad {};     // Multi-tile aFullLoad
 enum class MatMulL0C2Out : std::uint8_t
@@ -130,6 +131,19 @@ struct MatmulMultiBlockBasic {
     constexpr static uint64_t fullLoadMode = FULL_LOAD_MODE_;
     constexpr static uint64_t fusedOpType = FUSED_OP_TYPE_;
     constexpr static uint64_t nonContiguousType = NonContiguousType_;
+};
+
+/**
+ * @struct BatchMatmulIterbatchBroadcast
+ * @brief Matrix multiplication with batch broadcast, no quant, implemented based on Layout
+ * @param [in] ABroadcast: A tensor needs broadcast
+ * @param [in] BBroadcast: B tensor needs broadcast
+ */
+template <bool ABroadcast_, bool BBroadcast_>
+struct MatmulIterBatchBroadcast {
+    using ScheduleType = KernelIterBatchBroadcast;
+    static constexpr bool aBroadcast = ABroadcast_;
+    static constexpr bool bBroadcast = BBroadcast_;
 };
 
 /**

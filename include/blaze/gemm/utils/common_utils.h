@@ -109,6 +109,9 @@ constexpr uint16_t SCALE_BUFFER_FLAG_1 = FIFTH_FLAG;
 constexpr uint16_t M_MTE1_FLAG_0 = FOURTH_FLAG;
 constexpr uint16_t M_MTE1_FLAG_1 = FIFTH_FLAG;
 
+constexpr uint64_t LAST_BATCH_DIM = 3;
+constexpr uint64_t MAX_BATCH_DIM = 4;
+
 enum class QuantMode : uint32_t
 {
     DEFAULT = 0x0U,
