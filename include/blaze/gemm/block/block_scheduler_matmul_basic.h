@@ -22,7 +22,7 @@ namespace Blaze {
 namespace Gemm {
 namespace Block {
 
-template <class ProblemShape_, int64_t FullLoadMode_ = 0, bool IsFp32_ = false, bool IsNdFormat_ = true>
+template <class ProblemShape_, int64_t FullLoadMode_ = 0, bool IsNdFormat_ = true>
 class BlockSchedulerMatmulBasic {
 public:
     using BlockShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
@@ -89,23 +89,6 @@ public:
         sliceM_ = params.sliceM;
         srcNdStride_ = params.srcNdStride;
         isSlice_ = srcNdStride_ != 1 && sliceM_ != 0;
-        blkK_ = k_;
-        int64_t fp32SplitKThreshold = k_ > FP32_K_SWITCH_THRESHOLD ? FP32_SPLIT_K_THRESHOLD2 : FP32_SPLIT_K_THRESHOLD1;
-        // 连续且非全载场景切K
-        if constexpr (IS_FP32 && IS_ND_FORMAT && FullLoadMode == 0) {
-            if (!isSlice_ && !isHf32_ && k_ > fp32SplitKThreshold) {
-                isSplitSingleK_ = true;
-                splitSingleK_ = fp32SplitKThreshold;
-                if (k_ % fp32SplitKThreshold == 0) {
-                    splitSingleKRound_ = k_ / fp32SplitKThreshold;
-                    splitSingleKTail_ = fp32SplitKThreshold;
-                } else {
-                    splitSingleKRound_ = CeilDiv(k_, fp32SplitKThreshold) - 1;
-                    splitSingleKTail_ = k_ % splitSingleK_ + splitSingleK_;
-                }
-            }
-        }
-
         if (batch_ == 1) {
             mTailCnt_ = params.mTailCnt;
             nTailCnt_ = params.nTailCnt;
@@ -139,7 +122,7 @@ public:
 
     template <bool TransB_ = false, class B_T>
     __aicore__ inline BlockL1L0Shape GetBlockShape(
-        int64_t tileIdx, int64_t mOffset = 0, int64_t nOffset = 0, int64_t kOffset = 0)
+        int64_t tileIdx, int64_t mOffset = 0, int64_t nOffset = 0)
     {
         UpdateMNTileIdx(tileIdx);
         int64_t blkM = mL1_;
@@ -156,17 +139,13 @@ public:
         if (mTileIdx_ >= mL1NormCnt_) {
             blkM = mTileIdx_ == (mTileNum_ - 1) ? mL1TailLast_ : mL1TailMain_;
         }
-        if (isSplitSingleK_) {
-            splitSingleKIdx_ = CeilDiv(kOffset, splitSingleK_);
-            blkK_ = splitSingleKIdx_ == (splitSingleKRound_ - 1) ? splitSingleKTail_ : splitSingleK_;
-        }
         int64_t mL0 = blkM;
         int64_t nL0 = blkN;
         if (tileIdx / blockNum_ != (perCoreBlockNum_ - 1) || tailCnt_ == 1) {
             // mL1, nL1, k, batch, mL0, nL0
             mL0 = AscendC::Std::min(AscendC::Std::min(baseM_, blkM), blkM - mOffset);
             nL0 = AscendC::Std::min(AscendC::Std::min(baseN_, blkN), blkN - nOffset);
-            return {blkM, blkN, blkK_, batch_, mL0, nL0};
+            return {blkM, blkN, k_, batch_, mL0, nL0};
         }
         // SplitM and SplitN
         int64_t splitBlkM = CeilDiv(blkM, mTailCnt_);
@@ -183,13 +162,13 @@ public:
         mSplitOffset_ = mSplitIdx * splitBlkM;
         nSplitOffset_ = nSplitIdx * splitBlkN;
         if (mSplitOffset_ >= blkM || nSplitOffset_ >= blkN) {
-            return {0, 0, blkK_, batch_, 0, 0};
+            return {0, 0, k_, batch_, 0, 0};
         }
         splitBlkM = AscendC::Std::min(blkM - mSplitOffset_, splitBlkM);
         splitBlkN = AscendC::Std::min(blkN - nSplitOffset_, splitBlkN);
         mL0 = AscendC::Std::min(AscendC::Std::min(baseM_, splitBlkM), splitBlkM - mOffset);
         nL0 = AscendC::Std::min(AscendC::Std::min(baseN_, splitBlkN), splitBlkN - nOffset);
-        return {splitBlkM, splitBlkN, blkK_, batch_, mL0, nL0};
+        return {splitBlkM, splitBlkN, k_, batch_, mL0, nL0};
     }
 
     __aicore__ inline BlockCoord GetBlockCoord(int tileIdx)
@@ -245,11 +224,7 @@ private:
     static constexpr uint64_t BLOCK_SIZE_16 = 16UL;
     static constexpr uint64_t BLOCK_SIZE_32 = 32UL;
     static constexpr int64_t FullLoadMode = FullLoadMode_;
-    static constexpr bool IS_FP32 = IsFp32_;
     static constexpr bool IS_ND_FORMAT = IsNdFormat_;
-    static constexpr int64_t FP32_K_SWITCH_THRESHOLD = 268435456; // 1024 * 32 * 8192
-    static constexpr int64_t FP32_SPLIT_K_THRESHOLD1 = 1024;
-    static constexpr int64_t FP32_SPLIT_K_THRESHOLD2 = 8192;
 
     int64_t mTileNum_{0};
     int64_t nTileNum_{0};
@@ -271,16 +246,10 @@ private:
     int64_t tailWindow_{1};
     int64_t mTileIdx_{1};
     int64_t nTileIdx_{1};
-    int64_t splitSingleKIdx_{0};
     int64_t lastTileIdx_{-1};
     int64_t nSplitOffset_{0};
     int64_t mSplitOffset_{0};
     bool isSlice_{false};
-    bool isSplitSingleK_{false};
-    int64_t blkK_{0};
-    int64_t splitSingleKRound_{0};
-    int64_t splitSingleK_{0};
-    int64_t splitSingleKTail_{0};
     int64_t mL1_{0};
     int64_t nL1_{0};
     int64_t kL1_{0};

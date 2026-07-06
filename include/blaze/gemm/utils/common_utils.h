@@ -38,6 +38,8 @@ constexpr int32_t EVEN_NUMBER = 2;
 static constexpr uint64_t A_FULL_LOAD_MODE = 1UL;
 static constexpr uint64_t B_FULL_LOAD_MODE = 2UL;
 static constexpr uint64_t NONE_FULL_LOAD_MODE = 0UL;
+constexpr bool ENABLE_SPLIT_SINGLE_CORE_K = true;
+constexpr bool NONE_SPLIT_SINGLE_CORE_K = false;
 
 static constexpr int64_t WINDOW_LEN = 4UL;
 

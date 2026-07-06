@@ -75,18 +75,36 @@ struct GroupedMatmulWithScaleMx {
  * @param [in] FixpOpti_: enum, judge if enabling fixp align optimize, default is ON_THE_FLY
  * @param [in] FUSED_OP_TYPE_: execute fusion after mmad , default is 0
  */
-template <MatMulL0C2Out FixpOpti_ = MatMulL0C2Out::ON_THE_FLY, uint64_t FUSED_OP_TYPE_ = 0>
+template <
+    MatMulL0C2Out FixpOpti_ = MatMulL0C2Out::ON_THE_FLY, uint64_t FUSED_OP_TYPE_ = 0,
+    class KernelSchedule_ = KernelMultiBlockStreamK>
 struct MatmulMultiBlockWithStreamK {
-    using ScheduleType = KernelMultiBlockStreamK;
+    using ScheduleType = KernelSchedule_;
     constexpr static bool enableInputDataLenCheck = false;
     constexpr static uint64_t fusedOpType = FUSED_OP_TYPE_;
     constexpr static MatMulL0C2Out fixpOpti = FixpOpti_;
 };
 
 /**
+ * @struct MatmulMultiBlockWithStreamKSplitK
+ * @brief Matrix multiplication split k axis processing structure, no quant, no bias, implemented base on layout
+ * @param [in] FixpOpti_: enum, judge if enabling fixp align optimize, default is ON_THE_FLY
+ * @param [in] IsSplitSinglecoreK_: indicate whether splited singlecorek is enabled，default is true(split single
+ * core k)
+ */
+template <
+    MatMulL0C2Out FixpOpti_ = MatMulL0C2Out::ON_THE_FLY, bool IsSplitSinglecoreK_ = true,
+    class KernelSchedule_ = KernelMultiBlockStreamK>
+struct MatmulMultiBlockWithStreamKSplitK {
+    using ScheduleType = KernelSchedule_;
+    static constexpr MatMulL0C2Out fixpOpti = FixpOpti_;
+    static constexpr bool isSplitSingleCoreK = IsSplitSinglecoreK_;
+};
+
+/**
  * @struct MatmulMultiBlockBasic
  * @brief Matrix multiplication multi-block structure, no quant, implemented based on Layout
- * @param [in] FULL_LOAD_MODE: mode of full load, default is 0(no full load)
+ * @param [in] FULL_LOAD_MODE_: mode of full load, default is 0(no full load)
  * @param [in] FUSED_OP_TYPE_: execute fusion after mmad , default is 0
  * @param [in] KernelSchedule_: mmad dispatch policy
  * @param [in] NonContiguousType_: matmul support non-contiguous scene such as: slice, transpose
@@ -99,6 +117,25 @@ struct MatmulMultiBlockBasic {
     constexpr static uint64_t fullLoadMode = FULL_LOAD_MODE_;
     constexpr static uint64_t fusedOpType = FUSED_OP_TYPE_;
     constexpr static uint64_t nonContiguousType = NonContiguousType_;
+};
+
+/**
+ * @struct MatmulMultiBlockBasicSplitK
+ * @brief Matrix multiplication multi-block structure, no quant, implemented based on Layout
+ * @param [in] FullLoadMode_: mode of full load, default is 0(no full load)
+ * @param [in] IsSplitSinglecoreK_: indicate whether splited singlecorek is enabled，default is true(split single
+ * core k)
+ * @param [in] KernelSchedule_: mmad dispatch policy
+ * @param [in] NonContiguousType_: 0 indicates support for continuity
+ */
+template <
+    uint64_t FullLoadMode_ = 0, bool IsSplitSinglecoreK_ = true,
+    class KernelSchedule_ = KernelMmadMultiBlockBasic, uint64_t NonContiguousType_ = 0>
+struct MatmulMultiBlockBasicSplitK {
+    using ScheduleType = KernelSchedule_;
+    static constexpr uint64_t fullLoadMode = FullLoadMode_;
+    static constexpr bool isSplitSingleCoreK = IsSplitSinglecoreK_;
+    static constexpr uint64_t nonContiguousType = NonContiguousType_;
 };
 
 } // namespace Gemm
