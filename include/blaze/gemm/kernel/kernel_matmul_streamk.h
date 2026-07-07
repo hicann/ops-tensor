@@ -120,9 +120,6 @@ public:
             auto gmBias =
                 AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(biasGmAddr_), layoutBias);
 
-            // Set L2 cache
-            SetL2Cache(gmA, gmB, params.schParams.l2CacheMode);
-
             for (int64_t tileIdx = curBlockIdx; tileIdx < tileNum; tileIdx += usedCoreNum) {
                 int64_t tmpTileIdx = tileIdx;
                 if (!bs.CheckIsSkScene(0)) { // SK Preload in DP+SK
@@ -231,17 +228,6 @@ private:
         cGmAddr_ = reinterpret_cast<__gm__ CType*>(blockMmadParams.cGmAddr);
         workspaceGmAddr_ = reinterpret_cast<__gm__ float*>(blockMmadParams.workspaceGmAddr);
         biasGmAddr_ = reinterpret_cast<__gm__ BiasType*>(blockMmadParams.biasGmAddr);
-    }
-
-    template <typename TensorA, typename TensorB>
-    __aicore__ inline void SetL2Cache(TensorA& gmA, TensorB& gmB, uint32_t l2CacheMode)
-    {
-        if (l2CacheMode == ALL_L2_CACHE_DISABLE || l2CacheMode == B_L2_CACHE_DISABLE) {
-            gmB.SetL2CacheHint(AscendC::Te::CacheMode::CACHE_MODE_DISABLE);
-        }
-        if (l2CacheMode == ALL_L2_CACHE_DISABLE || l2CacheMode == A_L2_CACHE_DISABLE) {
-            gmA.SetL2CacheHint(AscendC::Te::CacheMode::CACHE_MODE_DISABLE);
-        }
     }
 
 private:
