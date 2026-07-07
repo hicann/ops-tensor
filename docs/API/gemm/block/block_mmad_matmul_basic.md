@@ -65,22 +65,6 @@ SetMMLayoutTransform(false); // 关闭
 | BiasType_ | class | Bias 数据类型 |
 | LayoutBias_ | class | Bias 布局类型 |
 
-## 类型别名
-
-| 类型 | 说明 |
-|------|------|
-| AType | A 矩阵数据类型 |
-| BType | B 矩阵数据类型 |
-| CType | C 矩阵输出类型 |
-| BiasType | Bias 数据类型 |
-| LayoutA | A 矩阵布局类型 |
-| LayoutB | B 矩阵布局类型 |
-| LayoutC | C 矩阵布局类型 |
-| LayoutBias | Bias 布局类型 |
-| DispatchPolicy | 调度策略类型 |
-| TupleShape | 问题规模：`Shape<int64_t, int64_t, int64_t, int64_t>` |
-| TupleL1L0Shape | Tile 形状：`Shape<int64_t, int64_t, int64_t, int64_t, int64_t, int64_t>` |
-| TileShape | Tile 形状：`Shape<int64_t, int64_t, int64_t>` |
 
 ## 特殊静态常量
 
@@ -139,6 +123,47 @@ struct Params {
 |------|------|------|--------|
 | l1Stages | uint32_t | L1 缓冲数量 | 1、2 或 4（默认 1） |
 | l0cStages | uint16_t | L0C 缓冲数量 | 1 或 2（默认 1） |
+
+## 特殊约束
+
+### 调度策略限制
+仅支持以下调度策略：
+- `MatmulMultiBlockBasic<>`（非全载模式）
+- `MatmulMultiBlockBasic<B_FULL_LOAD_MODE>`（B 矩阵全载）
+- `MatmulMultiBlockBasic<A_FULL_LOAD_MODE>`（A 矩阵全载）
+
+不支持 `MatmulMultiBlockWithStreamK` 等其他调度策略。
+
+### 计算模式
+仅支持 AIC 模式，不支持 AIV 计算。
+
+### 输出目标
+结果直接输出到 GM，不支持 workspace。
+
+### Layout Trait
+使用 `IsTrans` 和 `IsWeightNz` traits 判断 Layout：
+- `IsTrans<LayoutA>::value`：判断 A 矩阵是否转置
+- `IsTrans<LayoutB>::value`：判断 B 矩阵是否转置
+- `IsWeightNz<LayoutB>::value`：判断 B 矩阵是否为 NZ 格式
+
+### L1 缓冲布局
+```
+L1 空间布局（2 buffer）：
+AL1Ping|BL1Ping|BiasPing|AL1Pong|BL1Pong|BiasPong
+
+L1 空间布局（4 buffer）：
+AL1Buf0|BL1Buf0|BiasBuf0|AL1Buf1|BL1Buf1|BiasBuf1|AL1Buf2|BL1Buf2|BiasBuf2|AL1Buf3|BL1Buf3|BiasBuf3
+```
+
+### MM Layout Transform
+构造函数和析构函数中设置 MM Layout Transform：
+```
+// 构造函数（ASCEND_IS_NOT_AIV）
+SetMMLayoutTransform(true);  // 适配 Fixpipe 输出
+
+// 析构函数（ASCEND_IS_NOT_AIV）
+SetMMLayoutTransform(false); // 关闭
+```
 
 ## 公共成员方法（Public API）
 
@@ -325,10 +350,7 @@ Mmad 计算：C += A × B + Bias（首次迭代）
 - **nL1/baseN 成倍数关系**：减少尾块开销
 - **kL1/baseK 成倍数关系**：减少尾块开销
 
-### 全载模式选择
-- **非全载模式（FULL_LOAD_MODE=0）**：通用场景，支持 SplitK
-- **B 全载模式（FULL_LOAD_MODE=2）**：B 矩阵较小，可完全载入 L1
-- **A 全载模式（FULL_LOAD_MODE=1）**：A 矩阵较小，可完全载入 L1
+
 
 ### NZ 格式优化
 - **权重矩阵（B）**：优先使用 NZ 格式，提升 L1/L0 搬运效率

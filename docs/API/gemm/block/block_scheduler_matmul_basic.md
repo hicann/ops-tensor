@@ -40,11 +40,11 @@ struct Params {
     uint32_t nBaseTailSplitCnt = 1;                          // N 轴 L1 尾块切分数量
     uint32_t mTailMain = 1;                                  // M 轴 L1 尾块主尺寸
     uint32_t nTailMain = 1;                                  // N 轴 L1 尾块主尺寸
-    uint8_t isHf32 = 0;                                      // ub默认不开db为1
-    uint32_t l2CacheMode = L2_CACHE_DEFAULT; // L2Cache默认使能
-    uint32_t sliceM;                                         // 鞧连续场景m轴
-    uint32_t srcNdStride;                                    // 鞧连续场景m轴stride
-    uint32_t innerBatch = 1;                                 // 鞧连续transpose场景内轴batch值
+    uint8_t isHf32 = 0;                                      // HF32模式标志 (0=关闭, 1=开启)
+    uint32_t l2CacheMode = L2_CACHE_DEFAULT;                 // L2Cache默认使能
+    uint32_t sliceM;                                         // 非连续场景m轴
+    uint32_t srcNdStride;                                    // 非连续场景m轴stride
+    uint32_t innerBatch = 1;                                 // 非连续transpose场景内轴batch值
 };
 ```
 
@@ -143,9 +143,9 @@ mTailCnt=2, nTailCnt=2  // 尾块切为 4 份，4 个 Block 并行处理
 | 常量 | 说明 | 适用场景 |
 |------|------|----------|
 | L2_CACHE_DEFAULT | L2 Cache 使能（默认） | 通用场景 |
-| A_L2_CACHE_DISABLE | 禁用 A 矩阵 L2 Cache | A 矩阵复用少 |
-| B_L2_CACHE_DISABLE | 禁用 B 矩阵 L2 Cache | B 矩阵复用少 |
-| ALL_L2_CACHE_DISABLE | 禁用所有 L2 Cache | 大矩阵场景 |
+| A_L2_CACHE_DISABLE | 禁用 A 矩阵 L2 Cache | A 矩阵复用少的场景, 如A全载 |
+| B_L2_CACHE_DISABLE | 禁用 B 矩阵 L2 Cache | B 矩阵复用少, 如B全载 |
+| ALL_L2_CACHE_DISABLE | 禁用所有 L2 Cache | 大矩阵场景, 避免L2容量竞争和替换开销 |
 
 #### 7. 非连续场景参数 (sliceM, srcNdStride, innerBatch)
 
@@ -154,9 +154,9 @@ mTailCnt=2, nTailCnt=2  // 尾块切为 4 份，4 个 Block 并行处理
 **传值建议**：
 | 参数 | 说明 | 使用场景 |
 |------|------|----------|
-| sliceM | M 轴 slice 尺寸 | 非 ND 连续格式 |
-| srcNdStride | A 矩阵 GM layout 第一维 stride | 非 ND 连续格式 |
-| innerBatch | 非 transpose 场景内轴 batch | transpose 场景 |
+| sliceM | 非连续 Slice 场景 M 轴切分大小  | 非连续 Slice 场景 |
+| srcNdStride | 非连续 Slice 场景 M 轴 stride |  非连续 Slice 场景 |
+| innerBatch |非连续 Transpose 场景内轴 batch | 非连续 Transpose 场景 |
 
 **判断逻辑**：
 ```
@@ -387,5 +387,4 @@ IsFp32_ && !isHf32_ && IsNdFormat_ && k_ > fp32SplitKThreshold && FullLoadMode_ 
 | Basic Kernel | FullLoadMode=0，默认配置 |
 | FP32 大 K | isFp32=true，启用 SplitK |
 | 尾块优化 | batch=1，设置 mTailCnt/nTailCnt |
-| 小矩阵 | 禁用 L2 Cache，减小 tile 尺寸 |
-| 大矩阵 | 启用 L2 Cache（默认），增大 tile 尺寸 |
+| 大矩阵 | 建议禁用 L2 Cache 避免缓存污染 |

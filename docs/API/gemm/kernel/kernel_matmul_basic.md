@@ -29,30 +29,7 @@ if ASCEND_IS_AIV {
 默认路径不支持带 stride 的非连续输入（仅支持连续 ND/NZ layout）。
 当 `DispatchPolicy` 的 `NonContiguousType_` 设置为 `NON_CONTIGUOUS_TYPE_SLICE` 时，支持 A 矩阵 ND slice 非连续输入；该路径通过 `NDSliceLayoutPtn` 构造三维 GM layout，并使用 `CopySliceGM2L1` 完成 A 矩阵 GM->L1 搬运。
 
-### FP32 大 K
-不支持 FP32 大 K 场景（K 轴切分受硬件限制），K 值过大时需使用 StreamK Kernel。
-
-## 类型别名
-
-| 类型 | 说明 |
-|------|------|
-| BlockMmad | BlockMmadMatmulBasic 组件 |
-| ProblemShape | 问题规模类型：`Shape<int64_t, int64_t, int64_t, int64_t>` |
-| BlockScheduler | BlockSchedulerMatmulBasic 组件 |
-| BlockEpilogue | BlockEpilogueEmpty 组件 |
-| BlockMmadParams | BlockMmad::Params |
-| BlockEpilogueParams | BlockEpilogue::Params |
-| BlockSchedulerParams | BlockScheduler::Params |
-| AType | A 矩阵数据类型 |
-| BType | B 矩阵数据类型 |
-| CType | C 矩阵输出类型 |
-| BiasType | Bias 数据类型 |
-| LayoutA | A 矩阵布局类型 |
-| LayoutB | B 矩阵布局类型 |
-| LayoutC | C 矩阵布局类型 |
-| LayoutBias | Bias 布局类型 |
-
-## 静态常量
+## 特殊静态常量
 
 | 常量 | 说明 |
 |------|------|

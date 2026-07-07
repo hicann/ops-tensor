@@ -38,11 +38,6 @@ set(VERSION_INFO_INSTALL_DIR        ops_tensor)
 # 输出路径
 set(CMAKE_INSTALL_PREFIX ${CMAKE_SOURCE_DIR}/build_out)
 
-# 打包相关路径
-set(SCRIPT_PACKAGE_DIR ${CMAKE_SOURCE_DIR}/scripts/package)
-set(COMMON_SCRIPT_DIR ${SCRIPT_PACKAGE_DIR}/common)
-set(OPS_TENSOR_SCRIPT_DIR ${SCRIPT_PACKAGE_DIR}/ops_tensor/scripts)
-
 message(STATUS "Package: ${PKG_NAME}")
 message(STATUS "Architecture: ${ARCH}")
 message(STATUS "Kernel Arch: ${KERNEL_ARCH}")

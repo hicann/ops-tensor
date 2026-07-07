@@ -6,52 +6,22 @@ MX 量化矩阵乘 Block，基于 Tensor API 实现，仅支持 AIC 计算。支
 
 **继承自**：[Block Mmad 基础框架](./block_mmad.md)
 
-## 特殊约束
+## 模板参数
 
-### 调度策略限制
-仅支持以下调度策略：
-- `MatmulWithScaleMx<>`（Batch 路径非全载模式）
-- `MatmulWithScaleMx<A_FULL_LOAD_MODE>`（Batch 路径 A 矩阵全载模式）
-- `MatmulWithScaleMx<0, false, KernelMmadWithScaleMxWithoutBatch>`（单 Batch 标量路径）
-- `MatmulWithScaleMx<A_FULL_LOAD_MODE, false, KernelMmadWithScaleMxWithoutBatch>`（单 Batch A 矩阵全载模式）
-
-`MatmulWithScaleMx` 第三个模板参数为 `ScheduleType`，默认 `KernelMmadWithScaleMx`；单 Batch 标量路径需显式传 `KernelMmadWithScaleMxWithoutBatch`。
-
-不支持 `MatmulMultiBlockBasic` 或 `MatmulMultiBlockWithStreamK`。
-
-### 量化数据类型支持
-| 数据类型 | 说明 | C0_SIZE |
-|---------|------|---------|
-| fp4x2_e2m1_t | MxFP4 E2M1 格式 | 64 |
-| fp4x2_e1m2_t | MxFP4 E1M2 格式 | 64 |
-| fp8_e5m2_t | MxFP8 E5M2 格式 | 32 |
-| fp8_e4m3fn_t | MxFP8 E4M3FN 格式 | 32 |
-
-说明：C0_SIZE 用于 L1/L0 layout 对齐，FP4 需要更大的对齐。
-
-### Scale 因子类型
-Scale 因子固定为 `fp8_e8m0_t`（E8M0 浮点格式），用于量化数据的反量化。
-
-### 计算模式
-仅支持 AIC 模式，不支持 AIV 计算。
-
-### 输出目标
-结果直接输出到 GM，不支持 workspace。
-
-### MXFP 对齐要求
-- K 轴需对齐到 `MXFP_DIVISOR_SIZE`（64）
-- Scale K 轴需对齐到 `MXFP_DIVISOR_SIZE × MXFP_MULTI_BASE_SIZE`（128）
-- L0C 布局固定使用 NZLayoutPtn
-
-### Mmad 计算模式
-使用 `MmadTraitMX` trait，支持量化数据的自动反量化：
-```
-AscendC::Te::Mmad(
-    AscendC::Te::MmadAtom<
-        AscendC::Te::MmadTraits<
-            AscendC::Te::MmadOperation,
-            AscendC::Te::MmadTraitMX>>{},
-    tensorL0C, tensorAL0, tensorBL0);
+### 模板参数列表
+```cpp
+template <
+    typename DispatchPolicy,    // 调度策略
+    typename AType,             // A 矩阵数据类型（量化类型）
+    typename LayoutA,           // A 矩阵布局
+    typename BType,             // B 矩阵数据类型（量化类型）
+    typename LayoutB,           // B 矩阵布局
+    typename CType,             // C 矩阵计算类型（输出类型）
+    typename LayoutC,           // C 矩阵布局
+    typename BiasType,          // Bias 数据类型
+    typename LayoutBias         // Bias 布局
+>
+class BlockMmad;
 ```
 
 ## 特殊静态常量
@@ -105,6 +75,54 @@ struct TileL1L0Param {
     uint64_t curGmKL1 = 0;    // A/B 矩阵当前 GM K 维大小
     uint64_t curPadKL1 = 0;   // pad to 64 align
 };
+```
+
+## 特殊约束
+
+### 调度策略限制
+仅支持以下调度策略：
+- `MatmulWithScaleMx<>`（Batch 路径非全载模式）
+- `MatmulWithScaleMx<A_FULL_LOAD_MODE>`（Batch 路径 A 矩阵全载模式）
+- `MatmulWithScaleMx<0, false, KernelMmadWithScaleMxWithoutBatch>`（单 Batch 标量路径）
+- `MatmulWithScaleMx<A_FULL_LOAD_MODE, false, KernelMmadWithScaleMxWithoutBatch>`（单 Batch A 矩阵全载模式）
+
+`MatmulWithScaleMx` 第三个模板参数为 `ScheduleType`，默认 `KernelMmadWithScaleMx`；单 Batch 标量路径需显式传 `KernelMmadWithScaleMxWithoutBatch`。
+
+不支持 `MatmulMultiBlockBasic` 或 `MatmulMultiBlockWithStreamK`。
+
+### 量化数据类型支持
+| 数据类型 | 说明 | C0_SIZE |
+|---------|------|---------|
+| fp4x2_e2m1_t | MxFP4 E2M1 格式 | 64 |
+| fp4x2_e1m2_t | MxFP4 E1M2 格式 | 64 |
+| fp8_e5m2_t | MxFP8 E5M2 格式 | 32 |
+| fp8_e4m3fn_t | MxFP8 E4M3FN 格式 | 32 |
+
+说明：C0_SIZE 用于 L1/L0 layout 对齐，FP4 需要更大的对齐。
+
+### Scale 因子类型
+Scale 因子固定为 `fp8_e8m0_t`（E8M0 浮点格式），用于量化数据的反量化。
+
+### 计算模式
+仅支持 AIC 模式，不支持 AIV 计算。
+
+### 输出目标
+结果直接输出到 GM，不支持 workspace。
+
+### MXFP 对齐要求
+- K 轴需对齐到 `MXFP_DIVISOR_SIZE`（64）
+- Scale K 轴需对齐到 `MXFP_DIVISOR_SIZE × MXFP_MULTI_BASE_SIZE`（128）
+- L0C 布局固定使用 NZLayoutPtn
+
+### Mmad 计算模式
+使用 `MmadTraitMX` trait，支持量化数据的自动反量化：
+```
+AscendC::Te::Mmad(
+    AscendC::Te::MmadAtom<
+        AscendC::Te::MmadTraits<
+            AscendC::Te::MmadOperation,
+            AscendC::Te::MmadTraitMX>>{},
+    tensorL0C, tensorAL0, tensorBL0);
 ```
 
 ## 特殊成员方法

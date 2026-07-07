@@ -1,105 +1,170 @@
-# 算子开发快速入门：基于ops-tensor仓
+# ops-tensor 快速入门
 
-本指南旨在帮助你快速上手基于CANN和`ops-tensor`算子仓的使用，最简化地完成环境安装、编译部署及算子运行。
+## 介绍
 
-## 一、环境安装
+ops-tensor 内置了 **Blaze**（Basic Linear Algebra optimiZed Engine）基础线性代数加速引擎，为融合算子开发提供高性能 MM 公共能力，构建 NPU 通用高性能 CUBE 底座。
 
-### 1. 有环境场景：Docker安装
+环境搭建一般分为如下场景，您可以按需安装：
 
-Docker安装环境以Atlas A2产品（910B）为例。
+- **编译态**：针对仅编译不运行本项目的场景，只需安装前置依赖和 CANN toolkit 包。
+- **运行态**：针对运行本项目的场景（编译运行或纯运行），除了安装前置依赖和 CANN toolkit 包，还需安装驱动与固件、CANN ops 包。
 
-**前提条件**：
-* **Docker环境**：宿主机已安装Docker引擎（版本1.11.2及以上）。
-* **驱动与固件**：宿主机已安装昇腾NPU的[驱动与固件](https://www.hiascend.com/hardware/firmware-drivers/community?product=1&model=30&cann=8.0.RC3.alpha002&driver=1.0.26.alpha)Ascend HDK 24.1.0版本以上。安装指导详见《[CANN 软件安装指南](https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/850alpha002/softwareinst/instg/instg_0005.html?Mode=PmIns&OS=openEuler&Software=cannToolKit)》。
-    > **注意**：使用`npu-smi info`查看对应的驱动与固件版本。
+## 环境准备
 
-#### 下载镜像
+### 系统要求
 
-拉取已预集成CANN软件包及`ops-tensor`所需依赖的镜像。
+ops-tensor 支持源码编译，进行源码编译前，请确保如下基础依赖、NPU 驱动和固件已安装。
 
-* **操作步骤**：
-    1. 以root用户登录宿主机。
-    2. 执行拉取命令（请根据你的宿主机架构选择）：
-        * ARM架构：
-        ```bash
-        docker pull --platform=arm64 swr.cn-south-1.myhuaweicloud.com/ascendhub/cann:8.5.0-910b-ubuntu22.04-py3.10-ops
-        ```
-        * X86架构：
-        ```bash
-        docker pull --platform=amd64 swr.cn-south-1.myhuaweicloud.com/ascendhub/cann:8.5.0-910b-ubuntu22.04-py3.10-ops
-        ```
-        > **注意**：正常网速下，镜像下载时间约为5-10分钟。
+1. **安装依赖**
 
-#### Docker运行
+   本项目源码编译用到的依赖如下，请注意版本要求。
 
-请根据以下命令运行docker：
+   - python >= 3.7.0（建议版本 <= 3.10）
+   - gcc >= 7.3.0
+   - cmake >= 3.16.0
+   - make
+   - googletest（仅执行 Kernel UT 时依赖，建议版本 [release-1.11.0](https://github.com/google/googletest/releases/tag/release-1.11.0)）
+
+2. **安装驱动与固件（运行态依赖）**
+
+   运行算子时必须安装驱动与固件，若仅编译算子，可跳过本操作。
+
+   单击[下载链接](https://www.hiascend.com/hardware/firmware-drivers/community)，根据实际产品型号和环境架构，获取对应的 `Ascend-hdk-<chip_type>-npu-driver_<version>_linux-<arch>.run`、`Ascend-hdk-<chip_type>-npu-firmware_<version>.run` 包。
+
+   安装指导详见《[CANN 软件安装指南](https://www.hiascend.com/document/redirect/CannCommunityInstSoftware)》中"安装指南 > 安装NPU驱动和固件"。
+
+### 支持的产品
+
+- Ascend 950PR / Ascend 950DT
+
+### 安装 CANN 包
+
+#### 1. 下载软件包
+
+单击[下载链接](https://ascend.devcloud.huaweicloud.com/artifactory/cann-run-mirror/software/master/)，选择最新发布日期对应的目录，根据实际产品型号和环境架构，获取 `Ascend-cann-toolkit_${cann_version}_linux-${arch}.run`。
+
+#### 2. 安装软件包
+
+**安装社区版 CANN Toolkit 包**
 
 ```bash
-docker run --name cann_container --device /dev/davinci0 --device /dev/davinci_manager --device /dev/devmm_svm --device /dev/hisi_hdc -v /usr/local/dcmi:/usr/local/dcmi -v /usr/local/bin/npu-smi:/usr/local/bin/npu-smi -v /usr/local/Ascend/driver/lib64/:/usr/local/Ascend/driver/lib64/ -v /usr/local/Ascend/driver/version.info:/usr/local/Ascend/driver/version.info -v /etc/ascend_install.info:/etc/ascend_install.info -it swr.cn-south-1.myhuaweicloud.com/ascendhub/cann:8.5.0-910b-ubuntu22.04-py3.10-ops bash
+# 需要确保安装目录权限至少为 755
+# 确保安装包具有可执行权限
+chmod +x Ascend-cann-toolkit_${cann_version}_linux-${arch}.run
+
+# 安装命令
+./Ascend-cann-toolkit_${cann_version}_linux-${arch}.run --install --force --install-path=${install_path}
 ```
 
-#### 检查环境
+- `${cann_version}`：表示 CANN 包版本号。
+- `${arch}`：表示 CPU 架构，如 `aarch64`、`x86_64`。
+- `${install_path}`：表示指定安装路径，默认安装在 `/usr/local/Ascend` 目录。
 
-进入容器后，验证环境和驱动是否正常。
+## 环境验证
 
-* **检查NPU设备**：
+安装完 CANN 包或进入 Docker 容器后，需验证环境和驱动是否正常。
+
+- **检查 NPU 设备**（仿真执行，跳过此步骤）：
     ```bash
+    # 运行 npu-smi，若能正常显示设备信息，则驱动正常
     npu-smi info
     ```
-* **检查CANN安装**：
+
+- **检查 CANN 安装**：
     ```bash
-    cat /usr/local/Ascend/ascend-toolkit/latest/opp/version.info
+    # 查看 CANN Toolkit 版本信息（非 root 用户，将 /usr/local 替换为 ${HOME}）
+    cat /usr/local/Ascend/cann/opp/version.info
     ```
 
-### 2. 无环境场景：WebIDE开发（建设中）
+## 环境变量配置
 
-对于无环境的用户，提供WebIDE开发方式，目前本方式正在建设中。
-
-## 二、编译部署
-
-### 1. 拉取ops-tensor仓库代码
+按需选择合适的命令使环境变量生效。
 
 ```bash
-git clone https://gitcode.com/cann/ops-tensor.git
+# 默认路径安装，以 root 用户为例（非 root 用户，将 /usr/local 替换为 ${HOME}）
+source /usr/local/Ascend/cann/set_env.sh
+
+# 指定路径安装
+source ${install_path}/cann/set_env.sh
+```
+
+## 源码下载
+
+```bash
+# 下载项目源码
+git clone -b master https://gitcode.com/cann/ops-tensor.git
 cd ops-tensor
 ```
 
-### 2. 编译ops-tensor算子包
+> [!NOTE] 注意
+> gitcode 平台在使用 SSH 协议时，请在本地生成 SSH 公钥进行克隆、推送等操作。
+
+## 编译执行
+
+### 编译项目
+
+ops-tensor 提供一键式编译能力，使用 `build.sh` 脚本：
 
 ```bash
-bash build.sh --pkg
+# 编译所有算子
+./build.sh
+
+# 指定编译线程数（默认 8）
+./build.sh -j16
+
+# 查看完整帮助信息
+./build.sh --help
 ```
 
-若提示如下信息，说明编译成功。
+## Kernel UT 测试
+
+Kernel UT（单元测试）用于验证算子内核的正确性。
+
+### 1. 构建并执行所有 Kernel UT
 
 ```bash
-Self-extractable archive "cann-ops-tensor-1.0.0-linux-*.run" successfully created.
-Build package success: build/cann-ops-tensor-1.0.0-linux-*.run
+./build.sh --opkernel -u
 ```
 
-编译成功后，run包存放于项目根目录的build目录下。
-
-### 3. 安装ops-tensor算子包
+### 2. 执行指定算子的 Kernel UT
 
 ```bash
-./build/cann-ops-tensor-*linux*.run
+# 单个算子
+./build.sh --opkernel -u --ops=mat_mul
+
+# 多个算子
+./build.sh --opkernel -u --ops=mat_mul,quant_batch_matmul
 ```
 
-ops-tensor安装在`${ASCEND_HOME_PATH}/cann`路径中，`${ASCEND_HOME_PATH}`表示CANN软件安装目录。
-
-### 4. 配置环境变量
+### 3. 指定 SoC 执行 Kernel UT
 
 ```bash
-source ${ASCEND_HOME_PATH}/cann/set_env.sh
+./build.sh --opkernel -u --soc=ascend950 --ops=mat_mul
 ```
 
-### 5. 运行测试
+### 4. 设置测试超时时间
 
 ```bash
-bash build.sh --run
+# 默认超时 300 秒
+./build.sh --opkernel -u --test-timeout=600
 ```
 
-## 三、更多帮助
+**支持的 Kernel UT 算子**（位于 `tests/ut/op_kernel/`）：
+- `mat_mul` - 矩阵乘算子
+- `quant_batch_matmul` - 量化批量矩阵乘算子
 
-- [CANN 开发文档](https://www.hiascend.com/document)
-- [Ascend C API 参考](https://hiascend.com/document/redirect/CannCommunityAscendCApi)
+若提示如下信息，则说明 Kernel UT 测试通过：
+
+```bash
+[SUCCESS] Kernel UT all SoC tests passed
+```
+
+更详细的 Kernel UT 开发流程请参阅 [算子开发指南](./QUICK_OP_INVOCATION.md)。
+
+
+## 相关文档
+
+- [项目整体介绍](./README.md) - 项目介绍
+- [算子开发指南](./QUICK_OP_INVOCATION.md) - 详细的开发流程
+- [Blaze 模块介绍](./include/blaze/README.md) - Blaze 引擎说明
+- [API 文档](./docs/API/README.md) - API 详细说明

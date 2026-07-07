@@ -23,16 +23,6 @@
 
 说明：QBMM MX Kernel 支持 `isAtomicAdd` 参数，用于多核并行累加场景。
 
-## 类模板概述
-
-### 模板参数
-| 参数 | 说明 |
-|------|------|
-| ProblemShape_ | 问题形状类型，通常为 `AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>` (m, n, k, batch) |
-| BlockMmad_ | BlockMmad 类，矩阵乘计算组件 |
-| BlockEpilogue_ | BlockEpilogue 类，后处理组件 |
-| BlockScheduler_ | BlockScheduler 类，任务调度组件 |
-
 ### 类型别名
 | 类型 | 说明 |
 |------|------|
@@ -48,7 +38,7 @@
 | LayoutB | B 矩阵布局类型（继承自 BlockMmad） |
 | LayoutC | C 矩阵布局类型（继承自 BlockMmad） |
 | LayoutBias | Bias 布局类型（继承自 BlockMmad） |
-| TupleShape | Tile 形状类型 `AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>` |
+| TupleShape / TileShape | Tile 形状类型 `AscendC::Te::Shape<...>` |
 
 ### Layout 构建类型
 | 类型 | 说明 |
@@ -83,16 +73,16 @@ struct Params {
 ## 核心成员方法
 
 ### 构造函数
+```cpp
+__aicore__ inline GemmUniversal()
 ```
-__aicore__ inline KernelMatmul()
-```
-功能：构造 Kernel 对象。
+功能：构造 GemmUniversal Kernel 对象。
 
 ### 析构函数
+```cpp
+__aicore__ inline ~GemmUniversal()
 ```
-__aicore__ inline ~KernelMatmul()
-```
-功能：析构 Kernel 对象。
+功能：析构 GemmUniversal Kernel 对象。
 
 ### Init函数
 ```
@@ -119,18 +109,113 @@ __aicore__ inline void operator()(Params const& params)
 5. **Tile 循环处理**：遍历 tile 执行矩阵乘计算
 6. **清理**：关闭 HF32/MM Layout Transform
 
-## 公共调用示例
+## operator执行流程
 
-### 组件组装模板
+### 执行流程
 ```
+operator(params)
+    ↓
+Init：设置问题规模、GM地址
+    ↓
+BlockScheduler初始化
+    ↓
+Block索引检查：超出实际数量则返回
+    ↓
+HF32模式设置（可选）
+    ↓
+BlockMmad初始化
+    ↓
+创建GM Tensor（使用Tensor API）
+    ├── Layout构建：FrameLayoutFormat<LayoutPattern, C0_ELEMENT>
+    ├── MemPtr创建：MakeMemPtr<Location::GM>
+    └── Tensor创建：MakeTensor(memPtr, layout)
+    ↓
+L2 Cache配置（可选）
+    ↓
+Tile循环处理
+    ├── GetBlockShape：获取当前tile形状
+    ├── GetBlockCoord：获取当前tile坐标
+    ├── Slice Tensor：gmA.Slice(coord, shape)
+    └── BlockMmad执行
+    ↓
+清理：关闭HF32模式
+```
+
+### Tensor API使用示例
+```cpp
+// Layout构建（使用FrameLayoutFormat和LayoutPattern）
+using LayoutA = AscendC::Te::NZLayoutPtn;      // NZ格式布局
+using LayoutB = AscendC::Te::NDLayoutPtn;      // ND格式布局
+using LayoutC = AscendC::Te::NDExtLayoutPtn;   // ND扩展布局
+
+using MakeLayoutA = AscendC::Te::FrameLayoutFormat<LayoutA, AscendC::Std::Int<C0_ELEMENT<AType>>>;
+using MakeLayoutB = AscendC::Te::FrameLayoutFormat<LayoutB, AscendC::Std::Int<C0_ELEMENT<BType>>>;
+using MakeLayoutC = AscendC::Te::FrameLayoutFormat<LayoutC, AscendC::Std::Int<C0_ELEMENT<CType>>>;
+
+// Layout实例化
+auto layoutA = MakeLayoutA{}(m_, k_);  // 创建A矩阵layout (m, k)
+auto layoutB = MakeLayoutB{}(k_, n_);  // 创建B矩阵layout (k, n)
+auto layoutC = MakeLayoutC{}(m_, n_);  // 创建C矩阵layout (m, n)
+
+// GM Tensor创建（使用Tensor API）
+auto gmA = AscendC::Te::MakeTensor(
+    AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(aGmAddr_), 
+    layoutA);
+auto gmB = AscendC::Te::MakeTensor(
+    AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(bGmAddr_), 
+    layoutB);
+auto gmC = AscendC::Te::MakeTensor(
+    AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(cGmAddr_), 
+    layoutC);
+
+// Tensor Slice操作（获取当前tile的数据）
+auto gmBlockA = gmA.Slice(
+    AscendC::MakeCoord(coordM, 0L),          // 起始坐标
+    AscendC::MakeShape(shapeM, shapeK));     // 形状
+auto gmBlockB = gmB.Slice(
+    AscendC::MakeCoord(0L, coordN), 
+    AscendC::MakeShape(shapeK, shapeN));
+auto gmBlockC = gmC.Slice(
+    AscendC::MakeCoord(coordM, coordN), 
+    AscendC::MakeShape(shapeM, shapeN));
+```
+
+### operator调用示例
+```cpp
+// 1. 定义Kernel类型
+using MatmulKernel = Blaze::Gemm::Kernel::GemmUniversal<
+    ProblemShape, BlockMmad, BlockEpilogue, BlockScheduler>;
+
+// 2. 准备Params参数
+using Params = typename MatmulKernel::Params;
+Params params;
+params.problemShape = {m, n, k, batch};
+params.mmadParams.aGmAddr = aGM;
+params.mmadParams.bGmAddr = bGM;
+params.mmadParams.cGmAddr = cGM;
+params.mmadParams.biasGmAddr = biasGM;  // 可选
+params.schParams.l2CacheMode = L2_CACHE_DEFAULT;
+
+// 3. 实例化并执行
+MatmulKernel kernel;
+kernel(params);  // 执行矩阵乘计算
+```
+
+### Tile循环策略
+不同Kernel类型的Tile循环策略：
+- **Basic Kernel**：单核stride循环，`tileIdx += blockNum`
+- **StreamK Kernel**：DP+SK混合策略，AIC计算+AIV汇聚
+- **QBMM MX Kernel**：多Batch循环+Tile循环
+
+```cpp
 // 定义数据类型和布局
 using AType = half;
 using BType = half;
 using CType = float;
 using BiasType = float;
-using LayoutA = AscendC::Te::Layout::RowMajor;
-using LayoutB = AscendC::Te::Layout::ColMajor;
-using LayoutC = AscendC::Te::Layout::RowMajor;
+using LayoutA = AscendC::Te::NDExtLayoutPtn;
+using LayoutB = AscendC::Te::NDExtLayoutPtn;
+using LayoutC = AscendC::Te::NDExtLayoutPtn;
 using LayoutBias = LayoutC;
 
 // 定义问题 shape
@@ -140,9 +225,8 @@ using ProblemShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
 using BlockScheduler = Blaze::Gemm::Block::BlockSchedulerMatmulBasic<ProblemShape, FULL_LOAD_MODE>;
 
 // 定义 Kernel（根据需求选择 Basic 或 StreamK）
-using MatmulKernel = Blaze::Gemm::Kernel::KernelMatmulBasic<...>;
-// 或
-using MatmulKernel = Blaze::Gemm::Kernel::KernelMatmulStreamK<...>;
+using MatmulKernel = Blaze::Gemm::Kernel::GemmUniversal<
+    ProblemShape, BlockMmad, BlockEpilogue, BlockScheduler>;
 ```
 
 ### 参数准备模板
@@ -165,7 +249,7 @@ mm(params);
 ## 公共约束
 
 1. **模板参数要求**：
-   - ProblemShape 必须为 `AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>` 类型
+   - ProblemShape 必须为 `AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>` 类型, 分别表示 **m n k b** 维度大小。 
    - BlockMmad 必须继承自相应的 BlockMmad 基类
    - BlockEpilogue 必须与 Kernel 类型匹配
    - BlockScheduler 必须提供 tile 切分和调度功能
@@ -181,8 +265,8 @@ mm(params);
 ## 性能优化建议（公共）
 
 1. **Tile 大小选择**：
-   - L1 tile：充分利用 L1 容量（通常 1MB）
-   - L0 tile：匹配 L0A/L0B 容量（各 128KB）
+   - L1 tile：匹配 L1 容量（通常 512KB）
+   - L0 tile：匹配 L0A/L0B 容量（通常 64KB）
 
 2. **Block 数量配置**：根据问题规模合理设置 block 数量
 

@@ -405,26 +405,66 @@ build_project() {
 # 打包
 build_package() {
     log_info "Building package..."
+    
+    local PKG_NAME="cann-${SOC_NAME_LOWER}-ops-tensor_1.0.0_linux-${ARCH}.run"
+    local BUILD_OUT_DIR="${SCRIPT_DIR}/build_out"
+    
+    mkdir -p "${BUILD_OUT_DIR}"
+    
+    # 创建临时目录
+    local TMP_DIR=$(mktemp -d)
+    log_info "Working directory: ${TMP_DIR}"
+    
+    # 准备目录结构
+    mkdir -p "${TMP_DIR}/ops_tensor"
+    
+    # 复制 include 目录
+    cp -r "${SCRIPT_DIR}/include" "${TMP_DIR}/ops_tensor/"
+    
+    # 创建安装脚本
+    cat > "${TMP_DIR}/install.sh" << 'EOF'
+#!/bin/bash
+set -e
 
-    cd "$BUILD_DIR"
+# 安装路径优先级：ASCEND_INSTALL_PATH > 默认路径
+if [ -n "${ASCEND_INSTALL_PATH}" ]; then
+    INSTALL_BASE="${ASCEND_INSTALL_PATH}"
+else
+    INSTALL_BASE="/usr/local/Ascend/cann"
+fi
 
-    # 运行 ctest package target
-    log_info "Running CPack..."
-    cpack
+TARGET_DIR="${INSTALL_BASE}/ops_tensor"
 
-    if [ $? -eq 0 ]; then
-        log_success "Package created successfully"
-        # 查找生成的 .run 文件
-        local run_file=$(ls *.run 2>/dev/null | head -n 1)
-        if [ -n "$run_file" ]; then
-            log_success "Package file: $BUILD_DIR/$run_file"
-        fi
+echo "Installing ops-tensor header-only library..."
+echo "Target: ${TARGET_DIR}"
+
+mkdir -p "${TARGET_DIR}"
+cp -r ops_tensor/include "${TARGET_DIR}/"
+
+echo "Installation completed."
+exit 0
+
+__ARCHIVE_BELOW__
+EOF
+    
+    # 打包成 tar.gz
+    cd "${TMP_DIR}"
+    tar -czf archive.tar.gz ops_tensor
+    
+    # 合成 .run 文件
+    cat "${TMP_DIR}/install.sh" "${TMP_DIR}/archive.tar.gz" > "${BUILD_OUT_DIR}/${PKG_NAME}"
+    chmod +x "${BUILD_OUT_DIR}/${PKG_NAME}"
+    
+    # 清理
+    rm -rf "${TMP_DIR}"
+    cd "${SCRIPT_DIR}"
+    
+    if [ -f "${BUILD_OUT_DIR}/${PKG_NAME}" ]; then
+        log_success "Package created: ${BUILD_OUT_DIR}/${PKG_NAME}"
     else
         log_error "Package creation failed"
         exit 1
     fi
-
-    cd "$SCRIPT_DIR"
 }
 
 # 运行测试

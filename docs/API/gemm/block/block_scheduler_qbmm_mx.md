@@ -6,28 +6,57 @@
 
 **继承自**：[Block Scheduler 公共框架](./block_scheduler.md)
 
-### 模板参数
-```
+## 模板参数
+
+### 模板参数列表
+```cpp
 template <
-    class ProblemShape_,     // 问题规模类型
-    uint64_t FullLoadMode_,  // 全载模式（0=非全载，1=A全载）
-    class LayoutA_,          // A 矩阵布局类型
-    class LayoutB_,          // B 矩阵布局类型
-    class AType_>            // A 矩阵数据类型（用于判断 NZ 对齐粒度）
+    typename ProblemShape_,     // 问题规模类型
+    uint64_t FullLoadMode_,     // 全载模式
+    typename LayoutA_,          // A 矩阵布局类型
+    typename LayoutB_,          // B 矩阵布局类型
+    typename AType_>            // A 矩阵数据类型
 class BlockSchedulerQuantBatchMatmulV3;
 ```
 
-### 全载模式
-支持两种全载模式：
-- **FullLoadMode_ = 0**：非全载模式（默认）
-- **FullLoadMode_ = A_FULL_LOAD_MODE（1）**：A 矩阵全载模式
+### 参数详解
 
-### NZ 对齐粒度
-`AType_` 用于在 `weightNz = true` 且 `!transB` 时选择 N 轴对齐粒度：
-- **FP4（fp4x2_e2m1_t, fp4x2_e1m2_t）**：调用 `Align64`
-- **FP8（fp8_e5m2_t, fp8_e4m3fn_t）**：调用 `Align32`
+| 参数 | 类型约束 | 默认值 | 说明 |
+|------|----------|--------|------|
+| ProblemShape_ | `Shape<int64_t, int64_t, int64_t>` | - | 问题规模 `(m, n, k)` |
+| FullLoadMode_ | `uint64_t` | 0 | 全载模式：0=非全载，1=A全载 |
+| LayoutA_ | Layout Pattern 类型 | - | A 矩阵布局类型，用于判断转置 |
+| LayoutB_ | Layout Pattern 类型 | - | B 矩阵布局类型，用于判断转置和 NZ 格式 |
+| AType_ | `fp4x2_e2m1_t`, `fp4x2_e1m2_t`, `fp8_e5m2_t`, `fp8_e4m3fn_t` | - | A 矩阵数据类型，用于判断 NZ 对齐粒度 |
 
-当 `transB = true` 时，N 轴按 `BLOCK_CUBE` 对齐，当前实现调用 `Align16`。
+**转置判断**：
+```cpp
+// 通过 IsTrans trait 自动判断转置
+bool transA = IsTrans<LayoutA>::value;  // A 矩阵是否转置
+bool transB = IsTrans<LayoutB>::value;  // B 矩阵是否转置
+```
+
+**NZ 格式判断**：
+```cpp
+// 通过 IsWeightNz trait 判断 B 矩阵是否为 NZ 格式
+bool weightNz = IsWeightNz<LayoutB>::value;
+```
+
+### AType_ 参数详解
+
+**支持的量化数据类型**：
+| 数据类型 | 说明 | NZ 对齐粒度（!transB） |
+|---------|------|----------------------|
+| `fp4x2_e2m1_t` | MxFP4 E2M1 格式 | 64（Align64） |
+| `fp4x2_e1m2_t` | MxFP4 E1M2 格式 | 64（Align64） |
+| `fp8_e5m2_t` | MxFP8 E5M2 格式 | 32（Align32） |
+| `fp8_e4m3fn_t` | MxFP8 E4M3FN 格式 | 32（Align32） |
+
+**NZ 对齐粒度说明**：
+- `weightNz = true` 且 `!transB` 时，N 轴按 AType 选择对齐粒度
+  - **FP4 类型**：调用 `Align64`（对齐到 64）
+  - **FP8 类型**：调用 `Align32`（对齐到 32）
+- `transB = true` 时，N 轴按 `BLOCK_CUBE` 对齐（当前实现调用 `Align16`）
 
 ### 转置判断
 根据布局类型判断转置：

@@ -6,6 +6,82 @@ StreamK 矩阵乘 Block，基于 Tensor API 实现，仅支持 AIC 计算。支�
 
 **继承自**：[Block Mmad 基础框架](./block_mmad.md)
 
+
+
+## 模板参数
+
+### 模板参数列表
+```cpp
+template <
+    typename DispatchPolicy,    // 调度策略
+    typename AType,             // A 矩阵数据类型
+    typename LayoutA,           // A 矩阵布局
+    typename BType,             // B 矩阵数据类型
+    typename LayoutB,           // B 矩阵布局
+    typename CType,             // C 矩阵计算类型
+    typename LayoutC,           // C 矩阵布局
+    typename BiasType,          // Bias 数据类型
+    typename LayoutBias         // Bias 布局
+>
+class BlockMmad;
+```
+
+### DispatchPolicy 详解
+
+StreamK BlockMmad 仅支持以下两种 DispatchPolicy：
+
+**ON_THE_FLY 模式**：
+```cpp
+using DispatchPolicy = Blaze::Gemm::MatmulMultiBlockWithStreamK<
+    Blaze::Gemm::MatMulL0C2Out::ON_THE_FLY>;
+```
+- 实时输出模式，无需 stride 对齐
+- 适用于小到中等矩阵
+- 较低的内存占用
+
+**ND_FIXPIPE_1_2 模式**：
+```cpp
+using DispatchPolicy = Blaze::Gemm::MatmulMultiBlockWithStreamK<
+    Blaze::Gemm::MatMulL0C2Out::ND_FIXPIPE_1_2>;
+```
+- ND 1v2 优化模式，要求 stride 对齐到 32B
+- 适用于大矩阵场景
+- 更高的输出效率
+
+
+## 特殊静态常量
+
+| 常量 | 说明 |
+|------|------|
+| BUFFER_NUM | L1/L0 缓冲数量（固定为 2） |
+| HALF_L0_SIZE | L0 缓冲区半大小 |
+| L1_EVENT_ID_OFFSET | L1 B 缓冲事件偏移（2） |
+| MTE1_MTE2_EVENT_ID_NUM | L1 双缓冲事件数量（4） |
+
+## 特殊数据结构
+
+### Params
+```
+struct Params {
+    GM_ADDR aGmAddr{nullptr};         // A 矩阵 GM 地址
+    GM_ADDR bGmAddr{nullptr};         // B 矩阵 GM 地址
+    GM_ADDR cGmAddr{nullptr};         // C 矩阵 GM 地址（DP 模式）
+    GM_ADDR biasGmAddr{nullptr};      // Bias GM 地址
+    GM_ADDR groupListGmAddr{nullptr}; // GroupList 地址（预留扩展）
+    GM_ADDR workspaceGmAddr{nullptr}; // Workspace GM 地址（SK 模式）
+    uint64_t ml1{0};                  // L1 M 维度尺寸
+    uint64_t nl1{0};                  // L1 N 维度尺寸
+    uint64_t kl1{0};                  // L1 K 维度尺寸
+    uint32_t ml0{0};                  // L0 M 维度尺寸
+    uint32_t nl0{0};                  // L0 N 维度尺寸
+    uint32_t kl0{0};                  // L0 K 维度尺寸
+    uint32_t l1Stages{2};             // L1 缓冲数量
+    uint16_t l0cStages{1};            // L0C 缓冲数量
+};
+```
+
+说明：`cGmAddr` 和 `workspaceGmAddr` 均需提供，根据 `checkIsSkScene` 选择输出目标。
+
 ## 特殊约束
 
 ### 调度策略限制
@@ -34,6 +110,7 @@ StreamK 矩阵乘 Block，基于 Tensor API 实现，仅支持 AIC 计算。支�
 - **L0C 单缓冲**：固定使用单缓冲（offset = 0）
 
 ### L1 缓冲布局
+StreamK当前只支持`Double Buffer`
 ```
 L1 空间布局：
 a1|b1|bias1|a2|b2|bias2|
@@ -78,39 +155,6 @@ SetMMLayoutTransform(true);  // 适配 Fixpipe 输出
 // 析构函数（ASCEND_IS_NOT_AIV）
 SetMMLayoutTransform(false); // 关闭
 ```
-
-## 特殊静态常量
-
-| 常量 | 说明 |
-|------|------|
-| BUFFER_NUM | L1/L0 缓冲数量（固定为 2） |
-| HALF_L0_SIZE | L0 缓冲区半大小 |
-| L1_EVENT_ID_OFFSET | L1 B 缓冲事件偏移（2） |
-| MTE1_MTE2_EVENT_ID_NUM | L1 双缓冲事件数量（4） |
-
-## 特殊数据结构
-
-### Params
-```
-struct Params {
-    GM_ADDR aGmAddr{nullptr};         // A 矩阵 GM 地址
-    GM_ADDR bGmAddr{nullptr};         // B 矩阵 GM 地址
-    GM_ADDR cGmAddr{nullptr};         // C 矩阵 GM 地址（DP 模式）
-    GM_ADDR biasGmAddr{nullptr};      // Bias GM 地址
-    GM_ADDR groupListGmAddr{nullptr}; // GroupList 地址（预留扩展）
-    GM_ADDR workspaceGmAddr{nullptr}; // Workspace GM 地址（SK 模式）
-    uint64_t ml1{0};                  // L1 M 维度尺寸
-    uint64_t nl1{0};                  // L1 N 维度尺寸
-    uint64_t kl1{0};                  // L1 K 维度尺寸
-    uint32_t ml0{0};                  // L0 M 维度尺寸
-    uint32_t nl0{0};                  // L0 N 维度尺寸
-    uint32_t kl0{0};                  // L0 K 维度尺寸
-    uint32_t l1Stages{2};             // L1 缓冲数量
-    uint16_t l0cStages{1};            // L0C 缓冲数量
-};
-```
-
-说明：`cGmAddr` 和 `workspaceGmAddr` 均需提供，根据 `checkIsSkScene` 选择输出目标。
 
 ## 特殊成员方法
 

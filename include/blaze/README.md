@@ -5,7 +5,7 @@
 ## 定位与边界
 
 - **聚焦 Kernel 端**：Blaze 只负责矩阵乘类算子的 Kernel 端计算组件（数据搬运、MMAD、调度等），不涉及 aclnn 入口与 Host 端逻辑。
-- **职责分工**：算子的 Tiling 计算、内存规划、解决方案注册等 Host 端工作由各算子自身的 `<op>_solution.cpp` 负责，Blaze 与之配合而非替代。
+- **职责分工**：算子的 Tiling 计算、内存规划、解决方案注册等 Host 端工作由各算子自身负责，Blaze 与之配合而非替代。
 - **依赖关系**：Blaze 依赖 [`include/tensor_api/`](../tensor_api/) 提供的张量结构抽象（Layout / Shape / Coord 等），并直接对接 AscendC Kernel 接口。
 - **目标算子**：服务于使用到矩阵乘计算的相关算子，包括 Matmul、GroupedMatmul、MC2 等。
 
@@ -36,10 +36,13 @@ blaze/
 
 | 子目录 | 命名空间 | 职责 |
 | :--- | :--- | :--- |
-| [`kernel/`](kernel/) | `Blaze::Gemm::Kernel` | 完整算子内核入口，组合 Block + Epilogue + Scheduler 形成可启动的 Kernel |
-| [`block/`](block/) | `Blaze::Gemm::Block` | Block 级 Mmad 抽象及其针对不同 Policy 的实现，以及 Block 调度器 |
-| [`epilogue/`](epilogue/) | `Blaze::Gemm::Block` | 后处理策略，可按需扩展 Bias / 激活 / 反量化等 |
-| [`tile/`](tile/) | `Blaze::Gemm::Tile` / `AscendC::Te` | Tile 级原语：K 方向补零等 |
-| [`policy/`](policy/) | `Blaze::Gemm::` | 派发策略定义，控制全载模式、量化模式等行为 |
-| [`utils/`](utils/) | `Blaze::Gemm::` | 通用工具与常量：CeilDiv、Layout 推导、量化模式常量等 |
+| `gemm/kernel/` | `Blaze::Gemm::Kernel` | 完整算子内核入口，组合 Block + Epilogue + Scheduler 形成可启动的 Kernel |
+| `gemm/block/` | `Blaze::Gemm::Block` | Block 级 Mmad 抽象及其针对不同 Policy 的实现, 以及 Block 调度器 |
+| `epilogue/` | `Blaze::Gemm::Block` | 后处理策略，可按需扩展 Bias / 激活 / 反量化等 |
+| `gemm/tile/` | `Blaze::Gemm::Tile` | Tile 级原语：定制化 MMAD Trait、定制化 GM->L1/ L1->L0搬运, 如 K 方向补零等 |
+| `gemm/policy/`| `Blaze::Gemm` | 派发策略定义，控制全载模式、量化模式等行为 |
+| `gemm/utils/` | `Blaze::Gemm` | 通用工具与常量：CeilDiv、Layout 推导、量化模式常量等 |
 |
+
+## API 接口文档
+详细接口文档参考 [blaze接口文档](../../docs/API/README.md) 
