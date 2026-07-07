@@ -39,6 +39,15 @@ constexpr uint64_t SPARSE_GROUP_LIST_ITEM_STRIDE = 2UL;
 constexpr uint64_t SPARSE_GROUP_LIST_SPLIT_VALUE_OFFSET = 1UL;
 constexpr int64_t BLOCK_CUBE_MASK = BLOCK_CUBE - 1;
 constexpr int64_t SCALE_CACHE_MASK = 0xff;
+
+template <typename T>
+__aicore__ inline __gm__ T* GetTensorAddrFromList(uint16_t index, __gm__ T* tensorPtr)
+{
+    __gm__ uint64_t* dataAddr = reinterpret_cast<__gm__ uint64_t*>(tensorPtr);
+    uint64_t tensorPtrOffset = *dataAddr;
+    __gm__ uint64_t* retPtr = dataAddr + (tensorPtrOffset >> 3);
+    return reinterpret_cast<__gm__ T*>(*(retPtr + index));
+}
 } // namespace
 
 template <class ProblemShape, class BlockMmad, class BlockEpilogue, class BlockScheduler>
@@ -84,6 +93,7 @@ public:
         // the split axis is selected by LayoutA: !transA means split-M, transA means split-K.
         int8_t groupType;
         uint8_t groupListType;
+        uint8_t singleW;
     };
 
     struct Params {
@@ -224,6 +234,7 @@ private:
         cBasePtr_ = reinterpret_cast<__gm__ CType*>(params.mmadParams.cGmAddr);
         scaleABasePtr_ = reinterpret_cast<__gm__ fp8_e8m0_t*>(params.mmadParams.scaleAGmAddr);
         scaleBBasePtr_ = reinterpret_cast<__gm__ fp8_e8m0_t*>(params.mmadParams.scaleBGmAddr);
+        singleW_ = params.gmmParams.singleW == 1;
         if (gmmParams.isBias == 1) {
             biasBasePtr_ = reinterpret_cast<__gm__ BiasType*>(params.mmadParams.biasGmAddr);
             isBias_ = true;
@@ -324,12 +335,17 @@ private:
         if constexpr (!transA) {
             aOffset_ = IsFp4<AType>() ? ((prevSplitOffset * k) >> 1) : (prevSplitOffset * k);
             const int64_t scaleK = GetScaleK(k);
-            bOffset_ = perGroupBOffset_ * static_cast<int64_t>(groupIdx);
-            if constexpr (IsFp4<BType>()) {
-                bOffset_ >>= 1;
+            if (singleW_) {
+                bOffset_ = perGroupBOffset_ * static_cast<int64_t>(groupIdx);
+                if constexpr (IsFp4<BType>()) {
+                    bOffset_ >>= 1;
+                }
+                scaleBOffset_ = static_cast<int64_t>(groupIdx) * n * scaleK;
+            } else {
+                bOffset_ = 0;
+                scaleBOffset_ = 0;
             }
             scaleAOffset_ = prevSplitOffset * scaleK;
-            scaleBOffset_ = static_cast<int64_t>(groupIdx) * n * scaleK;
             cOffset_ = prevSplitOffset * n;
         } else {
             aOffset_ = IsFp4<AType>() ? ((m * prevSplitOffset) >> 1) : (m * prevSplitOffset);
@@ -377,9 +393,13 @@ private:
         auto gmScaleA = AscendC::Te::MakeTensor(
             AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(scaleABasePtr_ + scaleAOffset_), layoutScaleA);
         auto gmB = AscendC::Te::MakeTensor(
-            AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(bBasePtr_ + bOffset_), layoutB);
+            AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(
+                (singleW_ ? bBasePtr_ : GetTensorAddrFromList(groupIdx, bBasePtr_)) + bOffset_),
+            layoutB);
         auto gmScaleB = AscendC::Te::MakeTensor(
-            AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(scaleBBasePtr_ + scaleBOffset_), layoutScaleB);
+            AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(
+                (singleW_ ? scaleBBasePtr_ : GetTensorAddrFromList(groupIdx, scaleBBasePtr_)) + scaleBOffset_),
+            layoutScaleB);
         auto gmC = AscendC::Te::MakeTensor(
             AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(cBasePtr_ + cOffset_), layoutC);
         auto biasPtr = isBias_ ? (biasBasePtr_ + biasOffset_) : nullptr;
@@ -452,6 +472,7 @@ private:
     uint32_t baseN_{0};
     uint8_t groupListType_{GROUP_LIST_TYPE_OFFSET};
     bool isBias_{false};
+    bool singleW_{true};
 };
 
 } // namespace Kernel
