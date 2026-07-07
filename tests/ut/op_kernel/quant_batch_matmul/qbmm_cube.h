@@ -19,28 +19,7 @@
 #include "kernel_operator.h"
 #include "tensor_api/tensor.h"
 
-#if defined(ASCENDC_CPU_DEBUG)
-namespace AscendC {
-template <typename T>
-constexpr int32_t AuxGetC0Size() { return 32; }
-template <>
-constexpr int32_t AuxGetC0Size<half>() { return 16; }
-template <>
-constexpr int32_t AuxGetC0Size<float>() { return 16; }
-template <>
-constexpr int32_t AuxGetC0Size<bfloat16_t>() { return 16; }
-template <>
-constexpr int32_t AuxGetC0Size<int32_t>() { return 16; }
-template <>
-constexpr int32_t AuxGetC0Size<int8_t>() { return 32; }
-template <typename T>
-struct GetMmDstType { using Type = T; };
-template <>
-struct GetMmDstType<int8_t> { using Type = int32_t; };
-template <>
-struct GetMmDstType<half> { using Type = float; };
-}
-#endif
+#include "qbmm_cpu_debug_stub.h"
 
 #include "blaze/gemm/policy/dispatch_policy.h"
 #include "blaze/gemm/kernel/kernel_universal.h"
@@ -49,6 +28,7 @@ struct GetMmDstType<half> { using Type = float; };
 #include "blaze/gemm/block/block_scheduler_qbmm.h"
 #include "blaze/epilogue/block/block_epilogue_empty.h"
 #include "qbmm_tiling_data.h"
+#include "qbmm_ut_fill_helpers.h"
 
 namespace QBMMUT {
 
@@ -99,29 +79,8 @@ __aicore__ inline void QBMMCubeWrapper(
     params.schParams.mTailMain = tilingData.mTailMain;
     params.schParams.nTailMain = tilingData.nTailMain;
 
-    params.qbmmParams.batchA1 = tilingData.batchA1;
-    params.qbmmParams.batchA2 = tilingData.batchA2;
-    params.qbmmParams.batchA3 = tilingData.batchA3;
-    params.qbmmParams.batchA4 = tilingData.batchA4;
-    params.qbmmParams.batchB1 = tilingData.batchB1;
-    params.qbmmParams.batchB2 = tilingData.batchB2;
-    params.qbmmParams.batchB3 = tilingData.batchB3;
-    params.qbmmParams.batchB4 = tilingData.batchB4;
-    params.qbmmParams.batchC1 = tilingData.batchC1;
-    params.qbmmParams.batchC2 = tilingData.batchC2;
-    params.qbmmParams.batchC3 = tilingData.batchC3;
-    params.qbmmParams.batchC4 = tilingData.batchC4;
-    params.qbmmParams.biasThreeDim = tilingData.biasThreeDim;
-    params.qbmmParams.x1QuantMode = tilingData.x1QuantMode;
-    params.qbmmParams.x2QuantMode = tilingData.x2QuantMode;
-    params.qbmmParams.kAL1 = tilingData.kAL1;
-    params.qbmmParams.kBL1 = tilingData.kBL1;
-    params.qbmmParams.nBufferNum = tilingData.nBufferNum;
-    params.qbmmParams.baseM = tilingData.baseM_qbmm;
-    params.qbmmParams.baseN = tilingData.baseN_qbmm;
-    params.qbmmParams.baseK = tilingData.baseK_qbmm;
-    params.qbmmParams.isBias = tilingData.isBias;
-    params.qbmmParams.dbL0C = tilingData.dbL0C;
+    FillQbmmBatchParams(params.qbmmParams, tilingData);
+    FillQbmmTileParams(params.qbmmParams, tilingData);
 
     QBMMKernel kernel;
     kernel(params);

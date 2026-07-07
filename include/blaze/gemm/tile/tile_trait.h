@@ -24,5 +24,10 @@ struct MmadTraitMX {
     using TraitType = AscendC::Te::MmadTrait;
     static constexpr const TraitType value = MX_MMAD_TRAIT;
 };
-
+constexpr AscendC::Te::CopyL0C2UBTrait MIX_COPY_L0C2UB_SPLIT_M_TRAIT =
+    AscendC::Te::CopyL0C2UBTrait{AscendC::Te::RoundMode::DEFAULT, false, false, AscendC::Te::DUAL_DST_SPLIT_M};
+struct CopyL0C2UBTraitMixSplitM {
+    using TraitType = AscendC::Te::CopyL0C2UBTrait;
+    static constexpr const TraitType value = MIX_COPY_L0C2UB_SPLIT_M_TRAIT;
+};
 } // namespace Blaze::Gemm::Tile

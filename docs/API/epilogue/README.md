@@ -6,6 +6,7 @@
 | :----------------------------------------------------------- | :------: |
 | [block_epilogue_empty](./block/block_epilogue_empty.md) | 空后处理组件，用于不支持后处理的 Kernel |
 | [block_epilogue_streamk](./block/block_epilogue_matmul_streamk.md) | StreamK 后处理组件，支持 workspace 汇聚、类型转换、ReLU |
+| [block_epilogue_dequant](./block/block_epilogue_dequant.md) | MIX 模板 dequant 向量后处理，AIV 侧 int32→fp32 × scale + bias → bf16/fp16/fp32 |
 
 ## 公共框架
 
@@ -35,6 +36,7 @@ BlockEpilogue
 |--------------|---------|---------|-----------|---------|-----|---------|
 | BlockEpilogueEmpty | 无（空实现） | 无 | 不支持 | 无 | 不支持 | Basic Kernel |
 | BlockEpilogueStreamK | workspace 汇聚、Add、Cast、ReLU | AIV 核 | 支持 | 支持 float → half/bf16 | 可选支持 | StreamK Kernel |
+| BlockEpilogueDequant | dequant：int32→fp32 × x2Scale [× x1Scale] + bias | AIV 核 | 不支持 | 支持 fp32 → bf16/fp16/fp32 | 不支持 | QBMM MIX Kernel |
 
 ## 使用流程
 

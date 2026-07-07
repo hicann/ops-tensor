@@ -7,6 +7,8 @@
 | [kernel_matmul_basic](./kernel_matmul_basic.md) | 基础矩阵乘 Kernel，仅 AIC 计算，无 workspace |
 | [kernel_qbmm_mx](./kernel_qbmm_mx.md) | MX 量化 Batch Matmul，支持 MxFP4/MxFP8 |
 | [kernel_qbmm_mx_without_batch](./kernel_qbmm_mx_without_batch.md) | MX 量化单 Batch Matmul，裁剪 Batch 广播路径 |
+| [kernel_qbmm_mix](./kernel_qbmm_mix.md) | MIX 模板 A8W8 量化 Batch Matmul，AIC cube + AIV dequant 后处理 |
+| [kernel_qbmm_mix_without_batch](./kernel_qbmm_mix_without_batch.md) | MIX 模板 A8W8 量化单 Batch Matmul，裁剪 Batch 广播路径 |
 | [kernel_qgmm_mx_basic](./kernel_qgmm_mx_basic.md) | MX 量化 Grouped Matmul，支持 group list 与 tail split |
 | [kernel_matmul_streamk](./kernel_matmul_streamk.md) | StreamK 矩阵乘 Kernel，AIC+AIV 双核计算，支持 workspace |
 | [kernel_qbmm_streamk](./kernel_qbmm_streamk.md) | MX 量化 StreamK Kernel，支持单 Batch MxFP4/MxFP8 workspace 归约 |
@@ -31,18 +33,22 @@ KernelMatmul
 
 ## 实现差异
 
-| Kernel 类型 | 计算模式 | 量化支持 | Workspace | 典型场景 |
-| :--- | :---: | :---: | :---: | :---: |
-| KernelMatmulBasic | AIC | 否 | 否 | 通用 Matmul |
-| KernelQbmmMx | AIC | 是 | 否 | 量化 Batch Matmul |
-| GemmUniversal | AIC | 是 | 否 | 量化 Grouped Matmul |
-| KernelMatmulStreamK | AIC + AIV | 否 | 是 | 大 K 或 StreamK 场景 |
-| KernelQbmmStreamK | AIC + AIV | 是 | 是 | 量化切 K 场景 Matmul |
+| Kernel 类型 | 计算模式 | 量化支持 | Scale 支持 | BlockEpilogue | Workspace | Batch 支持 | BlockScheduler | AIC-AIV 同步 | 适用场景 |
+|------------|---------|---------|-----------|---------------|-----------|-----------|---------------|-------------|---------|
+| KernelMatmulBasic | 仅 AIC | 不支持 | 不支持 | BlockEpilogueEmpty | 不需要 | 单 batch | MatmulBasic | 无 | 通用 Matmul |
+| KernelQbmmMx | 仅 AIC | MX FP4/MX FP8 | ScaleA + ScaleB | 无 | 不需要 | 多 batch | BlockSchedulerQbmm | 无 | 量化 Batch Matmul |
+| KernelQbmmMxWithoutBatch | 仅 AIC | MX FP4/MX FP8 | ScaleA + ScaleB | 无 | 不需要 | 单 batch | BlockSchedulerQbmm | 无 | 量化单 Batch Matmul |
+| KernelQbmmMix | AIC + AIV 双核 | int8 (A8W8) | x2Scale + x1Scale(可选) | BlockEpilogueDequant | 不需要 | 多 batch | BlockSchedulerQbmm | 有 | int8 量化 Batch Matmul（ND/WeightNz） |
+| KernelQbmmMixWithoutBatch | AIC + AIV 双核 | int8 (A8W8) | x2Scale + x1Scale(可选) | BlockEpilogueDequant | 不需要 | 单 batch | BlockSchedulerQbmm | 有 | int8 量化单 Batch Matmul（ND/WeightNz） |
+| KernelQgmmMx | 仅 AIC | MX FP4/MX FP8 | ScaleA + ScaleB | 无 | 不需要 | group list | BlockSchedulerGmmAswtWithTailSplit | 无 | 量化 Grouped Matmul |
+| KernelMatmulStreamK | AIC + AIV 双核 | 不支持 | 不支持 | BlockEpilogueStreamK | 需要 | 单 batch | StreamK Scheduler | 有 | 切 K 场景 Matmul |
+| KernelQbmmStreamK | AIC + AIV 双核 | MX FP4/MX FP8 | ScaleA + ScaleB | BlockEpilogueStreamK（复用） | 需要 | 单 batch | StreamK Scheduler（复用） | 有 | 量化切 K 场景 Matmul |
 
 ## 使用流程
 
-1. 查看公共框架：[kernel.md](./kernel.md)
-2. 选择具体实现：Basic、QBMM MX、QGMM MX、StreamK 或 QBMM StreamK
-3. 组装 `ProblemShape`、`BlockMmad`、`BlockEpilogue`、`BlockScheduler`
-4. 构造 `Params`
-5. 实例化 Kernel 并调用 `operator()`
+1. **查看公共框架**：了解模板参数和核心接口 → [kernel.md](./kernel.md)
+2. **选择具体实现**：根据场景选择 Basic、QBMM MX、QBMM MIX、QGMM MX 或 StreamK
+3. **查看特殊约束**：了解各实现的特有约束和方法
+4. **组装组件**：定义 ProblemShape、BlockMmad、BlockEpilogue、BlockScheduler
+5. **准备参数**：构造 Params 结构体
+6. **执行 Kernel**：实例化并调用 operator()

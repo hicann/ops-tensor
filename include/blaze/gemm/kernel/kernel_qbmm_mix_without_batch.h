@@ -1,0 +1,163 @@
+﻿/**
+ * Copyright (c) 2026 Huawei Technologies Co., Ltd.
+ * This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+ * CANN Open Software License Agreement Version 2.0 (the "License").
+ * Please refer to the License for details. You may not use this file except in compliance with the License.
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+ * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+ * See LICENSE in the root of the software repository for the full text of the License.
+ */
+
+/*!
+ * \file kernel_qbmm_mix_without_batch.h
+ * \brief MIX template kernel without batch: AIC cube compute + AIV dequant epilogue (Tensor API).
+ */
+#pragma once
+
+#include "blaze/gemm/kernel/kernel_qbmm_mix_common.h"
+
+namespace Blaze {
+namespace Gemm {
+namespace Kernel {
+
+template <class ProblemShape, class BlockMmad, class BlockEpilogue, class BlockScheduler>
+class QbmmMixWithoutBatch : public QbmmMixSyncHelper {
+public:
+    using AType = typename BlockMmad::AType;
+    using BType = typename BlockMmad::BType;
+    using L0CType = typename BlockMmad::L0CType;
+    using LayoutA = typename BlockMmad::LayoutA;
+    using LayoutB = typename BlockMmad::LayoutB;
+    using BlockMmadParams = typename BlockMmad::Params;
+    using BlockSchedulerParams = typename BlockScheduler::Params;
+    using EpilogueParams = typename BlockEpilogue::Params;
+    using BlockShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
+    using BlockCoord = AscendC::Te::Coord<int64_t, int64_t, int64_t, int64_t>;
+
+    struct QBMMTiling {
+        uint32_t groupSizeM;
+        uint32_t groupSizeN;
+        uint32_t groupSizeK;
+        uint32_t baseM;
+        uint32_t baseN;
+        uint32_t baseK;
+        uint32_t kAL1;
+        uint32_t kBL1;
+        uint32_t nBufferNum;
+        uint32_t dbL0C;
+        uint32_t isBias;
+    };
+
+    struct Params {
+        ProblemShape problemShape;
+        BlockMmadParams mmParams;
+        BlockSchedulerParams schParams;
+        QBMMTiling qbmmParams;
+        EpilogueParams epilogueParams;
+    };
+
+    __aicore__ inline void operator()(const Params& params)
+    {
+        BlockScheduler bs(params.problemShape, params.schParams);
+        if ASCEND_IS_AIC {
+            mmOp_.Init(params.mmParams);
+        }
+        if ASCEND_IS_AIV {
+            epilogueOp_.Init(params.epilogueParams);
+        }
+        Run(params, bs);
+    }
+
+private:
+    // 单个 tile 的 AIC(cube)+AIV(dequant) 计算体：从 Run 主循环抽出以降低函数体长度。
+    // hasTile 仅用于 AIC 的 WaitForVector 判定（AIV 不读取），故按值传入，由调用方在返回后置位。
+    template <class GmTensorA, class GmTensorB>
+    __aicore__ inline void ProcessOneTile(
+        const GmTensorA& gmA, const GmTensorB& gmB, const BlockShape& singleShape, int64_t mPos, int64_t nPos,
+        int64_t curM, int64_t curN, int64_t k, int64_t n, int64_t l0cUbBaseOffset, bool hasTile)
+    {
+        constexpr int64_t kPos = 0;
+        if ASCEND_IS_AIC {
+            if (hasTile) {
+                WaitForVector();
+            }
+            auto gmBlockA = gmA.Slice(AscendC::Te::MakeCoord(mPos, kPos), AscendC::Te::MakeShape(curM, k));
+            auto gmBlockB = gmB.Slice(AscendC::Te::MakeCoord(kPos, nPos), AscendC::Te::MakeShape(k, curN));
+
+            // DATA_BLOCK=32 matches BlockEpilogueDequant::DATA_BLOCK.
+            constexpr int64_t L0C_ALIGN = 32 / sizeof(L0CType);
+            const int64_t curNAligned = Blaze::Gemm::CeilAlign(curN, L0C_ALIGN);
+            const int64_t curMAligned = Blaze::Gemm::CeilAlign(curM, static_cast<int64_t>(2));
+            auto layoutUbC = AscendC::Te::MakeFrameLayout<AscendC::Te::NDLayoutPtn>(curMAligned, curNAligned);
+            auto ubC = AscendC::Te::MakeTensor(
+                AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB, L0CType>(l0cUbBaseOffset * sizeof(L0CType)),
+                layoutUbC);
+            mmOp_(gmBlockA, gmBlockB, ubC, singleShape);
+            NotifyVector();
+        }
+        if ASCEND_IS_AIV {
+            WaitForCube();
+            epilogueOp_(curM, curN, nPos, mPos, nPos, mPos * n + nPos, l0cUbBaseOffset);
+            NotifyCube();
+        }
+    }
+
+    __aicore__ inline void Run(const Params& params, BlockScheduler& bs)
+    {
+        const int64_t m = AscendC::Te::Get<MNK_M>(params.problemShape);
+        const int64_t n = AscendC::Te::Get<MNK_N>(params.problemShape);
+        const int64_t k = AscendC::Te::Get<MNK_K>(params.problemShape);
+
+        auto layoutA = MakeLayoutA{}(m, k);
+        auto layoutB = MakeLayoutB{}(k, n);
+        auto gmA = AscendC::Te::MakeTensor(
+            AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(
+                reinterpret_cast<__gm__ AType*>(params.mmParams.aGmAddr)),
+            layoutA);
+        auto gmB = AscendC::Te::MakeTensor(
+            AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(
+                reinterpret_cast<__gm__ BType*>(params.mmParams.bGmAddr)),
+            layoutB);
+
+        if ((bs.GetEndBlockIdx() + 1) * params.schParams.mTailTile * params.schParams.nTailTile <=
+            AscendC::GetBlockNum()) {
+            bs.UpdateTailTile(params.schParams.mTailTile, params.schParams.nTailTile);
+        }
+
+        BlockCoord blockIdx;
+        int64_t mPos = 0;
+        int64_t nPos = 0;
+        bool hasTile = false;
+        while (bs.GetTileIdx(blockIdx)) {
+            BlockShape singleShape =
+                bs.template GetBlockShape<QuantMode::DEFAULT, QuantMode::DEFAULT, weightNz>(blockIdx);
+            if (AscendC::Te::Get<IDX_M_TILEIDX>(singleShape) <= 0 ||
+                AscendC::Te::Get<IDX_N_TILEIDX>(singleShape) <= 0) {
+                break;
+            }
+            bs.GetTileCoord(blockIdx, mPos, nPos);
+            const int64_t curM = AscendC::Te::Get<IDX_M_TILEIDX>(singleShape);
+            const int64_t curN = AscendC::Te::Get<IDX_N_TILEIDX>(singleShape);
+            const int64_t l0cUbBaseOffset = 0;
+            ProcessOneTile(gmA, gmB, singleShape, mPos, nPos, curM, curN, k, n, l0cUbBaseOffset, hasTile);
+            hasTile = true;
+        }
+        if ASCEND_IS_AIC {
+            if (hasTile) {
+                WaitForVector();
+            }
+        }
+    }
+
+    BlockMmad mmOp_;
+    BlockEpilogue epilogueOp_;
+
+    static constexpr bool weightNz = IsWeightNz<LayoutB>::value;
+    static constexpr int64_t C0_SIZE = AscendC::Te::C0_ELEMENT<AType>;
+    using MakeLayoutA = AscendC::Te::FrameLayoutFormat<LayoutA, AscendC::Std::Int<C0_SIZE>>;
+    using MakeLayoutB = AscendC::Te::FrameLayoutFormat<LayoutB, AscendC::Std::Int<C0_SIZE>>;
+};
+
+} // namespace Kernel
+} // namespace Gemm
+} // namespace Blaze

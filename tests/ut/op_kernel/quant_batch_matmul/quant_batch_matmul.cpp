@@ -16,13 +16,16 @@
 #pragma once
 #include <cstring>
 #include "qbmm_cube.h"
+#include "qbmm_mix.h"
 #include "qbmm_mx_l0c_pingpong.h"
 #include "qbmm_tiling_data.h"
 
 enum QBMMApiType : int
 {
     OP_TYPE_QBMM_CUBE = 10,
-    OP_TYPE_QBMM_MX_L0C_PINGPONG = 11,
+    OP_TYPE_QBMM_MIX = 11,
+    OP_TYPE_QBMM_MIX_NO_BATCH = 12,
+    OP_TYPE_QBMM_MX_L0C_PINGPONG = 13,
 };
 
 template <
@@ -35,13 +38,24 @@ __global__ __aicore__ void qbmm_kernel_entry(
         memcpy(&tilingData, tilingGM, sizeof(QBMMV3TilingData));
         QBMMUT::QBMMCubeWrapper<DTYPE_X1, DTYPE_X2, DTYPE_Y, DTYPE_BIAS>(
             x1GM, x2GM, pertokenScaleGM, scaleGM, biasGM, yGM, tilingData);
+    } else if constexpr (OP_TYPE == OP_TYPE_QBMM_MIX) {
+        QBMMV3TilingData tilingData;
+        memcpy(&tilingData, tilingGM, sizeof(QBMMV3TilingData));
+        QBMMUT::QBMMMixWrapper<DTYPE_X1, DTYPE_X2, DTYPE_Y, float, float, DTYPE_BIAS>(
+            x1GM, x2GM, pertokenScaleGM, scaleGM, biasGM, yGM, tilingData);
+    } else if constexpr (OP_TYPE == OP_TYPE_QBMM_MIX_NO_BATCH) {
+        QBMMV3TilingData tilingData;
+        memcpy(&tilingData, tilingGM, sizeof(QBMMV3TilingData));
+        QBMMUT::QBMMMixWithoutBatchWrapper<DTYPE_X1, DTYPE_X2, DTYPE_Y, float, float, DTYPE_BIAS>(
+            x1GM, x2GM, pertokenScaleGM, scaleGM, biasGM, yGM, tilingData);
     } else if constexpr (OP_TYPE == OP_TYPE_QBMM_MX_L0C_PINGPONG) {
         const auto* tilingData = reinterpret_cast<const QBMMUT::QBMML0CPingpongTilingData*>(tilingGM);
         QBMMUT::QBMML0CPingpongWrapper<DTYPE_X1, DTYPE_X2, DTYPE_Y, DTYPE_BIAS>(
             x1GM, x2GM, pertokenScaleGM, scaleGM, biasGM, yGM, *tilingData);
     } else {
         static_assert(
-            OP_TYPE == OP_TYPE_QBMM_CUBE || OP_TYPE == OP_TYPE_QBMM_MX_L0C_PINGPONG,
+            OP_TYPE == OP_TYPE_QBMM_CUBE || OP_TYPE == OP_TYPE_QBMM_MIX ||
+                OP_TYPE == OP_TYPE_QBMM_MIX_NO_BATCH || OP_TYPE == OP_TYPE_QBMM_MX_L0C_PINGPONG,
             "Unsupported OP_TYPE value for qbmm_kernel_entry");
     }
 }

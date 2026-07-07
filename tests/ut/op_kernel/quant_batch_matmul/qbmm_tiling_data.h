@@ -48,21 +48,26 @@ struct QBMMV3TilingData {
     int64_t nTailMain;
 
     // QBMMTiling (from kernel_qbmm_cube.h)
+    // batch 广播维度 A：batchA1..batchA4
     uint32_t batchA1;
     uint32_t batchA2;
     uint32_t batchA3;
     uint32_t batchA4;
+    // batch 广播维度 B：batchB1..batchB4
     uint32_t batchB1;
     uint32_t batchB2;
     uint32_t batchB3;
     uint32_t batchB4;
+    // batch 广播维度 C（输出）：batchC1..batchC4
     uint32_t batchC1;
     uint32_t batchC2;
     uint32_t batchC3;
     uint32_t batchC4;
+    // bias / 量化模式标志
     uint32_t biasThreeDim;
     uint32_t x1QuantMode;
     uint32_t x2QuantMode;
+    // L1 载入 / buffer 配置
     uint32_t kAL1;
     uint32_t kBL1;
     uint32_t nBufferNum;
@@ -71,5 +76,8 @@ struct QBMMV3TilingData {
     uint32_t baseK_qbmm;
     uint32_t isBias;
     uint32_t dbL0C;
+
+    // BlockEpilogueDequant 额外字段（MIX 路径）：bias 运行时 dtype 代码（ge::DataType，如 DT_FLOAT/DT_FLOAT16/DT_BF16）
+    uint32_t biasDtype;
 };
 #pragma pack(pop)
