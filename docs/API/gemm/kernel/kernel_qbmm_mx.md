@@ -2,7 +2,7 @@
 > [代码位置](../../../../include/blaze/gemm/kernel/kernel_qbmm_mx.h)
 
 ## 功能说明
-MX 量化 Batch Matmul Kernel，仅支持 AIC 计算，支持 MxFP4/MxFP8 量化格式。集成 Scale 因子（pertokenScale、scale）处理、多 Batch 维度支持、L2 Cache 动态配置，适用于量化推理场景。
+MX 量化 Batch Matmul Kernel，仅支持 AIC 计算，支持 MxFP4/MxFP8 量化格式。集成 Scale 因子（x1Scale、x2Scale）处理、多 Batch 维度支持、L2 Cache 动态配置，适用于量化推理场景。
 
 **继承自**：[Kernel Matmul 基础框架](./kernel.md)
 
@@ -15,8 +15,8 @@ MX 量化 Batch Matmul Kernel，仅支持 AIC 计算，支持 MxFP4/MxFP8 量化
 
 ### Scale 因子要求
 必须提供两个 Scale 因子：
-- `scaleAGmAddr`：A 矩阵的 per-token scale（`fp8_e8m0_t` 类型）
-- `scaleBGmAddr`：B 矩阵的 per-group scale（`fp8_e8m0_t` 类型）
+- `scaleAGmAddr`：A 矩阵的 缩放因子（`fp8_e8m0_t` 类型）
+- `scaleBGmAddr`：B 矩阵的 缩放因子（`fp8_e8m0_t` 类型）
 
 ### 计算模式
 仅支持 AIC 模式，不支持 AIV 计算（AIV 核直接返回）。
@@ -30,7 +30,7 @@ MX 量化 Batch Matmul Kernel，仅支持 AIC 计算，支持 MxFP4/MxFP8 量化
 - 小 tile：启用 L2 Cache
 
 ### Batch 维度限制
-支持 4 维 Batch（batchA1/A2/A3/A4、batchB1/B2/B3/B4、batchC1/C2/C3/C4），需满足广播规则。
+支持 4 维 Batch（batchA1/A2/A3/A4、batchB1/B2/B3/B4、batchC1/C2/C3/C4），需满足广播规则。x1Scale/x2Scale 的 Batch 维度须分别与 A 矩阵/B 矩阵一致。
 
 ### Atomic Add 模式
 可选 Atomic Add 模式（`isAtomicAdd = true`），用于多核并行累加场景。
@@ -96,8 +96,8 @@ struct Params {
 ### QBMMTiling
 ```
 struct QBMMTiling {
-    uint32_t batchA1, batchA2, batchA3, batchA4;  // A 矩阵 Batch 维度
-    uint32_t batchB1, batchB2, batchB3, batchB4;  // B 矩阵 Batch 维度
+    uint32_t batchA1, batchA2, batchA3, batchA4;  // A 矩阵/x1Scale 的 Batch 维度
+    uint32_t batchB1, batchB2, batchB3, batchB4;  // B 矩阵/x2Scale 的 Batch 维度
     uint32_t batchC1, batchC2, batchC3, batchC4;  // C 矩阵 Batch 维度
     uint32_t biasThreeDim;                        // Bias 是否为 3 维
     uint32_t baseM, baseN, baseK;                 // L0 tile 形状
@@ -170,7 +170,7 @@ __aicore__ inline void ProcessWithBatch(const Params& params, BlockScheduler& bs
 执行流程：
 1. 计算 Batch 广播倍数：multiA1C1、multiB1C1 等
 2. 4 维 Batch 循环（batchC1/C2/C3/C4）：
-   - 更新 Batch 偏移：`batchCOffset_`、`batchAOffset_`、`batchBOffset_`
+   - 更新 Batch 偏移：`batchCOffset_`、`batchAOffset_`、`batchBOffset_`，x1Scale/x2Scale 分别复用 `batchAOffset_`/`batchBOffset_`
    - 调用 `AddBatchOffset` 更新 GM 地址
    - 调用 `ProcessSingleBatch` 处理当前 Batch
 

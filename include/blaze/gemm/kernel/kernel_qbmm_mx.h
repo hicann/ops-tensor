@@ -326,6 +326,9 @@ __aicore__ inline void GemmUniversal<QBMM_MX_KERNEL_TEM_PARAMS>::AddBatchOffset(
     if (isBiasThreeDim_) {
         biasGmAddr_ += batchCOffset_ * n;
     }
+    const auto scaleKLen = Blaze::Gemm::CeilDiv(k, static_cast<int64_t>(MXFP_DIVISOR_SIZE)) * MXFP_MULTI_BASE_SIZE;
+    scaleAGmAddr_ += batchAOffset_ * m * scaleKLen;
+    scaleBGmAddr_ += batchBOffset_ * n * scaleKLen;
 }
 
 QBMM_MX_KERNEL_CLASS_TEM_PARAMS
