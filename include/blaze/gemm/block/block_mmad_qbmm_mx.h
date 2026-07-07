@@ -153,6 +153,10 @@ public:
         kL1_ = l1Params.kL1;
         scaleKL1_ = l1Params.scaleKL1;
         splitKNum_ = splitKNum;
+        abL1LoopCnt_ = 0UL;
+        scaleLoopCnt_ = 0UL;
+        l0PingPong_ = 0UL;
+        l0cPingPong_ = 0UL;
         baseM_ = AscendC::Te::Get<IDX_M_IDX>(l0TileShape);
         baseN_ = AscendC::Te::Get<IDX_N_IDX>(l0TileShape);
         baseK_ = AscendC::Te::Get<IDX_K_IDX>(l0TileShape);
