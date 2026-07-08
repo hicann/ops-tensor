@@ -56,7 +56,9 @@ private:
         if constexpr (IsSatisfiedPtnFormatV<U, NDExtLayoutPtn> && IsSatisfiedPtnFormatV<T, NDExtLayoutPtn>) {
             blockCount = GetTotalRowShape(srcLayout);
             // Next three parameters are in unit of 1B
-            blockLen = GetTotalColumnShape(srcLayout) * sizeof(SRC_TYPE);
+            blockLen = Std::min(
+                        GetTotalColumnShape(srcLayout) * sizeof(SRC_TYPE),
+                        GetTotalColumnShape(dstLayout) * sizeof(DST_TYPE));
 
             srcStride = GetElement<AttrInfo::Stride, AttrInfo::Row, 1>(srcLayout) * sizeof(SRC_TYPE);
             dstStride = GetElement<AttrInfo::Stride, AttrInfo::Row, 1>(dstLayout) * sizeof(DST_TYPE);
@@ -64,7 +66,9 @@ private:
         } else if constexpr (IsSatisfiedPtnFormatV<U, DNExtLayoutPtn> && IsSatisfiedPtnFormatV<T, DNExtLayoutPtn>) {
             blockCount = GetTotalColumnShape(srcLayout);
             // Next three parameters are in unit of 1B
-            blockLen = GetTotalRowShape(srcLayout) * sizeof(SRC_TYPE);
+            blockLen = Std::min(
+                        GetTotalRowShape(srcLayout) * sizeof(SRC_TYPE),
+                        GetTotalRowShape(dstLayout) * sizeof(DST_TYPE));
 
             srcStride = GetElement<AttrInfo::Stride, AttrInfo::Column, 1>(srcLayout) * sizeof(SRC_TYPE);
             dstStride = GetElement<AttrInfo::Stride, AttrInfo::Column, 1>(dstLayout) * sizeof(DST_TYPE);
