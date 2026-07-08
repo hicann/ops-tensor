@@ -223,7 +223,7 @@ private:
 private:
     static constexpr uint64_t BLOCK_SIZE_16 = 16UL;
     static constexpr uint64_t BLOCK_SIZE_32 = 32UL;
-    static constexpr int64_t FullLoadMode = FullLoadMode_;
+    static constexpr int64_t FULL_LOAD_MODE = FullLoadMode_;
     static constexpr bool IS_ND_FORMAT = IsNdFormat_;
     static constexpr bool IS_FP32 = IsFp32_;
 

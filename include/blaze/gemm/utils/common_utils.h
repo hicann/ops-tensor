@@ -46,6 +46,9 @@ static constexpr int64_t WINDOW_LEN = 4UL;
 constexpr static uint16_t DIMENSION_M = 0;
 constexpr static uint16_t DIMENSION_N = 1;
 constexpr static uint16_t DIMENSION_K = 2;
+constexpr uint64_t ON_THE_FLY = 0UL;
+constexpr uint64_t ND_ALIG_1V1_FIXPIPE = 1UL;
+constexpr uint64_t ND_ALIG_1V2_FIXPIPE = 2UL;
 
 constexpr uint16_t ZERO_FLAG = 0;
 constexpr uint16_t FIRST_FLAG = 1;

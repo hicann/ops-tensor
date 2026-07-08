@@ -30,4 +30,11 @@ struct CopyL0C2UBTraitMixSplitM {
     using TraitType = AscendC::Te::CopyL0C2UBTrait;
     static constexpr const TraitType value = MIX_COPY_L0C2UB_SPLIT_M_TRAIT;
 };
+
+struct CopyL0C2UBTraitSplitM {
+    using TraitType = AscendC::Te::CopyL0C2UBTrait;
+    static constexpr const TraitType value = AscendC::Te::CopyL0C2UBTrait{AscendC::Te::RoundMode::DEFAULT, false, false,
+                                                                          AscendC::Te::DualDstMode::DUAL_DST_SPLIT_M};
+};
+
 } // namespace Blaze::Gemm::Tile

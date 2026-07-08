@@ -30,6 +30,8 @@ struct KernelMmadMultiBlockBasic {}; // Multi-tile basic
 struct KernelIterBatchBroadcast {}; // Multi-tile batchMatmul broadcast + iterbatch
 struct KernelMmadMultiBlockBmmBroadcast {}; // Multi-tile batchMatmul broadcast
 struct KernelMmadMultiBlockAFullLoad {};     // Multi-tile aFullLoad
+struct KernelMmadMultiBlockBFullLoad {}; // Multi-tile fullLoad
+struct KernelMmadMultiBlockFixpipeOpti {}; // Multi-tile FixpipeOpti
 enum class MatMulL0C2Out : std::uint8_t
 {
     ON_THE_FLY = 0,
@@ -192,6 +194,23 @@ struct MatmulMultiBlockAFullLoad {
     using ScheduleType = KernelSchedule_;
     static constexpr uint64_t FULL_LOAD_MODE = FullLoadMode_;
     static constexpr uint64_t FUSED_OP_TYPE = FusedOpType_;
+};
+
+/**
+ * @struct MatmulMultiBlockFullLoad
+ * @brief Matrix multiplication multi-block structure, no quant, implemented based on Layout
+ * @param [in] L0C2OutModel_: mode of L0C out mode, default is ON_THE_FLY(not set out mode)
+ * @param [in] FullLoadMode_: mode of full load, default is B_FULL_LOAD_MODE(B full load)
+ * @param [in] FusedOpType: execute fusion after mmad , default is 0
+ */
+template <
+    uint64_t L0C2OutModel_ = ON_THE_FLY, uint64_t FullLoadMode_ = B_FULL_LOAD_MODE, uint64_t FusedOpType_ = 0,
+    class KernelSchedule_ = KernelMmadMultiBlockBFullLoad>
+struct MatmulMultiBlockFullLoadOrFixpipe {
+    using ScheduleType = KernelSchedule_;
+    constexpr static uint64_t FULL_LOAD_MODE = FullLoadMode_;
+    constexpr static uint64_t L0C2OUT_MODEL = L0C2OutModel_;
+    constexpr static uint64_t FUSED_OP_TYPE = FusedOpType_;
 };
 
 } // namespace Gemm
