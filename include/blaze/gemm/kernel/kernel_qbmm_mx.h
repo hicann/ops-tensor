@@ -170,6 +170,9 @@ __aicore__ inline void GemmUniversal<QBMM_MX_KERNEL_TEM_PARAMS>::Run(const Param
     }
 
     ProcessWithBatch(params, bs);
+    if constexpr (isAtomicAdd) {
+        AscendC::SetAtomicNone();
+    }
 }
 
 QBMM_MX_KERNEL_CLASS_TEM_PARAMS
