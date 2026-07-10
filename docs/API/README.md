@@ -287,12 +287,14 @@ blaze/
 │       ├── kernel/              # Kernel 层组件
 │       │   ├── kernel_matmul_basic.h
 │       │   ├── kernel_matmul_streamk.h
+│       │   ├── kernel_qbmm_cube.h
 │       │   ├── kernel_qbmm_mx.h
 │       │   ├── kernel_qbmm_mx_without_batch.h
 │       │   └── kernel_qbmm_streamk.h
 │       │
 │       ├── block/               # Block 层组件
 │       │   ├── block_mmad.h          # BlockMmad 基类
+│       │   ├── block_mmad_a8w8_fixpipe_quant.h # Fixpipe Quant BlockMmad
 │       │   ├── block_mmad_matmul_basic.h    # Matmul Basic BlockMmad
 │       │   ├── block_mmad_matmul_streamk.h  # Matmul StreamK BlockMmad
 │       │   ├── block_mmad_qbmm_mx.h         # Qbmm MX BlockMmad

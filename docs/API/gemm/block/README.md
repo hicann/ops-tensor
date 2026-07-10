@@ -6,6 +6,7 @@
 | 组件名 | 描述 |
 | :----------------------------------------------------------- | :------: |
 | [block_mmad_matmul_basic](./block_mmad_matmul_basic.md) | 基础矩阵乘 Block，基于 Tensor API，支持 L1/L0 双缓冲 |
+| [block_mmad_a8w8_fixpipe_quant](./block_mmad_a8w8_fixpipe_quant.md) | Fixpipe 量化矩阵乘 Block，支持 int8/HiFloat8/FP8 输入、Fixpipe 反量化、per-tensor/per-channel scale |
 | [block_mmad_qbmm_mx](./block_mmad_qbmm_mx.md) | MX 量化矩阵乘 Block，支持 Scale 因子、MxFP4/MxFP8 量化 |
 | [block_mmad_a8w8_mix](./block_mmad_a8w8_mix.md) | MIX 模板 A8W8 量化矩阵乘 Block，int32 累加 + L0C→UB（fixpipe NoQuant），不做 scale/bias |
 | [block_mmad_qgmm_mx](./block_mmad_qgmm_mx.md) | MX 量化 Grouped Matmul Block，支持 group list、ScaleA/ScaleB |
@@ -47,6 +48,7 @@ BlockMmad
     ├── DispatchPolicy (调度策略)
     │       ├── MatmulMultiBlockBasic (Basic)
     │       ├── MatmulMultiBlockWithStreamK (StreamK)
+    │       ├── MatmulWithScaleFixpipeQuant (Fixpipe 量化)
     │       ├── MatmulWithScaleMx (QBMM MX 量化)
     │       ├── MatmulWithScaleMix (QBMM MIX A8W8 量化)
     │       ├── MatmulWithScaleMxL0CPingpong (QBMM MX L0C PingPong)
@@ -65,6 +67,7 @@ BlockMmad
 |-----------|---------|---------|---------|-----------|---------|-----------|---------|-------------|---------|
 | BlockMmadBasic | MatmulMultiBlockBasic | GM | 不支持 | 不支持 | 可配置 (1 或 2) | 可配置 | 支持 | 无 | Basic Kernel |
 | BlockMmadStreamK | MatmulMultiBlockWithStreamK | GM 或 workspace | 不支持 | 不支持 | 固定双缓冲 | 固定单缓冲 | 支持 | 无（Kernel 层处理） | StreamK Kernel |
+| BlockMmadA8W8FixpipeQuant | MatmulWithScaleFixpipeQuant | GM | int8/HiFloat8/FP8 | X2 scale + Fixpipe | 可配置 (2 或 4) | 可配置 | 支持 | 无 | QBMM Cube Kernel |
 | BlockMmadMx | MatmulWithScaleMx | GM | MxFP4/MxFP8 | ScaleA + ScaleB | 可配置 (2 或 4) | 可配置 | 支持 | 无 | QBMM MX Kernel |
 | BlockMmadA8W8Mix | MatmulWithScaleMix | UB (L0C→UB) | int8 (A8W8) | 不在本层（由 epilogue 处理） | 可配置 (2 或 4) | 可配置 | 不在本层 | 无（Kernel 层处理） | QBMM MIX Kernel |
 | BlockMmadQGmmMx | GroupedMatmulWithScaleMx | GM | MxFP4/MxFP8 | ScaleA + ScaleB | 固定双缓冲 | 可配置 | 支持 | 无 | QGMM MX Kernel |
@@ -73,8 +76,8 @@ BlockMmad
 ## 使用流程
 
 1. **查看公共框架**：了解模板参数和核心接口 → [block_mmad.md](./block_mmad.md)
-2. **选择具体实现**：根据 Kernel 类型选择 Basic、StreamK、MX 或 L0C PingPong MX
-3. **定义调度策略**：选择 DispatchPolicy（TensorApi、StreamK、ScaleMx 或 ScaleMxL0CPingpong）
+2. **选择具体实现**：根据 Kernel 类型选择 Basic、StreamK、FixpipeQuant、MX 或 L0C PingPong MX
+3. **定义调度策略**：选择 DispatchPolicy（TensorApi、StreamK、FixpipeQuant、ScaleMx 或 ScaleMxL0CPingpong）
 4. **组装组件**：定义数据类型、布局类型
 5. **初始化**：调用 Init 设置 tile 形状、缓冲策略
 6. **执行计算**：调用 operator 执行矩阵乘
