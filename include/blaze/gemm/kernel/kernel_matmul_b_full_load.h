@@ -86,8 +86,8 @@ public:
         BlockScheduler bs(params.problemShape, params.schParams);
         int64_t curBlockIdx = AscendC::GetBlockIdx();
 
-        int64_t realBlockNum = bs.GetBlockNum(params.problemShape);
-        if (curBlockIdx >= realBlockNum) {
+        int64_t realCoreNums = bs.GetCoreNums();
+        if (curBlockIdx >= realCoreNums) {
             return;
         }
         if (params.schParams.isHf32) {
@@ -97,7 +97,7 @@ public:
 
         BlockMmad blockMmad;
         blockMmad.Init(params.mmadParams);
-        MatmulProcess(params, blockMmad, bs, curBlockIdx, AscendC::GetBlockNum(), bs.GetTileNum());
+        MatmulProcess(params, blockMmad, bs, curBlockIdx, AscendC::GetBlockNum(), bs.GetBlockNums());
         UnsetHf32();
     }
 
@@ -123,9 +123,9 @@ private:
 
         uint64_t preBatchIdx = 0;
         // Process tiles in ping-pong mode
-        for (int64_t tileIdx = curBlockIdx; tileIdx < totalBlockNums; tileIdx += coreNums) {
-            auto tileShape = bs.template GetBlockShape<TRANS_B, BType>(tileIdx);
-            auto tileCoord = bs.GetBlockCoord(tileIdx);
+        for (int64_t blockIdx = curBlockIdx; blockIdx < totalBlockNums; blockIdx += coreNums) {
+            auto tileShape = bs.template GetBlockShape<TRANS_B, BType>(blockIdx);
+            auto tileCoord = bs.GetBlockCoord(blockIdx);
             auto coordM = AscendC::Te::Get<MNK_M>(tileCoord);
             // auto coordN = AscendC::Te::Get<MNK_N>(tileCoord);
             auto shapeM = AscendC::Te::Get<MNK_M>(tileShape);

@@ -41,7 +41,7 @@ public:
     using LayoutC = LayoutC_;
     using LayoutBias = LayoutBias_;
     using DispatchPolicy = MatmulMultiBlockAFullLoad<FullLoadMode_, FusedOpType_, KernelSchedule_>;
-    using TupleL1L0Shape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t, int64_t, int64_t>;
+    using TupleShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
     using TripleShape = AscendC::Te::Shape<int64_t, int64_t, int64_t>;
 
     // TRANS_A and TRANS_B
@@ -132,7 +132,7 @@ public:
 
     template <typename TensorA, typename TensorB, typename TensorBias, typename TensorC>
     __aicore__ inline void operator()(
-        TensorA& gmA, TensorB& gmB, TensorBias& gmBias, TensorC& gmC, TupleL1L0Shape& blockShape)
+        TensorA& gmA, TensorB& gmB, TensorBias& gmBias, TensorC& gmC, TupleShape& blockShape)
     {
         static constexpr uint64_t HALF_L0C_SIZE = AscendC::TOTAL_L0C_SIZE / DOUBLE_BUFFER_COUNT;
         static constexpr uint64_t HALF_L0_SIZE = AscendC::TOTAL_L0A_SIZE / DOUBLE_BUFFER_COUNT;

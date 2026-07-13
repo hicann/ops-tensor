@@ -62,13 +62,35 @@ int64_t batch = Get<3>(problemShape);
 - **多 Batch 场景**：`batch > 1`，Kernel 层会进行 Batch 循环处理
 - StreamK 调度器会根据 ProblemShape 计算 tile 切分和 DP+SK 混合策略
 
-## 特殊类型别名
+## 特殊约束
+### DP+SK 混合策略
+StreamK 调度器将 tile 分为两种模式：
+- **DP（Data Parallel）模式**：完整 tile，每个核独立处理完整的 (m, n) tile，结果直接输出到 GM
+- **SK（StreamK）模式**：K 轴切分 tile，多个核协同处理一个 (m, n) tile 的不同 K 切分，结果输出到 workspace
 
-| 类型 | 说明 |
-|------|------|
-| BlockShape | Block 形状：`Shape<int64_t, int64_t, int64_t, int64_t>` |
-| BlockCoord | Block 坐标：`Coord<int64_t, int64_t, int64_t, int64_t>` (mTileIdx, nTileIdx, kTileIdx, 0) |
-| ProblemShape | 问题规模类型（模板参数） |
+### DP 模式 block
+- **block 数量**：`totalMNBlockNumsInDP_ = mBlockNums_ × nBlockNums_ - tailMNBlockNums`
+- **每个核处理**：完整的 (m, n) block，K 轴不切分
+- **输出目标**：GM（通过 BlockMmad 输出）
+
+### SK 模式 block
+- **block 数量**：`tailMNBlockNums × skBlockNums`
+- **每个核处理**：一个 (m, n) block 的部分 K 切分
+- **K 切分数量**：`skBlockNums_ = CeilDiv(k_, skSingleCoreK_)`
+- **输出目标**：workspace（通过 BlockMmad 输出）
+
+### block 索引分配
+```
+blockIdx 判断：
+DP 模式：CeilDiv((blockIdx + 1), usedCoreNums_) < CeilDiv(blockNums_, usedCoreNums_)
+SK 模式：CeilDiv((blockIdx + 1), usedCoreNums_) == CeilDiv(blockNums_, usedCoreNums_)
+```
+
+### Z 型扫描
+使用 Z 型扫描策略：
+- **正向扫描**：偶数行（rowIdx % 2 == 0）
+- **反向扫描**：奇数行（rowIdx % 2 != 0）
+
 
 ## Params 参数结构
 
@@ -99,22 +121,14 @@ struct Params {
 
 | 变量 | 说明 |
 |------|------|
-| usedCoreNum_ | 使用的核数 |
-| mTileNum_ | M 轴 tile 数量 |
-| nTileNum_ | N 轴 tile 数量 |
-| skKTileNum_ | SK 模式 K 轴 tile 数量 |
-| tileNum_ | 总 tile 数量（DP tile + SK tile） |
-| totalMNTileNumInDP_ | DP 模式 tile 数量 |
-| batch_ | Batch 数量 |
-| m_ | M 维度大小 |
-| n_ | N 维度大小 |
-| k_ | K 维度大小 |
-| mTileIdx_ | 当前 M 轴 tile 索引 |
-| nTileIdx_ | 当前 N 轴 tile 索引 |
-| kTileIdx_ | 当前 K 轴切分索引（SK 模式） |
-| curKTileNum_ | 当前 K 轴 tile 数量（DP=1, SK=skKTileNum_） |
-| mL1_ | L1 M 维度大小（等于 baseM） |
-| nL1_ | L1 N 维度大小（等于 baseN） |
+| usedCoreNums_ | 使用的核数 |
+| skBlockNums_ | SK 模式 K 轴 block 数量 |
+| blockNums_ | 总 block 数量（DP block + SK block） |
+| totalMNBlockNumsInDP_ | DP 模式 block 数量 |
+| mBlockIdx_ | 当前 M 轴 block 索引 |
+| nBlockIdx_ | 当前 N 轴 block 索引 |
+| kBlockIdx_ | 当前 K 轴切分索引（SK 模式） |
+| curKBlockNums_ | 当前 K 轴 block 数量（DP=1, SK=skBlockNums_） |
 | skSingleCoreK_ | SK 模式单核 K 大小 |
 
 ## 特殊成员方法
@@ -132,118 +146,75 @@ __aicore__ inline BlockSchedulerMatmulStreamK(const ProblemShape& shape, const P
 
 执行流程：
 1. 设置问题规模：`m_`, `n_`, `k_`, `batch_`
-2. 设置 L1/L0 形状：`mL1_ = baseM`, `nL1_ = baseN`, `skSingleCoreK_ = singleCoreK`
-3. 计算 tile 数量：`mTileNum_ = CeilDiv(m_, mL1_)`, `nTileNum_ = CeilDiv(n_, nL1_)`, `skKTileNum_ = CeilDiv(k_, skSingleCoreK_)`
-4. 计算 DP+SK tile：
-   - `tailMNTileNum = (mTileNum_ × nTileNum_) % usedCoreNum_`（SK 模式 MN tile 数量）
-   - `totalMNTileNumInDP_ = mTileNum_ × nTileNum_ - tailMNTileNum`（DP 模式 tile 数量）
-   - `tileNum_ = totalMNTileNumInDP_ + tailMNTileNum × skKTileNum_`（总 tile 数量）
+2. 设置 L1/L0 形状：`mL1_ = baseM`, `nL1_ = baseN`, `skSingleCoreK_ = singleCoreK`, `kL1_`, `baseK_`
+3. 计算 block 数量：`mBlockNums_ = CeilDiv(m_, mL1_)`, `nBlockNums_ = CeilDiv(n_, nL1_)`, `skBlockNums_ = CeilDiv(k_, skSingleCoreK_)`
+4. 计算 DP+SK block：
+   - `tailMNBlockNums = (mBlockNums_ × nBlockNums_) % usedCoreNums_`（SK 模式 block 数量）
+   - `totalMNBlockNumsInDP_ = mBlockNums_ × nBlockNums_ - tailMNBlockNums`（DP 模式 block 数量）
+   - `blockNums_ = totalMNBlockNumsInDP_ + tailMNBlockNums × skBlockNums_`（总 block 数量）
+5. 设置 HF32 和 L2 Cache 模式：`isHf32_`, `l2CacheMode_`
 
-### GetTileNum
+### GetBlockNums
 ```cpp
-__aicore__ inline int64_t GetTileNum()
+__aicore__ inline int64_t GetBlockNums()
 ```
-功能：返回总 tile 数量（`tileNum_ × batch_`）。
+功能：返回总 block 数量（`blockNums_ × batch_`）。
 
-### GetMNKTileNum
-```cpp
-__aicore__ inline Shape<int64_t, int64_t, int64_t, int64_t> GetMNKTileNum()
+### GetCoreNums
 ```
-功能：返回 M/N/K tile 数量 `{mTileNum_, nTileNum_, skKTileNum_, 1}`。
-
-### GetBlockNum
-```cpp
-__aicore__ inline int64_t GetBlockNum(ProblemShape shape)
+__aicore__ inline int64_t GetCoreNums()
 ```
-功能：返回实际使用的 Block 数量（不超过 tile 总数）。
-参数说明：
-| 参数 | 类型 | 说明 |
-|------|------|------|
-| shape | ProblemShape | 问题规模 |
-
-返回值：`min(tileNum_ × batch_, AscendC::GetBlockNum())`
+功能：返回实际需要的核数量（不超过 block 总数）。
 
 ### GetBlockShape
-```cpp
-__aicore__ inline BlockShape GetBlockShape(int64_t tileIdx)
 ```
-功能：返回当前 tile 的 Block 形状。
+__aicore__ inline BlockShape GetBlockShape(int64_t blockIdx)
+```
+功能：返回当前 block 的单核形状。
 参数说明：
 | 参数 | 类型 | 说明 |
 |------|------|------|
-| tileIdx | int64_t | tile 索引 |
+| blockIdx | int64_t | block 索引 |
 
 返回值：`BlockShape {blkM, blkN, blkK, 0}`
 特殊逻辑：
-- **尾块判断**：`mTileIdx_ == (mTileNum_ - 1)` 或 `nTileIdx_ == (nTileNum_ - 1)`
-- **K 切分尾块**：`kTileIdx_ == (curKTileNum_ - 1)`
+- **尾块判断**：`mBlockIdx_ == (mBlockNums_ - 1)` 或 `nBlockIdx_ == (nBlockNums_ - 1)`
+- **K 切分尾块**：`kBlockIdx_ == (curKBlockNums_ - 1)`
 - **DP 模式**：`blkK = k_`（完整 K）
 - **SK 模式**：`blkK = skSingleCoreK_` 或 `tailSingleCoreK`
 
 ### GetBlockCoord
-```cpp
-__aicore__ inline BlockCoord GetBlockCoord(int64_t tileIdx)
 ```
-功能：返回当前 tile 的 Block 坐标。
+__aicore__ inline BlockCoord GetBlockCoord(int64_t blockIdx)
+```
+功能：返回当前 block 的单核坐标。
 参数说明：
 | 参数 | 类型 | 说明 |
 |------|------|------|
-| tileIdx | int64_t | tile 索引 |
+| blockIdx | int64_t | block 索引 |
 
-返回值：`BlockCoord {mTileIdx_, nTileIdx_, kTileIdx_, 0}`
-说明：K 轴索引 `kTileIdx_` 仅在 SK 模式有效（DP 模式为 0）。
-
-### GetCurKSingleCore
-```cpp
-__aicore__ inline int64_t GetCurKSingleCore(int64_t tileIdx)
-```
-功能：返回当前 tile 的单核 K 大小。
-参数说明：
-| 参数 | 类型 | 说明 |
-|------|------|------|
-| tileIdx | int64_t | tile 索引 |
-
-返回值：
-- **DP 模式**：`k_`（完整 K）
-- **SK 模式**：`skSingleCoreK_`（切分 K）
+返回值：`BlockCoord {mBlockIdx_, nBlockIdx_, kBlockIdx_, 0}`
+说明：K 轴索引 `kBlockIdx_` 仅在 SK 模式有效（DP 模式为 0）。
 
 ### CheckIsSkScene
 ```cpp
-__aicore__ inline bool CheckIsSkScene(int64_t tileIdx)
+__aicore__ inline bool CheckIsSkScene(int64_t blockIdx)
 ```
-功能：判断当前 tile 是否为 SK 模式。
+功能：判断当前 block 是否为 SK 模式。
 参数说明：
 | 参数 | 类型 | 说明 |
 |------|------|------|
-| tileIdx | int64_t | tile 索引 |
+| blockIdx | int64_t | block 索引 |
 
 返回值：
 - **true**：SK 模式（K 轴切分）
-- **false**：DP 模式（完整 tile）
+- **false**：DP 模式（完整 block）
 
 判断逻辑：
 ```
-CeilDiv((tileIdx + 1), usedCoreNum_) == CeilDiv(tileNum_, usedCoreNum_)
+CeilDiv((blockIdx + 1), usedCoreNums_) == CeilDiv(blockNums_, usedCoreNums_)
 ```
 
-### UpdateMNTileIdx
-```
-__aicore__ inline void UpdateMNTileIdx(int64_t tileIdx)
-```
-功能：更新当前 tile 的 M/N/K tile 索引。
-参数说明：
-| 参数 | 类型 | 说明 |
-|------|------|------|
-| tileIdx | int64_t | tile 索引 |
-
-执行流程：
-1. **判断 DP/SK 模式**：`CheckIsSkScene(tileIdx)`
-2. **设置 K 轴 tile 数量**：`curKTileNum_ = (SK ? skKTileNum_ : 1)`
-3. **计算 mnIdxInCurLoop**：
-   - **SK 模式**：`kTileIdx_ = (tileIdx % usedCoreNum_) % curKTileNum_`, `mnIdxInCurLoop = (tileIdx % usedCoreNum_) / curKTileNum_ + totalMNTileNumInDP_`
-   - **DP 模式**：`kTileIdx_ = 0`, `mnIdxInCurLoop = tileIdx / curKTileNum_`
-4. **Z 型扫描**：计算 `mTileIdx_`, `nTileIdx_`
-5. **反向扫描**：奇数行反向（`nTileIdx_ = nTileNum_ - 1 - nTileIdx_`）
 
 ## 调用示例
 
@@ -273,18 +244,18 @@ ProblemShape shape{m, n, k, batch};
 BlockScheduler scheduler(shape, params);
 ```
 
-### 获取 tile 数量
-```cpp
-int64_t tileNum = scheduler.GetTileNum();
-int64_t blockNum = scheduler.GetBlockNum(shape);
-for (int64_t tileIdx = GetBlockIdx(); tileIdx < tileNum; tileIdx += blockNum) {
-    // 处理 tile
+### 获取 block 数量
+```
+int64_t blockNums = scheduler.GetBlockNums();
+int64_t coreNums = scheduler.GetCoreNums();
+for (int64_t blockIdx = GetBlockIdx(); blockIdx < blockNums; blockIdx += coreNums) {
+    // 处理 block
 }
 ```
 
 ### 判断 DP/SK 模式
 ```
-bool isSkScene = scheduler.CheckIsSkScene(tileIdx);
+bool isSkScene = scheduler.CheckIsSkScene(blockIdx);
 if (isSkScene) {
     // SK 模式：输出到 workspace
 } else {
@@ -294,7 +265,7 @@ if (isSkScene) {
 
 ### 获取单核形状
 ```
-auto singleCoreShape = scheduler.GetBlockShape(tileIdx);
+auto singleCoreShape = scheduler.GetBlockShape(blockIdx);
 int64_t blkM = Get<0>(singleCoreShape);
 int64_t blkN = Get<1>(singleCoreShape);
 int64_t blkK = Get<2>(singleCoreShape);
@@ -302,25 +273,10 @@ int64_t blkK = Get<2>(singleCoreShape);
 
 ### 获取单核坐标
 ```
-auto singleCoreCoord = scheduler.GetBlockCoord(tileIdx);
-int64_t mTileIdx = Get<0>(singleCoreCoord);
-int64_t nTileIdx = Get<1>(singleCoreCoord);
-int64_t kTileIdx = Get<2>(singleCoreCoord);  // SK 模式有效
-```
-
-### 获取当前 K 大小
-```cpp
-int64_t curK = scheduler.GetCurKSingleCore(tileIdx);
-// DP 模式：curK = k_
-// SK 模式：curK = skSingleCoreK_
-```
-
-### 获取 MNK tile 数量
-```cpp
-auto mnkTileNum = scheduler.GetMNKTileNum();
-int64_t mTileNum = Get<0>(mnkTileNum);
-int64_t nTileNum = Get<1>(mnkTileNum);
-int64_t skKTileNum = Get<2>(mnkTileNum);
+auto singleCoreCoord = scheduler.GetBlockCoord(blockIdx);
+int64_t mBlockIdx = Get<0>(singleCoreCoord);
+int64_t nBlockIdx = Get<1>(singleCoreCoord);
+int64_t kBlockIdx = Get<2>(singleCoreCoord);  // SK 模式有效
 ```
 
 ## 数据流
@@ -329,27 +285,27 @@ int64_t skKTileNum = Get<2>(mnkTileNum);
 ```
 问题规模 (m, n, k, batch)
     ↓
-tile 切分 (mTileNum, nTileNum, skKTileNum)
+tile 切分 (mBlockNums, nBlockNums, skBlockNums)
     ↓
-DP tile 数量 = mTileNum × nTileNum - tailMNTileNum
+DP block 数量 = mBlockNums × nBlockNums - tailMNBlockNums
     ↓
-SK tile 数量 = tailMNTileNum × skKTileNum
+SK block 数量 = tailMNBlockNums × skBlockNums
     ↓
-总 tile 数量 = DP tile + SK tile
+总 block 数量 = DP block + SK block
     ↓
-tile 索引判断 (CheckIsSkScene)
+block 索引判断 (CheckIsSkScene)
     ↓
-DP 模式：完整 tile，输出到 GM
+DP 模式：完整 block，输出到 GM
 SK 模式：K 轴切分，输出到 workspace
 ```
 
 ### DP 模式流程
 ```
-tileIdx 判断：CeilDiv((tileIdx + 1), usedCoreNum) < CeilDiv(tileNum, usedCoreNum)
+blockIdx 判断：CeilDiv((blockIdx + 1), usedCoreNums) < CeilDiv(blockNums, usedCoreNums)
     ↓
-curKTileNum = 1（不切分 K）
+curKBlockNums = 1（不切分 K）
     ↓
-kTileIdx = 0
+kBlockIdx = 0
     ↓
 GetBlockShape：blkK = k_（完整 K）
     ↓
@@ -358,11 +314,11 @@ BlockMmad：输出到 GM
 
 ### SK 模式流程
 ```
-tileIdx 判断：CeilDiv((tileIdx + 1), usedCoreNum) == CeilDiv(tileNum, usedCoreNum)
+blockIdx 判断：CeilDiv((blockIdx + 1), usedCoreNums) == CeilDiv(blockNums, usedCoreNums)
     ↓
-curKTileNum = skKTileNum（K 轴切分）
+curKBlockNums = skBlockNums（K 轴切分）
     ↓
-kTileIdx = (tileIdx % usedCoreNum) % curKTileNum
+kBlockIdx = (blockIdx % usedCoreNums) % curKBlockNums
     ↓
 GetBlockShape：blkK = skSingleCoreK_ 或 tailSingleCoreK
     ↓
@@ -375,73 +331,41 @@ BlockEpilogue（AIV）：workspace 汇聚 → GM
 ```
 mnIdxInCurLoop（DP/SK 模式的 MN 索引）
     ↓
-rowIdx = mnIdxInCurLoop / nTileNum / mainWindow
+rowIdx = mnIdxInCurLoop / nBlockNums / mainWindow
     ↓
-rowIdx < mainRow：mTileIdx = rowIdx × mainWindow + mnIdxInCurLoop % mainWindow
+rowIdx < mainRow：mBlockIdx = rowIdx × mainWindow + mnIdxInCurLoop % mainWindow
     ↓
 rowIdx == mainRow：尾窗口计算
     ↓
-rowIdx % 2 != 0：反向扫描（nTileIdx = nTileNum - 1 - nTileIdx）
-```
-
-## 特殊约束
-
-### DP+SK 混合策略
-StreamK 调度器将 tile 分为两种模式：
-- **DP（Data Parallel）模式**：完整 tile，每个核独立处理完整的 (m, n) tile，结果直接输出到 GM
-- **SK（StreamK）模式**：K 轴切分 tile，多个核协同处理一个 (m, n) tile 的不同 K 切分，结果输出到 workspace
-
-### DP 模式 tile
-- **tile 数量**：`totalMNTileNumInDP_ = mTileNum_ × nTileNum_ - tailMNTileNum`
-- **每个核处理**：完整的 (m, n) tile，K 轴不切分
-- **输出目标**：GM（通过 BlockMmad 输出）
-
-### SK 模式 tile
-- **tile 数量**：`tailMNTileNum × skKTileNum`
-- **每个核处理**：一个 (m, n) tile 的部分 K 切分
-- **K 切分数量**：`skKTileNum_ = CeilDiv(k_, skSingleCoreK_)`
-- **输出目标**：workspace（通过 BlockMmad 输出）
-
-### tile 索引分配
-```
-tileIdx 判断：
-DP 模式：CeilDiv((tileIdx + 1), usedCoreNum_) < CeilDiv(tileNum_, usedCoreNum_)
-SK 模式：CeilDiv((tileIdx + 1), usedCoreNum_) == CeilDiv(tileNum_, usedCoreNum_)
+rowIdx % 2 != 0：反向扫描（nBlockIdx = nBlockNums - 1 - nBlockIdx)
 ```
 
 ## 性能优化建议
 
-### usedCoreNum 配置
+### usedCoreNums 配置
 - **建议值**：根据实际 AIC 核数量设置（如 8、16）
-- **SK 模式比例**：`tailMNTileNum = (mTileNum × nTileNum) % usedCoreNum`
-- **优化**：调整 usedCoreNum 以减少 SK 模式 tile 数量
+- **SK 模式比例**：`tailMNBlockNums = (mBlockNums × nBlockNums) % usedCoreNums`
+- **优化**：调整 usedCoreNums 以减少 SK 模式 block 数量
 
 ### singleCoreK 配置
 - **建议值**：约为 `k_ / 4`，平衡 K 轴切分数量
-- **SK tile 数量**：`skKTileNum = CeilDiv(k_, singleCoreK)`
+- **SK block 数量**：`skBlockNums = CeilDiv(k_, singleCoreK)`
 - **优化**：调整 singleCoreK 以减少 K 轴切分数量
 
 ### DP+SK 比例配置
-- **DP 模式**：`totalMNTileNumInDP_ = mTileNum × nTileNum - tailMNTileNum`
-- **SK 模式**：`tailMNTileNum × skKTileNum`
-- **优化**：调整 mTileNum, nTileNum, usedCoreNum 以增加 DP 模式比例
+- **DP 模式**：`totalMNBlockNumsInDP_ = mBlockNums × nBlockNums - tailMNBlockNums`
+- **SK 模式**：`tailMNBlockNums × skBlockNums`
+- **优化**：调整 mBlockNums, nBlockNums, usedCoreNums 以增加 DP 模式比例
 
-### tile 形状配置
+### block 形状配置
 - **mL1 = baseM**：L1 M 维度等于 L0 base（如 256）
 - **nL1 = baseN**：L1 N 维度等于 L0 base（如 256）
 - **kL1**：L1 K 维度（如 baseK 或更大）
-- **优化**：使用性能最优的 tile 形状
+- **优化**：使用性能最优的 block 形状
 
 ### HF32 模式配置
 - **isHf32 = 1**：启用 HF32 计算模式 0=关闭, 1=开启
 - **适用场景**：需要高精度计算的 FP32 场景
-
-### L2 Cache 配置
-- **L2_CACHE_DEFAULT**：L2 Cache 使能（默认）
-- **A_L2_CACHE_DISABLE**：禁用 A 矩阵 L2 Cache
-- **B_L2_CACHE_DISABLE**：禁用 B 矩阵 L2 Cache
-- **ALL_L2_CACHE_DISABLE**：禁用所有 L2 Cache
-- **适用场景**：大矩阵场景建议禁用 L2 Cache 避免缓存污染
 
 ### 适用场景
 - **StreamK Kernel**：AIC + AIV 双核协同

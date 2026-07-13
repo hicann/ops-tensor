@@ -98,8 +98,8 @@ public:
         // 初始化blockScheduler
         BlockScheduler bs(params.problemShape, params.schParams);
         int64_t curBlockIdx = AscendC::GetBlockIdx();
-        int64_t realBlockNum = bs.GetBlockNum(params.problemShape);
-        if (curBlockIdx >= realBlockNum) {
+        int64_t realCoreNums = bs.GetCoreNums(); // 实际需要的核数
+        if (curBlockIdx >= realCoreNums) {
             return;
         }
 
@@ -109,7 +109,7 @@ public:
         }
 
         BlockMmad blockMmad;
-        blockMmad.Init(params.problemShape, params.mmadParams);
+        blockMmad.Init(params.mmadParams);
 
         // 默认ND Format
         auto layoutA = MakeLayoutA{}(m_, k_);       // ND layout for A
@@ -124,11 +124,11 @@ public:
             AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(biasGmAddr_), layoutBias);
 
         uint64_t preBatchIdx = 0;
-        int64_t tileNum = bs.GetTileNum();
-        int64_t blockNum = AscendC::GetBlockNum();
+        int64_t totalBlockNums = bs.GetBlockNums(); // 切分总块数
+        int64_t coreNums = AscendC::GetBlockNum(); // 实际启用的物理核数
         // Process tiles in ping-pong mode
-        for (int64_t tileIdx = curBlockIdx; tileIdx < tileNum; tileIdx += blockNum) {
-            auto tileShape = bs.template GetBlockShape<transB, BType>(tileIdx); // 非全载
+        for (int64_t tileIdx = curBlockIdx; tileIdx < totalBlockNums; tileIdx += coreNums) {
+            auto tileShape = bs.template GetBlockShape<TRANS_B, BType>(tileIdx); // 非全载
             auto tileCoord = bs.GetBlockCoord(tileIdx);                         // (m, n, k, b)
             auto coordM = AscendC::Te::Get<MNK_M>(tileCoord);
             auto coordN = AscendC::Te::Get<MNK_N>(tileCoord);
@@ -203,11 +203,11 @@ private:
     __aicore__ inline void UpdateBatchOffset(Params const& params)
     {
         aGmAddr_ = reinterpret_cast<__gm__ AType*>(params.mmadParams.aGmAddr) + batchAIndex_ * m_ * k_;
-        if (!weightNZFormat) {
+        if (!WEIGHT_NZ_FORMAT) {
             bGmAddr_ = reinterpret_cast<__gm__ BType*>(params.mmadParams.bGmAddr) + batchBIndex_ * k_ * n_;
         } else {
             bGmAddr_ = reinterpret_cast<__gm__ BType*>(params.mmadParams.bGmAddr) +
-                       Blaze::Gemm::CalWeightNZGmAddrOffset(transB, batchBIndex_, n_, k_, C0_SIZE);
+                       Blaze::Gemm::CalWeightNZGmAddrOffset(TRANS_B, batchBIndex_, n_, k_, C0_SIZE);
         }
         cGmAddr_ = reinterpret_cast<__gm__ CType*>(params.mmadParams.cGmAddr) + curBatchIdx_ * m_ * n_;
         if (params.batchInfo.biasBatchDimAll != 1UL) {
@@ -231,11 +231,11 @@ private:
     }
 
 private:
-    static constexpr bool isFp32 = (AscendC::Std::is_same_v<BType, float>);
-    static constexpr int64_t C0_SIZE = isFp32 ? C0_SIZE_fp32 : C0_SIZE_fp16;
-    static constexpr bool transA = BlockMmad::transA;
-    static constexpr bool transB = BlockMmad::transB;
-    static constexpr bool weightNZFormat = BlockMmad::weightNZFormat;
+    static constexpr bool IS_FP32 = (AscendC::Std::is_same_v<BType, float>);
+    static constexpr int64_t C0_SIZE = IS_FP32 ? C0_SIZE_fp32 : C0_SIZE_fp16;
+    static constexpr bool TRANS_A = BlockMmad::TRANS_A;
+    static constexpr bool TRANS_B = BlockMmad::TRANS_B;
+    static constexpr bool WEIGHT_NZ_FORMAT = BlockMmad::WEIGHT_NZ_FORMAT;
     __gm__ AType* aGmAddr_;
     __gm__ BType* bGmAddr_;
     __gm__ CType* cGmAddr_;

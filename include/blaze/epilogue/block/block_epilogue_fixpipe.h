@@ -46,7 +46,7 @@ public:
     using DispatchPolicy = DispatchPolicy_;
 
     // block shape
-    using BlockShape = Shape<int64_t, int64_t, int64_t, int64_t, int64_t, int64_t>;
+    using BlockShape = Shape<int64_t, int64_t, int64_t, int64_t>;
     using ProblemShape = Shape<int64_t, int64_t, int64_t, int64_t>;
 
     // input ub tensor and output global tensor
@@ -67,17 +67,26 @@ public:
         });
     }
 
-    __aicore__ inline void Run(BlockShape const& blockShape, int64_t dstOffset, bool splitM)
+    __aicore__ inline void Run(
+        BlockShape const& blockShape, int64_t dstOffset, bool splitM, int64_t baseM, int64_t baseN)
     {
-        int64_t blockShapeM = Get<MNK_M0>(blockShape);
-        int64_t halfBlockShapeM = Cmct::Gemm::CeilDiv(blockShapeM, AscendC::GetTaskRation());
+        // mL1, nL1, k, batch
+        int64_t blockShapeM = Get<MNK_M>(blockShape);
+        if (baseM != 0) {
+            // mL0 = min(curM, baseM)
+            blockShapeM = Blaze::Gemm::Min(blockShapeM, baseM);
+        }
+        int64_t halfBlockShapeM = Blaze::Gemm::CeilDiv(blockShapeM, AscendC::GetTaskRation());
         if (splitM) {
             blockShapeM = (static_cast<uint64_t>(blockShapeM) & 1UL) > 0UL ?
                               (halfBlockShapeM - AscendC::GetSubBlockIdx()) :
                               halfBlockShapeM;
         }
-        // // mL1, nL1, k, batch, mL0, nL0, 5 is nL0
-        int64_t blockShapeN = Get<MNK_N0>(blockShape);
+        int64_t blockShapeN = Get<MNK_N>(blockShape);
+        if (baseN != 0) {
+            // nL0 = min(curN, baseN)
+            blockShapeN = Blaze::Gemm::Min(blockShapeN, baseN);
+        }
         int64_t blockShapeNAlign = AlignBlock<DataTypeOut>(blockShapeN);
         // real copy data size
         int64_t inputSize = blockShapeM * blockShapeNAlign;
@@ -89,10 +98,11 @@ public:
         // UB 0 offset: 0
         // UB 1 offset: halfBlockShapeM * N
         int64_t offset = dstOffset + halfBlockShapeM * N * (AscendC::GetSubBlockIdx() & 0x1); // subBlockIdx()
-        DataCopyExtParams copyParams{static_cast<uint16_t>(blockShapeM),
-                                     static_cast<uint32_t>(blockShapeN * sizeof(DataTypeOut)), 0,
-                                     static_cast<int64_t>((N - blockShapeN) * sizeof(DataTypeOut)), 0};
-        if constexpr (DispatchPolicy::FUSED_OP_TYPE == OP_TYPE_RELU && !AscendC::IsSameType<DataTypeOut, bfloat16_t>::value) {
+        DataCopyExtParams copyParams{
+            static_cast<uint16_t>(blockShapeM), static_cast<uint32_t>(blockShapeN * sizeof(DataTypeOut)), 0,
+            static_cast<int64_t>((N - blockShapeN) * sizeof(DataTypeOut)), 0};
+        if constexpr (
+            DispatchPolicy::FUSED_OP_TYPE == OP_TYPE_RELU && !AscendC::IsSameType<DataTypeOut, bfloat16_t>::value) {
             AscendC::Relu(ubLocalTmp_, ubLocalTmp_, blockShapeM * blockShapeN);
             AscendC::SetFlag<AscendC::HardEvent::V_MTE3>(0x0);
             AscendC::WaitFlag<AscendC::HardEvent::V_MTE3>(0x0);
@@ -108,12 +118,13 @@ public:
         return ubOffset;
     }
 
-    __aicore__ inline void operator()(BlockShape const& blockShape, int64_t dstOffset = 0, bool splitM = false)
+    __aicore__ inline void operator()(
+        BlockShape const& blockShape, int64_t dstOffset = 0, bool splitM = false, int64_t baseM = 0, int64_t baseN = 0)
     {
-        Run(blockShape, dstOffset, splitM);
+        Run(blockShape, dstOffset, splitM, baseM, baseN);
         return;
     }
 };
 } // namespace Block
-} // namespace Gemm
+} // namespace Epilogue
 } // namespace Blaze

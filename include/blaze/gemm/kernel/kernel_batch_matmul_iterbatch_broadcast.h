@@ -57,10 +57,10 @@ public:
     using BlockScheduler = BlockScheduler_;
     using BlockEpilogue = BlockEpilogue_;
     using DispatchPolicy = typename BlockMmad::DispatchPolicy;
-    static constexpr bool transA = BlockMmad::transA;
-    static constexpr bool transB = BlockMmad::transB;
-    static constexpr bool aBroadcast = DispatchPolicy::aBroadcast;
-    static constexpr bool bBroadcast = DispatchPolicy::bBroadcast;
+    static constexpr bool TRANS_A = BlockMmad::TRANS_A;
+    static constexpr bool TRANS_B = BlockMmad::TRANS_B;
+    static constexpr bool A_BROADCAST = DispatchPolicy::A_BROADCAST;
+    static constexpr bool B_BROADCAST = DispatchPolicy::B_BROADCAST;
     using BlockMmadParams = typename BlockMmad::Params;
     using BlockEpilogueParams = typename BlockEpilogue::Params;
     using AType = typename BlockMmad::AType;
@@ -111,13 +111,13 @@ public:
         }
         BlockMmad blockMmad;
         int64_t curBlockIdx = AscendC::GetBlockIdx();
-        int64_t blockNum = AscendC::GetBlockNum();
+        int64_t coreNums = AscendC::GetBlockNum();
         Init(params);
         const BlockSchedulerParams& schP = params.schedulerParams;
-        Block::BlockSchedulerIterBatchBroadcast<ProblemShape> bs(params.problemShape, curBlockIdx, blockNum, schP);
-        int64_t tileNum = bs.GetTileNum();
-        int64_t realBlockNum = bs.GetBlockNum(params.problemShape, blockNum);
-        if (curBlockIdx >= realBlockNum) {
+        Block::BlockSchedulerIterBatchBroadcast<ProblemShape> bs(params.problemShape, schP);
+        int64_t blockNums = bs.GetBlockNums();
+        int64_t realCoreNums = bs.GetCoreNums(coreNums);
+        if (curBlockIdx >= realCoreNums) {
             return;
         }
         uint64_t mainIterBatchL1 = static_cast<uint64_t>(schP.iterBatchL1);
@@ -152,21 +152,20 @@ public:
             AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(aGmAddr_), layoutA3D);
         auto gmB = AscendC::Te::MakeTensor(
             AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(bGmAddr_), layoutB3D);
-        auto gmC = AscendC::Te::MakeTensor(
-            AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(cGmAddr_), layoutC3D);
-         auto gmBias = AscendC::Te::MakeTensor(
-             AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(biasGmAddr_), layoutBias);
-         for (int64_t tileIdx = curBlockIdx; tileIdx < tileNum; tileIdx += blockNum) {
-            auto blockShape = bs.GetBlockShape(tileIdx, tileNum);
-            auto blockCoord = bs.GetBlockCoord(tileIdx);
+        auto gmC = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(cGmAddr_), layoutC3D);
+        auto gmBias =
+            AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(biasGmAddr_), layoutBias);
+        for (int64_t blockIdx = curBlockIdx; blockIdx < blockNums; blockIdx += coreNums) {
+            auto blockShape = bs.GetBlockShape(blockIdx, blockNums);
+            auto blockCoord = bs.GetBlockCoord(blockIdx);
             uint64_t startBatchIdx = static_cast<uint64_t>(AscendC::Te::Get<MNK_B>(blockCoord));
             uint64_t curIterBatchL1 = static_cast<uint64_t>(AscendC::Te::Get<MNK_B>(blockShape));
             uint64_t aGmStartBatch = static_cast<uint64_t>(bs.ComputeABroadcastIndex(startBatchIdx));
             uint64_t bGmStartBatch = static_cast<uint64_t>(bs.ComputeBBroadcastIndex(startBatchIdx));
-            uint64_t al1Count = (aBroadcast && bcAxisA == LAST_BATCH_DIM) ? 1UL : curIterBatchL1;
-            uint64_t bl1Count = (bBroadcast && bcAxisB == LAST_BATCH_DIM) ? 1UL : curIterBatchL1;
-            uint64_t agmStart = aBroadcast ? aGmStartBatch : startBatchIdx;
-            uint64_t bgmStart = bBroadcast ? bGmStartBatch : startBatchIdx;
+            uint64_t al1Count = (A_BROADCAST && bcAxisA == LAST_BATCH_DIM) ? 1UL : curIterBatchL1;
+            uint64_t bl1Count = (B_BROADCAST && bcAxisB == LAST_BATCH_DIM) ? 1UL : curIterBatchL1;
+            uint64_t agmStart = A_BROADCAST ? aGmStartBatch : startBatchIdx;
+            uint64_t bgmStart = B_BROADCAST ? bGmStartBatch : startBatchIdx;
             auto gmASlice = gmA.Slice(
                 AscendC::Te::MakeCoord(agmStart, AscendC::Te::MakeCoord(0, 0)),
                 AscendC::Te::MakeShape(al1Count, AscendC::Te::MakeShape(m_, k_)));

@@ -43,8 +43,8 @@ public:
 public:
     __aicore__ inline BlockSchedulerMatmulStreamK(const ProblemShape& shape, const Params& params)
     {
-        usedCoreNum_ = params.usedCoreNum;
-        if (usedCoreNum_ <= 0) {
+        usedCoreNums_ = params.usedCoreNum;
+        if (usedCoreNums_ <= 0) {
             return;
         }
         m_ = AscendC::Te::Get<MNK_M>(shape);
@@ -56,113 +56,112 @@ public:
         nL1_ = params.baseN; // size of n in L1 & L0 & singlecore, per core use L1 once in stream k
         skSingleCoreK_ = params.singleCoreK; // size of k in singlecore
 
-        mTileNum_ = CeilDiv(m_, mL1_);
-        nTileNum_ = CeilDiv(n_, nL1_);
-        skKTileNum_ = CeilDiv(k_, skSingleCoreK_);
-        int64_t tailMNTileNum = (mTileNum_ * nTileNum_) % usedCoreNum_; // tail mCnt * nCnt num of SK
+        mBlockNums_ = CeilDiv(m_, mL1_);
+        nBlockNums_ = CeilDiv(n_, nL1_);
+        skBlockNums_ = CeilDiv(k_, skSingleCoreK_);
+        int64_t tailMNBlockNums = (mBlockNums_ * nBlockNums_) % usedCoreNums_; // tail mCnt * nCnt num of SK
         // core num of DP (m*n) + tail core num of SK (m*n*k)
-        tileNum_ = (mTileNum_ * nTileNum_ - tailMNTileNum) + tailMNTileNum * skKTileNum_;
-        totalMNTileNumInDP_ = mTileNum_ * nTileNum_ - tailMNTileNum;
+        blockNums_ = (mBlockNums_ * nBlockNums_ - tailMNBlockNums) + tailMNBlockNums * skBlockNums_;
+        totalMNBlockNumsInDP_ = mBlockNums_ * nBlockNums_ - tailMNBlockNums;
     }
 
-    __aicore__ inline int64_t GetTileNum()
+    /**
+       获取总的分块数
+    */
+    __aicore__ inline int64_t GetBlockNums()
     {
-        return tileNum_ * batch_;
+        return blockNums_ * batch_;
     }
 
-    __aicore__ inline int64_t GetBlockNum(ProblemShape shape)
+    /**
+       获取需要的核数
+    */
+    __aicore__ inline int64_t GetCoreNums()
     {
         int64_t tilingBlockNum = 0;
-        if (tileNum_ * batch_ < AscendC::GetBlockNum()) {
-            tilingBlockNum = tileNum_ * batch_;
+        if (blockNums_ * batch_ < AscendC::GetBlockNum()) {
+            tilingBlockNum = blockNums_ * batch_;
         } else {
             tilingBlockNum = AscendC::GetBlockNum();
         }
         return tilingBlockNum;
     }
 
-    __aicore__ inline AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t> GetMNKTileNum()
+    __aicore__ inline BlockShape GetBlockShape(int64_t blockIdx)
     {
-        return {mTileNum_, nTileNum_, skKTileNum_, 1};
-    }
-
-    __aicore__ inline BlockShape GetBlockShape(int64_t tileIdx)
-    {
-        UpdateMNTileIdx(tileIdx);
-        int64_t tailL1M = m_ - (mTileNum_ - 1) * mL1_;
-        int64_t tailL1N = n_ - (nTileNum_ - 1) * nL1_;
-        int64_t tailSingleCoreK = k_ - (curKTileNum_ - 1) * skSingleCoreK_;
-        int64_t blkM = (mTileIdx_ == (mTileNum_ - 1)) ? tailL1M : mL1_;
-        int64_t blkN = (nTileIdx_ == (nTileNum_ - 1)) ? tailL1N : nL1_;
-        int64_t blkK = (kTileIdx_ == (curKTileNum_ - 1)) ? tailSingleCoreK : skSingleCoreK_;
+        UpdateMNBlockIdx(blockIdx);
+        int64_t tailL1M = m_ - (mBlockNums_ - 1) * mL1_;
+        int64_t tailL1N = n_ - (nBlockNums_ - 1) * nL1_;
+        int64_t tailSingleCoreK = k_ - (curKBlockNums_ - 1) * skSingleCoreK_;
+        int64_t blkM = (mBlockIdx_ == (mBlockNums_ - 1)) ? tailL1M : mL1_;
+        int64_t blkN = (nBlockIdx_ == (nBlockNums_ - 1)) ? tailL1N : nL1_;
+        int64_t blkK = (kBlockIdx_ == (curKBlockNums_ - 1)) ? tailSingleCoreK : skSingleCoreK_;
         return {blkM, blkN, blkK, 0};
     }
 
-    __aicore__ inline BlockCoord GetBlockCoord(int64_t tileIdx)
+    __aicore__ inline BlockCoord GetBlockCoord(int64_t blockIdx)
     {
-        UpdateMNTileIdx(tileIdx);
-        return {mTileIdx_, nTileIdx_, kTileIdx_, 0};
+        UpdateMNBlockIdx(blockIdx);
+        return {mBlockIdx_, nBlockIdx_, kBlockIdx_, 0};
     }
 
-    __aicore__ inline int64_t GetCurKSingleCore(int64_t tileIdx)
+    __aicore__ inline bool CheckIsSkScene(int64_t blockIdx)
     {
-        return (CheckIsSkScene(tileIdx) ? skSingleCoreK_ : k_);
-    }
-
-    __aicore__ inline bool CheckIsSkScene(int64_t tileIdx)
-    {
-        return CeilDiv((tileIdx + 1), usedCoreNum_) == CeilDiv(tileNum_, usedCoreNum_); // true is sk, false is dp
+        return CeilDiv((blockIdx + 1), usedCoreNums_) == CeilDiv(blockNums_, usedCoreNums_); // true is sk, false is dp
     }
 
 private:
-    __aicore__ inline void UpdateMNTileIdx(int64_t tileIdx)
+    __aicore__ inline void UpdateMNBlockIdx(int64_t blockIdx)
     {
-        // judge now in dp loop (kTileNum = 1) or in sk loop
-        curKTileNum_ = CheckIsSkScene(tileIdx) ? skKTileNum_ : 1;
-        int64_t mnIdxInCurLoop = 0;
-        if (CheckIsSkScene(tileIdx)) { // SK scene
-            kTileIdx_ = (tileIdx % usedCoreNum_) % curKTileNum_;
-            mnIdxInCurLoop = (tileIdx % usedCoreNum_) / curKTileNum_ + totalMNTileNumInDP_;
-        } else { // DP scene
-            kTileIdx_ = 0;
-            mnIdxInCurLoop = tileIdx / curKTileNum_;
+        if (mBlockNums_ <= 0 || nBlockNums_ <= 0 || skBlockNums_ <= 0) {
+            return;
         }
-        int64_t mainWindow = AscendC::Std::min(WINDOW_LEN, mTileNum_);
-        int64_t mainRow = mTileNum_ / mainWindow - 1UL;
-        int64_t tailWindow = mTileNum_ - mainRow * mainWindow;
-        int64_t rowIdx = mnIdxInCurLoop / nTileNum_ / mainWindow;
+        // judge now in dp loop (kTileNum = 1) or in sk loop
+        curKBlockNums_ = CheckIsSkScene(blockIdx) ? skBlockNums_ : 1;
+        int64_t mnIdxInCurLoop = 0;
+        if (CheckIsSkScene(blockIdx)) { // SK scene
+            kBlockIdx_ = (blockIdx % usedCoreNums_) % curKBlockNums_;
+            mnIdxInCurLoop = (blockIdx % usedCoreNums_) / curKBlockNums_ + totalMNBlockNumsInDP_;
+        } else { // DP scene
+            kBlockIdx_ = 0;
+            mnIdxInCurLoop = blockIdx / curKBlockNums_;
+        }
+        int64_t mainWindow = AscendC::Std::min(WINDOW_LEN, mBlockNums_);
+        int64_t mainRow = mBlockNums_ / mainWindow - 1UL;
+        int64_t tailWindow = mBlockNums_ - mainRow * mainWindow;
+        int64_t rowIdx = mnIdxInCurLoop / nBlockNums_ / mainWindow;
         if (rowIdx < mainRow) {
-            mTileIdx_ = rowIdx * mainWindow + mnIdxInCurLoop % mainWindow;
-            nTileIdx_ = (mnIdxInCurLoop / mainWindow) % nTileNum_;
+            mBlockIdx_ = rowIdx * mainWindow + mnIdxInCurLoop % mainWindow;
+            nBlockIdx_ = (mnIdxInCurLoop / mainWindow) % nBlockNums_;
         } else {
             rowIdx = mainRow;
-            int64_t tailIndex = mnIdxInCurLoop - mainRow * mainWindow * nTileNum_;
-            mTileIdx_ = mainRow * mainWindow + tailIndex % tailWindow;
-            nTileIdx_ = (tailIndex / tailWindow) % nTileNum_;
+            int64_t tailIndex = mnIdxInCurLoop - mainRow * mainWindow * nBlockNums_;
+            mBlockIdx_ = mainRow * mainWindow + tailIndex % tailWindow;
+            nBlockIdx_ = (tailIndex / tailWindow) % nBlockNums_;
         }
         // mod 2 means even row, need reverse scan
         if (rowIdx % 2 != 0UL) {
-            nTileIdx_ = nTileNum_ - 1UL - nTileIdx_;
+            nBlockIdx_ = nBlockNums_ - 1UL - nBlockIdx_;
         }
     }
 
 private:
-    int64_t usedCoreNum_{0};
-    int64_t mTileNum_{0};
-    int64_t nTileNum_{0};
-    int64_t skKTileNum_{0};
-    int64_t tileNum_{1};
-    int64_t totalMNTileNumInDP_{0};
+    int64_t usedCoreNums_{0};
+    int64_t mBlockNums_{0};
+    int64_t nBlockNums_{0};
+    int64_t skBlockNums_{0};
+    int64_t blockNums_{1};
+    int64_t totalMNBlockNumsInDP_{0};
 
     int64_t batch_{0};
     int64_t m_{0};
     int64_t n_{0};
     int64_t k_{0};
 
-    int64_t mTileIdx_{1};
-    int64_t nTileIdx_{1};
-    int64_t kTileIdx_{1};
-    int64_t curKTileNum_{1};
+    int64_t mBlockIdx_{1};
+    int64_t nBlockIdx_{1};
+    int64_t kBlockIdx_{1};
+    int64_t curKBlockNums_{1};
 
     int64_t mL1_{0};
     int64_t nL1_{0};

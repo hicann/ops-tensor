@@ -26,8 +26,7 @@ enum OpType : int8_t
 };
 
 template <
-    int8_t OP_TYPE, typename DTYPE_X1, typename DTYPE_X2, typename DTYPE_Y, typename DTYPE_BIAS, CubeFormat FORMAT_X1 = CubeFormat::ND,
-    CubeFormat FORMAT_X2 = CubeFormat::ND, CubeFormat FORMAT_Y = CubeFormat::ND,
+    int8_t OP_TYPE, typename DTYPE_X1, typename DTYPE_X2, typename DTYPE_Y, typename DTYPE_BIAS, 
     Blaze::Gemm::MatMulL0C2Out L0C2OUT_MODE = Blaze::Gemm::MatMulL0C2Out::ON_THE_FLY, uint64_t FUSED_OP_TYPE = 0,
     uint64_t NON_CONTIGUOUS_TYPE = 0>
 __global__ __aicore__ void mat_mul_v3_kernel_entry(
@@ -37,11 +36,11 @@ __global__ __aicore__ void mat_mul_v3_kernel_entry(
     memcpy(&tilingData, tilingGM, sizeof(MatMulV3BasicTilingData));
 
     if constexpr (OP_TYPE == OP_TYPE_MATMUL_STREAMK) {
-        MatMulV3UT::MatMulStreamKWrapper<DTYPE_X1, DTYPE_X2, DTYPE_Y, DTYPE_BIAS, FORMAT_X1, FORMAT_X2, FORMAT_Y, L0C2OUT_MODE, FUSED_OP_TYPE>(
+        MatMulV3UT::MatMulStreamKWrapper<DTYPE_X1, DTYPE_X2, DTYPE_Y, DTYPE_BIAS, L0C2OUT_MODE, FUSED_OP_TYPE>(
             x1GM, x2GM, biasGM, yGM, workspaceGM, tilingData);
     } else if constexpr (OP_TYPE == OP_TYPE_MATMUL_BASIC) {
         MatMulV3UT::MatMulBasicWrapper<
-            DTYPE_X1, DTYPE_X2, DTYPE_Y, DTYPE_BIAS, FORMAT_X1, FORMAT_X2, FORMAT_Y, NON_CONTIGUOUS_TYPE>(
+            DTYPE_X1, DTYPE_X2, DTYPE_Y, DTYPE_BIAS, NON_CONTIGUOUS_TYPE>(
             x1GM, x2GM, biasGM, yGM, workspaceGM, tilingData);
     } else {
         static_assert(sizeof(OP_TYPE) == 0, "Unsupported OP_TYPE value for mat_mul_v3_kernel_entry");

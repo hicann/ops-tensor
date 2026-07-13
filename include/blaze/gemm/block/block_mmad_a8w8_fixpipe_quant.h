@@ -488,8 +488,8 @@ private:
         abL1LoopCnt_ = 0;
     }
 
-    constexpr static uint64_t HALF_L0_SIZE = TOTAL_L0A_SIZE / DOUBLE_BUFFER_COUNT;
-    constexpr static uint64_t HALF_L0C_SIZE = TOTAL_L0C_SIZE / DOUBLE_BUFFER_COUNT;
+    static constexpr uint64_t HALF_L0_SIZE = TOTAL_L0A_SIZE / DOUBLE_BUFFER_COUNT;
+    static constexpr uint64_t HALF_L0C_SIZE = TOTAL_L0C_SIZE / DOUBLE_BUFFER_COUNT;
 
     uint64_t m_{0};
     uint64_t n_{0};

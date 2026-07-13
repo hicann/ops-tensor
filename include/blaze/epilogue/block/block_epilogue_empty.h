@@ -51,4 +51,40 @@ public:
 };
 } // namespace Block
 } // namespace Gemm
+
+namespace Epilogue {
+namespace Block {
+
+class BlockEpilogueEmpty {
+public:
+    using BlockShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
+    using BlockCoord = AscendC::Te::Coord<int64_t, int64_t, int64_t, int64_t>;
+
+    struct Params {
+        Params() = default;
+    };
+
+    __aicore__ inline BlockEpilogueEmpty()
+    {}
+
+    __aicore__ inline void Run()
+    {
+        return;
+    }
+
+    __aicore__ inline void operator()(Params const& params)
+    {
+        Run();
+    }
+
+    __aicore__ inline void operator()(
+        BlockShape const& blockShape, BlockCoord const& blockCoord, int64_t dstStartOffset = 0,
+        int64_t srcStartOffset = 0)
+    {
+        return;
+    }
+};
+} // namespace Block
+} // namespace Epilogue
+
 } // namespace Blaze

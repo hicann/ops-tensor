@@ -44,15 +44,15 @@ public:
     using TupleShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
     using TileShape = AscendC::Te::Shape<int64_t, int64_t, int64_t>;
 
-    static constexpr bool transA = IsTrans<LayoutA>::value;
-    static constexpr bool transB = IsTrans<LayoutB>::value;
-    static constexpr bool weightNZFormat = IsWeightNz<LayoutB>::value;
+    static constexpr bool TRANS_A = IsTrans<LayoutA>::value;
+    static constexpr bool TRANS_B = IsTrans<LayoutB>::value;
+    static constexpr bool WEIGHT_NZ_FORMAT = IsWeightNz<LayoutB>::value;
 
     using MakeLayoutAL1 = AscendC::Std::conditional_t<
-        transA, AscendC::Te::FrameLayoutFormat<AscendC::Te::ZNLayoutPtn, AscendC::Te::LayoutTraitDefault<AType>>,
+        TRANS_A, AscendC::Te::FrameLayoutFormat<AscendC::Te::ZNLayoutPtn, AscendC::Te::LayoutTraitDefault<AType>>,
         AscendC::Te::FrameLayoutFormat<AscendC::Te::NZLayoutPtn, AscendC::Te::LayoutTraitDefault<AType>>>;
     using MakeLayoutBL1 = AscendC::Std::conditional_t<
-        transB, AscendC::Te::FrameLayoutFormat<AscendC::Te::ZNLayoutPtn, AscendC::Te::LayoutTraitDefault<BType>>,
+        TRANS_B, AscendC::Te::FrameLayoutFormat<AscendC::Te::ZNLayoutPtn, AscendC::Te::LayoutTraitDefault<BType>>,
         AscendC::Te::FrameLayoutFormat<AscendC::Te::NZLayoutPtn, AscendC::Te::LayoutTraitDefault<BType>>>;
 
     struct Params {
@@ -97,12 +97,8 @@ public:
         }
     }
 
-    __aicore__ inline void Init(const TupleShape& shape, const Params& params)
+    __aicore__ inline void Init(const Params& params)
     {
-        m_ = AscendC::Te::Get<DIMENSION_M>(shape);
-        n_ = AscendC::Te::Get<DIMENSION_N>(shape);
-        k_ = AscendC::Te::Get<DIMENSION_K>(shape);
-
         mL1_ = params.mL1;
         nL1_ = params.nL1;
         kL1_ = params.kL1;
@@ -116,7 +112,7 @@ public:
         aL1OneBuffer_ = mL1_ * kL1_ * sizeof(AType);
         bL1OneBuffer_ = nL1_ * kL1_ * sizeof(BType);
 
-        constexpr static uint64_t QUARTER_L1_SIZE = AscendC::TOTAL_L1_SIZE / QUADRUPLE_BUFFER_COUNT;
+        static constexpr uint64_t QUARTER_L1_SIZE = AscendC::TOTAL_L1_SIZE / QUADRUPLE_BUFFER_COUNT;
         for (auto i = 0; i < l1Stages_; ++i) {
             aL1Buffer_[i] = QUARTER_L1_SIZE * (QUADRUPLE_BUFFER_COUNT / l1Stages_) * i;
             bL1Buffer_[i] = aL1Buffer_[i] + aL1OneBuffer_;
@@ -132,7 +128,7 @@ public:
         TensorA& gmA, TensorB& gmB, TensorBias& gmBias, TensorC& gmC, TensorWorkspace gmWorkspace, TupleShape tileShape,
         int64_t kCntIndex, bool checkIsSkScene)
     {
-        constexpr static uint64_t HALF_L0_SIZE = AscendC::TOTAL_L0A_SIZE / DOUBLE_BUFFER_COUNT;
+        static constexpr uint64_t HALF_L0_SIZE = AscendC::TOTAL_L0A_SIZE / DOUBLE_BUFFER_COUNT;
         int64_t curML1 = AscendC::Te::Get<MNK_M>(tileShape);
         int64_t curNL1 = AscendC::Te::Get<MNK_N>(tileShape);
         uint64_t skSingleCoreK = AscendC::Te::Get<MNK_K>(tileShape);
@@ -333,9 +329,6 @@ private:
     static constexpr uint16_t MTE1_MTE2_EVENT_ID_NUM = 4;
     static constexpr uint16_t L1_EVENT_ID_OFFSET = 2;
 
-    uint64_t m_{1};
-    uint64_t n_{1};
-    uint64_t k_{1};
     uint64_t blkK_{1}; // actual value after spliting singcorek
     uint64_t mL1_{1};
     uint64_t nL1_{1};

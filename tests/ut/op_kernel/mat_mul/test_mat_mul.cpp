@@ -146,7 +146,7 @@ TEST_F(MatMulV3Test, Test_FP16_StreamK)
     AscendC::SetKernelMode(KernelMode::MIX_MODE);
 
     auto kernelFunc = mat_mul_v3_kernel_entry<
-        OP_TYPE_MATMUL_STREAMK, half, half, half, half, CubeFormat::ND, CubeFormat::ND, CubeFormat::ND,
+        OP_TYPE_MATMUL_STREAMK, half, half, half, half,
         Blaze::Gemm::MatMulL0C2Out::ON_THE_FLY, 0>;
     ASSERT_TRUE(KERNEL_RUN_KF(kernelFunc, blockNum, aGM, bGM, biasGM, cGM, workspaceGM, tilingGM))
         << "Kernel execution failed: one or more cores exited with non-zero status";
@@ -226,7 +226,7 @@ TEST_F(MatMulV3Test, Test_FP16_Basic)
     AscendC::SetKernelMode(KernelMode::MIX_MODE);
 
     auto kernelFunc = mat_mul_v3_kernel_entry<
-        OP_TYPE_MATMUL_BASIC, half, half, half, half, CubeFormat::ND, CubeFormat::ND, CubeFormat::ND>;
+        OP_TYPE_MATMUL_BASIC, half, half, half, half>;
     ASSERT_TRUE(KERNEL_RUN_KF(kernelFunc, blockNum, aGM, bGM, biasGM, cGM, workspaceGM, tilingGM))
         << "Kernel execution failed: one or more cores exited with non-zero status";
 }
@@ -305,7 +305,7 @@ TEST_F(MatMulV3Test, Test_FP32_StreamK_MultiCore)
     AscendC::SetKernelMode(KernelMode::MIX_MODE);
 
     auto kernelFunc = mat_mul_v3_kernel_entry<
-        OP_TYPE_MATMUL_STREAMK, float, float, float, float, CubeFormat::ND, CubeFormat::ND, CubeFormat::ND,
+        OP_TYPE_MATMUL_STREAMK, float, float, float, float,
         Blaze::Gemm::MatMulL0C2Out::ON_THE_FLY, 0>;
     ASSERT_TRUE(KERNEL_RUN_KF(kernelFunc, blockNum, aGM, bGM, biasGM, cGM, workspaceGM, tilingGM))
         << "Kernel execution failed: one or more cores exited with non-zero status";
@@ -392,7 +392,7 @@ TEST_F(MatMulV3Test, Test_FP16_Basic_Slice)
     AscendC::SetKernelMode(KernelMode::MIX_MODE);
 
     auto kernelFunc = mat_mul_v3_kernel_entry<
-        OP_TYPE_MATMUL_BASIC, half, half, half, half, CubeFormat::ND, CubeFormat::ND, CubeFormat::ND,
+        OP_TYPE_MATMUL_BASIC, half, half, half, half,
         Blaze::Gemm::MatMulL0C2Out::ON_THE_FLY, 0, Blaze::Gemm::NON_CONTIGUOUS_TYPE_SLICE>;
     ASSERT_TRUE(KERNEL_RUN_KF(kernelFunc, blockNum, aGM, bGM, biasGM, cGM, workspaceGM, tilingGM))
         << "Kernel execution failed: one or more cores exited with non-zero status";

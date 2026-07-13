@@ -43,22 +43,21 @@ public:
     using LayoutBias = LayoutBias_;
     using DispatchPolicy =
         MatmulMultiBlockBasicSplitK<FullLoadMode_, IsSplitSinglecoreK_, KernelSchedule_, NonContigiousType_>;
-    constexpr static uint64_t NON_CONTIGIOUS_TYPE = DispatchPolicy::nonContiguousType;
+    static constexpr uint64_t NON_CONTIGUOUS_TYPE = DispatchPolicy::NON_CONTIGUOUS_TYPE;
     using TupleShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
-    using TupleL1L0Shape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t, int64_t, int64_t>;
     using TileShape = AscendC::Te::Shape<int64_t, int64_t, int64_t>;
 
-    // transA and transB
-    static constexpr bool transA = IsTrans<LayoutA>::value;
-    static constexpr bool transB = IsTrans<LayoutB>::value;
-    static constexpr bool weightNZFormat = IsWeightNz<LayoutB>::value;
+    // TRANS_A and TRANS_B
+    static constexpr bool TRANS_A = IsTrans<LayoutA>::value;
+    static constexpr bool TRANS_B = IsTrans<LayoutB>::value;
+    static constexpr bool WEIGHT_NZ_FORMAT = IsWeightNz<LayoutB>::value;    
     // AL1 Layout
     using MakeLayoutAL1 = AscendC::Std::conditional_t<
-        transA, AscendC::Te::FrameLayoutFormat<AscendC::Te::ZNLayoutPtn, AscendC::Te::LayoutTraitDefault<AType>>,
+        TRANS_A, AscendC::Te::FrameLayoutFormat<AscendC::Te::ZNLayoutPtn, AscendC::Te::LayoutTraitDefault<AType>>,
         AscendC::Te::FrameLayoutFormat<AscendC::Te::NZLayoutPtn, AscendC::Te::LayoutTraitDefault<AType>>>;
     // BL1 Layout
     using MakeLayoutBL1 = AscendC::Std::conditional_t<
-        transB, AscendC::Te::FrameLayoutFormat<AscendC::Te::ZNLayoutPtn, AscendC::Te::LayoutTraitDefault<BType>>,
+        TRANS_B, AscendC::Te::FrameLayoutFormat<AscendC::Te::ZNLayoutPtn, AscendC::Te::LayoutTraitDefault<BType>>,
         AscendC::Te::FrameLayoutFormat<AscendC::Te::NZLayoutPtn, AscendC::Te::LayoutTraitDefault<BType>>>;
 
     // kernel params
@@ -77,6 +76,7 @@ public:
         uint32_t kL0{0};
         uint32_t l1Stages{1};
         uint16_t l0cStages{1};
+        uint64_t k{0};
     };
 
 public:
@@ -108,11 +108,9 @@ public:
         }
     }
 
-    __aicore__ inline void Init(const TupleShape& shape, const Params& params)
+    __aicore__ inline void Init(const Params& params)
     {
-        m_ = AscendC::Te::Get<DIMENSION_M>(shape);
-        n_ = AscendC::Te::Get<DIMENSION_N>(shape);
-        k_ = AscendC::Te::Get<DIMENSION_K>(shape);
+        k_ = params.k;
         mL1_ = params.mL1;
         nL1_ = params.nL1;
         kL1_ = params.kL1;
@@ -128,7 +126,7 @@ public:
         l0PingPong_ = 0;
         abL1LoopCnt_ = 0;
         l0cPingPong_ = 0;
-        constexpr static uint64_t QUARTER_L1_SIZE = AscendC::TOTAL_L1_SIZE / QUADRUPLE_BUFFER_COUNT;
+        static constexpr uint64_t QUARTER_L1_SIZE = AscendC::TOTAL_L1_SIZE / QUADRUPLE_BUFFER_COUNT;
         // 2 or 4 buffer
         for (auto i = 0; i < l1Stages_; ++i) {
             aL1Buffer_[i] = QUARTER_L1_SIZE * (QUADRUPLE_BUFFER_COUNT / l1Stages_) * i;
@@ -143,16 +141,16 @@ public:
 
     template <typename TensorA, typename TensorB, typename TensorBias, typename TensorC>
     __aicore__ inline void operator()(
-        TensorA& gmA, TensorB& gmB, TensorBias& gmBias, TensorC& gmC, TupleL1L0Shape& tileShape)
+        TensorA& gmA, TensorB& gmB, TensorBias& gmBias, TensorC& gmC, TupleShape& tileShape)
     {    
-        constexpr static uint64_t HALF_L0C_SIZE = AscendC::TOTAL_L0C_SIZE / DOUBLE_BUFFER_COUNT;
-        constexpr static uint64_t HALF_L0_SIZE = AscendC::TOTAL_L0A_SIZE / DOUBLE_BUFFER_COUNT;
-        // ml1,nl1
+        static constexpr uint64_t HALF_L0C_SIZE = AscendC::TOTAL_L0C_SIZE / DOUBLE_BUFFER_COUNT;
+        static constexpr uint64_t HALF_L0_SIZE = AscendC::TOTAL_L0A_SIZE / DOUBLE_BUFFER_COUNT;
+        // m1/n1
         uint64_t curML1 = AscendC::Te::Get<MNK_M>(tileShape);
         uint64_t curNL1 = AscendC::Te::Get<MNK_N>(tileShape);
-        // ml0 nl0
-        uint64_t curM = AscendC::Te::Get<MNK_M0>(tileShape);
-        uint64_t curN = AscendC::Te::Get<MNK_N0>(tileShape);
+        // m0/n0
+        uint64_t curM = Blaze::Gemm::Min(AscendC::Te::Get<MNK_M>(tileShape), static_cast<int64_t>(baseM_));
+        uint64_t curN = Blaze::Gemm::Min(AscendC::Te::Get<MNK_N>(tileShape), static_cast<int64_t>(baseN_));
 
         // 单核切k
         for (uint64_t splitSingleCoreKIdx = 0; splitSingleCoreKIdx < splitSingleCoreKRound_; splitSingleCoreKIdx++) {
@@ -340,12 +338,11 @@ private:
     }
 
 private:
-    constexpr static uint16_t MTE1_MTE2_EVENT_ID_NUM = 4;
-    constexpr static uint64_t FP32_K_SWITCH_BASE = 268435456; // 1024 * 32 * 8192
-    constexpr static uint64_t FP32_SPLIT_K_BASE1 = 1024;
-    constexpr static uint64_t FP32_SPLIT_K_BASE2 = 8192;
-    uint64_t m_{1};
-    uint64_t n_{1};
+    static constexpr uint16_t MTE1_MTE2_EVENT_ID_NUM = 4;
+    static constexpr uint64_t FP32_K_SWITCH_BASE = 268435456; // 1024 * 32 * 8192
+    static constexpr uint64_t FP32_SPLIT_K_BASE1 = 1024;
+    static constexpr uint64_t FP32_SPLIT_K_BASE2 = 8192;
+
     uint64_t k_{1};
     uint64_t blkK_{1};
     uint64_t mL1_{1};

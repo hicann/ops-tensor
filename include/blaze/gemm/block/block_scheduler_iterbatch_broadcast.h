@@ -52,8 +52,7 @@ public:
     };
 
 public:
-    __aicore__ inline BlockSchedulerIterBatchBroadcast(
-        const ProblemShape& shape, int64_t blockIdx, int64_t blockNum, const Params& params)
+    __aicore__ inline BlockSchedulerIterBatchBroadcast(const ProblemShape& shape, const Params& params)
     {
         m_ = AscendC::Te::Get<MNK_M>(shape);
         n_ = AscendC::Te::Get<MNK_N>(shape);
@@ -80,22 +79,12 @@ public:
         cBatchDim3_ = params.cBatchDim3;
     }
 
-    __aicore__ inline int64_t GetTileNum()
+    __aicore__ inline int64_t GetBlockNums()
     {
         return CeilDiv(b_, iterBatchL1_);
     }
 
-    __aicore__ inline AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t> GetIterBatchTuple()
-    {
-        return {iterBatchL1_, iterBatchL0_, broadcastAxisA_, broadcastAxisB_};
-    }
-
-    __aicore__ inline BlockShape GetTileL0Shape()
-    {
-        return {baseM_, baseN_, baseK_, 1};
-    }
-
-    __aicore__ inline int64_t GetBlockNum(ProblemShape shape, int64_t blockNum)
+    __aicore__ inline int64_t GetCoreNums(int64_t blockNum)
     {
         int64_t tileNum = CeilDiv(b_, iterBatchL1_);
         return (tileNum < blockNum) ? tileNum : blockNum;

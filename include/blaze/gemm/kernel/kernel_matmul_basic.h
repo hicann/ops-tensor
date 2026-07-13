@@ -58,7 +58,7 @@ public:
     using LayoutB = typename BlockMmad::LayoutB;
     using LayoutC = typename BlockMmad::LayoutC;
     using LayoutBias = typename BlockMmad::LayoutBias;
-    using TupleShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
+    using BlockShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
     using MakeLayoutA = AscendC::Te::FrameLayoutFormat<LayoutA, AscendC::Std::Int<AscendC::Te::C0_ELEMENT<AType>>>;
     using MakeLayoutB = AscendC::Te::FrameLayoutFormat<LayoutB, AscendC::Std::Int<AscendC::Te::C0_ELEMENT<BType>>>;
     using MakeLayoutC = AscendC::Te::FrameLayoutFormat<LayoutC, AscendC::Std::Int<AscendC::Te::C0_ELEMENT<CType>>>;
@@ -72,7 +72,7 @@ public:
         Params() = default;
     };
 
-    __aicore__ inline void operator()(Params const& params)
+    __aicore__ inline void operator()(Params& params)
     {
         if ASCEND_IS_AIV {
             return;
@@ -82,8 +82,8 @@ public:
         // 初始化blockScheduler
         BlockScheduler bs(params.problemShape, params.schParams);
         int64_t curBlockIdx = AscendC::GetBlockIdx();
-        int64_t realBlockNum = bs.GetBlockNum(params.problemShape);
-        if (curBlockIdx >= realBlockNum) {
+        int64_t realCoreNums = bs.GetCoreNums(); // 实际需要的核数
+        if (curBlockIdx >= realCoreNums) {
             return;
         }
 
@@ -93,12 +93,17 @@ public:
         }
 
         BlockMmad blockMmad;
-        blockMmad.Init(params.problemShape, params.mmadParams);
+        if constexpr (AscendC::Std::is_same_v<
+                MatmulMultiBlockBasicSplitK<0, 1, Blaze::Gemm::KernelMmadMultiBlockBasic, 0>,
+                typename BlockMmad_::DispatchPolicy>) {
+            params.mmadParams.k = k_;
+        }
+        blockMmad.Init(params.mmadParams);
 
-        if constexpr (nonContiguousType == NON_CONTIGUOUS_TYPE_SLICE) {
-            MatmulSliceProcess(params, blockMmad, bs, curBlockIdx, AscendC::GetBlockNum(), bs.GetTileNum());
+        if constexpr (NON_CONTIGUOUS_TYPE == NON_CONTIGUOUS_TYPE_SLICE) {
+            MatmulSliceProcess(params, blockMmad, bs, curBlockIdx, AscendC::GetBlockNum(), bs.GetBlockNums());
         } else {
-            MatmulProcess(params, blockMmad, bs, curBlockIdx, AscendC::GetBlockNum(), bs.GetTileNum());
+            MatmulProcess(params, blockMmad, bs, curBlockIdx, AscendC::GetBlockNum(), bs.GetBlockNums());
         }
 
         UnsetHf32();
@@ -106,8 +111,8 @@ public:
 
 private:
     __aicore__ inline void MatmulProcess(
-        Params const& params, BlockMmad& blockMmad, BlockScheduler& bs, int64_t curBlockIdx, int64_t blockNum,
-        int64_t tileNum)
+        Params const& params, BlockMmad& blockMmad, BlockScheduler& bs, int64_t curBlockIdx, int64_t coreNums,
+        int64_t totalBlockNums)
     {
         // 默认ND Format
         auto layoutA = MakeLayoutA{}(m_, k_);       // ND layout for A
@@ -126,16 +131,15 @@ private:
 
         uint64_t preBatchIdx = 0;
         // Process tiles in ping-pong mode
-        for (int64_t tileIdx = curBlockIdx; tileIdx < tileNum; tileIdx += blockNum) {
-            auto tileShape = bs.template GetBlockShape<transB, BType>(tileIdx); // 非全载
-            auto tileCoord = bs.GetBlockCoord(tileIdx);                         // (m, n, k, b)
-            auto coordM = AscendC::Te::Get<MNK_M>(tileCoord);
-            auto coordN = AscendC::Te::Get<MNK_N>(tileCoord);
-            auto shapeM = AscendC::Te::Get<MNK_M>(tileShape);
-            auto shapeN = AscendC::Te::Get<MNK_N>(tileShape);
-            auto shapeK = AscendC::Te::Get<MNK_K>(tileShape);
-            curBatchIdx_ = static_cast<uint64_t>(AscendC::Te::Get<MNK_B>(tileCoord));
-
+        for (int64_t blockIdx = curBlockIdx; blockIdx < totalBlockNums; blockIdx += coreNums) {
+            auto blockShape = bs.template GetBlockShape<TRANS_B, BType>(blockIdx); // (m, n, k, b)
+            auto blockCoord = bs.GetBlockCoord(blockIdx);                         // (m, n, k, b)
+            auto coordM = AscendC::Te::Get<MNK_M>(blockCoord);
+            auto coordN = AscendC::Te::Get<MNK_N>(blockCoord);
+            auto shapeM = AscendC::Te::Get<MNK_M>(blockShape);
+            auto shapeN = AscendC::Te::Get<MNK_N>(blockShape);
+            auto shapeK = AscendC::Te::Get<MNK_K>(blockShape);
+            curBatchIdx_ = static_cast<uint64_t>(AscendC::Te::Get<MNK_B>(blockCoord));
             if (preBatchIdx != curBatchIdx_) {
                 UpdateBatchOffset(params);
                 gmA = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(aGmAddr_), layoutA);
@@ -150,13 +154,13 @@ private:
             auto gmBlockB = gmB.Slice(AscendC::MakeCoord(0L, coordN), AscendC::MakeShape(shapeK, shapeN));
             auto gmBlockC = gmC.Slice(AscendC::MakeCoord(coordM, coordN), AscendC::MakeShape(shapeM, shapeN));
             auto gmBlockBias = gmBias.Slice(AscendC::MakeCoord(0L, coordN), AscendC::MakeShape(1L, shapeN));
-            blockMmad(gmBlockA, gmBlockB, gmBlockBias, gmBlockC, tileShape);
+            blockMmad(gmBlockA, gmBlockB, gmBlockBias, gmBlockC, blockShape);
         }
     }
 
     __aicore__ inline void MatmulSliceProcess(
-        Params const& params, BlockMmad& blockMmad, BlockScheduler& bs, int64_t curBlockIdx, int64_t blockNum,
-        int64_t tileNum)
+        Params const& params, BlockMmad& blockMmad, BlockScheduler& bs, int64_t curBlockIdx, int64_t coreNums,
+        int64_t totalBlockNums)
     {
         int64_t sliceM = static_cast<int64_t>(params.schParams.sliceM);
         int64_t sliceBatch = static_cast<int64_t>(m_) / sliceM;
@@ -177,14 +181,14 @@ private:
             AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(biasGmAddr_), layoutBias);
         SetL2Cache(gmA, gmB, params.schParams.l2CacheMode);
 
-        for (int64_t tileIdx = curBlockIdx; tileIdx < tileNum; tileIdx += blockNum) {
-            auto tileShape = bs.template GetBlockShape<transB, BType>(tileIdx);
-            auto tileCoord = bs.GetBlockCoord(tileIdx);
-            auto coordM = AscendC::Te::Get<MNK_M>(tileCoord);
-            auto coordN = AscendC::Te::Get<MNK_N>(tileCoord);
-            auto shapeM = AscendC::Te::Get<MNK_M>(tileShape);
-            auto shapeN = AscendC::Te::Get<MNK_N>(tileShape);
-            auto shapeK = AscendC::Te::Get<MNK_K>(tileShape);
+        for (int64_t blockIdx = curBlockIdx; blockIdx < totalBlockNums; blockIdx += coreNums) {
+            auto blockShape = bs.template GetBlockShape<TRANS_B, BType>(blockIdx);
+            auto blockCoord = bs.GetBlockCoord(blockIdx);
+            auto coordM = AscendC::Te::Get<MNK_M>(blockCoord);
+            auto coordN = AscendC::Te::Get<MNK_N>(blockCoord);
+            auto shapeM = AscendC::Te::Get<MNK_M>(blockShape);
+            auto shapeN = AscendC::Te::Get<MNK_N>(blockShape);
+            auto shapeK = AscendC::Te::Get<MNK_K>(blockShape);
 
             auto gmBlockA = gmA.Slice(
                 AscendC::Te::MakeCoord(coordM / sliceM, AscendC::Te::MakeCoord(0L, 0L)),
@@ -192,7 +196,7 @@ private:
             auto gmBlockB = gmB.Slice(AscendC::Te::MakeCoord(0L, coordN), AscendC::Te::MakeShape(shapeK, shapeN));
             auto gmBlockC = gmC.Slice(AscendC::Te::MakeCoord(coordM, coordN), AscendC::Te::MakeShape(shapeM, shapeN));
             auto gmBlockBias = gmBias.Slice(AscendC::Te::MakeCoord(0L, coordN), AscendC::Te::MakeShape(1L, shapeN));
-            blockMmad(gmBlockA, gmBlockB, gmBlockBias, gmBlockC, tileShape);
+            blockMmad(gmBlockA, gmBlockB, gmBlockBias, gmBlockC, blockShape);
         }
     }
 
@@ -211,11 +215,11 @@ private:
     __aicore__ inline void UpdateBatchOffset(Params const& params)
     {
         aGmAddr_ = reinterpret_cast<__gm__ AType*>(params.mmadParams.aGmAddr) + curBatchIdx_ * m_ * k_;
-        if (!weightNZFormat) {
+        if (!WEIGHT_NZ_FORMAT) {
             bGmAddr_ = reinterpret_cast<__gm__ BType*>(params.mmadParams.bGmAddr) + curBatchIdx_ * k_ * n_;
         } else {
             bGmAddr_ = reinterpret_cast<__gm__ BType*>(params.mmadParams.bGmAddr) +
-                       Blaze::Gemm::CalWeightNZGmAddrOffset(transB, curBatchIdx_, n_, k_, C0_SIZE);
+                       Blaze::Gemm::CalWeightNZGmAddrOffset(TRANS_B, curBatchIdx_, n_, k_, C0_SIZE);
         }
         cGmAddr_ = reinterpret_cast<__gm__ CType*>(params.mmadParams.cGmAddr) + curBatchIdx_ * m_ * n_;
     }
@@ -236,12 +240,12 @@ private:
     }
 
 private:
-    static constexpr bool isFp32 = (AscendC::Std::is_same_v<BType, float>);
-    static constexpr int64_t C0_SIZE = isFp32 ? C0_SIZE_fp32 : C0_SIZE_fp16;
-    static constexpr bool transA = BlockMmad::transA;
-    static constexpr bool transB = BlockMmad::transB;
-    static constexpr bool weightNZFormat = BlockMmad::weightNZFormat;
-    static constexpr uint64_t nonContiguousType = BlockMmad::NON_CONTIGIOUS_TYPE;
+    static constexpr bool IS_FP32 = (AscendC::Std::is_same_v<BType, float>);
+    static constexpr int64_t C0_SIZE = IS_FP32 ? C0_SIZE_fp32 : C0_SIZE_fp16;
+    static constexpr bool TRANS_A = BlockMmad::TRANS_A;
+    static constexpr bool TRANS_B = BlockMmad::TRANS_B;
+    static constexpr bool WEIGHT_NZ_FORMAT = BlockMmad::WEIGHT_NZ_FORMAT;
+    static constexpr uint64_t NON_CONTIGUOUS_TYPE = BlockMmad::NON_CONTIGUOUS_TYPE;
     __gm__ AType* aGmAddr_;
     __gm__ BType* bGmAddr_;
     __gm__ CType* cGmAddr_;

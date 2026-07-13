@@ -81,8 +81,8 @@ public:
         // 初始化blockScheduler
         BlockScheduler bs(params.problemShape, params.schParams);
         int64_t curBlockIdx = AscendC::GetBlockIdx();
-        int64_t realBlockNum = bs.GetBlockNum(params.problemShape);
-        if (curBlockIdx >= realBlockNum) {
+        int64_t realCoreNums = bs.GetCoreNums();
+        if (curBlockIdx >= realCoreNums) {
             return;
         }
         if (params.schParams.isHf32) {
@@ -92,7 +92,7 @@ public:
 
         BlockMmad blockMmad;
         blockMmad.Init(params.mmadParams);
-        MatmulProcess(params, blockMmad, bs, curBlockIdx, AscendC::GetBlockNum(), bs.GetTileNum());
+        MatmulProcess(params, blockMmad, bs, curBlockIdx, AscendC::GetBlockNum(), bs.GetBlockNums());
         UnsetHf32();
     }
 

@@ -52,22 +52,22 @@ public:
     using DispatchPolicy = MatmulIterBatchBroadcast<ABc, BBc>;
     using TupleShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
 
-    static constexpr bool transA = IsTrans<LayoutA>::value;
-    static constexpr bool transB = IsTrans<LayoutB>::value;
-    static constexpr bool aBroadcast = ABc;
-    static constexpr bool bBroadcast = BBc;
+    static constexpr bool TRANS_A = IsTrans<LayoutA>::value;
+    static constexpr bool TRANS_B = IsTrans<LayoutB>::value;
+    static constexpr bool A_BROADCAST = ABc;
+    static constexpr bool B_BROADCAST = BBc;
     static constexpr uint64_t BUFFER_NUM = 2;
-    constexpr static uint16_t MTE1_MTE2_EVENT_ID_NUM = 4;
-    constexpr static uint64_t HALF_L1_SIZE = AscendC::TOTAL_L1_SIZE / BUFFER_NUM;
-    constexpr static uint64_t HALF_L0_SIZE = AscendC::TOTAL_L0A_SIZE / BUFFER_NUM;
-    constexpr static uint64_t HALF_L0C_SIZE = AscendC::TOTAL_L0C_SIZE / BUFFER_NUM;
+    static constexpr uint16_t MTE1_MTE2_EVENT_ID_NUM = 4;
+    static constexpr uint64_t HALF_L1_SIZE = AscendC::TOTAL_L1_SIZE / BUFFER_NUM;
+    static constexpr uint64_t HALF_L0_SIZE = AscendC::TOTAL_L0A_SIZE / BUFFER_NUM;
+    static constexpr uint64_t HALF_L0C_SIZE = AscendC::TOTAL_L0C_SIZE / BUFFER_NUM;
     using A_T = AType;
     using B_T = BType;
     using C_T = CType;
     using Bias_T = BiasType;
-    using LayoutAl1Ptn = AscendC::Std::conditional_t<transA,
+    using LayoutAl1Ptn = AscendC::Std::conditional_t<TRANS_A,
         AscendC::Te::ZNLayoutPtn, AscendC::Te::NZLayoutPtn>;
-    using LayoutBl1Ptn = AscendC::Std::conditional_t<transB,
+    using LayoutBl1Ptn = AscendC::Std::conditional_t<TRANS_B,
         AscendC::Te::ZNLayoutPtn, AscendC::Te::NZLayoutPtn>;
 
     struct Params {
@@ -126,24 +126,24 @@ public:
         broadcastAxisA_ = broadcastAxisA;
         broadcastAxisB_ = broadcastAxisB;
         uint64_t al1BatchCount;
-        if constexpr (aBroadcast) {
+        if constexpr (A_BROADCAST) {
             al1BatchCount = (broadcastAxisA_ == LAST_BATCH_DIM) ? 1 : mainIterBatchL1;
         } else {
             al1BatchCount = mainIterBatchL1;
         }
         uint64_t bl1BatchCount;
-        if constexpr (bBroadcast) {
+        if constexpr (B_BROADCAST) {
             bl1BatchCount = (broadcastAxisB_ == LAST_BATCH_DIM) ? 1 : mainIterBatchL1;
         } else {
             bl1BatchCount = mainIterBatchL1;
         }
         const uint64_t c0Size = BLOCK_BYTE_SIZE / sizeof(A_T);
-        if constexpr (!transA) {
+        if constexpr (!TRANS_A) {
             aL1BatchStrideElems_ = CeilAlign(m_, static_cast<uint64_t>(BLOCK_CUBE)) * CeilAlign(k_, c0Size);
         } else {
             aL1BatchStrideElems_ = CeilAlign(m_, c0Size) * CeilAlign(k_, static_cast<uint64_t>(BLOCK_CUBE));
         }
-        if constexpr (!transB) {
+        if constexpr (!TRANS_B) {
             bL1BatchStrideElems_ = CeilAlign(k_, static_cast<uint64_t>(BLOCK_CUBE)) * CeilAlign(n_, c0Size);
         } else {
             bL1BatchStrideElems_ = CeilAlign(k_, c0Size) * CeilAlign(n_, static_cast<uint64_t>(BLOCK_CUBE));
@@ -323,8 +323,8 @@ private:
         const L0TileInfo& tileInfo, uint64_t offsetAl1,
         CopyL12L0AT copyL12L0A, CopyL12L0BT copyL12L0B, CopyL12BTT copyL12BT)
     {
-        // A-side: transA always 2D per-batch loop; !transA uses 3D or 2D for FP32+broadcastAxis==3
-        if constexpr (transA) {
+        // A-side: TRANS_A always 2D per-batch loop; !TRANS_A uses 3D or 2D for FP32+broadcastAxis==3
+        if constexpr (TRANS_A) {
             CopyAl1ToL0PerBatch<AscendC::Te::ZNLayoutPtn>(l0BufId, tileInfo, offsetAl1, copyL12L0A);
         } else {
             if (broadcastAxisA_ == LAST_BATCH_DIM && sizeof(AType) == sizeof(float)) {
@@ -340,8 +340,8 @@ private:
                 AscendC::Te::Copy(copyL12L0A, al0KTensor, al1Slice);
             }
         }
-        // B-side: !transB+FP32 always 2D per-batch; transB or !FP32 uses 3D default
-        if constexpr (!transB && sizeof(BType) == sizeof(float)) {
+        // B-side: !TRANS_B+FP32 always 2D per-batch; TRANS_B or !FP32 uses 3D default
+        if constexpr (!TRANS_B && sizeof(BType) == sizeof(float)) {
             CopyBl1ToL0PerBatch<AscendC::Te::NZLayoutPtn>(l0BufId, tileInfo, offsetAl1, copyL12L0B);
         } else {
             auto bl0KLayout = AscendC::Te::MakeFrameLayout<AscendC::Te::ZNLayoutPtn,
@@ -581,7 +581,7 @@ private:
     // --- Shared helpers for both modes ---
     __aicore__ inline uint64_t GetAl1Count(uint64_t iterBatchL1) const
     {
-        if constexpr (aBroadcast) {
+        if constexpr (A_BROADCAST) {
             if (broadcastAxisA_ == LAST_BATCH_DIM) { return 1; }
         }
         return iterBatchL1;
@@ -589,7 +589,7 @@ private:
 
     __aicore__ inline uint64_t GetBl1Count(uint64_t iterBatchL1) const
     {
-        if constexpr (bBroadcast) {
+        if constexpr (B_BROADCAST) {
             if (broadcastAxisB_ == LAST_BATCH_DIM) { return 1; }
         }
         return iterBatchL1;
@@ -597,7 +597,7 @@ private:
 
     __aicore__ inline uint64_t GetAl0Count(uint64_t iterBatchL0) const
     {
-        if constexpr (aBroadcast) {
+        if constexpr (A_BROADCAST) {
             if (broadcastAxisA_ == LAST_BATCH_DIM) { return 1; }
         }
         return iterBatchL0;
@@ -605,7 +605,7 @@ private:
 
     __aicore__ inline uint64_t GetBl0Count(uint64_t iterBatchL0) const
     {
-        if constexpr (bBroadcast) {
+        if constexpr (B_BROADCAST) {
             if (broadcastAxisB_ == LAST_BATCH_DIM) { return 1; }
         }
         return iterBatchL0;
@@ -613,7 +613,7 @@ private:
 
     __aicore__ inline uint64_t GetAl0BatchStart(uint64_t iterIdx) const
     {
-        if constexpr (aBroadcast) {
+        if constexpr (A_BROADCAST) {
             if (broadcastAxisA_ == LAST_BATCH_DIM) { return 0; }
         }
         return iterIdx * mainIterBatchL0_;
@@ -621,7 +621,7 @@ private:
 
     __aicore__ inline uint64_t GetBl0BatchStart(uint64_t iterIdx) const
     {
-        if constexpr (bBroadcast) {
+        if constexpr (B_BROADCAST) {
             if (broadcastAxisB_ == LAST_BATCH_DIM) { return 0; }
         }
         return iterIdx * mainIterBatchL0_;
@@ -629,7 +629,7 @@ private:
 
     __aicore__ inline uint64_t GetABatchIdx(uint64_t batchL1Idx) const
     {
-        if constexpr (aBroadcast) {
+        if constexpr (A_BROADCAST) {
             if (broadcastAxisA_ == LAST_BATCH_DIM) { return 0; }
         }
         return batchL1Idx;
@@ -637,7 +637,7 @@ private:
 
     __aicore__ inline uint64_t GetBBatchIdx(uint64_t batchL1Idx) const
     {
-        if constexpr (bBroadcast) {
+        if constexpr (B_BROADCAST) {
             if (broadcastAxisB_ == LAST_BATCH_DIM) { return 0; }
         }
         return batchL1Idx;

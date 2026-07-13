@@ -144,8 +144,8 @@ mTailCnt=2, nTailCnt=2  // 尾块切为 4 份，4 个 Block 并行处理
 |------|------|----------|
 | L2_CACHE_DEFAULT | L2 Cache 使能（默认） | 通用场景 |
 | A_L2_CACHE_DISABLE | 禁用 A 矩阵 L2 Cache | A 矩阵复用少的场景, 如A全载 |
-| B_L2_CACHE_DISABLE | 禁用 B 矩阵 L2 Cache | B 矩阵复用少, 如B全载 |
-| ALL_L2_CACHE_DISABLE | 禁用所有 L2 Cache | 大矩阵场景, 避免L2容量竞争和替换开销 |
+| B_L2_CACHE_DISABLE | 禁用 B 矩阵 L2 Cache | B 矩阵复用少的场景, 如B全载 |
+| ALL_L2_CACHE_DISABLE | 禁用所有 L2 Cache | A B 矩阵都复用少的场景, 避免L2替换开销 |
 
 #### 7. 非连续场景参数 (sliceM, srcNdStride, innerBatch)
 
@@ -170,7 +170,6 @@ slice 路径不新增调度器接口，Kernel 通过 `Params::sliceM`、`Params:
 | 类型 | 说明 |
 |------|------|
 | BlockShape | Block 形状：`Shape<int64_t, int64_t, int64_t, int64_t>` |
-| BlockL1L0Shape | Block L1/L0 形状：`Shape<int64_t, int64_t, int64_t, int64_t, int64_t, int64_t>` |
 | BlockCoord | Block 坐标：`Coord<int64_t, int64_t, int64_t, int64_t>` (mOffset, nOffset, kOffset, batchIdx) |
 | ProblemShape | 问题规模类型（模板参数） |
 
@@ -191,64 +190,59 @@ __aicore__ inline BlockSchedulerMatmulBasic(
 ### 执行流程
 ```
 1. 设置问题规模：k_, batch_, innerBatch_
-2. 设置 L1/L0 形状：mL1_, nL1_, kL1_, baseM_, baseN_, baseK_
-3. 计算 tile 数量：mTileNum_, nTileNum_, kTileNum_, tileNum_
+2. 设置 L1/L0 形状：mL1_, nL1_, kL1_
+3. 计算 block 数量：mBlockNums_, nBlockNums_, blockNums_
 4. 计算 L1 尾块参数：mL1NormCnt_, mL1TailMain_, mL1TailLast_, nL1NormCnt_, nL1TailMain_, nL1TailLast_
-5. 判断 SplitK 切分：isSplitSingleK_, splitSingleK_, splitSingleKRound_, splitSingleKTail_
-6. 判断非连续场景：isSlice_
-7. 计算尾块切分：mTailCnt_, nTailCnt_, tailCnt_（batch=1 场景）
-8. 计算扫描窗口：mainWindow_, mainRow_, tailWindow_
+5. 判断非连续场景：isSlice_
+6. 计算尾块切分：mTailCnt_, nTailCnt_, tailCnt_（batch=1 场景）
+7. 计算扫描窗口：mainWindow_, mainRow_, tailWindow_
 ```
 
 ## 公共成员方法（Public API）
 
-### GetTileNum
+### GetBlockNums
 ```cpp
-__aicore__ inline int64_t GetTileNum()
+__aicore__ inline int64_t GetBlockNums()
 ```
-功能：返回总 tile 数量（`tileNum_ * batch_`）。
+功能：返回总 block 数量（`blockNums_ * batch_`）。
 
-### GetBlockNum
+### GetCoreNums
 ```cpp
-__aicore__ inline int64_t GetBlockNum(ProblemShape shape)
+__aicore__ inline int64_t GetCoreNums()
 ```
-功能：返回实际使用的 Block 数量（不超过 tile 总数）。
-返回值：`min(tileNum_ * batch_, blockNum_)`
+功能：返回实际需要的核数量（不超过 block 总数）。
+返回值：`min(blockNums_ * batch_, blockNum_)`
 
 ### GetBlockShape
 ```cpp
-template <bool TransB_ = false, class B_T>
-__aicore__ inline BlockL1L0Shape GetBlockShape(
-    int64_t tileIdx, int64_t mOffset = 0, int64_t nOffset = 0, int64_t kOffset = 0)
+template <bool TransB_ = false, class BType_>
+__aicore__ inline BlockShape GetBlockShape(int64_t blockIdx)
 ```
-功能：返回当前 tile 的 Block 形状。
-返回值：`BlockL1L0Shape {mL1, nL1, k, batch, mL0, nL0}`
+功能：返回当前 block 的形状。
+返回值：`BlockShape {mL1, nL1, k, batch}`
 
 参数说明：
 | 参数 | 类型 | 说明 |
 |------|------|------|
-| tileIdx | int64_t | tile 索引 |
-| mOffset | int64_t | M 轴偏移（默认 0） |
-| nOffset | int64_t | N 轴偏移（默认 0） |
-| kOffset | int64_t | K 轴偏移（默认 0，用于 SplitK） |
+| blockIdx | int64_t | block 索引 |
 
 模板参数说明：
 | 参数 | 说明 |
 |------|------|
 | TransB_ | B 矩阵是否转置（默认 false） |
-| B_T | B 矩阵数据类型 |
+| BType_ | B 矩阵数据类型 |
 
 ### GetBlockCoord
 ```cpp
-__aicore__ inline BlockCoord GetBlockCoord(int tileIdx)
+__aicore__ inline BlockCoord GetBlockCoord(int blockIdx)
 ```
-功能：返回当前 tile 的 Block 坐标。
+功能：返回当前 block 的坐标。
 返回值：`BlockCoord {mOffset, nOffset, kOffset, batchIdx}`
 
 参数说明：
 | 参数 | 类型 | 说明 |
 |------|------|------|
-| tileIdx | int | tile 索引 |
+| blockIdx | int | block 索引 |
 
 ## 调用示例
 
@@ -301,31 +295,29 @@ ProblemShape shape{m, n, k, batch};
 BlockScheduler scheduler(shape, params);
 ```
 
-### 获取 tile 数量
+### 获取 block 数量
 ```cpp
-int64_t tileNum = scheduler.GetTileNum();
-int64_t blockNum = scheduler.GetBlockNum(shape);
-for (int64_t tileIdx = blockIdx; tileIdx < tileNum; tileIdx += blockNum) {
-    // 处理 tile
+int64_t blockNums = scheduler.GetBlockNums();
+int64_t coreNums = scheduler.GetCoreNums();
+for (int64_t blockIdx = blockIdx; blockIdx < blockNums; blockIdx += coreNums) {
+    // 处理 block
 }
 ```
 
 ### 获取 Block 形状
 ```cpp
-using B_T = half;
+using BType_ = half;
 bool TransB = false;
-auto blockShape = scheduler.GetBlockShape<TransB, B_T>(tileIdx);
+auto blockShape = scheduler.GetBlockShape<TransB, BType_>(blockIdx);
 int64_t mL1 = Get<0>(blockShape);
 int64_t nL1 = Get<1>(blockShape);
 int64_t kL1 = Get<2>(blockShape);
 int64_t batch = Get<3>(blockShape);
-int64_t mL0 = Get<4>(blockShape);
-int64_t nL0 = Get<5>(blockShape);
 ```
 
 ### 获取 Block 坐标
 ```cpp
-auto blockCoord = scheduler.GetBlockCoord(tileIdx);
+auto blockCoord = scheduler.GetBlockCoord(blockIdx);
 int64_t mOffset = Get<0>(blockCoord);
 int64_t nOffset = Get<1>(blockCoord);
 int64_t batchIdx = Get<3>(blockCoord);
@@ -337,13 +329,13 @@ int64_t batchIdx = Get<3>(blockCoord);
 ```
 // 奇数行反向扫描
 if (rowIdx % 2 != 0) {
-    nTileIdx_ = nTileNum_ - 1 - nTileIdx_;
+    nBlockIdx_ = nBlockNums_ - 1 - nBlockIdx_;
 }
 ```
 
 **示意图**：
 ```
-Z 型扫描示意（mTileNum_=4, nTileNum_=4）
+Z 型扫描示意（mBlockNums_=4, nBlockNums_=4）
 
      N轴 →
    ┌──┬──┬──┬──┐
@@ -362,29 +354,13 @@ M  ├──┼──┼──┼──┤
 ### 窗口扫描
 ```
 mainWindow_ = 4  （窗口长度）
-mainRow_ = mTileNum_ / mainWindow_ - 1
-tailWindow_ = mTileNum_ - mainRow_ * mainWindow_
+mainRow_ = mBlockNums_ / mainWindow_ - 1
+tailWindow_ = mBlockNums_ - mainRow_ * mainWindow_
 ```
-
-## SplitK 切分
-
-### 触发条件
-```
-IsFp32_ && !isHf32_ && IsNdFormat_ && k_ > fp32SplitKThreshold && FullLoadMode_ == 0 && !isSlice_
-```
-
-### 阈值配置
-| 常量 | 值 | 说明 |
-|------|-----|------|
-| FP32_K_SWITCH_THRESHOLD | 268435456 | 大 K 阈值切换点 |
-| FP32_SPLIT_K_THRESHOLD1 | 1024 | 小 K 场景切分阈值 |
-| FP32_SPLIT_K_THRESHOLD2 | 8192 | 大 K 场景切分阈值 |
 
 ## 适用场景
 
 | 场景 | 配置建议 |
 |------|----------|
 | Basic Kernel | FullLoadMode=0，默认配置 |
-| FP32 大 K | isFp32=true，启用 SplitK |
 | 尾块优化 | batch=1，设置 mTailCnt/nTailCnt |
-| 大矩阵 | 建议禁用 L2 Cache 避免缓存污染 |

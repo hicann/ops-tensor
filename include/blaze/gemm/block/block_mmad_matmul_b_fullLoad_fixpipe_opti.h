@@ -44,7 +44,6 @@ public:
     using DispatchPolicy =
         MatmulMultiBlockFullLoadOrFixpipe<L0COutModel_, FullLoadMode_, FusedOpType_, KernelSchedule_>;
     using TupleShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
-    using TupleL1L0Shape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t, int64_t, int64_t>;
     using TileShape = AscendC::Te::Shape<int64_t, int64_t, int64_t>;
 
     // TRANS_A and TRANS_B
@@ -136,7 +135,7 @@ public:
         l0PingPong_ = 0;
         abL1LoopCnt_ = 0;
         l0cPingPong_ = 0;
-        constexpr static uint64_t QUARTER_L1_SIZE = AscendC::TOTAL_L1_SIZE / QUADRUPLE_BUFFER_COUNT;
+        static constexpr uint64_t QUARTER_L1_SIZE = AscendC::TOTAL_L1_SIZE / QUADRUPLE_BUFFER_COUNT;
         // 2 buffer: A0 A1 | B | Bias
         // 4 buffer: A0 A1 A2 A3 | B | Bias
         if constexpr (DispatchPolicy::FULL_LOAD_MODE == B_FULL_LOAD_MODE) {
@@ -154,10 +153,10 @@ public:
 
     template <typename TensorA, typename TensorB, typename TensorBias, typename TensorC>
     __aicore__ inline void operator()(
-        TensorA& gmA, TensorB& gmB, TensorBias& gmBias, TensorC& tensorC, TupleL1L0Shape& tileShape)
+        TensorA& gmA, TensorB& gmB, TensorBias& gmBias, TensorC& tensorC, TupleShape& tileShape)
     {
-        constexpr static uint64_t HALF_L0C_SIZE = AscendC::TOTAL_L0C_SIZE / DOUBLE_BUFFER_COUNT;
-        constexpr static uint64_t HALF_L0_SIZE = AscendC::TOTAL_L0A_SIZE / DOUBLE_BUFFER_COUNT;
+        static constexpr uint64_t HALF_L0C_SIZE = AscendC::TOTAL_L0C_SIZE / DOUBLE_BUFFER_COUNT;
+        static constexpr uint64_t HALF_L0_SIZE = AscendC::TOTAL_L0A_SIZE / DOUBLE_BUFFER_COUNT;
 
         uint64_t curM = AscendC::Te::Get<MNK_M>(tileShape);
         uint64_t curN = AscendC::Te::Get<MNK_N>(tileShape);
@@ -416,11 +415,11 @@ private:
     }
 
 private:
-    constexpr static uint64_t SPLIT_M_ALIGN = 2;
-    constexpr static uint16_t DIMENSION_M = 0;
-    constexpr static uint16_t DIMENSION_N = 1;
-    constexpr static uint16_t DIMENSION_K = 2;
-    constexpr static uint16_t MTE1_MTE2_EVENT_ID_NUM = 4;
+    static constexpr uint64_t SPLIT_M_ALIGN = 2;
+    static constexpr uint16_t DIMENSION_M = 0;
+    static constexpr uint16_t DIMENSION_N = 1;
+    static constexpr uint16_t DIMENSION_K = 2;
+    static constexpr uint16_t MTE1_MTE2_EVENT_ID_NUM = 4;
 
     uint64_t k_{1};
     uint64_t mL1_{1};
