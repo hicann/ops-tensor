@@ -1,0 +1,4 @@
+[submodule "include/tensor_api"]
+	path = include/tensor_api
+	url = https://gitcode.com/cann/asc-devkit.git
+	branch = feature/tensor_api_from_9.0.0
