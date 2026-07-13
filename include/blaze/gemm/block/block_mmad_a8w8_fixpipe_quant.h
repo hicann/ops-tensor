@@ -71,6 +71,8 @@ public:
     static constexpr uint16_t BIAS_BUFFER_FLAG_1 = 5;
     static constexpr uint16_t X2_SCALE_BUFFER_FLAG_0 = 0;
     static constexpr uint16_t X2_SCALE_BUFFER_FLAG_1 = 1;
+    constexpr static uint16_t M_MTE1_FLAG_0 = 4;
+    constexpr static uint16_t M_MTE1_FLAG_1 = 5;
 
     using MakeLayoutAL1 = AscendC::Std::conditional_t<
         transA, AscendC::Te::FrameLayoutFormat<AscendC::Te::ZNLayoutPtn, AscendC::Std::Int<C0_SIZE>>,
@@ -98,6 +100,8 @@ public:
         SetFlag<HardEvent::MTE1_MTE2>(BIAS_BUFFER_FLAG_1);
         SetFlag<HardEvent::FIX_MTE2>(X2_SCALE_BUFFER_FLAG_0);
         SetFlag<HardEvent::FIX_MTE2>(X2_SCALE_BUFFER_FLAG_1);
+        SetFlag<HardEvent::M_MTE1>(M_MTE1_FLAG_0);
+        SetFlag<HardEvent::M_MTE1>(M_MTE1_FLAG_1);
         SetMMLayoutTransform(true);
     }
 
@@ -111,6 +115,8 @@ public:
         WaitFlag<HardEvent::MTE1_MTE2>(BIAS_BUFFER_FLAG_1);
         WaitFlag<HardEvent::FIX_MTE2>(X2_SCALE_BUFFER_FLAG_0);
         WaitFlag<HardEvent::FIX_MTE2>(X2_SCALE_BUFFER_FLAG_1);
+        WaitFlag<HardEvent::M_MTE1>(M_MTE1_FLAG_0);
+        WaitFlag<HardEvent::M_MTE1>(M_MTE1_FLAG_1);
         SetMMLayoutTransform(false);
     }
 
@@ -286,14 +292,16 @@ private:
         uint64_t kL0Iter = CeilDiv(curInnerKL1, baseK_);
         for (uint16_t iter1 = 0; iter1 < kL0Iter; ++iter1) {
             uint64_t curKL0 = (iter1 == kL0Iter - 1) ? (curInnerKL1 - iter1 * baseK_) : baseK_;
-            uint64_t l0Offset = HALF_L0_SIZE * (l0PingPong_ & 0x1);
+            const uint64_t l0PingPongId = l0PingPong_ & 0x1;
+            const uint64_t l0Offset = HALF_L0_SIZE * l0PingPongId;
 
             auto layoutAL0 = AscendC::Te::MakeFrameLayout<AscendC::Te::NZLayoutPtn, AscendC::Te::LayoutTraitDefault<AType>>(curML1, curKL0);
             auto layoutBL0 = AscendC::Te::MakeFrameLayout<AscendC::Te::ZNLayoutPtn, AscendC::Te::LayoutTraitDefault<BType>>(curKL0, curNL1);
             auto l0aLocal = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::L0A, AType>(l0Offset), layoutAL0);
             auto l0bLocal = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::L0B, BType>(l0Offset), layoutBL0);
 
-            WaitFlag<HardEvent::M_MTE1>(l0PingPong_ & 0x1);
+            const uint16_t mte1WaitMFlag = static_cast<uint16_t>(l0PingPongId + M_MTE1_FLAG_0);
+            WaitFlag<HardEvent::M_MTE1>(mte1WaitMFlag);
 
             auto aL1Sub = tensorAL1.Slice(AscendC::Te::MakeCoord(0, aKPrefix + iter1 * baseK_), AscendC::Te::MakeShape(curML1, curKL0));
             AscendC::Te::Copy(copyL12L0A, l0aLocal, aL1Sub);
@@ -311,8 +319,8 @@ private:
                 AscendC::Te::Copy(copyL12BT, tensorBt, tensorBiasL1);
             }
 
-            SetFlag<HardEvent::MTE1_M>(l0PingPong_ & 0x1);
-            WaitFlag<HardEvent::MTE1_M>(l0PingPong_ & 0x1);
+            SetFlag<HardEvent::MTE1_M>(l0PingPongId);
+            WaitFlag<HardEvent::MTE1_M>(l0PingPongId);
 
             mmadParams.k = static_cast<uint16_t>(curKL0);
             mmadParams.unitFlag = (isL1LastRound && iter1 + 1 == kL0Iter) ? FINAL_ACCUMULATION : NON_FINAL_ACCUMULATION;
@@ -328,7 +336,7 @@ private:
                 AscendC::Te::Mmad(MmadAtomT{}.with(mmadParams), c1Local, l0aLocal, l0bLocal);
             }
 
-            SetFlag<HardEvent::M_MTE1>(l0PingPong_ & 0x1);
+            SetFlag<HardEvent::M_MTE1>(mte1WaitMFlag);
             l0PingPong_++;
         }
     }
@@ -347,14 +355,16 @@ private:
 
             uint64_t offsetAL1 = l1BufferAOffset_[l1BufId];
             auto layoutAL1 = MakeLayoutAL1{}(curML1, curKL1);
+            if constexpr (DispatchPolicy::fullLoadMode != 0) {
+                offsetAL1 = l1BufferAOffset_[0] +
+                            iter0 * kL1_ * CeilAlign(curML1, transA ? static_cast<uint64_t>(C0_SIZE) : BLOCK_CUBE);
+            }
             auto tensorAL1 = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::L1, AType>(offsetAL1), layoutAL1);
             if constexpr (DispatchPolicy::fullLoadMode == 0) {
                 auto gmTileA = gmA.Slice(AscendC::Te::MakeCoord(0UL, iter0 * kAL1_), AscendC::Te::MakeShape(curML1, curKL1));
                 AscendC::Te::Copy(copyGM2L1, tensorAL1, gmTileA);
             } else {
                 if (abL1LoopCnt_ < kL1Iter_) {
-                    offsetAL1 = l1BufferAOffset_[0] + iter0 * kL1_ * CeilAlign(curML1, transA ? C0_SIZE : BLOCK_CUBE);
-                    tensorAL1 = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::L1, AType>(offsetAL1), layoutAL1);
                     auto gmTileA = gmA.Slice(AscendC::Te::MakeCoord(0UL, iter0 * kL1_), AscendC::Te::MakeShape(curML1, curKL1));
                     AscendC::Te::Copy(copyGM2L1, tensorAL1, gmTileA);
                 }
@@ -375,9 +385,6 @@ private:
 
             SetFlag<HardEvent::MTE1_MTE2>(l1BufId);
             abL1LoopCnt_++;
-        }
-        if constexpr (DispatchPolicy::fullLoadMode != 0) {
-            abL1LoopCnt_ = 0;
         }
     }
 
