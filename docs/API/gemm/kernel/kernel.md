@@ -19,9 +19,10 @@
 ### 特殊模板参数（量化 Kernel）
 | 参数 | 说明 |
 |------|------|
-| isAtomicAdd | 是否启用 Atomic Add 模式（QBMM MX） |
+| AtomicAdd_ | 是否启用 Atomic Add 模式（QBMM MX） |
 
-说明：QBMM MX Kernel 支持 `isAtomicAdd` 参数，用于多核并行累加场景。
+说明：QBMM MX Policy 通过 `AtomicAdd_` 模板参数控制多核并行累加，并公开编译期常量
+`IS_ATOMIC_ADD` 供 Kernel 使用。
 
 ### 类型别名
 | 类型 | 说明 |

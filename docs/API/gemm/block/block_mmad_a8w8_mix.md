@@ -14,23 +14,23 @@ MIX 模板 A8W8 量化矩阵乘 Block，基于 Tensor API，仅在 **AIC** 上�
 ### 量化数据类型
 - A/B：int8（A8W8）。
 - L0C 累加类型 `L0CType = GetMmDstType<AType>::Type`（int8 → int32）。
-- C0_SIZE = `AuxGetC0Size<int8_t>()`（32）；L0C_C0 = 16。
+- C0_SIZE = `AuxGetC0Size<int8_t>()`（32）；C0_SIZE_L0C = 16。
 
 ### 计算模式与输出目标
 - 仅 AIC 模式。
 - 输出走 **L0C → UB**（`CopyL0C2UB`，`FINAL_ACCUMULATION` + `DUAL_DST_SPLIT_M` trait），**不写 GM、不支持 workspace**。最终 GM 写由 AIV epilogue 负责。
 
 ### Scale / Bias
-本层不处理 scale 与 bias（`Params` 仅含 A/B/C 三个 GM 地址）。`cGmAddr` 在 MIX 路径下 BlockMmad 自身不使用，仅为与其它 BlockMmad 策略保持 Params 布局一致、并支持下游按 `{aGM, bGM, cGM}` 位置初始化而保留。
+本层不处理 scale 与 bias。`Params` 保存 A/B 的 GM 地址及 L1/L0 切分参数；输出 Tensor 由 `operator()` 的 `ubC` 参数传入。
 
 ## 特殊静态常量
 | 常量 | 说明 |
 |------|------|
-| weightNz | B 是否为 NZ 格式（`IsWeightNz<LayoutB>`） |
-| transA / transB | A/B 是否转置 |
+| WEIGHT_NZ | B 是否为 NZ 格式（`IsWeightNz<LayoutB>`） |
+| TRANS_A / TRANS_B | A/B 是否转置 |
 | C0_SIZE | C0 对齐大小（int8: 32） |
-| L0C_C0 | L0C 的 C0（16） |
-| AB_L1_TWO_BUFFER | 双缓冲常量（2） |
+| C0_SIZE_L0C | L0C 的 C0（16），定义于 `common_utils.h` |
+| DOUBLE_BUFFER_COUNT | 双缓冲数量（2），定义于 `common_utils.h` |
 
 ## 特殊类型别名
 | 类型 | 说明 |
@@ -38,7 +38,7 @@ MIX 模板 A8W8 量化矩阵乘 Block，基于 Tensor API，仅在 **AIC** 上�
 | BType | 权重类型，取自 `BTypeTuple` 的第 0 元素 |
 | X2ScaleType | x2Scale 类型，取自 `BTypeTuple` 的第 1 元素 |
 | L0CType | L0C 累加类型（int8 → int32） |
-| MakeLayoutAL1 / MakeLayoutBL1 | 据 transA/transB 选择 ZN/NZ 的 L1 FrameLayout |
+| MakeLayoutAL1 / MakeLayoutBL1 | 据 TRANS_A/TRANS_B 选择 ZN/NZ 的 L1 FrameLayout |
 
 ## 特殊数据结构
 
@@ -47,7 +47,12 @@ MIX 模板 A8W8 量化矩阵乘 Block，基于 Tensor API，仅在 **AIC** 上�
 struct Params {
     GM_ADDR aGmAddr{nullptr};   // A 矩阵 GM 起始地址
     GM_ADDR bGmAddr{nullptr};   // B 矩阵 GM 起始地址
-    GM_ADDR cGmAddr{nullptr};   // 保留（本层不使用，详见上文）
+    ProblemShape problemShape;  // 问题规模 (m, n, k, batch)
+    BlockShape l0TileShape;     // L0 tile (baseM, baseN, baseK)
+    uint64_t kAL1{0};           // A 的 L1 K 轴切分
+    uint64_t kBL1{0};           // B 的 L1 K 轴切分
+    uint64_t l1BufferNum{0};    // L1 缓冲数量
+    bool enableL0CPingPong{false}; // 是否启用 L0C 双缓冲
 };
 ```
 
@@ -61,18 +66,12 @@ __aicore__ inline ~BlockMmad()   // WaitFlag MTE1_MTE2 ×4，关闭 MMLayoutTran
 
 ### Init函数
 ```
-__aicore__ inline void Init(
-    const ProblemShape& problemShape,  // 问题规模 (m, n, k)
-    const BlockShape& l0TileShape,     // L0 tile (baseM, baseN, baseK)
-    const uint64_t& kAL1,              // A 的 L1 K 轴切分
-    const uint64_t& kBL1,              // B 的 L1 K 轴切分
-    const uint64_t& l1BufferNum,       // L1 缓冲数量
-    bool dbL0C)                        // 是否启用 L0C 双缓冲
+__aicore__ inline void Init(const Params& params)
 ```
-功能：记录规模与 tile，按全载模式 / 缓冲数量计算 `aL1OneBuffer_` / `bL1OneBuffer_`，并调用 `GetL1BufferOffset()` 计算 L1 buffer 偏移。
+功能：读取问题规模与 tile，按全载模式和缓冲数量计算单个 A/B L1 Buffer 的局部大小，并调用 `GetL1BufferOffset(aL1OneBuffer, bL1OneBuffer)` 计算 L1 Buffer 偏移。
 说明：
-- `fullLoadMode != 0`：A 矩阵全载，`aL1OneBuffer_ = CeilAlign(baseM_,...) * CeilAlign(k_,...)`。
-- `GetL1BufferOffset()` 复用 `Init()` 已算好的 `aL1OneBuffer_`，避免重复计算导致 A/B buffer 布局不一致。
+- `FULL_LOAD_MODE == A_FULL_LOAD_MODE`：A 矩阵全载，`aL1OneBuffer = CeilAlign(baseM, ...) * CeilAlign(k_, ...)`。
+- `aL1OneBuffer` / `bL1OneBuffer` 是 `Init()` 内的局部变量，通过参数传给 `GetL1BufferOffset`，不作为类成员保存。
 
 ### operator函数
 ```

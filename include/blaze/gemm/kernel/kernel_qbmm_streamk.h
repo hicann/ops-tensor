@@ -28,6 +28,7 @@
 #include "blaze/gemm/block/block_mmad_qbmm_mx.h"
 #include "blaze/gemm/block/block_scheduler_matmul_streamk.h"
 #include "blaze/gemm/utils/common_utils.h"
+#include "blaze/gemm/utils/layout_utils.h"
 #include "tensor_api/tensor.h"
 
 namespace Blaze {
@@ -92,10 +93,9 @@ private:
     using LayoutB = typename BlockMmadOp::LayoutB;
     using LayoutC = typename BlockMmadOp::LayoutC;
 
-    static constexpr bool TRANS_A = BlockMmadOp::transA;
-    static constexpr bool TRANS_B = BlockMmadOp::transB;
+    static constexpr bool TRANS_A = IsTrans<LayoutA>::value;
+    static constexpr bool TRANS_B = IsTrans<LayoutB>::value;
     static constexpr int32_t C0_SIZE = IsFp4<AType>() ? C0_SIZE_B4 : C0_SIZE_B8;
-    static constexpr int32_t SCALE_C0 = 2;
     using MakeLayoutA = AscendC::Te::FrameLayoutFormat<LayoutA, AscendC::Std::Int<C0_SIZE>>;
     using MakeLayoutB = AscendC::Te::FrameLayoutFormat<LayoutB, AscendC::Std::Int<C0_SIZE>>;
     using MakeLayoutC = AscendC::Te::FrameLayoutFormat<
@@ -184,7 +184,7 @@ private:
     __aicore__ inline void ProcessAicBlock(
         Params const& params, BlockScheduler& bs, BlockMmadOp& blockMmadOp, TensorA& gmA, TensorScaleA& gmScaleA,
         TensorB& gmB, TensorScaleB& gmScaleB, TensorBias& gmBias, TensorC& gmC, int64_t tmpBlockIdx,
-        int64_t mL1, int64_t nL1, ProblemShape const& tileL0, uint64_t scaleKL1)
+        int64_t mL1, int64_t nL1, ProblemShape const& l0BlockShape, uint64_t scaleKL1)
     {
         auto singleCoreShape = bs.GetBlockShape(tmpBlockIdx);
         auto singleCoreCoord = bs.GetBlockCoord(tmpBlockIdx);
@@ -221,8 +221,10 @@ private:
             AscendC::Te::MakeShape(AscendC::Te::Get<MNK_M>(singleCoreShape),
                                    AscendC::Te::Get<MNK_N>(singleCoreShape)));
         bool isBiasForBlock = biasGmAddr_ != nullptr && AscendC::Te::Get<MNK_K>(singleCoreCoord) == 0;
-        blockMmadOp.Init(singleCoreShape, tileL0, {static_cast<uint64_t>(params.schParams.kL1), scaleKL1, 2},
-                         isBiasForBlock, params.qbmmParams.dbL0C > 1);
+        blockMmadOp.Init(
+            singleCoreShape, l0BlockShape,
+            {static_cast<uint64_t>(params.schParams.kL1), scaleKL1, DOUBLE_BUFFER_COUNT},
+            isBiasForBlock, params.qbmmParams.dbL0C > 1);
         if (isSkScene) {
             blockMmadOp(gmBlockA, gmBlockB, gmBlockScaleA, gmBlockScaleB, gmBlockBias, gmWorkSpace, singleCoreShape);
         } else {
@@ -254,11 +256,11 @@ private:
                                            MakeLayoutC{}(m, n));
         BlockMmadOp blockMmadOp;
         auto scaleKL1 = static_cast<uint64_t>(params.qbmmParams.scaleKL1);
-        ProblemShape tileL0 = {params.schParams.baseM, params.schParams.baseN, params.schParams.baseK, 1};
+        ProblemShape l0BlockShape = {params.schParams.baseM, params.schParams.baseN, params.schParams.baseK, 1};
         for (int64_t blockIdx = curBlockIdx; blockIdx < blockNums; blockIdx += usedCoreNums_) {
             int64_t tmpBlockIdx = GetActualBlockIdx(bs, blockIdx, blockNums, tailSKTotalBlockNums);
             ProcessAicBlock(params, bs, blockMmadOp, gmA, gmScaleA, gmB, gmScaleB, gmBias, gmC, tmpBlockIdx,
-                            params.schParams.baseM, params.schParams.baseN, tileL0, scaleKL1);
+                            params.schParams.baseM, params.schParams.baseN, l0BlockShape, scaleKL1);
         }
     }
 
@@ -281,15 +283,15 @@ private:
             return;
         }
 
-        ProblemShape tileL1 = {params.schParams.baseM, params.schParams.baseN, params.schParams.kL1, 1};
+        ProblemShape l1BlockShape = {params.schParams.baseM, params.schParams.baseN, params.schParams.kL1, 1};
         BlockEpilogue epilogueOp;
         epilogueOp.Init(
-            params.epilogueParams, problemShape_, tileL1, {mBlockNums_, nBlockNums_, skBlockNums_, 1},
-            usedCoreNums_, bs.CheckIsSkScene(0));
+            params.epilogueParams, problemShape_, l1BlockShape,
+            {mBlockNums_, nBlockNums_, skBlockNums_, 1}, usedCoreNums_,
+            bs.CheckIsSkScene(0));
         epilogueOp();
     }
 
-private:
     static constexpr uint8_t AIC_ONLY_SYNC_MODE = 0;
     static constexpr uint8_t AIC_SYNC_AIV_MODE = 4;
     static constexpr uint16_t AIC_ONLY_SYNC_FLAG = 7;

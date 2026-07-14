@@ -81,3 +81,38 @@ struct QBMMV3TilingData {
     uint32_t biasDtype;
 };
 #pragma pack(pop)
+
+namespace QBMMUT {
+
+#pragma pack(push, 8)
+struct QBMML0CPingpongTilingData {
+    int64_t m;
+    int64_t n;
+    int64_t k;
+    int64_t b;
+    uint32_t baseM;
+    uint32_t baseN;
+    uint32_t baseK;
+    uint32_t kL1;
+    uint32_t scaleKL1;
+    uint32_t nBufferNum;
+    uint32_t dbL0C;
+};
+
+struct QBMMStreamKTilingData {
+    int64_t m;
+    int64_t n;
+    int64_t k;
+    int64_t b;
+    uint32_t usedCoreNum;
+    uint32_t baseM;
+    uint32_t baseN;
+    uint32_t baseK;
+    uint32_t singleCoreK;
+    uint32_t kL1;
+    uint32_t scaleKL1;
+    uint32_t dbL0C;
+};
+#pragma pack(pop)
+
+} // namespace QBMMUT

@@ -39,6 +39,8 @@ struct L1Params {
 };
 ```
 
+`l1BufNum` 支持 2、3 或 4 缓冲；其中 3 缓冲用于在 L1 容量不足以放下 4 缓冲时保留三缓冲流水。
+
 ### Init
 ```cpp
 __aicore__ inline void Init(

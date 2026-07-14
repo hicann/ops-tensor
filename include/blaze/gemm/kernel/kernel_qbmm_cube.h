@@ -23,7 +23,6 @@
 #include "kernel_operator_intf.h"
 #endif
 #include "blaze/gemm/utils/common_utils.h"
-#include "blaze/gemm/block/block_scheduler_qbmm.h"
 #include "tensor_api/tensor.h"
 
 namespace Blaze {
@@ -37,7 +36,8 @@ namespace Kernel {
         AscendC::Std::enable_if_t<                            \
             AscendC::Std::is_same_v<KernelMmadWithScaleFixpipeQuant, typename BlockMmad::DispatchPolicy::ScheduleType>>
 
-#define QBMM_CUBE_KERNEL_CLASS_TEMPLATE_DEF_PARAMS template <class ProblemShape, class BlockMmad, class BlockEpilogue, class BlockScheduler>
+#define QBMM_CUBE_KERNEL_CLASS_TEMPLATE_DEF_PARAMS \
+    template <class ProblemShape, class BlockMmad, class BlockEpilogue, class BlockScheduler>
 #define QBMM_CUBE_KERNEL_FUNC_TEMPLATE_PARAMS ProblemShape, BlockMmad, BlockEpilogue, BlockScheduler
 
 QBMM_CUBE_KERNEL_CLASS_TEM_PARAMS
@@ -47,11 +47,6 @@ public:
     {}
     __aicore__ inline ~GemmUniversal()
     {}
-
-    static constexpr bool weightNz = BlockMmad::weightNz;
-    static constexpr bool isAtomicAdd = BlockMmad::DispatchPolicy::isAtomicAdd;
-    static constexpr bool transA = BlockMmad::transA;
-    static constexpr bool transB = BlockMmad::transB;
 
     using BlockMmadParams = typename BlockMmad::Params;
     using AType = typename BlockMmad::AType;
@@ -64,17 +59,9 @@ public:
     using X2ScaleType = uint64_t;
     using ScaleGmType = typename BlockMmad::X2ScaleType;
 
-    static constexpr int64_t C0_SIZE = AscendC::Te::C0_ELEMENT<AType>;
-    static constexpr uint64_t DEQ_SCALE_MUL = 0xFFFFE000;
-    static constexpr uint32_t LEFT_SHIFT_16 = 16;
-
     using BlockShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
     using BlockCoord = AscendC::Te::Coord<int64_t, int64_t, int64_t, int64_t>;
     using BlockSchedulerParams = typename BlockScheduler::Params;
-
-    using MakeLayoutA = AscendC::Te::FrameLayoutFormat<LayoutA, AscendC::Std::Int<C0_SIZE>>;
-    using MakeLayoutB = AscendC::Te::FrameLayoutFormat<LayoutB, AscendC::Std::Int<C0_SIZE>>;
-    using MakeLayoutC = AscendC::Te::FrameLayoutFormat<LayoutC, AscendC::Std::Int<AscendC::Te::C0_ELEMENT<CType>>>;
 
     struct QBMMTiling {
         uint32_t batchA1;
@@ -109,7 +96,6 @@ public:
         QBMMTiling qbmmParams;
     };
 
-public:
     __aicore__ inline void Init(const Params& params);
     __aicore__ inline void Run(const Params& params);
     __aicore__ inline void operator()(const Params& params)
@@ -118,6 +104,18 @@ public:
     }
 
 private:
+    static constexpr bool WEIGHT_NZ = BlockMmad::WEIGHT_NZ;
+    static constexpr bool IS_ATOMIC_ADD = BlockMmad::DispatchPolicy::IS_ATOMIC_ADD;
+    static constexpr bool TRANS_A = BlockMmad::TRANS_A;
+    static constexpr bool TRANS_B = BlockMmad::TRANS_B;
+    static constexpr int64_t C0_SIZE = AscendC::Te::C0_ELEMENT<AType>;
+    static constexpr uint64_t DEQ_SCALE_MUL = 0xFFFFE000;
+    static constexpr uint32_t LEFT_SHIFT_16 = 16;
+
+    using MakeLayoutA = AscendC::Te::FrameLayoutFormat<LayoutA, AscendC::Std::Int<C0_SIZE>>;
+    using MakeLayoutB = AscendC::Te::FrameLayoutFormat<LayoutB, AscendC::Std::Int<C0_SIZE>>;
+    using MakeLayoutC = AscendC::Te::FrameLayoutFormat<LayoutC, AscendC::Std::Int<AscendC::Te::C0_ELEMENT<CType>>>;
+
     __aicore__ inline void ResetGmAddr(const Params& params);
     __aicore__ inline void AddBatchOffset(const Params& params);
     __aicore__ inline void ProcessSingleBatch(
@@ -142,31 +140,31 @@ private:
 QBMM_CUBE_KERNEL_CLASS_TEMPLATE_DEF_PARAMS
 __aicore__ inline void GemmUniversal<QBMM_CUBE_KERNEL_TEM_PARAMS>::Run(const Params& params)
 {
-    if constexpr (isAtomicAdd) {
+    if constexpr (IS_ATOMIC_ADD) {
         AscendC::SetAtomicAdd<float>();
     }
     Init(params);
     BlockScheduler bs(params.problemShape, params.schParams);
 
-    BlockShape l0TileShape{
+    BlockShape l0BlockShape{
         static_cast<int64_t>(params.qbmmParams.baseM), static_cast<int64_t>(params.qbmmParams.baseN),
         static_cast<int64_t>(params.qbmmParams.baseK), 0};
     bool enableL0CPingPong = (params.qbmmParams.dbL0C > 1);
     mmadOp_.Init(
-        params.problemShape, l0TileShape, params.qbmmParams.kAL1, params.qbmmParams.kBL1, params.qbmmParams.nBufferNum,
+        params.problemShape, l0BlockShape, params.qbmmParams.kAL1, params.qbmmParams.kBL1, params.qbmmParams.nBufferNum,
         static_cast<QuantMode>(params.qbmmParams.x2QuantMode), isBias_, enableL0CPingPong);
 
     if (AscendC::Te::Get<MNK_B>(params.problemShape) == 1) {
         AddBatchOffset(params);
         ProcessSingleBatch(params, bs, 0, true);
-        if constexpr (isAtomicAdd) {
+        if constexpr (IS_ATOMIC_ADD) {
             AscendC::SetAtomicNone();
         }
         return;
     }
 
     ProcessWithBatch(params, bs);
-    if constexpr (isAtomicAdd) {
+    if constexpr (IS_ATOMIC_ADD) {
         AscendC::SetAtomicNone();
     }
 }
@@ -240,14 +238,16 @@ __aicore__ inline void GemmUniversal<QBMM_CUBE_KERNEL_TEM_PARAMS>::AddBatchOffse
     ResetGmAddr(params);
     aGmBase_ += batchAOffset_ * AscendC::Te::Get<MNK_M>(params.problemShape) *
                 AscendC::Te::Get<MNK_K>(params.problemShape);
-    if constexpr (weightNz) {
-        if constexpr (transB) {
+    if constexpr (WEIGHT_NZ) {
+        if constexpr (TRANS_B) {
             bGmBase_ += batchBOffset_ * Blaze::Gemm::CeilDiv(AscendC::Te::Get<MNK_K>(params.problemShape), C0_SIZE) *
-                        Blaze::Gemm::CeilDiv(AscendC::Te::Get<MNK_N>(params.problemShape), static_cast<int64_t>(BLOCK_CUBE)) *
+                        Blaze::Gemm::CeilDiv(
+                            AscendC::Te::Get<MNK_N>(params.problemShape), static_cast<int64_t>(BLOCK_CUBE)) *
                         BLOCK_CUBE * C0_SIZE;
         } else {
             bGmBase_ += batchBOffset_ * Blaze::Gemm::CeilDiv(AscendC::Te::Get<MNK_N>(params.problemShape), C0_SIZE) *
-                        Blaze::Gemm::CeilDiv(AscendC::Te::Get<MNK_K>(params.problemShape), static_cast<int64_t>(BLOCK_CUBE)) *
+                        Blaze::Gemm::CeilDiv(
+                            AscendC::Te::Get<MNK_K>(params.problemShape), static_cast<int64_t>(BLOCK_CUBE)) *
                         BLOCK_CUBE * C0_SIZE;
         }
     } else {
@@ -284,8 +284,8 @@ __aicore__ inline void GemmUniversal<QBMM_CUBE_KERNEL_TEM_PARAMS>::ProcessWithBa
     uint64_t batchA1Offset = 0;
     uint64_t batchB1Offset = 0;
     uint64_t curBatchC = 1UL;
-    uint64_t totalCnt = bs.GetTotalCnt() * AscendC::Te::Get<MNK_B>(params.problemShape);
-    uint64_t nonTailRoundCnt = (totalCnt / AscendC::GetBlockNum()) * AscendC::GetBlockNum();
+    const uint64_t totalCnt = bs.GetTotalCnt() * AscendC::Te::Get<MNK_B>(params.problemShape);
+    const uint64_t nonTailRoundCnt = (totalCnt / AscendC::GetBlockNum()) * AscendC::GetBlockNum();
     for (uint64_t b1Index = 0; b1Index < params.qbmmParams.batchC1; ++b1Index) {
         uint64_t batchC2Offset = batchC1Offset;
         uint64_t batchA2Offset = batchA1Offset;
@@ -299,7 +299,7 @@ __aicore__ inline void GemmUniversal<QBMM_CUBE_KERNEL_TEM_PARAMS>::ProcessWithBa
                 batchAOffset_ = batchA3Offset;
                 batchBOffset_ = batchB3Offset;
                 for (uint64_t b4Index = 0; b4Index < params.qbmmParams.batchC4; ++b4Index) {
-                    bool isTailRound = curBatchC * bs.GetTotalCnt() > nonTailRoundCnt;
+                    const bool isTailRound = curBatchC * bs.GetTotalCnt() > nonTailRoundCnt;
                     AddBatchOffset(params);
                     ProcessSingleBatch(
                         params, bs, (AscendC::Te::Get<MNK_B>(params.problemShape) - curBatchC), isTailRound);
@@ -346,7 +346,7 @@ __aicore__ inline void GemmUniversal<QBMM_CUBE_KERNEL_TEM_PARAMS>::ProcessSingle
     const bool isPerChannel =
         static_cast<QuantMode>(params.qbmmParams.x2QuantMode) == QuantMode::PERCHANNEL_MODE;
 
-    BlockCoord blockIdx;
+    BlockCoord blockCoord;
     if (needUpdateTail_ || (isTailRound && ((bs.GetEndBlockIdx() + 1) + (restBatch * bs.GetTotalCnt())) *
                                                    params.schParams.mTailTile * params.schParams.nTailTile <=
                                                AscendC::GetBlockNum())) {
@@ -356,15 +356,18 @@ __aicore__ inline void GemmUniversal<QBMM_CUBE_KERNEL_TEM_PARAMS>::ProcessSingle
 
     int64_t mPos = 0L;
     int64_t nPos = 0L;
-    auto layoutScale = AscendC::Te::MakeFrameLayout<AscendC::Te::NDExtLayoutPtn, AscendC::Te::LayoutTraitDefault<X2ScaleType>>(1, n);
-    auto gmScale = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(scaleGmBase_), layoutScale);
-    while (bs.GetTileIdx(blockIdx)) {
-        BlockShape singleShape = bs.template GetBlockShape<QuantMode::DEFAULT, QuantMode::DEFAULT, weightNz>(blockIdx);
+    auto layoutScale =
+        AscendC::Te::MakeFrameLayout<AscendC::Te::NDExtLayoutPtn, AscendC::Te::LayoutTraitDefault<X2ScaleType>>(1, n);
+    auto gmScale = AscendC::Te::MakeTensor(
+        AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(scaleGmBase_), layoutScale);
+    while (bs.GetTileIdx(blockCoord)) {
+        BlockShape singleShape =
+            bs.template GetBlockShape<QuantMode::DEFAULT, QuantMode::DEFAULT, WEIGHT_NZ>(blockCoord);
         if (AscendC::Te::Get<IDX_M_TILEIDX>(singleShape) <= 0 || AscendC::Te::Get<IDX_N_TILEIDX>(singleShape) <= 0) {
             return;
         }
 
-        bs.GetTileCoord(blockIdx, mPos, nPos);
+        bs.GetTileCoord(blockCoord, mPos, nPos);
         const int64_t curM = AscendC::Te::Get<IDX_M_TILEIDX>(singleShape);
         const int64_t curN = AscendC::Te::Get<IDX_N_TILEIDX>(singleShape);
 

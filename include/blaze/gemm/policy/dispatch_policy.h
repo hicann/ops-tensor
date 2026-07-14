@@ -43,38 +43,38 @@ enum class MatMulL0C2Out : std::uint8_t
 /**
  * @struct MatmulWithScaleFixpipeQuant
  * @brief Quantized fixpipe matmul with scale and fixpipe dequant (Tensor API / Blaze)
- * @param [in] FULL_LOAD_MODE_: full-load mode, 0 = none, A_FULL_LOAD_MODE = A full load
- * @param [in] ATOMIC_ADD_: whether to enable atomic add on output
+ * @param [in] FullLoadMode_: full-load mode, 0 = none, A_FULL_LOAD_MODE = A full load
+ * @param [in] AtomicAdd_: whether to enable atomic add on output
  */
-template <uint64_t FULL_LOAD_MODE_ = 0, bool ATOMIC_ADD_ = false>
+template <uint64_t FullLoadMode_ = 0, bool AtomicAdd_ = false>
 struct MatmulWithScaleFixpipeQuant {
     using ScheduleType = KernelMmadWithScaleFixpipeQuant;
-    static constexpr uint64_t fullLoadMode = FULL_LOAD_MODE_;
-    static constexpr bool isAtomicAdd = ATOMIC_ADD_;
+    static constexpr uint64_t FULL_LOAD_MODE = FullLoadMode_;
+    static constexpr bool IS_ATOMIC_ADD = AtomicAdd_;
 };
 
 /**
  * @struct MatmulWithScaleMix
  * @brief Mix fixpipe matmul with scale and fixpipe dequant for WeightNZ (Tensor API / Blaze)
- * @param [in] FULL_LOAD_MODE_: full-load mode, 0 = none, A_FULL_LOAD_MODE = A full load
- * @param [in] ATOMIC_ADD_: whether to enable atomic add on output
+ * @param [in] FullLoadMode_: full-load mode, 0 = none, A_FULL_LOAD_MODE = A full load
+ * @param [in] AtomicAdd_: whether to enable atomic add on output
  */
-template <uint64_t FULL_LOAD_MODE_ = 0, bool ATOMIC_ADD_ = false>
+template <uint64_t FullLoadMode_ = 0, bool AtomicAdd_ = false>
 struct MatmulWithScaleMix {
     using ScheduleType = KernelMmadWithScaleMix;
-    static constexpr uint64_t fullLoadMode = FULL_LOAD_MODE_;
-    static constexpr bool isAtomicAdd = ATOMIC_ADD_;
+    static constexpr uint64_t FULL_LOAD_MODE = FullLoadMode_;
+    static constexpr bool IS_ATOMIC_ADD = AtomicAdd_;
 };
 
 /**
  * @struct MatmulWithScaleMx
  * @brief Mx Matrix multiplication with scaleA and scaleB
  */
-template <uint64_t FULL_LOAD_MODE_ = 0, bool ATOMIC_ADD_ = false, class ScheduleType_ = KernelMmadWithScaleMx>
+template <uint64_t FullLoadMode_ = 0, bool AtomicAdd_ = false, class ScheduleType_ = KernelMmadWithScaleMx>
 struct MatmulWithScaleMx {
     using ScheduleType = ScheduleType_;
-    static constexpr uint64_t fullLoadMode = FULL_LOAD_MODE_;
-    static constexpr bool isAtomicAdd = ATOMIC_ADD_;
+    static constexpr uint64_t FULL_LOAD_MODE = FullLoadMode_;
+    static constexpr bool IS_ATOMIC_ADD = AtomicAdd_;
 };
 
 /**
@@ -96,8 +96,8 @@ struct GroupedMatmulWithScaleMx {
 template <uint64_t FullLoadMode_ = 0, bool AtomicAdd_ = false, class ScheduleType_ = KernelMmadWithScaleMx>
 struct MatmulWithScaleMxL0CPingpong {
     using ScheduleType = ScheduleType_;
-    static constexpr uint64_t fullLoadMode = FullLoadMode_;
-    static constexpr bool isAtomicAdd = AtomicAdd_;
+    static constexpr uint64_t FULL_LOAD_MODE = FullLoadMode_;
+    static constexpr bool IS_ATOMIC_ADD = AtomicAdd_;
 };
 
 /**

@@ -77,9 +77,9 @@ Bias 仅在首个 K-L1/L0 迭代搬入 BT 并参与 Mmad。
 | TRANS_A | A 矩阵是否转置 |
 | TRANS_B | B 矩阵是否转置 |
 | C0_SIZE | A/B C0 对齐大小，由 `AscendC::Te::C0_ELEMENT<AType>` 推导 |
-| L0C_C0 | L0C C0 对齐大小，固定为 16 |
-| SCALE_BUFFER_NUM | X2 scale L1 缓冲数量，固定为 2 |
-| AB_L1_TWO_BUFFER | A/B L1 双缓冲标志，固定为 2 |
+| C0_SIZE_L0C | L0C C0 对齐大小，固定为 16，定义于 `common_utils.h` |
+| SCALE_BUFFER_NUM | X2 scale L1 缓冲数量，固定为 2，定义于 `common_utils.h` |
+| DOUBLE_BUFFER_COUNT | A/B L1 双缓冲数量，固定为 2，定义于 `common_utils.h` |
 
 ## 特殊类型别名
 

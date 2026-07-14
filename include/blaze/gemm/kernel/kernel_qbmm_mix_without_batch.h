@@ -69,24 +69,24 @@ public:
     }
 
 private:
-    // 单个 tile 的 AIC(cube)+AIV(dequant) 计算体：从 Run 主循环抽出以降低函数体长度。
-    // hasTile 仅用于 AIC 的 WaitForVector 判定（AIV 不读取），故按值传入，由调用方在返回后置位。
+    // Process one block on AIC(cube) and AIV(dequant), keeping Run compact.
+    // hasBlock is only used by AIC WaitForVector; AIV does not read it.
     template <class GmTensorA, class GmTensorB>
-    __aicore__ inline void ProcessOneTile(
+    __aicore__ inline void ProcessOneBlock(
         const GmTensorA& gmA, const GmTensorB& gmB, const BlockShape& singleShape, int64_t mPos, int64_t nPos,
-        int64_t curM, int64_t curN, int64_t k, int64_t n, int64_t l0cUbBaseOffset, bool hasTile)
+        int64_t curM, int64_t curN, int64_t k, int64_t n, int64_t l0cUbBaseOffset, bool hasBlock)
     {
         constexpr int64_t kPos = 0;
         if ASCEND_IS_AIC {
-            if (hasTile) {
+            if (hasBlock) {
                 WaitForVector();
             }
             auto gmBlockA = gmA.Slice(AscendC::Te::MakeCoord(mPos, kPos), AscendC::Te::MakeShape(curM, k));
             auto gmBlockB = gmB.Slice(AscendC::Te::MakeCoord(kPos, nPos), AscendC::Te::MakeShape(k, curN));
 
             // DATA_BLOCK=32 matches BlockEpilogueDequant::DATA_BLOCK.
-            constexpr int64_t L0C_ALIGN = 32 / sizeof(L0CType);
-            const int64_t curNAligned = Blaze::Gemm::CeilAlign(curN, L0C_ALIGN);
+            constexpr int64_t l0cAlign = BLOCK_BYTE_SIZE / sizeof(L0CType);
+            const int64_t curNAligned = Blaze::Gemm::CeilAlign(curN, l0cAlign);
             const int64_t curMAligned = Blaze::Gemm::CeilAlign(curM, static_cast<int64_t>(2));
             auto layoutUbC = AscendC::Te::MakeFrameLayout<AscendC::Te::NDLayoutPtn>(curMAligned, curNAligned);
             auto ubC = AscendC::Te::MakeTensor(
@@ -124,26 +124,26 @@ private:
             bs.UpdateTailTile(params.schParams.mTailTile, params.schParams.nTailTile);
         }
 
-        BlockCoord blockIdx;
+        BlockCoord blockCoord;
         int64_t mPos = 0;
         int64_t nPos = 0;
-        bool hasTile = false;
-        while (bs.GetTileIdx(blockIdx)) {
+        bool hasBlock = false;
+        while (bs.GetTileIdx(blockCoord)) {
             BlockShape singleShape =
-                bs.template GetBlockShape<QuantMode::DEFAULT, QuantMode::DEFAULT, weightNz>(blockIdx);
+                bs.template GetBlockShape<QuantMode::DEFAULT, QuantMode::DEFAULT, WEIGHT_NZ>(blockCoord);
             if (AscendC::Te::Get<IDX_M_TILEIDX>(singleShape) <= 0 ||
                 AscendC::Te::Get<IDX_N_TILEIDX>(singleShape) <= 0) {
                 break;
             }
-            bs.GetTileCoord(blockIdx, mPos, nPos);
+            bs.GetTileCoord(blockCoord, mPos, nPos);
             const int64_t curM = AscendC::Te::Get<IDX_M_TILEIDX>(singleShape);
             const int64_t curN = AscendC::Te::Get<IDX_N_TILEIDX>(singleShape);
             const int64_t l0cUbBaseOffset = 0;
-            ProcessOneTile(gmA, gmB, singleShape, mPos, nPos, curM, curN, k, n, l0cUbBaseOffset, hasTile);
-            hasTile = true;
+            ProcessOneBlock(gmA, gmB, singleShape, mPos, nPos, curM, curN, k, n, l0cUbBaseOffset, hasBlock);
+            hasBlock = true;
         }
         if ASCEND_IS_AIC {
-            if (hasTile) {
+            if (hasBlock) {
                 WaitForVector();
             }
         }
@@ -152,7 +152,7 @@ private:
     BlockMmad mmOp_;
     BlockEpilogue epilogueOp_;
 
-    static constexpr bool weightNz = IsWeightNz<LayoutB>::value;
+    static constexpr bool WEIGHT_NZ = IsWeightNz<LayoutB>::value;
     static constexpr int64_t C0_SIZE = AscendC::Te::C0_ELEMENT<AType>;
     using MakeLayoutA = AscendC::Te::FrameLayoutFormat<LayoutA, AscendC::Std::Int<C0_SIZE>>;
     using MakeLayoutB = AscendC::Te::FrameLayoutFormat<LayoutB, AscendC::Std::Int<C0_SIZE>>;

@@ -37,7 +37,7 @@ namespace QBMMUT {
 
 // MIX 路径的公共类型装配：AIC 侧 int8 GEMM（int32 L0C→UB），AIV 侧反量化。
 template <typename AType, typename BType, typename OutType, typename X2ScaleType, typename X1ScaleType,
-    typename BiasType>
+    typename BiasType, uint64_t FullLoadMode = Blaze::Gemm::NONE_FULL_LOAD_MODE>
 struct QBMMMixTypes {
     using LayoutA = AscendC::Te::NDExtLayoutPtn;
     using LayoutB = AscendC::Te::NDExtLayoutPtn;
@@ -50,10 +50,10 @@ struct QBMMMixTypes {
     // BTypeTuple 第 1 个元素为权重类型；第 2 个元素在 MIX mmad 中未使用（scale 在 epilogue 施加）。
     using BTypeTuple = AscendC::Std::tuple<BType, uint64_t>;
 
-    using DispatchPolicy = Blaze::Gemm::MatmulWithScaleMix<0, false>;
+    using DispatchPolicy = Blaze::Gemm::MatmulWithScaleMix<FullLoadMode, false>;
 
     using BlockScheduler = Blaze::Gemm::Block::BlockSchedulerQuantBatchMatmulV3<
-        ProblemShape, 0, LayoutA, LayoutB, AType>;
+        ProblemShape, FullLoadMode, LayoutA, LayoutB, AType>;
 
     // CType 占位为 int32_t（UB 累加器类型），MIX mmad 类模板体内未直接引用该形参。
     using BlockMmad = Blaze::Gemm::Block::BlockMmad<
@@ -82,21 +82,7 @@ __aicore__ inline void FillMixMmadParams(MmadParams& mmadParams, GM_ADDR x1GM, G
     mmadParams.enableL0CPingPong = (tilingData.dbL0C > 1);
 }
 
-// 用 tilingData 填充 BlockScheduler::Params。
-template <typename SchParams>
-__aicore__ inline void FillSchParams(SchParams& schParams, const QBMMV3TilingData& tilingData)
-{
-    schParams.baseM = tilingData.baseM;
-    schParams.baseN = tilingData.baseN;
-    schParams.mTailTile = tilingData.mTailTile;
-    schParams.nTailTile = tilingData.nTailTile;
-    schParams.mBaseTailSplitCnt = tilingData.mBaseTailSplitCnt;
-    schParams.nBaseTailSplitCnt = tilingData.nBaseTailSplitCnt;
-    schParams.mTailMain = tilingData.mTailMain;
-    schParams.nTailMain = tilingData.nTailMain;
-}
-
-// 用 tilingData + GM 地址填充 BlockEpilogueDequant::Params。
+// Fill BlockEpilogueDequant::Params from tiling and GM addresses.
 template <typename EpilogueParams>
 __aicore__ inline void FillEpilogueParams(EpilogueParams& epilogueParams, GM_ADDR pertokenScaleGM,
     GM_ADDR scaleGM, GM_ADDR biasGM, GM_ADDR yGM, const QBMMV3TilingData& tilingData)
@@ -117,12 +103,13 @@ __aicore__ inline void FillEpilogueParams(EpilogueParams& epilogueParams, GM_ADD
 
 // 多 batch MIX：GemmUniversal（KernelMmadWithScaleMix 特化）。
 template <typename AType, typename BType, typename OutType, typename X2ScaleType = float,
-    typename X1ScaleType = float, typename BiasType = int32_t>
+    typename X1ScaleType = float, typename BiasType = int32_t,
+    uint64_t FullLoadMode = Blaze::Gemm::NONE_FULL_LOAD_MODE>
 __aicore__ inline void QBMMMixWrapper(
     GM_ADDR x1GM, GM_ADDR x2GM, GM_ADDR pertokenScaleGM, GM_ADDR scaleGM, GM_ADDR biasGM, GM_ADDR yGM,
     const QBMMV3TilingData& tilingData)
 {
-    using Types = QBMMMixTypes<AType, BType, OutType, X2ScaleType, X1ScaleType, BiasType>;
+    using Types = QBMMMixTypes<AType, BType, OutType, X2ScaleType, X1ScaleType, BiasType, FullLoadMode>;
     using QBMMKernel = Blaze::Gemm::Kernel::GemmUniversal<
         typename Types::ProblemShape, typename Types::BlockMmad, typename Types::BlockEpilogue,
         typename Types::BlockScheduler>;
@@ -131,7 +118,7 @@ __aicore__ inline void QBMMMixWrapper(
     Params params;
     params.problemShape = {tilingData.m, tilingData.n, tilingData.k, tilingData.b};
     FillMixMmadParams(params.mmadParams, x1GM, x2GM, tilingData);
-    FillSchParams(params.schParams, tilingData);
+    FillQbmmSchParams(params.schParams, tilingData);
 
     FillQbmmBatchParams(params.qbmmParams, tilingData);
     FillQbmmTileParams(params.qbmmParams, tilingData);
@@ -144,12 +131,13 @@ __aicore__ inline void QBMMMixWrapper(
 
 // 单 batch MIX：QbmmMixWithoutBatch（裁剪 batch 广播路径）。
 template <typename AType, typename BType, typename OutType, typename X2ScaleType = float,
-    typename X1ScaleType = float, typename BiasType = int32_t>
+    typename X1ScaleType = float, typename BiasType = int32_t,
+    uint64_t FullLoadMode = Blaze::Gemm::NONE_FULL_LOAD_MODE>
 __aicore__ inline void QBMMMixWithoutBatchWrapper(
     GM_ADDR x1GM, GM_ADDR x2GM, GM_ADDR pertokenScaleGM, GM_ADDR scaleGM, GM_ADDR biasGM, GM_ADDR yGM,
     const QBMMV3TilingData& tilingData)
 {
-    using Types = QBMMMixTypes<AType, BType, OutType, X2ScaleType, X1ScaleType, BiasType>;
+    using Types = QBMMMixTypes<AType, BType, OutType, X2ScaleType, X1ScaleType, BiasType, FullLoadMode>;
     using QBMMKernel = Blaze::Gemm::Kernel::QbmmMixWithoutBatch<
         typename Types::ProblemShape, typename Types::BlockMmad, typename Types::BlockEpilogue,
         typename Types::BlockScheduler>;
@@ -158,7 +146,7 @@ __aicore__ inline void QBMMMixWithoutBatchWrapper(
     Params params;
     params.problemShape = {tilingData.m, tilingData.n, tilingData.k, tilingData.b};
     FillMixMmadParams(params.mmParams, x1GM, x2GM, tilingData);
-    FillSchParams(params.schParams, tilingData);
+    FillQbmmSchParams(params.schParams, tilingData);
 
     // without_batch 的 QBMMTiling 仅有 groupSize*/tile 字段（kernel 未直接读取），按 tile 尺寸填充。
     params.qbmmParams.groupSizeM = tilingData.baseM_qbmm;
@@ -173,3 +161,45 @@ __aicore__ inline void QBMMMixWithoutBatchWrapper(
 }
 
 } // namespace QBMMUT
+
+template <class DTYPE_X1, class DTYPE_X2, class DTYPE_Y, class DTYPE_BIAS>
+__global__ __aicore__ void qbmm_mix_kernel_entry(
+    GM_ADDR x1GM, GM_ADDR x2GM, GM_ADDR pertokenScaleGM, GM_ADDR scaleGM, GM_ADDR biasGM, GM_ADDR yGM,
+    GM_ADDR tilingGM)
+{
+    const auto* tilingData = reinterpret_cast<const QBMMV3TilingData*>(tilingGM);
+    QBMMUT::QBMMMixWrapper<DTYPE_X1, DTYPE_X2, DTYPE_Y, float, float, DTYPE_BIAS>(
+        x1GM, x2GM, pertokenScaleGM, scaleGM, biasGM, yGM, *tilingData);
+}
+
+template <class DTYPE_X1, class DTYPE_X2, class DTYPE_Y, class DTYPE_BIAS>
+__global__ __aicore__ void qbmm_mix_without_batch_kernel_entry(
+    GM_ADDR x1GM, GM_ADDR x2GM, GM_ADDR pertokenScaleGM, GM_ADDR scaleGM, GM_ADDR biasGM, GM_ADDR yGM,
+    GM_ADDR tilingGM)
+{
+    const auto* tilingData = reinterpret_cast<const QBMMV3TilingData*>(tilingGM);
+    QBMMUT::QBMMMixWithoutBatchWrapper<DTYPE_X1, DTYPE_X2, DTYPE_Y, float, float, DTYPE_BIAS>(
+        x1GM, x2GM, pertokenScaleGM, scaleGM, biasGM, yGM, *tilingData);
+}
+
+template <class DTYPE_X1, class DTYPE_X2, class DTYPE_Y, class DTYPE_BIAS>
+__global__ __aicore__ void qbmm_mix_a_full_load_kernel_entry(
+    GM_ADDR x1GM, GM_ADDR x2GM, GM_ADDR pertokenScaleGM, GM_ADDR scaleGM, GM_ADDR biasGM, GM_ADDR yGM,
+    GM_ADDR tilingGM)
+{
+    const auto* tilingData = reinterpret_cast<const QBMMV3TilingData*>(tilingGM);
+    QBMMUT::QBMMMixWrapper<
+        DTYPE_X1, DTYPE_X2, DTYPE_Y, float, float, DTYPE_BIAS, Blaze::Gemm::A_FULL_LOAD_MODE>(
+        x1GM, x2GM, pertokenScaleGM, scaleGM, biasGM, yGM, *tilingData);
+}
+
+template <class DTYPE_X1, class DTYPE_X2, class DTYPE_Y, class DTYPE_BIAS>
+__global__ __aicore__ void qbmm_mix_without_batch_a_full_load_kernel_entry(
+    GM_ADDR x1GM, GM_ADDR x2GM, GM_ADDR pertokenScaleGM, GM_ADDR scaleGM, GM_ADDR biasGM, GM_ADDR yGM,
+    GM_ADDR tilingGM)
+{
+    const auto* tilingData = reinterpret_cast<const QBMMV3TilingData*>(tilingGM);
+    QBMMUT::QBMMMixWithoutBatchWrapper<
+        DTYPE_X1, DTYPE_X2, DTYPE_Y, float, float, DTYPE_BIAS, Blaze::Gemm::A_FULL_LOAD_MODE>(
+        x1GM, x2GM, pertokenScaleGM, scaleGM, biasGM, yGM, *tilingData);
+}

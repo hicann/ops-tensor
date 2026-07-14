@@ -58,9 +58,9 @@ template <
 
 | 类型 | 说明 |
 |------|------|
-| weightNz | B 矩阵是否为 NZ 格式（继承自 BlockMmad） |
-| transA / transB | A/B 是否转置（继承自 BlockMmad） |
-| isAtomicAdd | 是否启用 Atomic Add（继承自 BlockMmad::DispatchPolicy） |
+| WEIGHT_NZ | B 矩阵是否为 NZ 格式（继承自 BlockMmad） |
+| TRANS_A / TRANS_B | A/B 是否转置（继承自 BlockMmad） |
+| IS_ATOMIC_ADD | 是否启用 Atomic Add（继承自 BlockMmad::DispatchPolicy） |
 | C0_SIZE | C0 对齐大小（int8: 32） |
 | MakeLayoutA / MakeLayoutB | A/B 的 FrameLayout 构建器 |
 

@@ -25,26 +25,12 @@
 #include "blaze/gemm/block/block_mmad_qbmm_mx_l0c_pingpong.h"
 #include "blaze/gemm/block/block_scheduler_qbmm.h"
 #include "blaze/epilogue/block/block_epilogue_empty.h"
+#include "qbmm_tiling_data.h"
 
 namespace QBMMUT {
 
-#pragma pack(push, 8)
-struct QBMML0CPingpongTilingData {
-    int64_t m;
-    int64_t n;
-    int64_t k;
-    int64_t b;
-    uint32_t baseM;
-    uint32_t baseN;
-    uint32_t baseK;
-    uint32_t kL1;
-    uint32_t scaleKL1;
-    uint32_t nBufferNum;
-    uint32_t dbL0C;
-};
-#pragma pack(pop)
-
-template <typename AType, typename BType, typename CType, typename BiasType, uint64_t FullLoadMode = 0>
+template <typename AType, typename BType, typename CType, typename BiasType,
+    uint64_t FullLoadMode = Blaze::Gemm::NONE_FULL_LOAD_MODE>
 __aicore__ inline void QBMML0CPingpongWrapper(
     GM_ADDR x1GM, GM_ADDR x2GM, GM_ADDR pertokenScaleGM, GM_ADDR scaleGM, GM_ADDR biasGM, GM_ADDR yGM,
     const QBMML0CPingpongTilingData& tilingData)
@@ -99,3 +85,24 @@ __aicore__ inline void QBMML0CPingpongWrapper(
 }
 
 } // namespace QBMMUT
+
+template <class DTYPE_X1, class DTYPE_X2, class DTYPE_Y, class DTYPE_BIAS>
+__global__ __aicore__ void qbmm_mx_l0c_pingpong_kernel_entry(
+    GM_ADDR x1GM, GM_ADDR x2GM, GM_ADDR pertokenScaleGM, GM_ADDR scaleGM, GM_ADDR biasGM, GM_ADDR yGM,
+    GM_ADDR tilingGM)
+{
+    const auto* tilingData = reinterpret_cast<const QBMMUT::QBMML0CPingpongTilingData*>(tilingGM);
+    QBMMUT::QBMML0CPingpongWrapper<DTYPE_X1, DTYPE_X2, DTYPE_Y, DTYPE_BIAS>(
+        x1GM, x2GM, pertokenScaleGM, scaleGM, biasGM, yGM, *tilingData);
+}
+
+template <class DTYPE_X1, class DTYPE_X2, class DTYPE_Y, class DTYPE_BIAS>
+__global__ __aicore__ void qbmm_mx_l0c_pingpong_a_full_load_kernel_entry(
+    GM_ADDR x1GM, GM_ADDR x2GM, GM_ADDR pertokenScaleGM, GM_ADDR scaleGM, GM_ADDR biasGM, GM_ADDR yGM,
+    GM_ADDR tilingGM)
+{
+    const auto* tilingData = reinterpret_cast<const QBMMUT::QBMML0CPingpongTilingData*>(tilingGM);
+    QBMMUT::QBMML0CPingpongWrapper<
+        DTYPE_X1, DTYPE_X2, DTYPE_Y, DTYPE_BIAS, Blaze::Gemm::A_FULL_LOAD_MODE>(
+        x1GM, x2GM, pertokenScaleGM, scaleGM, biasGM, yGM, *tilingData);
+}

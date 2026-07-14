@@ -23,37 +23,50 @@ namespace QBMMUT {
 // 填充 batch 广播维度字段（A/B/C 各 4 维）+ bias/量化模式标志。
 // QbmmParams 通过鸭子类型匹配 GemmUniversal 各特化的 QBMMTiling（fixpipe / MIX 多 batch）。
 template <typename QbmmParams>
-__aicore__ inline void FillQbmmBatchParams(QbmmParams& qp, const QBMMV3TilingData& td)
+__aicore__ inline void FillQbmmBatchParams(QbmmParams& qbmmParams, const QBMMV3TilingData& tilingData)
 {
-    qp.batchA1 = td.batchA1;
-    qp.batchA2 = td.batchA2;
-    qp.batchA3 = td.batchA3;
-    qp.batchA4 = td.batchA4;
-    qp.batchB1 = td.batchB1;
-    qp.batchB2 = td.batchB2;
-    qp.batchB3 = td.batchB3;
-    qp.batchB4 = td.batchB4;
-    qp.batchC1 = td.batchC1;
-    qp.batchC2 = td.batchC2;
-    qp.batchC3 = td.batchC3;
-    qp.batchC4 = td.batchC4;
-    qp.biasThreeDim = td.biasThreeDim;
-    qp.x1QuantMode = td.x1QuantMode;
-    qp.x2QuantMode = td.x2QuantMode;
+    qbmmParams.batchA1 = tilingData.batchA1;
+    qbmmParams.batchA2 = tilingData.batchA2;
+    qbmmParams.batchA3 = tilingData.batchA3;
+    qbmmParams.batchA4 = tilingData.batchA4;
+    qbmmParams.batchB1 = tilingData.batchB1;
+    qbmmParams.batchB2 = tilingData.batchB2;
+    qbmmParams.batchB3 = tilingData.batchB3;
+    qbmmParams.batchB4 = tilingData.batchB4;
+    qbmmParams.batchC1 = tilingData.batchC1;
+    qbmmParams.batchC2 = tilingData.batchC2;
+    qbmmParams.batchC3 = tilingData.batchC3;
+    qbmmParams.batchC4 = tilingData.batchC4;
+    qbmmParams.biasThreeDim = tilingData.biasThreeDim;
+    qbmmParams.x1QuantMode = tilingData.x1QuantMode;
+    qbmmParams.x2QuantMode = tilingData.x2QuantMode;
 }
 
 // 填充 L1 载入 / L0C tile 配置字段（三种 QBMMTiling 均含这些字段）。
 template <typename QbmmParams>
-__aicore__ inline void FillQbmmTileParams(QbmmParams& qp, const QBMMV3TilingData& td)
+__aicore__ inline void FillQbmmTileParams(QbmmParams& qbmmParams, const QBMMV3TilingData& tilingData)
 {
-    qp.kAL1 = td.kAL1;
-    qp.kBL1 = td.kBL1;
-    qp.nBufferNum = td.nBufferNum;
-    qp.baseM = td.baseM_qbmm;
-    qp.baseN = td.baseN_qbmm;
-    qp.baseK = td.baseK_qbmm;
-    qp.isBias = td.isBias;
-    qp.dbL0C = td.dbL0C;
+    qbmmParams.kAL1 = tilingData.kAL1;
+    qbmmParams.kBL1 = tilingData.kBL1;
+    qbmmParams.nBufferNum = tilingData.nBufferNum;
+    qbmmParams.baseM = tilingData.baseM_qbmm;
+    qbmmParams.baseN = tilingData.baseN_qbmm;
+    qbmmParams.baseK = tilingData.baseK_qbmm;
+    qbmmParams.isBias = tilingData.isBias;
+    qbmmParams.dbL0C = tilingData.dbL0C;
+}
+
+template <typename SchParams>
+__aicore__ inline void FillQbmmSchParams(SchParams& schedulerParams, const QBMMV3TilingData& tilingData)
+{
+    schedulerParams.baseM = tilingData.baseM;
+    schedulerParams.baseN = tilingData.baseN;
+    schedulerParams.mTailTile = tilingData.mTailTile;
+    schedulerParams.nTailTile = tilingData.nTailTile;
+    schedulerParams.mBaseTailSplitCnt = tilingData.mBaseTailSplitCnt;
+    schedulerParams.nBaseTailSplitCnt = tilingData.nBaseTailSplitCnt;
+    schedulerParams.mTailMain = tilingData.mTailMain;
+    schedulerParams.nTailMain = tilingData.nTailMain;
 }
 
 } // namespace QBMMUT

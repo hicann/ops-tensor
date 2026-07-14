@@ -76,14 +76,14 @@ __aicore__ inline int64_t GetCoreNums();     // BlockSchedulerMatmulBasic, Block
 ### GetBlockShape
 ```cpp
 __aicore__ inline BlockShape GetBlockShape(int64_t blockIdx);       // BlockSchedulerMatmulBasic, BlockSchedulerMatmulStreamK
-template <QuantMode aQuantMode, QuantMode bQuantMode, bool weightNz = false>
+template <QuantMode AQuantMode_, QuantMode BQuantMode_, bool WeightNz_ = false>
 __aicore__ inline BlockShape GetBlockShape(BlockCoord blockCoord);      // BlockSchedulerQuantBatchMatmulV3
 ```
 功能：返回当前 block 的形状。
 
 QuantBatchMatmulV3 的 `BlockShape` 第 3、4 个字段用于携带 M/N 尾块切分偏移。
 
-### GetBlockCoord
+### GetTileIdx / GetBlockCoord
 ```cpp
 __aicore__ inline BlockCoord GetBlockCoord(int64_t blockIdx);            // BlockSchedulerMatmulBasic
 __aicore__ inline BlockCoord GetBlockCoord(int64_t blockIdx);       // BlockSchedulerMatmulStreamK
@@ -91,7 +91,7 @@ __aicore__ inline bool GetTileIdx(BlockCoord& blockCoord);              // Block
 ```
 功能：返回当前 block 的坐标。
 
-### GetTileCoord
+### GetTileCoord（QuantBatchMatmulV3）
 ```cpp
 __aicore__ inline void GetTileCoord(BlockCoord blockCoord, int64_t& mPos, int64_t& nPos);
 ```
@@ -138,7 +138,7 @@ if (rowIdx % 2 != 0) {
 |-----------|----------|
 | BlockSchedulerMatmulBasic | `mTileIdx >= mL1NormCnt_` 或 `nTileIdx >= nL1NormCnt_` |
 | BlockSchedulerStreamK | `mTileIdx == (mTileNum - 1)` 或 `nTileIdx == (nTileNum - 1)` |
-| BlockSchedulerQuantBatchMatmulV3 | `mTileIdx >= mBaseNormCnt_` 或 `nTileIdx >= nBaseNormCnt_` |
+| BlockSchedulerQuantBatchMatmulV3 | `mIdx >= mBaseNormCnt_` 或 `nIdx >= nBaseNormCnt_` |
 
 ### 尾块切分
 | Scheduler | 尾块切分支持 |

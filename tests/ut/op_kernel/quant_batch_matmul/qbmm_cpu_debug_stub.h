@@ -10,31 +10,12 @@
 
 /**
  * \file qbmm_cpu_debug_stub.h
- * \brief CPU-debug 下 blaze cube 侧的公共桩（AuxGetC0Size / GetMmDstType）。
- *        由 fixpipe 与 mix 两套 wrapper 共用，`#pragma once` 保证同一编译单元只定义一次。
+ * \brief CPU-debug 下引入 Matmul 公共类型与辅助函数定义。
+ *        复用 CANN 提供的实现，避免与其他 Matmul 头文件重复定义。
  */
 
 #pragma once
 
 #if defined(ASCENDC_CPU_DEBUG)
-namespace AscendC {
-template <typename T>
-constexpr int32_t AuxGetC0Size() { return 32; }
-template <>
-constexpr int32_t AuxGetC0Size<half>() { return 16; }
-template <>
-constexpr int32_t AuxGetC0Size<float>() { return 16; }
-template <>
-constexpr int32_t AuxGetC0Size<bfloat16_t>() { return 16; }
-template <>
-constexpr int32_t AuxGetC0Size<int32_t>() { return 16; }
-template <>
-constexpr int32_t AuxGetC0Size<int8_t>() { return 32; }
-template <typename T>
-struct GetMmDstType { using Type = T; };
-template <>
-struct GetMmDstType<int8_t> { using Type = int32_t; };
-template <>
-struct GetMmDstType<half> { using Type = float; };
-}
+#include "lib/matmul_intf.h"
 #endif

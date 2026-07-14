@@ -28,21 +28,19 @@ class BlockMmad;
 
 | 常量 | 说明 |
 |------|------|
-| weightNz | B 矩阵是否为 NZ 格式 |
-| transA | A 矩阵是否转置 |
-| transB | B 矩阵是否转置 |
+| WEIGHT_NZ | B 矩阵是否为 NZ 格式 |
+| TRANS_A | A 矩阵是否转置 |
+| TRANS_B | B 矩阵是否转置 |
 | C0_SIZE | C0 对齐大小（FP4: 64，FP8: 32） |
-| SCALE_C0 | Scale C0 对齐大小（固定为 2） |
-| DOUBLE_BUFFER_COUNT | Scale 缓冲数量（固定为 2） |
-| HALF_L0_SIZE | L0 缓冲区半大小 |
-| HALF_L0C_SIZE | L0C 缓冲区半大小 |
+| SCALE_C0 | Scale C0 对齐大小（固定为 2，定义于 `common_utils.h`） |
+| DOUBLE_BUFFER_COUNT | Scale 缓冲数量（固定为 2，定义于 `common_utils.h`） |
 
 ## 特殊类型别名
 
 | 类型 | 说明 |
 |------|------|
-| MakeLayoutScaleA | ScaleA Layout 构建器（根据 transA 选择 ScaleADN/ScaleAND） |
-| MakeLayoutScaleB | ScaleB Layout 构建器（根据 transB 选择 ScaleBDN/ScaleBND） |
+| MakeLayoutScaleA | ScaleA Layout 构建器（根据 TRANS_A 选择 ScaleADN/ScaleAND） |
+| MakeLayoutScaleB | ScaleB Layout 构建器（根据 TRANS_B 选择 ScaleBDN/ScaleBND） |
 
 ## 特殊数据结构
 
@@ -159,7 +157,7 @@ __aicore__ inline void Init(
 | dbL0C | bool | 是否启用 L0C 双缓冲 |
 
 说明：
-- `l1BufNum` 支持 2 或 4 缓冲
+- `l1BufNum` 支持 2、3 或 4 缓冲
 - `scaleKL1` 应为 `kL1` 的整数倍（建议 2×kL1）
 - K 轴需对齐到 MXFP_DIVISOR_SIZE（64）
 
@@ -354,6 +352,7 @@ Mmad 计算（MX 模式：自动反量化）
 
 ### L1 缓冲数量
 - `l1BufNum = 4`：最大化流水线并行度（推荐）
+- `l1BufNum = 3`：在 L1 容量不足以放下 4 缓冲时保留三缓冲流水
 - `l1BufNum = 2`：减少 L1 占用（小矩阵场景）
 
 ### K 轴 Padding

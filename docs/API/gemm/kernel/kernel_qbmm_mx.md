@@ -33,7 +33,7 @@ MX 量化 Batch Matmul Kernel，仅支持 AIC 计算，支持 MxFP4/MxFP8 量化
 支持 4 维 Batch（batchA1/A2/A3/A4、batchB1/B2/B3/B4、batchC1/C2/C3/C4），需满足广播规则。x1Scale/x2Scale 的 Batch 维度须分别与 A 矩阵/B 矩阵一致。
 
 ### Atomic Add 模式
-可选 Atomic Add 模式（`isAtomicAdd = true`），用于多核并行累加场景。
+可选 Atomic Add 模式（`IS_ATOMIC_ADD = true`），用于多核并行累加场景。
 
 ## 特殊成员方法
 
@@ -71,14 +71,14 @@ template <
 
 | 类型 | 说明 |
 |------|------|
-| weightNz | B 矩阵是否为 NZ 格式（继承自 BlockMmad） |
-| transA | A 矩阵是否转置（继承自 BlockMmad） |
-| transB | B 矩阵是否转置（继承自 BlockMmad） |
-| isAtomicAdd | 是否启用 Atomic Add 模式（继承自 BlockMmad::DispatchPolicy） |
+| WEIGHT_NZ | B 矩阵是否为 NZ 格式（由 LayoutB 判断） |
+| TRANS_A | A 矩阵是否转置（由 LayoutA 判断） |
+| TRANS_B | B 矩阵是否转置（由 LayoutB 判断） |
+| IS_ATOMIC_ADD | 是否启用 Atomic Add 模式（继承自 BlockMmad::DispatchPolicy） |
 | C0_SIZE | C0 对齐大小（FP4: 64，FP8: 32） |
-| SCALE_C0 | Scale C0 对齐大小（固定为 2） |
-| MakeLayoutScaleA | ScaleA Layout 构建器（根据 transA 选择） |
-| MakeLayoutScaleB | ScaleB Layout 构建器（根据 transB 选择） |
+| SCALE_C0 | Scale C0 对齐大小（固定为 2，定义于 `common_utils.h`） |
+| MakeLayoutScaleA | ScaleA Layout 构建器（根据 TRANS_A 选择） |
+| MakeLayoutScaleB | ScaleB Layout 构建器（根据 TRANS_B 选择） |
 
 ## 特殊数据结构
 
@@ -137,7 +137,7 @@ __aicore__ inline void Run(const Params& params)
 ```
 功能：执行量化 Batch Matmul Kernel 计算。
 执行流程：
-1. Atomic Add 配置：如果 `isAtomicAdd = true`，调用 `SetAtomicAdd<float>`
+1. Atomic Add 配置：如果 `IS_ATOMIC_ADD = true`，调用 `SetAtomicAdd<float>`
 2. 调用 `Init(params)` 设置参数
 3. 创建 BlockScheduler 实例
 4. 初始化 BlockMmadMX 组件
@@ -272,7 +272,7 @@ Mmad 计算（MX 模式：MmadTraitMX）
 ## 性能优化建议
 
 ### L1 缓冲配置
-- `l1BufNum`：建议 2 或 4，平衡 L1 容量和流水线并行度
+- `l1BufNum`：建议 2、3 或 4，平衡 L1 容量和流水线并行度
 - `kL1`：建议对齐到 `MXFP_DIVISOR_SIZE`（64）
 
 ### Scale KL1 配置

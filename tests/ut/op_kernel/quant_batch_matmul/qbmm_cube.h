@@ -32,9 +32,11 @@
 
 namespace QBMMUT {
 
-template <typename AType, typename BType, typename CType, typename BiasType>
+template <typename AType, typename BType, typename CType, typename BiasType,
+    uint64_t FullLoadMode = Blaze::Gemm::NONE_FULL_LOAD_MODE>
 __aicore__ inline void QBMMCubeWrapper(
-    GM_ADDR x1GM, GM_ADDR x2GM, GM_ADDR pertokenScaleGM, GM_ADDR scaleGM, GM_ADDR biasGM, GM_ADDR yGM, const QBMMV3TilingData& tilingData)
+    GM_ADDR x1GM, GM_ADDR x2GM, GM_ADDR pertokenScaleGM, GM_ADDR scaleGM, GM_ADDR biasGM, GM_ADDR yGM,
+    const QBMMV3TilingData& tilingData)
 {
     using LayoutA = AscendC::Te::NDExtLayoutPtn;
     using LayoutB = AscendC::Te::NDExtLayoutPtn;
@@ -46,10 +48,10 @@ __aicore__ inline void QBMMCubeWrapper(
     // BTypeTuple = (BType, uint64_t) for B + X2Scale
     using BTypeTuple = AscendC::Std::tuple<BType, uint64_t>;
 
-    using DispatchPolicy = Blaze::Gemm::MatmulWithScaleFixpipeQuant<0, false>;
+    using DispatchPolicy = Blaze::Gemm::MatmulWithScaleFixpipeQuant<FullLoadMode, false>;
 
     using BlockScheduler = Blaze::Gemm::Block::BlockSchedulerQuantBatchMatmulV3<
-        ProblemShape, 0, LayoutA, LayoutB, AType>;
+        ProblemShape, FullLoadMode, LayoutA, LayoutB, AType>;
 
     using BlockMmad = Blaze::Gemm::Block::BlockMmad<
         DispatchPolicy, AType, LayoutA, BTypeTuple, LayoutB, CType, LayoutC, BiasType, LayoutBias>;
@@ -70,15 +72,7 @@ __aicore__ inline void QBMMCubeWrapper(
     params.mmadParams.scaleAGmAddr = reinterpret_cast<GM_ADDR>(pertokenScaleGM);
     params.mmadParams.scaleBGmAddr = reinterpret_cast<GM_ADDR>(scaleGM);
 
-    params.schParams.baseM = tilingData.baseM;
-    params.schParams.baseN = tilingData.baseN;
-    params.schParams.mTailTile = tilingData.mTailTile;
-    params.schParams.nTailTile = tilingData.nTailTile;
-    params.schParams.mBaseTailSplitCnt = tilingData.mBaseTailSplitCnt;
-    params.schParams.nBaseTailSplitCnt = tilingData.nBaseTailSplitCnt;
-    params.schParams.mTailMain = tilingData.mTailMain;
-    params.schParams.nTailMain = tilingData.nTailMain;
-
+    FillQbmmSchParams(params.schParams, tilingData);
     FillQbmmBatchParams(params.qbmmParams, tilingData);
     FillQbmmTileParams(params.qbmmParams, tilingData);
 
@@ -87,3 +81,24 @@ __aicore__ inline void QBMMCubeWrapper(
 }
 
 } // namespace QBMMUT
+
+template <class DTYPE_X1, class DTYPE_X2, class DTYPE_Y, class DTYPE_BIAS>
+__global__ __aicore__ void qbmm_cube_kernel_entry(
+    GM_ADDR x1GM, GM_ADDR x2GM, GM_ADDR pertokenScaleGM, GM_ADDR scaleGM, GM_ADDR biasGM, GM_ADDR yGM,
+    GM_ADDR tilingGM)
+{
+    const auto* tilingData = reinterpret_cast<const QBMMV3TilingData*>(tilingGM);
+    QBMMUT::QBMMCubeWrapper<DTYPE_X1, DTYPE_X2, DTYPE_Y, DTYPE_BIAS>(
+        x1GM, x2GM, pertokenScaleGM, scaleGM, biasGM, yGM, *tilingData);
+}
+
+template <class DTYPE_X1, class DTYPE_X2, class DTYPE_Y, class DTYPE_BIAS>
+__global__ __aicore__ void qbmm_cube_a_full_load_kernel_entry(
+    GM_ADDR x1GM, GM_ADDR x2GM, GM_ADDR pertokenScaleGM, GM_ADDR scaleGM, GM_ADDR biasGM, GM_ADDR yGM,
+    GM_ADDR tilingGM)
+{
+    const auto* tilingData = reinterpret_cast<const QBMMV3TilingData*>(tilingGM);
+    QBMMUT::QBMMCubeWrapper<
+        DTYPE_X1, DTYPE_X2, DTYPE_Y, DTYPE_BIAS, Blaze::Gemm::A_FULL_LOAD_MODE>(
+        x1GM, x2GM, pertokenScaleGM, scaleGM, biasGM, yGM, *tilingData);
+}
