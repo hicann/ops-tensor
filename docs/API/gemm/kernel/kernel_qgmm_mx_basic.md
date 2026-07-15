@@ -16,7 +16,7 @@ MX 量化 Grouped Matmul 的 Kernel 组件，基于 Tensor API 实现，仅支�
 通常与 `BlockMmad<GroupedMatmulWithScaleMx<...>, ...>` 搭配使用。
 
 ### 调度器限制
-使用 `BlockSchedulerGmmSwatWithTailSplit` 负责 grouped matmul 的 tile 分发和 tail split。
+使用 `BlockSchedulerGmmSwatWithTailSplit` 负责 grouped matmul 的单核 block 分发和 tail split。
 
 ### Scale 类型
 ScaleA 和 ScaleB 固定按 `fp8_e8m0_t` 解释。
@@ -26,10 +26,10 @@ ScaleA 和 ScaleB 固定按 `fp8_e8m0_t` 解释。
 | 别名 | 含义 |
 |------|------|
 | `ProblemShape` | 整体问题规模 |
-| `TupleShape` | 当前 group 的问题规模 |
-| `BlockShape` | 单 tile 形状 |
-| `SchedulerShape` | scheduler 使用的问题规模 |
-| `BlockCoord` | tile 坐标 |
+| `SchedulerProblemShape` | scheduler 使用的当前 group 问题规模 |
+| `BlockShape` | 单核 block 形状 |
+| `SchedulerBlockShape` | scheduler 返回的单核基本块大小与 tail split 偏移 |
+| `BlockCoord` | block 坐标 |
 
 ## 特殊数据结构
 
@@ -60,12 +60,12 @@ struct GMMTiling {
 |------|------|
 | `groupNum` | group 数量 |
 | `m/n/k` | 初始问题规模 |
-| `baseM/baseN/baseK` | 基础 tile 大小 |
+| `baseM/baseN/baseK` | 基础 block/L0 tile 大小 |
 | `kAL1/kBL1` | A/B 的 L1 K 轴切分 |
 | `scaleKAL1/scaleKBL1` | ScaleA/ScaleB 的 L1 K 轴切分 tiling 字段；在 MX 量化中两者必须一致，并作为 BlockMmad 的共享 `scaleKL1` |
 | `isBias` | 是否启用 bias |
 | `dbL0C` | L0C 双缓冲模式；当前仅值 `2` 启用，其余值均视为禁用 |
-| `groupType` | GMM tiling 兼容保留字段；当前 kernel 未读取该字段，split 方向由 `LayoutA` 对应的 `transA` 编译期路径决定（`!transA` 按 M，`transA` 按 K） |
+| `groupType` | GMM tiling 兼容保留字段；当前 kernel 未读取该字段，split 方向由 `LayoutA` 对应的 `TRANS_A` 编译期路径决定（`!TRANS_A` 按 M，`TRANS_A` 按 K） |
 | `groupListType` | offset、length 或 sparse |
 
 `kAL1/kBL1/scaleKAL1/scaleKBL1` 需满足 BlockMmad 的 L1 参数约束：`kAL1` 与 `kBL1` 的较大值作为外层 K 窗口，较大值需为较小值的整数倍；tiling 需传入一致的 `scaleKAL1` 和 `scaleKBL1`，且不小于该外层窗口，并为该外层窗口的整数倍。Kernel 使用 `scaleKAL1` 作为共享 `scaleKL1`。
@@ -110,7 +110,7 @@ __aicore__ inline void Run(const Params& params)
 - 遍历所有 group
 - 逐 group 更新 `m/n/k`
 - 逐 group 更新地址偏移
-- 调用 scheduler 和 block 完成 tile 级计算
+- 调用 scheduler 和 BlockMmad 完成单核 block 级计算
 
 ### SetMNK 函数
 ```cpp
@@ -119,7 +119,7 @@ __aicore__ inline void SetMNK(uint32_t groupIdx)
 
 功能：
 - 从 group list 中提取当前组切分值
-- 当前 QGMM MX scalar 路径按 `LayoutA` 对应的 `transA` 编译期路径更新当前组的 `problemShape_`；`groupType` 在当前 kernel 中未参与该判断
+- 当前 QGMM MX scalar 路径按 `LayoutA` 对应的 `TRANS_A` 编译期路径更新当前组的 `problemShape_`；`groupType` 在当前 kernel 中未参与该判断
 
 ### UpdateBaseOffsets 函数
 ```cpp
@@ -138,7 +138,7 @@ __aicore__ inline void ProcessSingleGroup(BlockScheduler& scheduler, uint32_t gr
 
 功能：
 - 构造当前 group 的 Tensor API GM Tensor
-- 获取每个 tile 的坐标和形状
+- 获取每个单核 block 的坐标和形状
 - 将 slice 后的 tensor 交给 `BlockMmad`
 
 ## 调用示例
@@ -183,8 +183,8 @@ kernel(params);
     -> 遍历 group
     -> 更新当前组的 m/n/k
     -> 更新 A/B/Scale/Bias/C 偏移
-    -> scheduler 分发 tile
-    -> block 执行单 tile 计算
+    -> scheduler 分发单核 block
+    -> BlockMmad 在单核 block 内执行 L0 tile 计算
     -> 末组按需执行 tail split
 ```
 

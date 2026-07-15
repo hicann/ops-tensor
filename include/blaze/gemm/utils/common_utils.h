@@ -188,14 +188,14 @@ __aicore__ inline int64_t GetPerBlockNum(int64_t coreNum, int64_t mTileNum, int6
     return perCoreBlockNum;
 }
 
-__aicore__ inline uint64_t CalWeightNZGmAddrOffset(bool transB, int64_t batchIdx, int64_t n, int64_t k, int64_t c0_size)
+__aicore__ inline uint64_t CalWeightNZGmAddrOffset(bool transB, int64_t batchIdx, int64_t n, int64_t k, int64_t c0Size)
 {
     if (transB) {
-        return batchIdx * Blaze::Gemm::CeilDiv(k, c0_size) * Blaze::Gemm::CeilDiv(n, static_cast<int64_t>(BLOCK_CUBE)) *
-               BLOCK_CUBE * c0_size;
+        return batchIdx * Blaze::Gemm::CeilDiv(k, c0Size) *
+               Blaze::Gemm::CeilDiv(n, static_cast<int64_t>(BLOCK_CUBE)) * BLOCK_CUBE * c0Size;
     } else {
-        return batchIdx * Blaze::Gemm::CeilDiv(n, c0_size) * Blaze::Gemm::CeilDiv(k, static_cast<int64_t>(BLOCK_CUBE)) *
-               BLOCK_CUBE * c0_size;
+        return batchIdx * Blaze::Gemm::CeilDiv(n, c0Size) *
+               Blaze::Gemm::CeilDiv(k, static_cast<int64_t>(BLOCK_CUBE)) * BLOCK_CUBE * c0Size;
     }
 }
 

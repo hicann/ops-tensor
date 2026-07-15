@@ -3,7 +3,7 @@
 
 ## 功能说明
 MX 量化 Grouped Matmul 的 Block 组件，基于 Tensor API 实现，仅支持 AIC 计算。
-组件负责单个 tile 的 A/B 搬运、ScaleA/ScaleB 搬运、MX Mmad 计算以及 bias 处理，适用于 grouped matmul 的 mx tensor_api kernel。
+组件负责单核 block 内的 A/B、ScaleA/ScaleB 搬运与 L0 tile 级 MX Mmad 计算，并处理 bias。
 
 **继承思路参考**：[Block Mmad 公共框架](./block_mmad.md)
 
@@ -32,8 +32,8 @@ ScaleA 和 ScaleB 固定使用 `fp8_e8m0_t`。
 
 | 常量 | 说明 |
 |------|------|
-| `transA` | A 是否转置 |
-| `transB` | B 是否转置 |
+| `TRANS_A` | A 是否转置 |
+| `TRANS_B` | B 是否转置 |
 | `C0_SIZE` | 数据 C0 对齐大小，FP4 为 64，FP8 为 32 |
 | `SCALE_C0` | Scale 布局的 C0 对齐大小，固定为 2 |
 | `SCALE_BUFFER_NUM` | Scale 双缓冲数量 |
@@ -45,7 +45,7 @@ ScaleA 和 ScaleB 固定使用 `fp8_e8m0_t`。
 | 别名 | 含义 |
 |------|------|
 | `ProblemShape` | 当前 group 的问题规模 |
-| `BlockShape` | 单 tile 形状 |
+| `BlockShape` | 单核 block 形状 |
 | `MxL0AType` | A 在 L0 中的数据类型 |
 | `MxL0BType` | B 在 L0 中的数据类型 |
 
@@ -102,7 +102,7 @@ struct L1Params {
 ### MmadParams
 ```cpp
 struct MmadParams {
-    BlockShape l0TileShape;
+    BlockShape tileShapeL0;
     L1Params l1Params;
     bool isBias;
     bool enableL0cPingPong;
@@ -137,17 +137,17 @@ __aicore__ inline void UpdateParamsForNextProblem(const ProblemShape& problemSha
 template <typename TensorA, typename TensorB, typename TensorScaleA,
           typename TensorScaleB, typename TensorBias, typename TensorC>
 __aicore__ inline void operator()(
-    TensorA gmA,
-    TensorB gmB,
-    TensorScaleA gmScaleA,
-    TensorScaleB gmScaleB,
-    TensorBias gmBias,
-    TensorC gmC,
-    const BlockShape& singleShape)
+    const TensorA& gmA,
+    const TensorB& gmB,
+    const TensorScaleA& gmScaleA,
+    const TensorScaleB& gmScaleB,
+    const TensorBias& gmBias,
+    const TensorC& gmC,
+    const BlockShape& blockShape)
 ```
 
 功能：
-- 处理一个 tile 的 MX grouped matmul 计算
+- 处理一个单核 block 的 MX grouped matmul 计算
 - 输入 tensor 由 kernel 层完成 slice 后传入
 
 ## 调用示例
@@ -174,9 +174,9 @@ using BlockMmad = Blaze::Gemm::Block::BlockMmad<
 BlockMmad blockMmad;
 
 BlockMmad::ProblemShape problemShape{m, n, k, 0};
-BlockMmad::BlockShape l0TileShape{baseM, baseN, baseK, 0};
+BlockMmad::BlockShape tileShapeL0{baseM, baseN, baseK, 0};
 BlockMmad::L1Params l1Params{kAL1, kBL1, scaleKL1};
-BlockMmad::MmadParams params{l0TileShape, l1Params, isBias, enableL0cPingPong};
+BlockMmad::MmadParams params{tileShapeL0, l1Params, isBias, enableL0cPingPong};
 
 blockMmad.Init(problemShape, params);
 ```
@@ -190,8 +190,9 @@ auto gmBlockScaleB = gmScaleB.Slice(...);
 auto gmBlockBias = gmBias.Slice(...);
 auto gmBlockC = gmC.Slice(...);
 
-BlockMmad::BlockShape singleShape{tileM, tileN, tileK, 0};
-blockMmad(gmBlockA, gmBlockB, gmBlockScaleA, gmBlockScaleB, gmBlockBias, gmBlockC, singleShape);
+const int64_t blockK = problemK;
+BlockMmad::BlockShape blockShape{blockM, blockN, blockK, 0};
+blockMmad(gmBlockA, gmBlockB, gmBlockScaleA, gmBlockScaleB, gmBlockBias, gmBlockC, blockShape);
 ```
 
 ## 数据流

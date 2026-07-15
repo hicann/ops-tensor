@@ -81,12 +81,12 @@ struct MatmulWithScaleMx {
  * @struct GroupedMatmulWithScaleMx
  * @brief Grouped Mx matrix multiplication with scaleA and scaleB
  */
-template <uint64_t FULL_LOAD_MODE_ = 0, bool ATOMIC_ADD = false,
+template <uint64_t FullLoadMode_ = 0, bool AtomicAdd_ = false,
           class ScheduleType_ = KernelGroupedMmadWithScaleMx>
 struct GroupedMatmulWithScaleMx {
     using ScheduleType = ScheduleType_;
-    static constexpr uint64_t fullLoadMode = FULL_LOAD_MODE_;
-    static constexpr bool isAtomicAdd = ATOMIC_ADD;
+    static constexpr uint64_t FULL_LOAD_MODE = FullLoadMode_;
+    static constexpr bool IS_ATOMIC_ADD = AtomicAdd_;
 };
 
 /**

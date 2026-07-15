@@ -9,7 +9,7 @@
  */
 
 /*!
- * \file block_scheduler_gmm_aswt_with_tail_split.h
+ * \file block_scheduler_gmm_swat_with_tail_split.h
  * \brief
  */
 
@@ -26,7 +26,9 @@ constexpr int64_t INNER_AXIS_MIN_SPLIT_VAL = 128;
 
 class BlockSchedulerGmmSwatWithTailSplit {
 public:
-    using TupleShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
+    using ProblemShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
+    // M block size, N block size, M split offset, N split offset.
+    using BlockShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
     using BlockCoord = AscendC::Te::Coord<int64_t, int64_t, int64_t, int64_t>;
     struct Params {
         int32_t baseM{0};
@@ -34,40 +36,45 @@ public:
     };
 
     __aicore__ inline BlockSchedulerGmmSwatWithTailSplit(const Params& params)
-        : baseM_(params.baseM), baseN_(params.baseN), blockNum_(AscendC::GetBlockNum()),
-          blockIdx_(AscendC::GetBlockIdx() / AscendC::GetTaskRation())
+        : baseM_(params.baseM), baseN_(params.baseN)
     {
+        blockNum_ = AscendC::GetBlockNum();
+        blockIdx_ = AscendC::GetBlockIdx() / AscendC::GetTaskRation();
+        endBlockIdx_ = blockNum_ > 0 ? blockNum_ - 1 : 0;
     }
 
     __aicore__ inline BlockSchedulerGmmSwatWithTailSplit(int32_t baseM, int32_t baseN, int32_t baseK)
-        : baseM_(baseM), baseN_(baseN), blockNum_(AscendC::GetBlockNum()),
-          blockIdx_(AscendC::GetBlockIdx() / AscendC::GetTaskRation())
+        : baseM_(baseM), baseN_(baseN)
     {
         (void)baseK;
+        blockNum_ = AscendC::GetBlockNum();
+        blockIdx_ = AscendC::GetBlockIdx() / AscendC::GetTaskRation();
+        endBlockIdx_ = blockNum_ > 0 ? blockNum_ - 1 : 0;
     }
 
-    __aicore__ inline void UpdateNextProblem(const TupleShape& problemShape)
+    __aicore__ inline void UpdateNextProblem(const ProblemShape& problemShape)
     {
-        // Scheduler maps only M/N tiles; K is kept for shape consistency and does not drive split-K here.
+        // Scheduler maps only M/N blocks; K is kept for shape consistency and does not drive split-K here.
         k_ = AscendC::Te::Get<MNK_K>(problemShape);
         if (m_ != AscendC::Te::Get<MNK_M>(problemShape) || n_ != AscendC::Te::Get<MNK_N>(problemShape)) {
             m_ = AscendC::Te::Get<MNK_M>(problemShape);
             n_ = AscendC::Te::Get<MNK_N>(problemShape);
-            mCnt_ = CeilDiv(m_, static_cast<int64_t>(baseM_));
-            nCnt_ = CeilDiv(n_, static_cast<int64_t>(baseN_));
-            mBaseTail_ = m_ - (mCnt_ - 1) * baseM_;
-            nBaseTail_ = n_ - (nCnt_ - 1) * baseN_;
-            totalCnt_ = mCnt_ * nCnt_;
-            mainMWindow_ = GMM_WINDOW_LEN < mCnt_ ? GMM_WINDOW_LEN : mCnt_;
-            mainRow_ = mCnt_ / mainMWindow_ - 1;
-            tailWindow_ = mCnt_ - mainMWindow_ * mainRow_;
+            mBlockNums_ = CeilDiv(m_, static_cast<int64_t>(baseM_));
+            nBlockNums_ = CeilDiv(n_, static_cast<int64_t>(baseN_));
+            mBaseTail_ = m_ - (mBlockNums_ - 1) * baseM_;
+            nBaseTail_ = n_ - (nBlockNums_ - 1) * baseN_;
+            totalBlockNums_ = mBlockNums_ * nBlockNums_;
+            mainMWindow_ = GMM_WINDOW_LEN < mBlockNums_ ? GMM_WINDOW_LEN : mBlockNums_;
+            mainRow_ = mBlockNums_ / mainMWindow_ - 1;
+            tailWindow_ = mBlockNums_ - mainMWindow_ * mainRow_;
         }
         roundIdx_ = 0;
-        round_ = CeilDiv(totalCnt_, static_cast<int64_t>(blockNum_));
+        round_ = CeilDiv(totalBlockNums_, static_cast<int64_t>(blockNum_));
         // Continue from the next physical core after the previous group to balance grouped problems.
         startBlockIdx_ = endBlockIdx_ == blockNum_ - 1 ? 0 : (endBlockIdx_ + 1);
-        // The last physical core that owns a tile before optional tail splitting.
-        endBlockIdx_ = (totalCnt_ + startBlockIdx_ - 1) % blockNum_;
+        // The last physical core that owns a block before optional tail splitting.
+        endBlockIdx_ = (totalBlockNums_ + startBlockIdx_ - 1) % blockNum_;
+        tailBlockNums_ = Min(static_cast<int64_t>(endBlockIdx_ + 1), totalBlockNums_);
         // Adjust the per-core round count when this group wraps around the physical core range.
         if (startBlockIdx_ > endBlockIdx_ && (blockIdx_ > endBlockIdx_ && blockIdx_ < startBlockIdx_)) {
             round_ -= 1;
@@ -87,18 +94,12 @@ public:
         nTailAlign_ = nTailAlign;
     }
 
-    __aicore__ inline int64_t GetTailTileCnt()
-    {
-        return Min(static_cast<int64_t>(endBlockIdx_ + 1), totalCnt_);
-    }
-
     __aicore__ inline void UpdateTailTile(uint32_t mTailCnt, uint32_t nTailCnt)
     {
         mTailCnt_ = mTailCnt;
         nTailCnt_ = nTailCnt;
         tailCnt_ = mTailCnt_ * nTailCnt_;
-        int64_t tailOriCnt = GetTailTileCnt();
-        int64_t newEndBlockIdx = endBlockIdx_ + tailOriCnt * (tailCnt_ - 1);
+        int64_t newEndBlockIdx = endBlockIdx_ + tailBlockNums_ * (tailCnt_ - 1);
         if (blockIdx_ > endBlockIdx_ && blockIdx_ <= newEndBlockIdx) {
             round_ += 1;
         }
@@ -108,8 +109,8 @@ public:
             tailCnt_ = 1;
             tailBlockBase_ = 0;
         } else if (tailCnt_ > 1) {
-            // Base physical block of the original tail tile window before M/N tail splitting.
-            tailBlockBase_ = endBlockIdx_ + 1 - tailOriCnt;
+            // Base physical block of the original tail block window before M/N tail splitting.
+            tailBlockBase_ = endBlockIdx_ + 1 - tailBlockNums_;
         } else {
             tailBlockBase_ = 0;
         }
@@ -118,13 +119,12 @@ public:
 
     __aicore__ inline void UpdateTailTile()
     {
-        // Use the idle cores after normal tiles to split the final M/N tail tile.
-        int64_t tailTileCnt = GetTailTileCnt();
-        if (tailTileCnt == 0) {
+        // Use the idle cores after normal blocks to split the final M/N tail block.
+        if (tailBlockNums_ == 0) {
             return;
         }
-        int64_t remainTile = (AscendC::GetBlockNum() - endBlockIdx_ - 1) / tailTileCnt + 1;
-        if (remainTile <= 1) {
+        int64_t remainBlockNums = (AscendC::GetBlockNum() - endBlockIdx_ - 1) / tailBlockNums_ + 1;
+        if (remainBlockNums <= 1) {
             return;
         }
 
@@ -132,19 +132,19 @@ public:
         int64_t mMin = Min(static_cast<int64_t>(BLOCK_CUBE), mTailAlign_);
         int64_t nMin = Min(static_cast<int64_t>(BLOCK_CUBE), nTailAlign_);
 
-        int64_t mTile = Min(CeilDiv(static_cast<int64_t>(mBaseTail_), mMin), remainTile);
-        int64_t nTile = Min(CeilDiv(static_cast<int64_t>(nBaseTail_), nMin), remainTile);
-        while (mTile * nTile > remainTile) {
-            if (mTile >= nTile) {
-                mTile -= 1;
+        int64_t mBlockNums = Min(CeilDiv(static_cast<int64_t>(mBaseTail_), mMin), remainBlockNums);
+        int64_t nBlockNums = Min(CeilDiv(static_cast<int64_t>(nBaseTail_), nMin), remainBlockNums);
+        while (mBlockNums * nBlockNums > remainBlockNums) {
+            if (mBlockNums >= nBlockNums) {
+                mBlockNums -= 1;
             } else {
-                nTile -= 1;
+                nBlockNums -= 1;
             }
         }
-        UpdateTailTile(mTile, nTile);
+        UpdateTailTile(mBlockNums, nBlockNums);
     }
 
-    __aicore__ inline bool GetTileIdx(BlockCoord& blockCoord)
+    __aicore__ inline bool GetNextBlockCoord(BlockCoord& blockCoord)
     {
         if (round_ == 0 || roundIdx_ > round_ - 1) {
             return false;
@@ -156,35 +156,35 @@ public:
         int64_t index = newBlockIdx + roundIdx_ * blockNum_;
         if (blockIdx_ < startBlockIdx_) {
             index += blockNum_ - startBlockIdx_;
-        } else if (tailCnt_ > 1 && endBlockIdx_ + 1 >= tailCnt_ * totalCnt_) {
+        } else if (tailCnt_ > 1 && endBlockIdx_ + 1 >= tailCnt_ * totalBlockNums_) {
             index -= (tailBlockBase_ + ((startBlockIdx_ - tailBlockBase_) / tailCnt_) * tailCnt_) / tailCnt_;
         } else {
             index -= startBlockIdx_;
         }
 
         // SWAT order walks a short M window first, then N; odd rows reverse N for locality.
-        int64_t rowIdx = index / nCnt_ / mainMWindow_;
+        int64_t rowIdx = index / nBlockNums_ / mainMWindow_;
         if (rowIdx < mainRow_) {
             AscendC::Std::get<MNK_M>(blockCoord) = rowIdx * mainMWindow_ + index % mainMWindow_;
-            AscendC::Std::get<MNK_N>(blockCoord) = (index / mainMWindow_) % nCnt_;
+            AscendC::Std::get<MNK_N>(blockCoord) = (index / mainMWindow_) % nBlockNums_;
         } else {
             rowIdx = mainRow_;
-            int64_t tailIndex = index - mainRow_ * mainMWindow_ * nCnt_;
+            int64_t tailIndex = index - mainRow_ * mainMWindow_ * nBlockNums_;
             AscendC::Std::get<MNK_M>(blockCoord) = mainRow_ * mainMWindow_ + tailIndex % tailWindow_;
-            AscendC::Std::get<MNK_N>(blockCoord) = (tailIndex / tailWindow_) % nCnt_;
+            AscendC::Std::get<MNK_N>(blockCoord) = (tailIndex / tailWindow_) % nBlockNums_;
         }
         if (rowIdx & 1) {
-            AscendC::Std::get<MNK_N>(blockCoord) = nCnt_ - 1 - AscendC::Te::Get<MNK_N>(blockCoord);
+            AscendC::Std::get<MNK_N>(blockCoord) = nBlockNums_ - 1 - AscendC::Te::Get<MNK_N>(blockCoord);
         }
         roundIdx_++;
         return true;
     }
 
-    __aicore__ inline TupleShape GetBlockShape(const BlockCoord& blockCoord)
+    __aicore__ inline BlockShape GetBlockShape(const BlockCoord& blockCoord)
     {
-        int64_t singleCoreM = AscendC::Te::Get<MNK_M>(blockCoord) != (mCnt_ - 1) ? baseM_ : mBaseTail_;
-        int64_t singleCoreN = AscendC::Te::Get<MNK_N>(blockCoord) != (nCnt_ - 1) ? baseN_ : nBaseTail_;
-        // Return offsets only for the final split tail tile; bias and split-K are handled by the kernel/block.
+        int64_t singleCoreM = AscendC::Te::Get<MNK_M>(blockCoord) != (mBlockNums_ - 1) ? baseM_ : mBaseTail_;
+        int64_t singleCoreN = AscendC::Te::Get<MNK_N>(blockCoord) != (nBlockNums_ - 1) ? baseN_ : nBaseTail_;
+        // Return offsets only for the final split tail block; bias and split-K are handled by the kernel/block.
         if (tailCnt_ == 1 || roundIdx_ < round_) {
             return {singleCoreM, singleCoreN, 0, 0};
         }
@@ -212,9 +212,9 @@ public:
     }
 
 private:
-    int64_t mCnt_{0};
-    int64_t nCnt_{0};
-    int64_t totalCnt_{0};
+    int64_t mBlockNums_{0};
+    int64_t nBlockNums_{0};
+    int64_t totalBlockNums_{0};
     int64_t m_{0};
     int64_t n_{0};
     int64_t k_{0};
@@ -223,6 +223,7 @@ private:
     int64_t mTailAlign_{1};
     int64_t nTailAlign_{1};
     int64_t tailCnt_{1};
+    int64_t tailBlockNums_{0};
     int64_t tailBlockBase_{0};
     int64_t mainMWindow_{0};
     int64_t tailWindow_{0};
@@ -236,10 +237,9 @@ private:
     uint32_t blockNum_{0};
     uint32_t blockIdx_{0};
     uint32_t startBlockIdx_{0};
-    uint32_t endBlockIdx_{blockNum_ - 1};
+    uint32_t endBlockIdx_{0};
 };
 
-using BlockSchedulerGmmAswtWithTailSplit = BlockSchedulerGmmSwatWithTailSplit;
 } // namespace Block
 } // namespace Gemm
 } // namespace Blaze

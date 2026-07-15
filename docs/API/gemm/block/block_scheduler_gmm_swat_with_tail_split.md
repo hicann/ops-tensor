@@ -1,8 +1,8 @@
-# Block Scheduler GMM ASWT With Tail Split
-> [代码位置](../../../../include/blaze/gemm/block/block_scheduler_gmm_aswt_with_tail_split.h)
+# Block Scheduler GMM SWAT With Tail Split
+> [代码位置](../../../../include/blaze/gemm/block/block_scheduler_gmm_swat_with_tail_split.h)
 
 ## 功能说明
-Grouped Matmul 的 BlockScheduler 组件，用于 QGMM MX Tensor API kernel。调度器按 group 逐次更新问题规模，在 group 间延续物理核分配位置以均衡负载，并在末组计算量较小时利用空闲核拆分 M/N tail tile。
+Grouped Matmul 的 BlockScheduler 组件，用于 QGMM MX Tensor API kernel。调度器按 group 逐次更新问题规模，在 group 间延续物理核分配位置以均衡负载，并在末组计算量较小时利用空闲核拆分 M/N tail block。
 
 **框架参考**：[Block Scheduler 公共框架](./block_scheduler.md)
 
@@ -12,7 +12,7 @@ Grouped Matmul 的 BlockScheduler 组件，用于 QGMM MX Tensor API kernel。�
 适用于 grouped matmul 场景，当前由 `GemmUniversal` 的 QGMM MX 特化使用，不处理 split-K；K 维仅作为 shape 字段保留。
 
 ### 扫描策略
-使用 SWAT 扫描策略，沿 M 轴以 `GMM_WINDOW_LEN` 为窗口组织 tile，并在奇数行反向扫描 N 轴以提升局部性。
+使用 SWAT 扫描策略，沿 M 轴以 `GMM_WINDOW_LEN` 为窗口组织 block，并在奇数行反向扫描 N 轴以提升局部性。
 
 ### Tail Split
 Tail split 由调用方在末组按需触发。`SetTailAlign` 配置 M/N tail 的最小对齐粒度，`UpdateTailTile` 根据剩余空闲核数拆分末尾 M/N tail tile。
@@ -28,8 +28,9 @@ Tail split 由调用方在末组按需触发。`SetTailAlign` 配置 M/N tail �
 
 | 别名 | 含义 |
 |------|------|
-| `TupleShape` | 问题规模，`Shape<int64_t, int64_t, int64_t, int64_t>` |
-| `BlockCoord` | tile 坐标，`Coord<int64_t, int64_t, int64_t, int64_t>` |
+| `ProblemShape` | 问题总规模，`Shape<int64_t, int64_t, int64_t, int64_t>` |
+| `BlockShape` | 单核基本块大小与 M/N tail split 偏移 |
+| `BlockCoord` | block 坐标，`Coord<int64_t, int64_t, int64_t, int64_t>` |
 
 ## 特殊数据结构
 
@@ -60,7 +61,7 @@ __aicore__ inline BlockSchedulerGmmSwatWithTailSplit(int32_t baseM, int32_t base
 
 ### UpdateNextProblem 函数
 ```cpp
-__aicore__ inline void UpdateNextProblem(const TupleShape& problemShape)
+__aicore__ inline void UpdateNextProblem(const ProblemShape& problemShape)
 ```
 
 功能：
@@ -95,22 +96,22 @@ __aicore__ inline void UpdateTailTile(uint32_t mTailCnt, uint32_t nTailCnt)
 - 无参版本根据当前 group 的 tail 大小和空闲核数自动计算 M/N tail split。
 - 有参版本按调用方指定的 `mTailCnt/nTailCnt` 更新 tail split 状态。
 
-### GetTileIdx 函数
+### GetNextBlockCoord 函数
 ```cpp
-__aicore__ inline bool GetTileIdx(BlockCoord& blockCoord)
+__aicore__ inline bool GetNextBlockCoord(BlockCoord& blockCoord)
 ```
 
 功能：
-- 返回当前核本轮需要处理的 tile 坐标。
-- 当当前核无更多 tile 时返回 `false`。
+- 返回当前核本轮需要处理的 block 坐标。
+- 当当前核无更多 block 时返回 `false`。
 
 ### GetBlockShape 函数
 ```cpp
-__aicore__ inline TupleShape GetBlockShape(const BlockCoord& blockCoord)
+__aicore__ inline BlockShape GetBlockShape(const BlockCoord& blockCoord)
 ```
 
 功能：
-- 根据 tile 坐标返回当前 tile 的实际 M/N 形状。
+- 根据 block 坐标返回当前单核 block 的实际 M/N 形状。
 - 在 tail split 场景下，返回值的第 3/4 维携带 M/N split 偏移；当拆分后当前核没有有效工作量时返回 `{0, 0, 0, 0}`。
 
 ### GetEndBlockIdx 函数
@@ -129,8 +130,8 @@ __aicore__ inline int64_t GetEndBlockIdx() const
     -> SetTailAlign
     -> 每个 group 调用 UpdateNextProblem
     -> 末组按需调用 UpdateTailTile
-    -> GetTileIdx 获取 tile 坐标
-    -> GetBlockShape 获取 tile 形状和 tail split 偏移
+    -> GetNextBlockCoord 获取 block 坐标
+    -> GetBlockShape 获取 block 形状和 tail split 偏移
 ```
 
 ## 适用场景
