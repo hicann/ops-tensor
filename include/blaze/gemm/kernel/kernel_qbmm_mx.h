@@ -116,7 +116,9 @@ private:
         const Params& params, BlockScheduler& bs, uint64_t restBatch, bool isTailRound);
 
     __aicore__ inline void ProcessWithBatch(const Params& params, BlockScheduler& bs);
-    __aicore__ inline void AddBatchOffset(const Params& params);
+    __aicore__ inline void AddBatchOffset(
+        const Params& params, uint64_t aBatchElementStride, uint64_t bBatchElementStride, uint64_t cBatchStride,
+        uint64_t scaleABatchStride, uint64_t scaleBBatchStride, uint64_t biasBatchStride);
 
     template <typename TensorB, typename TensorC>
     __aicore__ inline void SetL2Cache(
@@ -242,6 +244,31 @@ __aicore__ inline void GemmUniversal<QBMM_MX_KERNEL_TEM_PARAMS>::ProcessWithBatc
     const Params& params, BlockScheduler& bs)
 {
     const auto& qbmmParams = params.qbmmParams;
+    const auto& problemShape = params.problemShape;
+    const auto m = AscendC::Te::Get<MNK_M>(problemShape);
+    const auto n = AscendC::Te::Get<MNK_N>(problemShape);
+    const auto k = AscendC::Te::Get<MNK_K>(problemShape);
+    const uint64_t aBatchElementStride = m * k;
+    uint64_t bBatchElementStride = 0;
+    if constexpr (WEIGHT_NZ) {
+        if constexpr (TRANS_B) {
+            const auto kBlockCnt = Blaze::Gemm::CeilDiv(k, C0_SIZE);
+            const auto nBlockCnt = Blaze::Gemm::CeilDiv(n, static_cast<int64_t>(BLOCK_CUBE));
+            bBatchElementStride = kBlockCnt * nBlockCnt * BLOCK_CUBE * C0_SIZE;
+        } else {
+            const auto nBlockCnt = Blaze::Gemm::CeilDiv(n, C0_SIZE);
+            const auto kBlockCnt = Blaze::Gemm::CeilDiv(k, static_cast<int64_t>(BLOCK_CUBE));
+            bBatchElementStride = nBlockCnt * kBlockCnt * BLOCK_CUBE * C0_SIZE;
+        }
+    } else {
+        bBatchElementStride = n * k;
+    }
+    const uint64_t cBatchStride = m * n;
+    const uint64_t biasBatchStride = isBiasThreeDim_ ? n : 0;
+    const uint64_t scaleKLen =
+        Blaze::Gemm::CeilDiv(k, static_cast<int64_t>(MXFP_DIVISOR_SIZE)) * MXFP_MULTI_BASE_SIZE;
+    const uint64_t scaleABatchStride = m * scaleKLen;
+    const uint64_t scaleBBatchStride = n * scaleKLen;
     const uint64_t batchC3C4 = static_cast<uint64_t>(qbmmParams.batchC3) * qbmmParams.batchC4;
     const uint64_t batchC2C3C4 = qbmmParams.batchC2 * batchC3C4;
     const uint64_t batchB3B4 = static_cast<uint64_t>(qbmmParams.batchB3) * qbmmParams.batchB4;
@@ -279,7 +306,9 @@ __aicore__ inline void GemmUniversal<QBMM_MX_KERNEL_TEM_PARAMS>::ProcessWithBatc
                 batchBOffset_ = batchB3Offset;
                 for (uint64_t b4Index = 0; b4Index < qbmmParams.batchC4; ++b4Index) {
                     const bool isTailRound = curBatchC * singleBatchBlockCnt > tailRoundStart;
-                    AddBatchOffset(params);
+                    AddBatchOffset(
+                        params, aBatchElementStride, bBatchElementStride, cBatchStride, scaleABatchStride,
+                        scaleBBatchStride, biasBatchStride);
                     ProcessSingleBatch(params, bs, batchCount - curBatchC, isTailRound);
                     curBatchC++;
                     batchCOffset_ += 1;
@@ -301,35 +330,20 @@ __aicore__ inline void GemmUniversal<QBMM_MX_KERNEL_TEM_PARAMS>::ProcessWithBatc
 }
 
 QBMM_MX_KERNEL_CLASS_TEM_PARAMS
-__aicore__ inline void GemmUniversal<QBMM_MX_KERNEL_TEM_PARAMS>::AddBatchOffset(const Params& params)
+__aicore__ inline void GemmUniversal<QBMM_MX_KERNEL_TEM_PARAMS>::AddBatchOffset(
+    const Params& params, uint64_t aBatchElementStride, uint64_t bBatchElementStride, uint64_t cBatchStride,
+    uint64_t scaleABatchStride, uint64_t scaleBBatchStride, uint64_t biasBatchStride)
 {
     ResetGmAddr(params);
     constexpr uint64_t sizeShift = IsFp4<AType>() ? 1 : 0;
-    const auto& problemShape = params.problemShape;
-    const auto m = AscendC::Te::Get<MNK_M>(problemShape);
-    const auto n = AscendC::Te::Get<MNK_N>(problemShape);
-    const auto k = AscendC::Te::Get<MNK_K>(problemShape);
-    aGmAddr_ += (batchAOffset_ * m * k) >> sizeShift;
-    if constexpr (WEIGHT_NZ) {
-        if constexpr (TRANS_B) {
-            const auto kBlockCnt = Blaze::Gemm::CeilDiv(k, C0_SIZE);
-            const auto nBlockCnt = Blaze::Gemm::CeilDiv(n, static_cast<int64_t>(BLOCK_CUBE));
-            bGmAddr_ += (batchBOffset_ * kBlockCnt * nBlockCnt * BLOCK_CUBE * C0_SIZE) >> sizeShift;
-        } else {
-            const auto nBlockCnt = Blaze::Gemm::CeilDiv(n, C0_SIZE);
-            const auto kBlockCnt = Blaze::Gemm::CeilDiv(k, static_cast<int64_t>(BLOCK_CUBE));
-            bGmAddr_ += (batchBOffset_ * nBlockCnt * kBlockCnt * BLOCK_CUBE * C0_SIZE) >> sizeShift;
-        }
-    } else {
-        bGmAddr_ += (batchBOffset_ * n * k) >> sizeShift;
-    }
-    cGmAddr_ += batchCOffset_ * m * n;
+    aGmAddr_ += (batchAOffset_ * aBatchElementStride) >> sizeShift;
+    bGmAddr_ += (batchBOffset_ * bBatchElementStride) >> sizeShift;
+    cGmAddr_ += batchCOffset_ * cBatchStride;
     if (isBiasThreeDim_) {
-        biasGmAddr_ += batchCOffset_ * n;
+        biasGmAddr_ += batchCOffset_ * biasBatchStride;
     }
-    const auto scaleKLen = Blaze::Gemm::CeilDiv(k, static_cast<int64_t>(MXFP_DIVISOR_SIZE)) * MXFP_MULTI_BASE_SIZE;
-    scaleAGmAddr_ += batchAOffset_ * m * scaleKLen;
-    scaleBGmAddr_ += batchBOffset_ * n * scaleKLen;
+    scaleAGmAddr_ += batchAOffset_ * scaleABatchStride;
+    scaleBGmAddr_ += batchBOffset_ * scaleBBatchStride;
 }
 
 QBMM_MX_KERNEL_CLASS_TEM_PARAMS

@@ -23,6 +23,7 @@
 #include "kernel_operator_intf.h"
 #endif
 #include "blaze/gemm/utils/common_utils.h"
+#include "blaze/gemm/utils/layout_utils.h"
 #include "tensor_api/tensor.h"
 
 namespace Blaze {
@@ -104,10 +105,10 @@ public:
     }
 
 private:
-    static constexpr bool WEIGHT_NZ = BlockMmad::WEIGHT_NZ;
+    static constexpr bool WEIGHT_NZ = IsWeightNz<LayoutB>::value;
+    static constexpr bool TRANS_A = IsTrans<LayoutA>::value;
+    static constexpr bool TRANS_B = IsTrans<LayoutB>::value;
     static constexpr bool IS_ATOMIC_ADD = BlockMmad::DispatchPolicy::IS_ATOMIC_ADD;
-    static constexpr bool TRANS_A = BlockMmad::TRANS_A;
-    static constexpr bool TRANS_B = BlockMmad::TRANS_B;
     static constexpr int64_t C0_SIZE = AscendC::Te::C0_ELEMENT<AType>;
     static constexpr uint64_t DEQ_SCALE_MUL = 0xFFFFE000;
     static constexpr uint32_t LEFT_SHIFT_16 = 16;

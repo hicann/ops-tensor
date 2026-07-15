@@ -106,94 +106,21 @@ public:
         scaleLoopCnt_ = 0UL;
         l0PingPong_ = 0UL;
         l0cPingPong_ = 0UL;
-        uint64_t baseM = AscendC::Te::Get<IDX_M_IDX>(l0TileShape);
-        uint64_t baseN = AscendC::Te::Get<IDX_N_IDX>(l0TileShape);
-        baseN_ = baseN;
-        baseK_ = AscendC::Te::Get<IDX_K_IDX>(l0TileShape);
         isBias_ = isBias;
         l1BufNum_ = l1Params.l1BufNum;
         enableL0cPingPong_ = dbL0C;
+        uint64_t baseM = AscendC::Te::Get<IDX_M_IDX>(l0TileShape);
+        baseN_ = AscendC::Te::Get<IDX_N_IDX>(l0TileShape);
+        baseK_ = AscendC::Te::Get<IDX_K_IDX>(l0TileShape);
         constexpr uint64_t sizeShift = IsFp4<AType>() ? 1 : 0;
-        constexpr uint64_t halfL1Size = AscendC::TOTAL_L1_SIZE >> 1;
         uint64_t l1HalfBufNum = l1BufNum_ >> 1;
-        uint64_t bL1OneBuffer = (baseN * kL1_) >> sizeShift;
-        uint64_t scaleBL1OneBuffer = baseN * (Align64(scaleKL1_) >> ALIGN_64_BYTES_SHIFT) * MXFP_MULTI_BASE_SIZE;
-        uint64_t biasL1OneBuffer = isBias_ ? baseN * sizeof(BiasType) : 0;
+        uint64_t bL1OneBuffer = (baseN_ * kL1_) >> sizeShift;
+        uint64_t scaleBL1OneBuffer = baseN_ * (Align64(scaleKL1_) >> ALIGN_64_BYTES_SHIFT) * MXFP_MULTI_BASE_SIZE;
+        uint64_t biasL1OneBuffer = isBias_ ? baseN_ * sizeof(BiasType) : 0;
         if constexpr (DispatchPolicy::FULL_LOAD_MODE == NONE_FULL_LOAD_MODE) {
-            uint64_t aL1OneBuffer = (baseM * Align64(kL1_)) >> sizeShift;
-            uint64_t scaleAL1OneBuffer =
-                baseM * (Align64(scaleKL1_) >> ALIGN_64_BYTES_SHIFT) * MXFP_MULTI_BASE_SIZE;
-            if (l1BufNum_ == TRIPLE_BUFFER_COUNT) {
-                // Triple-buffer: keep buffers 0/2 in the front half and buffer 1 in the back half.
-                // L1 space: A0|A2|B0|B2|AScale0|BScale0|bias0|...|A1|B1|AScale1|BScale1|bias1
-                l1BufferAOffset_[0] = 0UL;
-                l1BufferAOffset_[2] = l1BufferAOffset_[0] + aL1OneBuffer;
-                l1BufferBOffset_[0] = l1BufferAOffset_[2] + aL1OneBuffer;
-                l1BufferBOffset_[2] = l1BufferBOffset_[0] + bL1OneBuffer;
-                l1BufferScaleAOffset_[0] = l1BufferBOffset_[2] + bL1OneBuffer;
-                l1BufferScaleBOffset_[0] = l1BufferScaleAOffset_[0] + scaleAL1OneBuffer;
-                l1BufferBiasOffset_[0] = l1BufferScaleBOffset_[0] + scaleBL1OneBuffer;
-                l1BufferAOffset_[1] = Max(halfL1Size, l1BufferBiasOffset_[0] + biasL1OneBuffer);
-                l1BufferBOffset_[1] = l1BufferAOffset_[1] + aL1OneBuffer;
-                l1BufferScaleAOffset_[1] = l1BufferBOffset_[1] + bL1OneBuffer;
-                l1BufferScaleBOffset_[1] = l1BufferScaleAOffset_[1] + scaleAL1OneBuffer;
-                l1BufferBiasOffset_[1] = l1BufferScaleBOffset_[1] + scaleBL1OneBuffer;
-            } else {
-                for (int32_t bufferId = 0; bufferId < l1BufNum_; bufferId++) {
-                    // 2 buffer: L1 space is : A0|B0|AScale0|BScale0|bias0|...|A1|B1|AScale1|BScale1|bias1|...
-                    // 4 buffer: L1 space is : A0A2|B0B2|AScale0|BScale0|bias0|...|A1A3|B1B3|AScale1|BScale1|bias1|...
-                    uint64_t l1Offset = halfL1Size * (bufferId & 1);
-                    l1BufferAOffset_[bufferId] = l1Offset + aL1OneBuffer * (bufferId >> 1);
-                    l1BufferBOffset_[bufferId] =
-                        l1Offset + aL1OneBuffer * l1HalfBufNum + bL1OneBuffer * (bufferId >> 1);
-                }
-                uint64_t scaleABaseOffset = bL1OneBuffer * l1HalfBufNum;
-                #pragma unroll
-                for (int32_t bufferId = 0; bufferId < DOUBLE_BUFFER_COUNT; bufferId++) {
-                    l1BufferScaleAOffset_[bufferId] = l1BufferBOffset_[bufferId] + scaleABaseOffset;
-                    l1BufferScaleBOffset_[bufferId] = l1BufferScaleAOffset_[bufferId] + scaleAL1OneBuffer;
-                    l1BufferBiasOffset_[bufferId] = l1BufferScaleBOffset_[bufferId] + scaleBL1OneBuffer;
-                }
-            }
+            InitNoneFullLoadL1BufferOffsets(baseM, l1HalfBufNum, bL1OneBuffer, scaleBL1OneBuffer, biasL1OneBuffer);
         } else {
-            uint64_t mAlign = 0;
-            if constexpr (TRANS_A) {
-                mAlign = AlignC0(baseM);
-            } else {
-                mAlign = Align16(baseM);
-            }
-            uint64_t kAlign = Align64(k_);
-            uint64_t aL1OneBuffer = (mAlign * kAlign) >> sizeShift;
-            uint64_t scaleAL1OneBuffer =
-                baseM * (Align64(k_) >> ALIGN_64_BYTES_SHIFT) * MXFP_MULTI_BASE_SIZE;
-            if (l1BufNum_ == TRIPLE_BUFFER_COUNT) {
-                // Triple-buffer full-load: B0|B2|BScale0|bias0|A|AScale|...|B1|BScale1|bias1
-                l1BufferBOffset_[0] = 0UL;
-                l1BufferBOffset_[2] = l1BufferBOffset_[0] + bL1OneBuffer;
-                l1BufferScaleBOffset_[0] = l1BufferBOffset_[2] + bL1OneBuffer;
-                l1BufferBiasOffset_[0] = l1BufferScaleBOffset_[0] + scaleBL1OneBuffer;
-                l1BufferAOffset_[0] = l1BufferBiasOffset_[0] + biasL1OneBuffer;
-                l1BufferScaleAOffset_[0] = l1BufferAOffset_[0] + aL1OneBuffer;
-                l1BufferBOffset_[1] = Max(halfL1Size, l1BufferScaleAOffset_[0] + scaleAL1OneBuffer);
-                l1BufferScaleBOffset_[1] = l1BufferBOffset_[1] + bL1OneBuffer;
-                l1BufferBiasOffset_[1] = l1BufferScaleBOffset_[1] + scaleBL1OneBuffer;
-            } else {
-                // 2 buffer: L1 space is : B0|BScale0|bias0|A|AScale|...|B1|BScale1|bias1|
-                // 4 buffer: L1 space is : B0B2|BScale0|bias0|A|AScale|...|B1B3|BScale1|bias1|...
-                l1BufferAOffset_[0] = bL1OneBuffer * l1HalfBufNum + scaleBL1OneBuffer + biasL1OneBuffer;
-                l1BufferScaleAOffset_[0] = l1BufferAOffset_[0] + aL1OneBuffer;
-                uint64_t b1Offset = l1BufferScaleAOffset_[0] + scaleAL1OneBuffer >= halfL1Size ?
-                                          l1BufferScaleAOffset_[0] + scaleAL1OneBuffer : halfL1Size;
-                for (int32_t bufferId = 0; bufferId < l1BufNum_; bufferId++) {
-                    l1BufferBOffset_[bufferId] = b1Offset * (bufferId & 1) + bL1OneBuffer * (bufferId >> 1);
-                }
-                uint64_t scaleBBaseOffset = bL1OneBuffer * l1HalfBufNum;
-                #pragma unroll
-                for (int32_t bufferId = 0; bufferId < DOUBLE_BUFFER_COUNT; bufferId++) {
-                    l1BufferScaleBOffset_[bufferId] = l1BufferBOffset_[bufferId] + scaleBBaseOffset;
-                    l1BufferBiasOffset_[bufferId] = l1BufferScaleBOffset_[bufferId] + scaleBL1OneBuffer;
-                }
-            }
+            InitAFullLoadL1BufferOffsets(baseM, l1HalfBufNum, bL1OneBuffer, scaleBL1OneBuffer, biasL1OneBuffer);
         }
         kL1Iter_ = CeilDiv(k_, kL1_);
     }
@@ -338,6 +265,95 @@ private:
         return l1BufNum_ == TRIPLE_BUFFER_COUNT ? loopCnt % TRIPLE_BUFFER_COUNT : (loopCnt & (l1BufNum_ - 1));
     }
 
+    __aicore__ inline void InitNoneFullLoadL1BufferOffsets(
+        uint64_t baseM, uint64_t l1HalfBufNum, uint64_t bL1OneBuffer, uint64_t scaleBL1OneBuffer,
+        uint64_t biasL1OneBuffer)
+    {
+        constexpr uint64_t sizeShift = IsFp4<AType>() ? 1 : 0;
+        constexpr uint64_t halfL1Size = AscendC::TOTAL_L1_SIZE >> 1;
+        uint64_t aL1OneBuffer = (baseM * Align64(kL1_)) >> sizeShift;
+        uint64_t scaleAL1OneBuffer =
+            baseM * (Align64(scaleKL1_) >> ALIGN_64_BYTES_SHIFT) * MXFP_MULTI_BASE_SIZE;
+        if (l1BufNum_ == TRIPLE_BUFFER_COUNT) {
+            // Triple-buffer: keep buffers 0/2 in the front half and buffer 1 in the back half.
+            // L1 space: A0|A2|B0|B2|AScale0|BScale0|bias0|...|A1|B1|AScale1|BScale1|bias1
+            l1BufferAOffset_[0] = 0UL;
+            l1BufferAOffset_[2] = l1BufferAOffset_[0] + aL1OneBuffer;
+            l1BufferBOffset_[0] = l1BufferAOffset_[2] + aL1OneBuffer;
+            l1BufferBOffset_[2] = l1BufferBOffset_[0] + bL1OneBuffer;
+            l1BufferScaleAOffset_[0] = l1BufferBOffset_[2] + bL1OneBuffer;
+            l1BufferScaleBOffset_[0] = l1BufferScaleAOffset_[0] + scaleAL1OneBuffer;
+            l1BufferBiasOffset_[0] = l1BufferScaleBOffset_[0] + scaleBL1OneBuffer;
+            l1BufferAOffset_[1] = Max(halfL1Size, l1BufferBiasOffset_[0] + biasL1OneBuffer);
+            l1BufferBOffset_[1] = l1BufferAOffset_[1] + aL1OneBuffer;
+            l1BufferScaleAOffset_[1] = l1BufferBOffset_[1] + bL1OneBuffer;
+            l1BufferScaleBOffset_[1] = l1BufferScaleAOffset_[1] + scaleAL1OneBuffer;
+            l1BufferBiasOffset_[1] = l1BufferScaleBOffset_[1] + scaleBL1OneBuffer;
+        } else {
+            for (int32_t bufferId = 0; bufferId < l1BufNum_; bufferId++) {
+                // 2 buffer: L1 space is : A0|B0|AScale0|BScale0|bias0|...|A1|B1|AScale1|BScale1|bias1|...
+                // 4 buffer: L1 space is : A0A2|B0B2|AScale0|BScale0|bias0|...|A1A3|B1B3|AScale1|BScale1|bias1|...
+                uint64_t l1Offset = halfL1Size * (bufferId & 1);
+                l1BufferAOffset_[bufferId] = l1Offset + aL1OneBuffer * (bufferId >> 1);
+                l1BufferBOffset_[bufferId] =
+                    l1Offset + aL1OneBuffer * l1HalfBufNum + bL1OneBuffer * (bufferId >> 1);
+            }
+            uint64_t scaleABaseOffset = bL1OneBuffer * l1HalfBufNum;
+            #pragma unroll
+            for (int32_t bufferId = 0; bufferId < DOUBLE_BUFFER_COUNT; bufferId++) {
+                l1BufferScaleAOffset_[bufferId] = l1BufferBOffset_[bufferId] + scaleABaseOffset;
+                l1BufferScaleBOffset_[bufferId] = l1BufferScaleAOffset_[bufferId] + scaleAL1OneBuffer;
+                l1BufferBiasOffset_[bufferId] = l1BufferScaleBOffset_[bufferId] + scaleBL1OneBuffer;
+            }
+        }
+    }
+
+    __aicore__ inline void InitAFullLoadL1BufferOffsets(
+        uint64_t baseM, uint64_t l1HalfBufNum, uint64_t bL1OneBuffer, uint64_t scaleBL1OneBuffer,
+        uint64_t biasL1OneBuffer)
+    {
+        constexpr uint64_t sizeShift = IsFp4<AType>() ? 1 : 0;
+        constexpr uint64_t halfL1Size = AscendC::TOTAL_L1_SIZE >> 1;
+        uint64_t mAlign = 0;
+        if constexpr (TRANS_A) {
+            mAlign = AlignC0(baseM);
+        } else {
+            mAlign = Align16(baseM);
+        }
+        uint64_t kAlign = Align64(k_);
+        uint64_t aL1OneBuffer = (mAlign * kAlign) >> sizeShift;
+        uint64_t scaleAL1OneBuffer =
+            baseM * (Align64(k_) >> ALIGN_64_BYTES_SHIFT) * MXFP_MULTI_BASE_SIZE;
+        if (l1BufNum_ == TRIPLE_BUFFER_COUNT) {
+            // Triple-buffer full-load: B0|B2|BScale0|bias0|A|AScale|...|B1|BScale1|bias1
+            l1BufferBOffset_[0] = 0UL;
+            l1BufferBOffset_[2] = l1BufferBOffset_[0] + bL1OneBuffer;
+            l1BufferScaleBOffset_[0] = l1BufferBOffset_[2] + bL1OneBuffer;
+            l1BufferBiasOffset_[0] = l1BufferScaleBOffset_[0] + scaleBL1OneBuffer;
+            l1BufferAOffset_[0] = l1BufferBiasOffset_[0] + biasL1OneBuffer;
+            l1BufferScaleAOffset_[0] = l1BufferAOffset_[0] + aL1OneBuffer;
+            l1BufferBOffset_[1] = Max(halfL1Size, l1BufferScaleAOffset_[0] + scaleAL1OneBuffer);
+            l1BufferScaleBOffset_[1] = l1BufferBOffset_[1] + bL1OneBuffer;
+            l1BufferBiasOffset_[1] = l1BufferScaleBOffset_[1] + scaleBL1OneBuffer;
+        } else {
+            // 2 buffer: L1 space is : B0|BScale0|bias0|A|AScale|...|B1|BScale1|bias1|
+            // 4 buffer: L1 space is : B0B2|BScale0|bias0|A|AScale|...|B1B3|BScale1|bias1|...
+            l1BufferAOffset_[0] = bL1OneBuffer * l1HalfBufNum + scaleBL1OneBuffer + biasL1OneBuffer;
+            l1BufferScaleAOffset_[0] = l1BufferAOffset_[0] + aL1OneBuffer;
+            uint64_t b1Offset = l1BufferScaleAOffset_[0] + scaleAL1OneBuffer >= halfL1Size ?
+                                      l1BufferScaleAOffset_[0] + scaleAL1OneBuffer : halfL1Size;
+            for (int32_t bufferId = 0; bufferId < l1BufNum_; bufferId++) {
+                l1BufferBOffset_[bufferId] = b1Offset * (bufferId & 1) + bL1OneBuffer * (bufferId >> 1);
+            }
+            uint64_t scaleBBaseOffset = bL1OneBuffer * l1HalfBufNum;
+            #pragma unroll
+            for (int32_t bufferId = 0; bufferId < DOUBLE_BUFFER_COUNT; bufferId++) {
+                l1BufferScaleBOffset_[bufferId] = l1BufferBOffset_[bufferId] + scaleBBaseOffset;
+                l1BufferBiasOffset_[bufferId] = l1BufferScaleBOffset_[bufferId] + scaleBL1OneBuffer;
+            }
+        }
+    }
+
     template <typename TensorScaleA, typename TensorScaleB>
     __aicore__ inline auto CopyScalesInL1(
         TensorScaleA const& gmScaleA, TensorScaleB const& gmScaleB, const TileL1L0Param& tileL1L0Param,
@@ -464,10 +480,14 @@ private:
         auto CopyL12L0B = AscendC::Te::MakeCopy(AscendC::Te::CopyL12L0B{});
         auto CopyL12L0ScaleB = AscendC::Te::MakeCopy(AscendC::Te::CopyL12L0ScaleB{});
         constexpr uint64_t halfL0Size = AscendC::TOTAL_L0A_SIZE / DOUBLE_BUFFER_COUNT;
+        const bool needBiasInL1 = hasBias && iter0 == 0 && isFirstSplitK;
+        auto layoutBt = AscendC::Te::MakeFrameLayout<AscendC::Te::NDExtLayoutPtn>(
+            1UL, Align16(tileL1L0Param.curN));
+        auto tensorBt = AscendC::Te::MakeTensor(
+            AscendC::Te::MakeMemPtr<AscendC::Te::Location::BIAS, float>(biasBtOffset), layoutBt);
         for (uint16_t iter1 = 0; iter1 < kL0Iter; ++iter1) {
-            const uint64_t curKL0 = (iter1 * baseK + baseK > tileL1L0Param.curPadKL1) ?
-                              (tileL1L0Param.curPadKL1 - iter1 * baseK) :
-                              baseK;
+            const uint64_t curKL0 =
+                (iter1 * baseK + baseK > tileL1L0Param.curPadKL1) ? (tileL1L0Param.curPadKL1 - iter1 * baseK) : baseK;
             const uint64_t scaleKL0Len = (Align64(curKL0) >> ALIGN_64_BYTES_SHIFT) * MXFP_MULTI_BASE_SIZE;
             const uint64_t scaleK0Offset = iter1 * scaleK0OffsetStride;
             // Load data to L0 and open DB
@@ -497,13 +517,9 @@ private:
                     AscendC::Te::MakeCoord(0, scaleK0Offset),
                     AscendC::Te::MakeShape(tileL1L0Param.curM, scaleKL0Len)));
 
-            // bias L1->BT
-            auto layoutBt = AscendC::Te::MakeFrameLayout<AscendC::Te::NDExtLayoutPtn>(
-                1UL, Align16(tileL1L0Param.curN));
-            auto tensorBt = AscendC::Te::MakeTensor(
-                AscendC::Te::MakeMemPtr<AscendC::Te::Location::BIAS, float>(biasBtOffset), layoutBt);
-            const bool needBias = hasBias && iter0 == 0 && iter1 == 0 && isFirstSplitK;
+            const bool needBias = needBiasInL1 && iter1 == 0;
             if (needBias) {
+                // bias L1->BT
                 auto CopyL12BT = AscendC::Te::MakeCopy(AscendC::Te::CopyL12BT{});
                 AscendC::Te::Copy(CopyL12BT, tensorBt, tensorBiasL1);
             }

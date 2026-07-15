@@ -37,9 +37,6 @@ using AscendC::IsSameType;
 using AscendC::SetFlag;
 using AscendC::WaitFlag;
 using AscendC::SetMMLayoutTransform;
-using AscendC::TOTAL_L0A_SIZE;
-using AscendC::TOTAL_L0C_SIZE;
-using AscendC::TOTAL_L1_SIZE;
 
 template <
     uint64_t FullLoadMode_, bool AtomicAdd_, class AType_, class LayoutA_, class BTypeTuple_, class LayoutB_,
@@ -141,12 +138,13 @@ public:
     template <typename TensorA, typename TensorB, typename TensorC>
     __aicore__ inline void operator()(TensorA gmA, TensorB gmB, TensorC ubC, BlockShape singleShape)
     {
+        constexpr uint64_t halfL0cSize = AscendC::TOTAL_L0C_SIZE / DOUBLE_BUFFER_COUNT;
         uint64_t curML1 = AscendC::Te::Get<IDX_M_TILEIDX>(singleShape);
         uint64_t curNL1 = AscendC::Te::Get<IDX_N_TILEIDX>(singleShape);
         AscendC::Te::MmadParams mmadParams;
         mmadParams.m = static_cast<uint16_t>(curML1);
         mmadParams.n = static_cast<uint16_t>(curNL1);
-        uint64_t l0cOffset = (l0cPingPong_ & 1) * HALF_L0C_SIZE;
+        uint64_t l0cOffset = (l0cPingPong_ & 1) * halfL0cSize;
 
         uint64_t curML1Aligned = CeilAlign(curML1, static_cast<uint64_t>(2));
         auto layoutL0C = AscendC::Te::MakeFrameLayout<AscendC::Te::NZLayoutPtn, AscendC::Std::Int<C0_SIZE_L0C>>(
@@ -174,7 +172,7 @@ public:
 private:
     __aicore__ inline void GetL1BufferOffset(uint64_t aL1OneBuffer, uint64_t bL1OneBuffer)
     {
-        constexpr uint64_t halfL1Size = TOTAL_L1_SIZE >> 1;
+        constexpr uint64_t halfL1Size = AscendC::TOTAL_L1_SIZE >> 1;
         uint64_t l1HalfBufNum = l1BufNum_ >> 1;
         if constexpr (DispatchPolicy::FULL_LOAD_MODE == NONE_FULL_LOAD_MODE) {
             for (uint16_t bufferId = 0; bufferId < l1BufNum_; bufferId++) {
@@ -200,12 +198,13 @@ private:
         uint64_t curML1, uint64_t curNL1, uint64_t curInnerKL1, uint64_t aKPrefix, uint64_t bKPrefix,
         bool isL1LastRound, uint32_t initMode, uint64_t kL1OuterIdx, uint64_t kL1InnerIdx)
     {
+        constexpr uint64_t halfL0Size = AscendC::TOTAL_L0A_SIZE / DOUBLE_BUFFER_COUNT;
         auto copyL12L0A = AscendC::Te::MakeCopy(AscendC::Te::CopyL12L0A{});
         auto copyL12L0B = AscendC::Te::MakeCopy(AscendC::Te::CopyL12L0B{});
         uint64_t kL0Iter = CeilDiv(curInnerKL1, baseK_);
         for (uint16_t iter1 = 0; iter1 < kL0Iter; ++iter1) {
             uint64_t curKL0 = (iter1 == kL0Iter - 1) ? (curInnerKL1 - iter1 * baseK_) : baseK_;
-            uint64_t l0Offset = HALF_L0_SIZE * (l0PingPong_ & 0x1);
+            uint64_t l0Offset = halfL0Size * (l0PingPong_ & 0x1);
 
             auto layoutAL0 =
                 AscendC::Te::MakeFrameLayout<AscendC::Te::NZLayoutPtn, AscendC::Te::LayoutTraitDefault<AType>>(
@@ -427,8 +426,6 @@ private:
 
     static constexpr uint32_t L0_INIT_MODE_ABL1 = 0U;
     static constexpr uint32_t L0_INIT_MODE_SPLIT = 1U;
-    static constexpr uint64_t HALF_L0_SIZE = TOTAL_L0A_SIZE / DOUBLE_BUFFER_COUNT;
-    static constexpr uint64_t HALF_L0C_SIZE = TOTAL_L0C_SIZE / DOUBLE_BUFFER_COUNT;
     static constexpr bool WEIGHT_NZ = IsWeightNz<LayoutB>::value;
     static constexpr bool TRANS_A = IsTrans<LayoutA>::value;
     static constexpr bool TRANS_B = IsTrans<LayoutB>::value;
