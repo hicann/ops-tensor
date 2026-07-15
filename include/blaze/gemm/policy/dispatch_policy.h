@@ -25,6 +25,7 @@ struct KernelGroupedMmadWithScaleMx {}; // Grouped multi-block with Mx scale
 struct KernelMmadWithScaleMxWithoutBatch {}; // Multi-block with Mx scale, without batch broadcast
 struct KernelMmadWithScaleFixpipeQuant {}; // Multi-block with fixpipe quant scale (A8W8 fixpipe)
 struct KernelMmadWithScaleMix {};   // Multi-block with fixpipe mix scale (WeightNZ)
+struct KernelMmadWithScaleMixWithoutBatch {}; // Multi-block with fixpipe mix scale (WeightNZ), without batch
 struct KernelMultiBlockStreamK {}; // Multi-tile transfer with K-axis spliting and caching
 struct KernelQbmmMultiBlockStreamK {}; // QBMM MX StreamK schedule
 struct KernelMmadMultiBlockBasic {}; // Multi-tile basic
@@ -59,9 +60,9 @@ struct MatmulWithScaleFixpipeQuant {
  * @param [in] FullLoadMode_: full-load mode, 0 = none, A_FULL_LOAD_MODE = A full load
  * @param [in] AtomicAdd_: whether to enable atomic add on output
  */
-template <uint64_t FullLoadMode_ = 0, bool AtomicAdd_ = false>
+template <uint64_t FullLoadMode_ = 0, bool AtomicAdd_ = false, class ScheduleType_ = KernelMmadWithScaleMix>
 struct MatmulWithScaleMix {
-    using ScheduleType = KernelMmadWithScaleMix;
+    using ScheduleType = ScheduleType_;
     static constexpr uint64_t FULL_LOAD_MODE = FullLoadMode_;
     static constexpr bool IS_ATOMIC_ADD = AtomicAdd_;
 };

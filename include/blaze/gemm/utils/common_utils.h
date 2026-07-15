@@ -114,6 +114,13 @@ constexpr uint16_t M_MTE1_FLAG_1 = FIFTH_FLAG;
 constexpr uint64_t LAST_BATCH_DIM = 3;
 constexpr uint64_t MAX_BATCH_DIM = 4;
 
+// AIC(cube) <-> AIV(vector) cross-core notify/wait handshake used by the QBMM MIX kernels
+// (kernel_qbmm_mix.h / kernel_qbmm_mix_without_batch.h). Provided as free functions (no helper class).
+constexpr uint16_t QBMM_MIX_SYNC_MODE = 4;
+constexpr uint16_t QBMM_MIX_AIC_SYNC_AIV_FLAG = 0;
+constexpr uint16_t QBMM_MIX_AIV_SYNC_AIC_FLAG = 1;
+constexpr uint16_t QBMM_MIX_FLAG_ID_MAX = 16;
+
 enum class QuantMode : uint32_t
 {
     DEFAULT = 0x0U,
@@ -197,6 +204,28 @@ __aicore__ inline uint64_t CalWeightNZGmAddrOffset(bool transB, int64_t batchIdx
         return batchIdx * Blaze::Gemm::CeilDiv(n, c0Size) *
                Blaze::Gemm::CeilDiv(k, static_cast<int64_t>(BLOCK_CUBE)) * BLOCK_CUBE * c0Size;
     }
+}
+
+__aicore__ inline void NotifyVector()
+{
+    AscendC::CrossCoreSetFlag<QBMM_MIX_SYNC_MODE, PIPE_FIX>(QBMM_MIX_AIC_SYNC_AIV_FLAG);
+    AscendC::CrossCoreSetFlag<QBMM_MIX_SYNC_MODE, PIPE_FIX>(QBMM_MIX_AIC_SYNC_AIV_FLAG + QBMM_MIX_FLAG_ID_MAX);
+}
+
+__aicore__ inline void WaitForVector()
+{
+    AscendC::CrossCoreWaitFlag<QBMM_MIX_SYNC_MODE, PIPE_FIX>(QBMM_MIX_AIV_SYNC_AIC_FLAG);
+    AscendC::CrossCoreWaitFlag<QBMM_MIX_SYNC_MODE, PIPE_FIX>(QBMM_MIX_AIV_SYNC_AIC_FLAG + QBMM_MIX_FLAG_ID_MAX);
+}
+
+__aicore__ inline void NotifyCube()
+{
+    AscendC::CrossCoreSetFlag<QBMM_MIX_SYNC_MODE, PIPE_V>(QBMM_MIX_AIV_SYNC_AIC_FLAG);
+}
+
+__aicore__ inline void WaitForCube()
+{
+    AscendC::CrossCoreWaitFlag<QBMM_MIX_SYNC_MODE, PIPE_V>(QBMM_MIX_AIC_SYNC_AIV_FLAG);
 }
 
 } // namespace Gemm

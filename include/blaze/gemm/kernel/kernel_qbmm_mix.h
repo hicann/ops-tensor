@@ -17,7 +17,15 @@
 #pragma once
 
 #include "kernel_universal.h"
-#include "blaze/gemm/kernel/kernel_qbmm_mix_common.h"
+#if ASC_DEVKIT_MAJOR >= 9 
+#include "kernel_basic_intf.h" 
+#else 
+#include "kernel_operator.h" 
+#include "kernel_operator_intf.h" 
+#endif 
+#include "blaze/gemm/utils/common_utils.h" 
+#include "blaze/gemm/block/block_scheduler_qbmm.h" 
+#include "tensor_api/tensor.h"
 
 namespace Blaze {
 namespace Gemm {
@@ -35,7 +43,7 @@ namespace Kernel {
 #define QBMM_MIX_KERNEL_FUNC_TEMPLATE_PARAMS ProblemShape, BlockMmad, BlockEpilogue, BlockScheduler
 
 QBMM_MIX_KERNEL_CLASS_TEM_PARAMS
-class GemmUniversal<QBMM_MIX_KERNEL_TEM_PARAMS> : public QbmmMixSyncHelper {
+class GemmUniversal<QBMM_MIX_KERNEL_TEM_PARAMS> {
 public:
     __aicore__ inline GemmUniversal()
     {}

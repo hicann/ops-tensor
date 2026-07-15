@@ -123,8 +123,18 @@ public:
 
         if (isPerChannel_) {
             x2ScaleGmAddr_ = params.x2ScaleGmAddr;
+        } else if constexpr (IsSameType<X2ScaleType, float>::value) {
+            auto x2ScaleTensor = AscendC::Te::MakeTensor(
+                AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(
+                    reinterpret_cast<__gm__ float*>(params.x2ScaleGmAddr)),
+                MakeNDExtLayout(1, 1, 1));
+            ReadX2ScaleScalar(x2ScaleTensor);
         } else {
-            ReadX2ScaleScalar(params.x2ScaleGmAddr);
+            auto x2ScaleTensor = AscendC::Te::MakeTensor(
+                AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(
+                    reinterpret_cast<__gm__ uint16_t*>(params.x2ScaleGmAddr)),
+                MakeNDExtLayout(1, 1, 1));
+            ReadX2ScaleScalar(x2ScaleTensor);
         }
         if (isPerToken_) {
             x1ScaleGmAddr_ = params.x1ScaleGmAddr;
@@ -194,18 +204,13 @@ public:
     }
 
 private:
-    __aicore__ inline void ReadX2ScaleScalar(GM_ADDR scaleAddr)
+    template <class X2ScaleTensor>
+    __aicore__ inline void ReadX2ScaleScalar(const X2ScaleTensor& x2ScaleTensor)
     {
         if constexpr (IsSameType<X2ScaleType, float>::value) {
-            auto gmTensor = AscendC::Te::MakeTensor(
-                AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(reinterpret_cast<__gm__ float*>(scaleAddr)),
-                MakeNDExtLayout(1, 1, 1));
-            x2ScaleScalar_ = gmTensor[AscendC::Te::MakeCoord(static_cast<int64_t>(0), static_cast<int64_t>(0))];
+            x2ScaleScalar_ = x2ScaleTensor[AscendC::Te::MakeCoord(static_cast<int64_t>(0), static_cast<int64_t>(0))];
         } else {
-            auto gmTensor = AscendC::Te::MakeTensor(
-                AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(reinterpret_cast<__gm__ uint16_t*>(scaleAddr)),
-                MakeNDExtLayout(1, 1, 1));
-            uint16_t raw = gmTensor[AscendC::Te::MakeCoord(static_cast<int64_t>(0), static_cast<int64_t>(0))];
+            uint16_t raw = x2ScaleTensor[AscendC::Te::MakeCoord(static_cast<int64_t>(0), static_cast<int64_t>(0))];
             uint32_t bits = static_cast<uint32_t>(raw) << 16;
             x2ScaleScalar_ = *reinterpret_cast<float*>(&bits);
         }

@@ -14,15 +14,37 @@
  */
 #pragma once
 
-#include "blaze/gemm/kernel/kernel_qbmm_mix_common.h"
+#include "kernel_universal.h"
+#if ASC_DEVKIT_MAJOR >= 9
+#include "kernel_basic_intf.h"
+#else
+#include "kernel_operator.h"
+#include "kernel_operator_intf.h"
+#endif
+#include "blaze/gemm/utils/common_utils.h"
+#include "blaze/gemm/policy/dispatch_policy.h"
+#include "blaze/gemm/block/block_scheduler_qbmm.h"
+#include "tensor_api/tensor.h"
 
 namespace Blaze {
 namespace Gemm {
 namespace Kernel {
 
-template <class ProblemShape, class BlockMmad, class BlockEpilogue, class BlockScheduler>
-class QbmmMixWithoutBatch : public QbmmMixSyncHelper {
+#define QBMM_MIX_WITHOUT_BATCH_KERNEL_CLASS_TEM_PARAMS \
+    template <class ProblemShape, class BlockMmad, class BlockEpilogue, class BlockScheduler>
+#define QBMM_MIX_WITHOUT_BATCH_KERNEL_TEM_PARAMS                       \
+    ProblemShape, BlockMmad, BlockEpilogue, BlockScheduler,            \
+        AscendC::Std::enable_if_t<                                     \
+            AscendC::Std::is_same_v<KernelMmadWithScaleMixWithoutBatch, typename BlockMmad::DispatchPolicy::ScheduleType>>
+
+QBMM_MIX_WITHOUT_BATCH_KERNEL_CLASS_TEM_PARAMS
+class QbmmMixWithoutBatch {
 public:
+    __aicore__ inline QbmmMixWithoutBatch()
+    {}
+    __aicore__ inline ~QbmmMixWithoutBatch()
+    {}
+
     using AType = typename BlockMmad::AType;
     using BType = typename BlockMmad::BType;
     using L0CType = typename BlockMmad::L0CType;
@@ -156,6 +178,20 @@ private:
     static constexpr int64_t C0_SIZE = AscendC::Te::C0_ELEMENT<AType>;
     using MakeLayoutA = AscendC::Te::FrameLayoutFormat<LayoutA, AscendC::Std::Int<C0_SIZE>>;
     using MakeLayoutB = AscendC::Te::FrameLayoutFormat<LayoutB, AscendC::Std::Int<C0_SIZE>>;
+};
+
+QBMM_MIX_WITHOUT_BATCH_KERNEL_CLASS_TEM_PARAMS
+class GemmUniversal<QBMM_MIX_WITHOUT_BATCH_KERNEL_TEM_PARAMS>
+    : public QbmmMixWithoutBatch<ProblemShape, BlockMmad, BlockEpilogue, BlockScheduler> {
+public:
+    using Base = QbmmMixWithoutBatch<ProblemShape, BlockMmad, BlockEpilogue, BlockScheduler>;
+    using Params = typename Base::Params;
+    using Base::operator();
+
+    __aicore__ inline GemmUniversal()
+    {}
+    __aicore__ inline ~GemmUniversal()
+    {}
 };
 
 } // namespace Kernel

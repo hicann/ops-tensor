@@ -39,11 +39,11 @@ using AscendC::WaitFlag;
 using AscendC::SetMMLayoutTransform;
 
 template <
-    uint64_t FullLoadMode_, bool AtomicAdd_, class AType_, class LayoutA_, class BTypeTuple_, class LayoutB_,
-    class CType_, class LayoutC_, class BiasType_, class LayoutBias_>
+    uint64_t FullLoadMode_, bool AtomicAdd_, class ScheduleType_, class AType_, class LayoutA_, class BTypeTuple_,
+    class LayoutB_, class CType_, class LayoutC_, class BiasType_, class LayoutBias_>
 class BlockMmad<
-    MatmulWithScaleMix<FullLoadMode_, AtomicAdd_>, AType_, LayoutA_, BTypeTuple_, LayoutB_, CType_, LayoutC_,
-    BiasType_, LayoutBias_> {
+    MatmulWithScaleMix<FullLoadMode_, AtomicAdd_, ScheduleType_>, AType_, LayoutA_, BTypeTuple_, LayoutB_, CType_,
+    LayoutC_, BiasType_, LayoutBias_> {
 public:
     using AType = AType_;
     using BType = typename AscendC::Std::tuple_element<0, BTypeTuple_>::type;
@@ -52,7 +52,7 @@ public:
     using LayoutBias = LayoutBias_;
     using L0CType =
         AscendC::Std::conditional_t<AscendC::IsSameType<AType, int8_t>::value, int32_t, float>;
-    using DispatchPolicy = MatmulWithScaleMix<FullLoadMode_, AtomicAdd_>;
+    using DispatchPolicy = MatmulWithScaleMix<FullLoadMode_, AtomicAdd_, ScheduleType_>;
     using ProblemShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
     using BlockShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
 
@@ -136,7 +136,7 @@ public:
     }
 
     template <typename TensorA, typename TensorB, typename TensorC>
-    __aicore__ inline void operator()(TensorA gmA, TensorB gmB, TensorC ubC, BlockShape singleShape)
+    __aicore__ inline void operator()(const TensorA& gmA, const TensorB& gmB, TensorC ubC, BlockShape singleShape)
     {
         constexpr uint64_t halfL0cSize = AscendC::TOTAL_L0C_SIZE / DOUBLE_BUFFER_COUNT;
         uint64_t curML1 = AscendC::Te::Get<IDX_M_TILEIDX>(singleShape);
@@ -194,7 +194,7 @@ private:
 
     template <typename TensorAL1, typename TensorBL1, typename C1Tensor>
     __aicore__ inline void Iterate(
-        AscendC::Te::MmadParams& mmadParams, TensorAL1 tensorAL1, TensorBL1 tensorBL1, C1Tensor& c1Local,
+        AscendC::Te::MmadParams& mmadParams, const TensorAL1& tensorAL1, const TensorBL1& tensorBL1, C1Tensor& c1Local,
         uint64_t curML1, uint64_t curNL1, uint64_t curInnerKL1, uint64_t aKPrefix, uint64_t bKPrefix,
         bool isL1LastRound, uint32_t initMode, uint64_t kL1OuterIdx, uint64_t kL1InnerIdx)
     {
@@ -247,7 +247,7 @@ private:
 
     template <typename TensorA, typename TensorB, typename C1Tensor>
     __aicore__ inline void IterateABL1(
-        TensorA gmA, TensorB gmB, AscendC::Te::MmadParams& mmadParams, C1Tensor& c1Local,
+        const TensorA& gmA, const TensorB& gmB, AscendC::Te::MmadParams& mmadParams, C1Tensor& c1Local,
         uint64_t curML1, uint64_t curNL1)
     {
         auto copyGM2L1 = AscendC::Te::MakeCopy(AscendC::Te::CopyGM2L1{});
@@ -301,7 +301,7 @@ private:
 
     template <typename TensorA, typename TensorB, typename C1Tensor>
     __aicore__ inline void IterateAL1BL1(
-        TensorA gmA, TensorB gmB, AscendC::Te::MmadParams& mmadParams, C1Tensor& c1Local,
+        const TensorA& gmA, const TensorB& gmB, AscendC::Te::MmadParams& mmadParams, C1Tensor& c1Local,
         uint64_t curML1, uint64_t curNL1)
     {
         auto copyGM2L1 = AscendC::Te::MakeCopy(AscendC::Te::CopyGM2L1{});
@@ -354,7 +354,7 @@ private:
 
     template <typename TensorA, typename TensorB, typename C1Tensor>
     __aicore__ inline void IterateBL1AL1(
-        TensorA gmA, TensorB gmB, AscendC::Te::MmadParams& mmadParams, C1Tensor& c1Local,
+        const TensorA& gmA, const TensorB& gmB, AscendC::Te::MmadParams& mmadParams, C1Tensor& c1Local,
         uint64_t curML1, uint64_t curNL1)
     {
         auto copyGM2L1 = AscendC::Te::MakeCopy(AscendC::Te::CopyGM2L1{});
