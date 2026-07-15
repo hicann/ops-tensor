@@ -29,7 +29,8 @@
 
 namespace MatMulV3UT {
 
-template <typename A_TYPE, typename B_TYPE, typename C_TYPE, typename BIAS_TYPE, CubeFormat FORMAT_A, CubeFormat FORMAT_B, CubeFormat FORMAT_C>
+template <
+    typename A_TYPE, typename B_TYPE, typename C_TYPE, typename BIAS_TYPE, uint64_t NON_CONTIGUOUS_TYPE = 0>
 __aicore__ inline void MatMulBasicWrapper(
     GM_ADDR aGM, GM_ADDR bGM, GM_ADDR biasGM, GM_ADDR cGM, GM_ADDR workspaceGM, const MatMulV3BasicTilingData& tilingData)
 {

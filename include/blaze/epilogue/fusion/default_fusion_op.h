@@ -22,8 +22,9 @@
 #include "blaze/gemm/utils/common_utils.h"
 
 namespace Blaze {
-namespace Gemm {
-namespace Block {
+
+namespace Epilogue {
+namespace Fusion {
 template <typename DataTypeOut_, typename DataTypeIn_>
 class DefaultFusion {
 public:
@@ -53,7 +54,12 @@ public:
         Run(dstLocal, srcLocal, curAivM, curAivN, mIdx, nIdx);
     }
 };
-} // namespace Block
-} // namespace Gemm
+} // namespace Fusion
+} // namespace Epilogue
+
+namespace Gemm::Block {
+    using Epilogue::Fusion::DefaultFusion;
+}
+
 } // namespace Blaze
 

@@ -59,37 +59,32 @@ __aicore__ inline BlockScheduler(const ProblemShape& shape, const Params& params
 
 ## 通用成员方法
 
-### GetTileNum / GetTotalTileNum
+### GetBlockNums / GetCoreNums
 ```cpp
-__aicore__ inline int64_t GetTileNum();      // BlockSchedulerMatmulBasic
-__aicore__ inline int64_t GetTotalTileNum(); // BlockSchedulerStreamK
+__aicore__ inline int64_t GetBlockNums();    // BlockSchedulerMatmulBasic, BlockSchedulerMatmulStreamK
+__aicore__ inline int64_t GetCoreNums();     // BlockSchedulerMatmulBasic, BlockSchedulerMatmulStreamK
 ```
-功能：返回总 tile 数量（含 batch）。
-
-### GetBlockNum
-```cpp
-__aicore__ inline int64_t GetBlockNum(ProblemShape shape, int64_t blockNum)
-```
-功能：返回实际使用的 Block 数量（不超过 tile 总数）。
+功能：
+- `GetBlockNums()`: 返回总 block 数量（含 batch）。
+- `GetCoreNums()`: 返回实际需要的核数量（不超过 block 总数）。
 
 ### GetBlockShape
 ```cpp
-__aicore__ inline BlockShape GetBlockShape(int64_t tileIdx, ...);       // BlockSchedulerMatmulBasic
-__aicore__ inline BlockShape GetBlockShape(int64_t tileIdx);       // BlockSchedulerStreamK
+__aicore__ inline BlockShape GetBlockShape(int64_t blockIdx);       // BlockSchedulerMatmulBasic, BlockSchedulerMatmulStreamK
 template <QuantMode aQuantMode, QuantMode bQuantMode, bool weightNz = false>
 __aicore__ inline BlockShape GetBlockShape(BlockCoord blockCoord);      // BlockSchedulerQuantBatchMatmulV3
 ```
-功能：返回当前 tile 的 Block 形状。
+功能：返回当前 block 的形状。
 
 QuantBatchMatmulV3 的 `BlockShape` 第 3、4 个字段用于携带 M/N 尾块切分偏移。
 
-### GetBlockCoord / GetTileIdx
+### GetBlockCoord
 ```cpp
-__aicore__ inline BlockCoord GetBlockCoord(int64_t tileIdx);            // BlockSchedulerMatmulBasic
-__aicore__ inline BlockCoord GetBlockCoord(int64_t tileIdx);       // BlockSchedulerStreamK
+__aicore__ inline BlockCoord GetBlockCoord(int64_t blockIdx);            // BlockSchedulerMatmulBasic
+__aicore__ inline BlockCoord GetBlockCoord(int64_t blockIdx);       // BlockSchedulerMatmulStreamK
 __aicore__ inline bool GetTileIdx(BlockCoord& blockCoord);              // BlockSchedulerQuantBatchMatmulV3
 ```
-功能：返回当前 tile 的 Block 坐标。
+功能：返回当前 block 的坐标。
 
 ## Z 型扫描
 
@@ -178,11 +173,11 @@ ProblemShape shape{m, n, k, batch};
 BlockScheduler scheduler(shape, params);
 
 int64_t blockIdx = AscendC::GetBlockIdx();
-int64_t blockNum = scheduler.GetBlockNum(shape);
+int64_t coreNums = scheduler.GetCoreNums();
 
-for (int64_t tileIdx = blockIdx; tileIdx < scheduler.GetTileNum(); tileIdx += blockNum) {
-    auto blockShape = scheduler.GetBlockShape<transB, BType>(tileIdx);
-    auto blockCoord = scheduler.GetBlockCoord(tileIdx);
+for (int64_t blockIdx = blockIdx; blockIdx < scheduler.GetBlockNums(); blockIdx += coreNums) {
+    auto blockShape = scheduler.GetBlockShape<TRANS_B, BType>(blockIdx);
+    auto blockCoord = scheduler.GetBlockCoord(blockIdx);
     // BlockMmad 计算
 }
 ```

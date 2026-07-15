@@ -31,19 +31,22 @@ constexpr int32_t MNK_M = 0;
 constexpr int32_t MNK_N = 1;
 constexpr int32_t MNK_K = 2;
 constexpr int32_t MNK_B = 3;
-constexpr int32_t MNK_M0 = 4;
-constexpr int32_t MNK_N0 = 5;
 constexpr int32_t EVEN_NUMBER = 2;
 
-constexpr static uint64_t A_FULL_LOAD_MODE = 1UL;
-constexpr static uint64_t B_FULL_LOAD_MODE = 2UL;
-constexpr static uint64_t NONE_FULL_LOAD_MODE = 0UL;
+constexpr uint64_t A_FULL_LOAD_MODE = 1UL;
+constexpr uint64_t B_FULL_LOAD_MODE = 2UL;
+constexpr uint64_t NONE_FULL_LOAD_MODE = 0UL;
+constexpr bool ENABLE_SPLIT_SINGLE_CORE_K = true;
+constexpr bool NONE_SPLIT_SINGLE_CORE_K = false;
 
-constexpr static int64_t WINDOW_LEN = 4UL;
+constexpr int64_t WINDOW_LEN = 4UL;
 
-constexpr static uint16_t DIMENSION_M = 0;
-constexpr static uint16_t DIMENSION_N = 1;
-constexpr static uint16_t DIMENSION_K = 2;
+constexpr uint16_t DIMENSION_M = 0;
+constexpr uint16_t DIMENSION_N = 1;
+constexpr uint16_t DIMENSION_K = 2;
+constexpr uint64_t ON_THE_FLY = 0UL;
+constexpr uint64_t ND_ALIG_1V1_FIXPIPE = 1UL;
+constexpr uint64_t ND_ALIG_1V2_FIXPIPE = 2UL;
 
 constexpr uint16_t ZERO_FLAG = 0;
 constexpr uint16_t FIRST_FLAG = 1;
@@ -53,7 +56,7 @@ constexpr uint16_t FOURTH_FLAG = 4;
 constexpr uint16_t FIFTH_FLAG = 5;
 constexpr uint16_t SIXTH_FLAG = 6;
 constexpr uint16_t SEVENTH_FLAG = 7;
-constexpr static int64_t PER_BLOCK_SIZE = 128LL;
+constexpr int64_t PER_BLOCK_SIZE = 128LL;
 
 constexpr uint32_t L2_CACHE_DEFAULT = 0U;
 constexpr uint32_t A_L2_CACHE_DISABLE = 1U;

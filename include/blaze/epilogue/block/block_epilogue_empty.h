@@ -17,7 +17,8 @@
 #include "tensor_api/tensor.h"
 
 namespace Blaze {
-namespace Gemm {
+
+namespace Epilogue {
 namespace Block {
 
 class BlockEpilogueEmpty {
@@ -50,5 +51,9 @@ public:
     }
 };
 } // namespace Block
-} // namespace Gemm
+} // namespace Epilogue
+
+namespace Gemm::Block {
+    using Epilogue::Block::BlockEpilogueEmpty;
+}
 } // namespace Blaze

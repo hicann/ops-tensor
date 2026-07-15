@@ -134,9 +134,9 @@ TEST_F(MatMulV3Test, Test_FP16_StreamK) {
 
     AscendC::SetKernelMode(KernelMode::MIX_MODE);
 
-    auto kernelFunc =
-        mat_mul_v3_kernel_entry<OP_TYPE_MATMUL_STREAMK, half, half, half, half, CubeFormat::ND, CubeFormat::ND,
-                                CubeFormat::ND, Blaze::Gemm::MatMulL0C2Out::ON_THE_FLY, 0>;
+    auto kernelFunc = mat_mul_v3_kernel_entry<
+        OP_TYPE_MATMUL_STREAMK, half, half, half, half,
+        Blaze::Gemm::MatMulL0C2Out::ON_THE_FLY, 0>;
     ASSERT_TRUE(KERNEL_RUN_KF(kernelFunc, blockNum, aGM, bGM, biasGM, cGM, workspaceGM, tilingGM))
         << "Kernel execution failed: one or more cores exited with non-zero status";
 }
@@ -214,8 +214,8 @@ TEST_F(MatMulV3Test, Test_FP16_Basic) {
 
     AscendC::SetKernelMode(KernelMode::MIX_MODE);
 
-    auto kernelFunc = mat_mul_v3_kernel_entry<OP_TYPE_MATMUL_BASIC, half, half, half, half, CubeFormat::ND,
-                                              CubeFormat::ND, CubeFormat::ND>;
+    auto kernelFunc = mat_mul_v3_kernel_entry<
+        OP_TYPE_MATMUL_BASIC, half, half, half, half>;
     ASSERT_TRUE(KERNEL_RUN_KF(kernelFunc, blockNum, aGM, bGM, biasGM, cGM, workspaceGM, tilingGM))
         << "Kernel execution failed: one or more cores exited with non-zero status";
 }
@@ -293,9 +293,96 @@ TEST_F(MatMulV3Test, Test_FP32_StreamK_MultiCore) {
 
     AscendC::SetKernelMode(KernelMode::MIX_MODE);
 
-    auto kernelFunc =
-        mat_mul_v3_kernel_entry<OP_TYPE_MATMUL_STREAMK, float, float, float, float, CubeFormat::ND, CubeFormat::ND,
-                                CubeFormat::ND, Blaze::Gemm::MatMulL0C2Out::ON_THE_FLY, 0>;
+    auto kernelFunc = mat_mul_v3_kernel_entry<
+        OP_TYPE_MATMUL_STREAMK, float, float, float, float,
+        Blaze::Gemm::MatMulL0C2Out::ON_THE_FLY, 0>;
+    ASSERT_TRUE(KERNEL_RUN_KF(kernelFunc, blockNum, aGM, bGM, biasGM, cGM, workspaceGM, tilingGM))
+        << "Kernel execution failed: one or more cores exited with non-zero status";
+}
+
+TEST_F(MatMulV3Test, Test_FP16_Basic_Slice)
+{
+    const int64_t M = 16;
+    const int64_t N = 16;
+    const int64_t K = 16;
+    const int64_t SLICE_M = 2;
+    const int64_t ORI_M = 4;
+    const uint32_t blockNum = 1;
+    const int64_t srcNdStride = ORI_M * K;
+    const int64_t sliceBatch = M / SLICE_M;
+    const int64_t aStorageM = sliceBatch * ORI_M;
+    const int64_t aStorageElements = aStorageM * K;
+
+    size_t aSize = aStorageElements * sizeof(half);
+    size_t bSize = K * N * sizeof(half);
+    size_t biasSize = N * sizeof(float);
+    size_t cSize = M * N * sizeof(half);
+    size_t workspaceSize = blockNum * WORKSPACE_TILE_SIZE + WORKSPACE_OVERHEAD;
+
+    aGM = (GM_ADDR)AscendC::GmAlloc(aSize);
+    bGM = (GM_ADDR)AscendC::GmAlloc(bSize);
+    biasGM = (GM_ADDR)AscendC::GmAlloc(biasSize);
+    cGM = (GM_ADDR)AscendC::GmAlloc(cSize);
+    workspaceGM = (GM_ADDR)AscendC::GmAlloc(workspaceSize);
+    tilingGM = (GM_ADDR)AscendC::GmAlloc(sizeof(MatMulV3BasicTilingData));
+
+    ASSERT_NE(aGM, nullptr);
+    ASSERT_NE(bGM, nullptr);
+    ASSERT_NE(biasGM, nullptr);
+    ASSERT_NE(cGM, nullptr);
+    ASSERT_NE(workspaceGM, nullptr);
+    ASSERT_NE(tilingGM, nullptr);
+
+    std::string dataDir = std::string(UT_KERNEL_SRC_DIR) + "/mat_mul/matmul_data";
+    std::string genCmd = std::string("cd ") + dataDir + " && rm -rf *.bin";
+    std::string genDataCmd = std::string("cd ") + dataDir + " && python3 gen_data.py --m " +
+                             std::to_string(aStorageM) + " --n 16 --k 16 --dtype float16";
+    int genRet = system(genCmd.c_str());
+    ASSERT_EQ(genRet, 0) << "Failed to clean old .bin files in matmul_data";
+    genRet = system(genDataCmd.c_str());
+    ASSERT_EQ(genRet, 0) << "gen_data.py failed with exit code " << genRet;
+
+    std::ifstream aFile(dataDir + "/input_a.bin", std::ios::binary);
+    ASSERT_TRUE(aFile.is_open()) << "Failed to open input_a.bin";
+    std::ifstream bFile(dataDir + "/input_b.bin", std::ios::binary);
+    ASSERT_TRUE(bFile.is_open()) << "Failed to open input_b.bin";
+    aFile.read(reinterpret_cast<char*>(aGM), aSize);
+    ASSERT_TRUE(aFile.good()) << "Failed to read input_a.bin (expected " << aSize << " bytes)";
+    bFile.read(reinterpret_cast<char*>(bGM), bSize);
+    ASSERT_TRUE(bFile.good()) << "Failed to read input_b.bin (expected " << bSize << " bytes)";
+
+    MatMulV3BasicTilingData* tilingData = reinterpret_cast<MatMulV3BasicTilingData*>(tilingGM);
+    tilingData->usedCoreNum = blockNum;
+    tilingData->m = M;
+    tilingData->n = N;
+    tilingData->k = K;
+    tilingData->mL1 = 16;
+    tilingData->nL1 = 16;
+    tilingData->kL1 = 16;
+    tilingData->baseM = 16;
+    tilingData->baseN = 16;
+    tilingData->baseK = 16;
+    tilingData->skSingleCoreK = 16;
+    tilingData->mTailCnt = 1;
+    tilingData->nTailCnt = 1;
+    tilingData->mBaseTailSplitCnt = 1;
+    tilingData->nBaseTailSplitCnt = 1;
+    tilingData->mTailMain = 0;
+    tilingData->nTailMain = 0;
+    tilingData->isHf32 = 0;
+    tilingData->l1BufferNum = 1;
+    tilingData->l0cDB = 1;
+    tilingData->ubDB = 1;
+    tilingData->l2CacheDisable = L2CacheMode::L2_CACHE_DEFAULT;
+    tilingData->sliceM = SLICE_M;
+    tilingData->srcNdStride = srcNdStride;
+    tilingData->innerBatch = 0;
+
+    AscendC::SetKernelMode(KernelMode::MIX_MODE);
+
+    auto kernelFunc = mat_mul_v3_kernel_entry<
+        OP_TYPE_MATMUL_BASIC, half, half, half, half,
+        Blaze::Gemm::MatMulL0C2Out::ON_THE_FLY, 0, Blaze::Gemm::NON_CONTIGUOUS_TYPE_SLICE>;
     ASSERT_TRUE(KERNEL_RUN_KF(kernelFunc, blockNum, aGM, bGM, biasGM, cGM, workspaceGM, tilingGM))
         << "Kernel execution failed: one or more cores exited with non-zero status";
 }

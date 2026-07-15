@@ -25,7 +25,8 @@
 #include "tensor_api/tensor.h"
 
 namespace Blaze {
-namespace Gemm {
+
+namespace Epilogue {
 namespace Block {
 
 template <class WorkspaceType_, class OutType_, class DispatchPolicy_>
@@ -99,13 +100,13 @@ public:
         Params const& params, BlockShape blockShapeInAiv, BlockShape tileL1ShapeInAiv, BlockCoord coordInAiv,
         uint64_t usedCoreNum, bool checkIsSkScene)
     {
-        m_ = AscendC::Te::Get<MNK_M>(blockShapeInAiv);
-        n_ = AscendC::Te::Get<MNK_N>(blockShapeInAiv);
-        mL1_ = AscendC::Te::Get<MNK_M>(tileL1ShapeInAiv);
-        nL1_ = AscendC::Te::Get<MNK_N>(tileL1ShapeInAiv);
-        mCnt_ = AscendC::Te::Get<MNK_M>(coordInAiv);
-        nCnt_ = AscendC::Te::Get<MNK_N>(coordInAiv);
-        kCnt_ = AscendC::Te::Get<MNK_K>(coordInAiv);
+        m_ = AscendC::Te::Get<Blaze::Gemm::MNK_M>(blockShapeInAiv);
+        n_ = AscendC::Te::Get<Blaze::Gemm::MNK_N>(blockShapeInAiv);
+        mL1_ = AscendC::Te::Get<Blaze::Gemm::MNK_M>(tileL1ShapeInAiv);
+        nL1_ = AscendC::Te::Get<Blaze::Gemm::MNK_N>(tileL1ShapeInAiv);
+        mCnt_ = AscendC::Te::Get<Blaze::Gemm::MNK_M>(coordInAiv);
+        nCnt_ = AscendC::Te::Get<Blaze::Gemm::MNK_N>(coordInAiv);
+        kCnt_ = AscendC::Te::Get<Blaze::Gemm::MNK_K>(coordInAiv);
         usedCoreNum_ = usedCoreNum;
         // Decrease tile size of per vector core to prevent data race of cube and vector
         aivMte2Num_ = checkIsSkScene ? AscendC::GetTaskRation() : AscendC::BLOCK_CUBE;
@@ -114,8 +115,8 @@ public:
         AscendC::ICachePreLoad(NUM_TWO);
         // Ensure cube to pair with vector, add sync flag in dp+sk scene
         if (!checkIsSkScene) {
-            AscendC::SetFlag<AscendC::HardEvent::MTE3_MTE2>(ZERO_FLAG);
-            AscendC::WaitFlag<AscendC::HardEvent::MTE3_MTE2>(ZERO_FLAG);
+            AscendC::SetFlag<AscendC::HardEvent::MTE3_MTE2>(Blaze::Gemm::ZERO_FLAG);
+            AscendC::WaitFlag<AscendC::HardEvent::MTE3_MTE2>(Blaze::Gemm::ZERO_FLAG);
         }
     }
 
@@ -135,11 +136,12 @@ public:
             }
             AscendC::DataCopyPad<float>(
                 ubAddTensor, workspaceGlobal_[copyGm2UbParams_.offsetWorkspaceGM], dataCopyExtParams, {false, 0, 0, 0});
-            AscendC::SetFlag<AscendC::HardEvent::MTE2_V>(ZERO_FLAG);
-            AscendC::WaitFlag<AscendC::HardEvent::MTE2_V>(ZERO_FLAG);
+            AscendC::SetFlag<AscendC::HardEvent::MTE2_V>(Blaze::Gemm::ZERO_FLAG);
+            AscendC::WaitFlag<AscendC::HardEvent::MTE2_V>(Blaze::Gemm::ZERO_FLAG);
 
             for (uint64_t i = 1; i < copyGm2UbParams_.kCnt; ++i) {
-                AscendC::Add(ubAddTensor, ubAddTensor, ubAddTensor[i * copyGm2UbParams_.burstLen], copyGm2UbParams_.burstLen);
+                AscendC::Add(
+                    ubAddTensor, ubAddTensor, ubAddTensor[i * copyGm2UbParams_.burstLen], copyGm2UbParams_.burstLen);
             }
 
             AscendC::DataCopyExtParams ub2gmExtParams{
@@ -149,7 +151,7 @@ public:
                 static_cast<uint32_t>(copyUb2GmParams_.dstGap * sizeof(OutType)), 0};
 
             if constexpr (
-                DispatchPolicy::fusedOpType == OP_TYPE_RELU &&
+                DispatchPolicy::FUSED_OP_TYPE == Blaze::Gemm::OP_TYPE_RELU &&
                 (sizeof(OutType) != sizeof(half) || AscendC::IsSameType<OutType, bfloat16_t>::value)) {
                 AscendC::Relu(ubAddTensor, ubAddTensor, copyGm2UbParams_.burstLen);
             }
@@ -157,22 +159,25 @@ public:
                 AscendC::LocalTensor<OutType> ubCastDst{AscendC::TPosition::VECIN, 0, AscendC::TOTAL_UB_SIZE};
                 AscendC::Cast(ubCastDst, ubAddTensor, AscendC::RoundMode::CAST_RINT, copyGm2UbParams_.burstLen);
                 if constexpr (
-                    DispatchPolicy::fusedOpType == OP_TYPE_RELU && !AscendC::IsSameType<OutType, bfloat16_t>::value) {
+                    DispatchPolicy::FUSED_OP_TYPE == Blaze::Gemm::OP_TYPE_RELU &&
+                    !AscendC::IsSameType<OutType, bfloat16_t>::value) {
                     // Relu not support bfloat16_t
                     AscendC::Relu(ubCastDst, ubCastDst, copyGm2UbParams_.burstLen);
                 }
-                AscendC::SetFlag<AscendC::HardEvent::V_MTE3>(ZERO_FLAG);
-                AscendC::WaitFlag<AscendC::HardEvent::V_MTE3>(ZERO_FLAG);
+                AscendC::SetFlag<AscendC::HardEvent::V_MTE3>(Blaze::Gemm::ZERO_FLAG);
+                AscendC::WaitFlag<AscendC::HardEvent::V_MTE3>(Blaze::Gemm::ZERO_FLAG);
                 AscendC::DataCopyPad<
-                    OutType, (DispatchPolicy::fixpOpti == MatMulL0C2Out::ND_FIXPIPE_1_2) ? AscendC::PaddingMode::Normal :
-                                                                                           AscendC::PaddingMode::Compact>(
+                    OutType, (DispatchPolicy::FIXP_OPTI == Blaze::Gemm::MatMulL0C2Out::ND_FIXPIPE_1_2) ?
+                                 AscendC::PaddingMode::Normal :
+                                 AscendC::PaddingMode::Compact>(
                     cGlobal_[copyUb2GmParams_.offsetCGm], ubCastDst, ub2gmExtParams);
             } else {
-                AscendC::SetFlag<AscendC::HardEvent::V_MTE3>(ZERO_FLAG);
-                AscendC::WaitFlag<AscendC::HardEvent::V_MTE3>(ZERO_FLAG);
+                AscendC::SetFlag<AscendC::HardEvent::V_MTE3>(Blaze::Gemm::ZERO_FLAG);
+                AscendC::WaitFlag<AscendC::HardEvent::V_MTE3>(Blaze::Gemm::ZERO_FLAG);
                 AscendC::DataCopyPad<
-                    OutType, (DispatchPolicy::fixpOpti == MatMulL0C2Out::ND_FIXPIPE_1_2) ? AscendC::PaddingMode::Normal :
-                                                                                           AscendC::PaddingMode::Compact>(
+                    OutType, (DispatchPolicy::FIXP_OPTI == Blaze::Gemm::MatMulL0C2Out::ND_FIXPIPE_1_2) ?
+                                 AscendC::PaddingMode::Normal :
+                                 AscendC::PaddingMode::Compact>(
                     cGlobal_[copyUb2GmParams_.offsetCGm], ubAddTensor, ub2gmExtParams);
             }
         }
@@ -209,7 +214,7 @@ public:
         if (round_ < NUM_TWO) {
             aivParams_.curML1InAiv = aivParams_.mCntIndex != (mCnt_ - 1) ? mL1_ : (m_ - (mCnt_ - 1) * mL1_);
             aivParams_.curNL1InAiv = aivParams_.nCntIndex != (nCnt_ - 1) ? nL1_ : (n_ - (nCnt_ - 1) * nL1_);
-            if constexpr (DispatchPolicy::fixpOpti == MatMulL0C2Out::ND_FIXPIPE_1_2) {
+            if constexpr (DispatchPolicy::FIXP_OPTI == Blaze::Gemm::MatMulL0C2Out::ND_FIXPIPE_1_2) {
                 aivParams_.curAlignedNInAiv =
                     Blaze::Gemm::CeilAlign(aivParams_.curNL1InAiv, static_cast<uint64_t>(AscendC::ONE_BLK_SIZE));
             } else {
@@ -248,7 +253,7 @@ public:
         }
         // datasize for moving in ub, align to 32B
         copyGm2UbParams_.burstLen =
-            Blaze::Gemm::CeilAlign(copyGm2UbParams_.mBurst * aivParams_.curAlignedNInAiv, BLOCK_BYTE_SIZE);
+            Blaze::Gemm::CeilAlign(copyGm2UbParams_.mBurst * aivParams_.curAlignedNInAiv, Blaze::Gemm::BLOCK_BYTE_SIZE);
         // gap of src between cur burst and next burst
         copyGm2UbParams_.srcGap = BLOCK_BASE_M * BLOCK_BASE_N - copyGm2UbParams_.burstLen;
 
@@ -265,12 +270,17 @@ public:
     }
 
 private:
-    constexpr static uint64_t BLOCK_BASE_M = 256UL;
-    constexpr static uint64_t BLOCK_BASE_N = 256UL;
-    constexpr static uint64_t NUM_TWO = 2UL;
-    constexpr static uint64_t MAIN_WINDOW = 4UL;
-    constexpr static uint64_t UB2GM_SRCGAP_UNIT = 32UL;
+    static constexpr uint64_t BLOCK_BASE_M = 256UL;
+    static constexpr uint64_t BLOCK_BASE_N = 256UL;
+    static constexpr uint64_t NUM_TWO = 2UL;
+    static constexpr uint64_t MAIN_WINDOW = 4UL;
+    static constexpr uint64_t UB2GM_SRCGAP_UNIT = 32UL;
 };
 } // namespace Block
-} // namespace Gemm
+} // namespace Epilogue
+
+namespace Gemm::Block {
+    using Epilogue::Block::BlockEpilogueMatmulStreamK;
+}
+
 } // namespace Blaze

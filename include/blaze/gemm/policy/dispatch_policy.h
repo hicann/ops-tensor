@@ -18,6 +18,7 @@
 
 namespace Blaze {
 namespace Gemm {
+
 /* block schedule policies */
 struct KernelMmadWithScaleMx {};   // Multi-block with Mx scale
 struct KernelMmadWithScaleFixpipeQuant {}; // Multi-block with fixpipe quant scale (A8W8 fixpipe)
@@ -39,8 +40,8 @@ enum class MatMulL0C2Out : std::uint8_t {
 template <uint64_t FULL_LOAD_MODE_ = 0, bool ATOMIC_ADD_ = false>
 struct MatmulWithScaleFixpipeQuant {
     using ScheduleType = KernelMmadWithScaleFixpipeQuant;
-    constexpr static uint64_t fullLoadMode = FULL_LOAD_MODE_;
-    constexpr static bool isAtomicAdd = ATOMIC_ADD_;
+    static constexpr uint64_t fullLoadMode = FULL_LOAD_MODE_;
+    static constexpr bool isAtomicAdd = ATOMIC_ADD_;
 };
 
 /**
@@ -50,35 +51,42 @@ struct MatmulWithScaleFixpipeQuant {
 template <uint64_t FULL_LOAD_MODE_ = 0, bool ATOMIC_ADD_ = false, class ScheduleType_ = KernelMmadWithScaleMx>
 struct MatmulWithScaleMx {
     using ScheduleType = ScheduleType_;
-    constexpr static uint64_t fullLoadMode = FULL_LOAD_MODE_;
-    constexpr static bool isAtomicAdd = ATOMIC_ADD_;
+    static constexpr uint64_t fullLoadMode = FULL_LOAD_MODE_;
+    static constexpr bool isAtomicAdd = ATOMIC_ADD_;
 };
 
 /**
  * @struct MatmulMultiBlockWithStreamK
  * @brief Matrix multiplication split k axis processing structure, no quant, no bias, implemented base on layout
  * @param [in] FixpOpti_: enum, judge if enabling fixp align optimize, default is ON_THE_FLY
- * @param [in] FUSED_OP_TYPE_: execute fusion after mmad , default is 0
+ * @param [in] FusedOpType_: execute fusion after mmad , default is 0
+ * @param [in] KernelSchedule_: mmad dispatch policy
  */
-template <MatMulL0C2Out FixpOpti_ = MatMulL0C2Out::ON_THE_FLY, uint64_t FUSED_OP_TYPE_ = 0>
+template <
+    MatMulL0C2Out FixpOpti_ = MatMulL0C2Out::ON_THE_FLY, uint64_t FusedOpType_ = 0,
+    class KernelSchedule_ = KernelMultiBlockStreamK>
 struct MatmulMultiBlockWithStreamK {
-    using ScheduleType = KernelMultiBlockStreamK;
-    constexpr static bool enableInputDataLenCheck = false;
-    constexpr static uint64_t fusedOpType = FUSED_OP_TYPE_;
-    constexpr static MatMulL0C2Out fixpOpti = FixpOpti_;
+    using ScheduleType = KernelSchedule_;
+    static constexpr uint64_t FUSED_OP_TYPE = FusedOpType_;
+    static constexpr MatMulL0C2Out FIXP_OPTI = FixpOpti_;
 };
 
 /**
  * @struct MatmulMultiBlockBasic
  * @brief Matrix multiplication multi-block structure, no quant, implemented based on Layout
- * @param [in] FULL_LOAD_MODE: mode of full load, default is 0(no full load)
- * @param [in] FUSED_OP_TYPE_: execute fusion after mmad , default is 0
+ * @param [in] FullLoadMode_: mode of full load, default is 0(no full load)
+ * @param [in] FusedOpType_: execute fusion after mmad , default is 0
+ * @param [in] KernelSchedule_: mmad dispatch policy
+ * @param [in] NonContiguousType_: matmul support non-contiguous scene such as: slice, transpose
  */
-template <uint64_t FULL_LOAD_MODE_ = 0, uint64_t FUSED_OP_TYPE_ = 0, class KernelSchedule_ = KernelMmadMultiBlockBasic>
+template <
+    uint64_t FullLoadMode_ = 0, uint64_t FusedOpType_ = 0, class KernelSchedule_ = KernelMmadMultiBlockBasic,
+    uint64_t NonContiguousType_ = 0>
 struct MatmulMultiBlockBasic {
     using ScheduleType = KernelSchedule_;
-    constexpr static uint64_t fullLoadMode = FULL_LOAD_MODE_;
-    constexpr static uint64_t fusedOpType = FUSED_OP_TYPE_;
+    static constexpr uint64_t FULL_LOAD_MODE = FullLoadMode_;
+    static constexpr uint64_t FUSED_OP_TYPE = FusedOpType_;
+    static constexpr uint64_t NON_CONTIGUOUS_TYPE = NonContiguousType_;
 };
 
 } // namespace Gemm
