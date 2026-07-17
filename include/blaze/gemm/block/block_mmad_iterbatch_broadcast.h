@@ -50,25 +50,6 @@ public:
     using LayoutC = LayoutC_;
     using LayoutBias = LayoutBias_;
     using DispatchPolicy = MatmulIterBatchBroadcast<ABc, BBc>;
-    using TupleShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
-
-    static constexpr bool TRANS_A = IsTrans<LayoutA>::value;
-    static constexpr bool TRANS_B = IsTrans<LayoutB>::value;
-    static constexpr bool A_BROADCAST = ABc;
-    static constexpr bool B_BROADCAST = BBc;
-    static constexpr uint64_t BUFFER_NUM = 2;
-    static constexpr uint16_t MTE1_MTE2_EVENT_ID_NUM = 4;
-    static constexpr uint64_t HALF_L1_SIZE = AscendC::TOTAL_L1_SIZE / BUFFER_NUM;
-    static constexpr uint64_t HALF_L0_SIZE = AscendC::TOTAL_L0A_SIZE / BUFFER_NUM;
-    static constexpr uint64_t HALF_L0C_SIZE = AscendC::TOTAL_L0C_SIZE / BUFFER_NUM;
-    using A_T = AType;
-    using B_T = BType;
-    using C_T = CType;
-    using Bias_T = BiasType;
-    using LayoutAl1Ptn = AscendC::Std::conditional_t<TRANS_A,
-        AscendC::Te::ZNLayoutPtn, AscendC::Te::NZLayoutPtn>;
-    using LayoutBl1Ptn = AscendC::Std::conditional_t<TRANS_B,
-        AscendC::Te::ZNLayoutPtn, AscendC::Te::NZLayoutPtn>;
 
     struct Params {
         GM_ADDR aGmAddr{nullptr};
@@ -77,7 +58,25 @@ public:
         GM_ADDR biasGmAddr{nullptr};
         GM_ADDR groupListGmAddr{nullptr};
         GM_ADDR workspaceGmAddr{nullptr};
+        uint64_t m{0};
+        uint64_t n{0};
+        uint64_t k{0};
+        uint64_t baseM{0};
+        uint64_t baseN{0};
+        uint64_t baseK{0};
+        uint64_t iterBatchL1{1};
+        uint64_t iterBatchL0{1};
+        bool aBroadcastSingleBatch{false};
+        bool bBroadcastSingleBatch{false};
     };
+
+private:
+    static constexpr bool TRANS_A = IsTrans<LayoutA>::value;
+    static constexpr bool TRANS_B = IsTrans<LayoutB>::value;
+    static constexpr bool A_BROADCAST = ABc;
+    static constexpr bool B_BROADCAST = BBc;
+    static constexpr uint64_t BUFFER_NUM = 2;
+    static constexpr uint16_t MTE1_MTE2_EVENT_ID_NUM = 4;
 
 public:
     __aicore__ inline BlockMmad()
@@ -90,6 +89,7 @@ public:
             AscendC::SetFlag<AscendC::HardEvent::FIX_M>(FIRST_FLAG);
             AscendC::SetFlag<AscendC::HardEvent::M_MTE1>(SIXTH_FLAG);
             AscendC::SetFlag<AscendC::HardEvent::M_MTE1>(SEVENTH_FLAG);
+            AscendC::SetMMLayoutTransform(true);
         }
     }
 
@@ -103,41 +103,37 @@ public:
             AscendC::WaitFlag<AscendC::HardEvent::FIX_M>(FIRST_FLAG);
             AscendC::WaitFlag<AscendC::HardEvent::M_MTE1>(SIXTH_FLAG);
             AscendC::WaitFlag<AscendC::HardEvent::M_MTE1>(SEVENTH_FLAG);
+            AscendC::SetMMLayoutTransform(false);
         }
     }
 
-    __aicore__ inline void Init(
-        const TupleShape& shape,
-        uint64_t mainIterBatchL1, uint64_t mainIterBatchL0,
-        bool isBias,
-        uint64_t baseM, uint64_t baseN, uint64_t baseK,
-        uint64_t broadcastAxisA, uint64_t broadcastAxisB)
+    __aicore__ inline void Init(const Params& params)
     {
-        m_ = AscendC::Te::Get<MNK_M>(shape);
-        n_ = AscendC::Te::Get<MNK_N>(shape);
-        k_ = AscendC::Te::Get<MNK_K>(shape);
-        baseM_ = baseM;
-        baseN_ = baseN;
-        baseK_ = baseK;
-        isBias_ = isBias;
-        mainIterBatchL1_ = mainIterBatchL1;
-        mainIterBatchL0_ = mainIterBatchL0;
+        m_ = params.m;
+        n_ = params.n;
+        k_ = params.k;
+        baseM_ = params.baseM;
+        baseN_ = params.baseN;
+        baseK_ = params.baseK;
+        isBias_ = params.biasGmAddr != nullptr;
+        mainIterBatchL1_ = params.iterBatchL1;
+        mainIterBatchL0_ = params.iterBatchL0;
         abL1BufId_ = 0;
-        broadcastAxisA_ = broadcastAxisA;
-        broadcastAxisB_ = broadcastAxisB;
+        aBroadcastSingleBatch_ = params.aBroadcastSingleBatch;
+        bBroadcastSingleBatch_ = params.bBroadcastSingleBatch;
         uint64_t al1BatchCount;
         if constexpr (A_BROADCAST) {
-            al1BatchCount = (broadcastAxisA_ == LAST_BATCH_DIM) ? 1 : mainIterBatchL1;
+            al1BatchCount = (aBroadcastSingleBatch_) ? 1 : mainIterBatchL1_;
         } else {
-            al1BatchCount = mainIterBatchL1;
+            al1BatchCount = mainIterBatchL1_;
         }
         uint64_t bl1BatchCount;
         if constexpr (B_BROADCAST) {
-            bl1BatchCount = (broadcastAxisB_ == LAST_BATCH_DIM) ? 1 : mainIterBatchL1;
+            bl1BatchCount = (bBroadcastSingleBatch_) ? 1 : mainIterBatchL1_;
         } else {
-            bl1BatchCount = mainIterBatchL1;
+            bl1BatchCount = mainIterBatchL1_;
         }
-        const uint64_t c0Size = BLOCK_BYTE_SIZE / sizeof(A_T);
+        const uint64_t c0Size = BLOCK_BYTE_SIZE / sizeof(AType);
         if constexpr (!TRANS_A) {
             aL1BatchStrideElems_ = CeilAlign(m_, static_cast<uint64_t>(BLOCK_CUBE)) * CeilAlign(k_, c0Size);
         } else {
@@ -148,18 +144,19 @@ public:
         } else {
             bL1BatchStrideElems_ = CeilAlign(k_, c0Size) * CeilAlign(n_, static_cast<uint64_t>(BLOCK_CUBE));
         }
-        aL1OneBuffer_ = aL1BatchStrideElems_ * sizeof(A_T) * al1BatchCount;
-        bL1OneBuffer_ = bL1BatchStrideElems_ * sizeof(B_T) * bl1BatchCount;
+        aL1OneBuffer_ = aL1BatchStrideElems_ * sizeof(AType) * al1BatchCount;
+        bL1OneBuffer_ = bL1BatchStrideElems_ * sizeof(BType) * bl1BatchCount;
     }
 
     template <typename TensorC, typename TensorA, typename TensorB, typename TensorBias>
     __aicore__ inline void operator()(
-        TensorC gmC, TensorA gmA, TensorB gmB, TensorBias gmBias,
+        const TensorA& gmA, const TensorB& gmB, const TensorBias& gmBias, TensorC& gmC,
         uint64_t curIterBatchL1)
     {
         uint64_t curAl1Count = GetAl1Count(curIterBatchL1);
         uint64_t curBl1Count = GetBl1Count(curIterBatchL1);
         uint64_t l1BufId = abL1BufId_ & 0x1;
+        static constexpr uint64_t HALF_L1_SIZE = AscendC::TOTAL_L1_SIZE / BUFFER_NUM;
         uint64_t offsetAl1 = HALF_L1_SIZE * l1BufId;
         uint64_t offsetBl1 = offsetAl1 + aL1OneBuffer_;
 
@@ -225,13 +222,15 @@ private:
     uint64_t bL1OneBuffer_{0};
     uint64_t aL1BatchStrideElems_{1};
     uint64_t bL1BatchStrideElems_{1};
-    uint64_t broadcastAxisA_{MAX_BATCH_DIM};
-    uint64_t broadcastAxisB_{MAX_BATCH_DIM};
+    bool aBroadcastSingleBatch_{false};
+    bool bBroadcastSingleBatch_{false};
 
     template <typename TensorA>
     __aicore__ inline auto CopyGM2L1A(const TensorA& gmA, uint64_t offsetAl1, uint64_t al1Count)
     {
         auto copyGM2L1 = AscendC::Te::MakeCopy(AscendC::Te::CopyGM2L1{});
+        using LayoutAl1Ptn = AscendC::Std::conditional_t<TRANS_A, AscendC::Te::ZNLayoutPtn,
+            AscendC::Te::NZLayoutPtn>;
         auto al1Layout = AscendC::Te::MakeFrameLayout<
             LayoutAl1Ptn, AscendC::Te::LayoutTraitDefault<AType>>(al1Count, m_, k_);
         auto al1Tensor = AscendC::Te::MakeTensor(
@@ -244,6 +243,8 @@ private:
     __aicore__ inline auto CopyGM2L1B(const TensorB& gmB, uint64_t offsetBl1, uint64_t bl1Count)
     {
         auto copyGM2L1 = AscendC::Te::MakeCopy(AscendC::Te::CopyGM2L1{});
+        using LayoutBl1Ptn = AscendC::Std::conditional_t<TRANS_B, AscendC::Te::ZNLayoutPtn,
+            AscendC::Te::NZLayoutPtn>;
         auto bl1Layout = AscendC::Te::MakeFrameLayout<
             LayoutBl1Ptn, AscendC::Te::LayoutTraitDefault<BType>>(bl1Count, k_, n_);
         auto bl1Tensor = AscendC::Te::MakeTensor(
@@ -278,11 +279,11 @@ private:
         CopyL0C2GMT copyL0C2GM, MmadAtomT mmadAtom, uint64_t offsetAl1)
     {
         uint64_t batchStepCnt = CeilDiv(curIterBatchL1, mainIterBatchL0_);
-        const uint64_t c0Size = BLOCK_BYTE_SIZE / sizeof(A_T);
+        const uint64_t c0Size = BLOCK_BYTE_SIZE / sizeof(AType);
         uint64_t l0aPerBatchBytes = CeilAlign(m_, static_cast<uint64_t>(BLOCK_CUBE)) *
-            CeilAlign(k_, c0Size) * sizeof(A_T);
+            CeilAlign(k_, c0Size) * sizeof(AType);
         uint64_t l0bPerBatchBytes = CeilAlign(k_, c0Size) *
-            CeilAlign(n_, static_cast<uint64_t>(BLOCK_CUBE)) * sizeof(B_T);
+            CeilAlign(n_, static_cast<uint64_t>(BLOCK_CUBE)) * sizeof(BType);
         uint64_t l0cPerBatchBytes = CeilAlign(m_, static_cast<uint64_t>(BLOCK_CUBE)) *
             CeilAlign(n_, static_cast<uint64_t>(BLOCK_CUBE)) * sizeof(float);
         uint64_t l0BufId = 0;
@@ -305,9 +306,9 @@ private:
                 uint64_t al0BatchIdx = GetABatchIdx(batchL0Idx);
                 uint64_t bl0BatchIdx = GetBBatchIdx(batchL0Idx);
                 ComputeMmad(m_, n_, k_, 0, mmadAtom,
-                    HALF_L0_SIZE * l0BufId + al0BatchIdx * l0aPerBatchBytes,
-                    HALF_L0_SIZE * l0BufId + bl0BatchIdx * l0bPerBatchBytes,
-                    HALF_L0C_SIZE * l0BufId + batchL0Idx * l0cPerBatchBytes);
+                    AscendC::TOTAL_L0A_SIZE / BUFFER_NUM * l0BufId + al0BatchIdx * l0aPerBatchBytes,
+                    AscendC::TOTAL_L0A_SIZE / BUFFER_NUM * l0BufId + bl0BatchIdx * l0bPerBatchBytes,
+                    AscendC::TOTAL_L0C_SIZE / BUFFER_NUM * l0BufId + batchL0Idx * l0cPerBatchBytes);
             }
             AscendC::SetFlag<AscendC::HardEvent::M_MTE1>(static_cast<uint16_t>(l0BufId) + SIXTH_FLAG);
             FixL0CToGM(gmC, l0BufId, curIterBatchL0, iter1, copyL0C2GM);
@@ -323,17 +324,17 @@ private:
         const L0TileInfo& tileInfo, uint64_t offsetAl1,
         CopyL12L0AT copyL12L0A, CopyL12L0BT copyL12L0B, CopyL12BTT copyL12BT)
     {
-        // A-side: TRANS_A always 2D per-batch loop; !TRANS_A uses 3D or 2D for FP32+broadcastAxis==3
+        // A-side: TRANS_A always 2D per-batch loop; !TRANS_A uses 3D or 2D for FP32+single-batch broadcast
         if constexpr (TRANS_A) {
             CopyAl1ToL0PerBatch<AscendC::Te::ZNLayoutPtn>(l0BufId, tileInfo, offsetAl1, copyL12L0A);
         } else {
-            if (broadcastAxisA_ == LAST_BATCH_DIM && sizeof(AType) == sizeof(float)) {
+            if (aBroadcastSingleBatch_ && sizeof(AType) == sizeof(float)) {
                 CopyAl1ToL0PerBatch<AscendC::Te::NZLayoutPtn>(l0BufId, tileInfo, offsetAl1, copyL12L0A);
             } else {
                 auto al0KLayout = AscendC::Te::MakeFrameLayout<AscendC::Te::NZLayoutPtn,
                     AscendC::Te::LayoutTraitDefault<AType>>(tileInfo.curAl0Cnt, tileInfo.curM, tileInfo.curK);
-                auto al0KTensor = AscendC::Te::MakeTensor(
-                    AscendC::Te::MakeMemPtr<AscendC::Te::Location::L0A, AType>(HALF_L0_SIZE * l0BufId), al0KLayout);
+                auto al0KTensor = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::L0A, AType>(
+                    AscendC::TOTAL_L0A_SIZE / BUFFER_NUM * l0BufId), al0KLayout);
                 auto al1Slice = al1Tensor.Slice(AscendC::Te::MakeCoord(tileInfo.al0BatchStart,
                     AscendC::Te::MakeCoord(tileInfo.iterM * baseM_, tileInfo.iterK * baseK_)),
                     AscendC::Te::MakeShape(tileInfo.curAl0Cnt, AscendC::Te::MakeShape(tileInfo.curM, tileInfo.curK)));
@@ -346,8 +347,8 @@ private:
         } else {
             auto bl0KLayout = AscendC::Te::MakeFrameLayout<AscendC::Te::ZNLayoutPtn,
                 AscendC::Te::LayoutTraitDefault<BType>>(tileInfo.curBl0Cnt, tileInfo.curK, tileInfo.curN);
-            auto bl0KTensor = AscendC::Te::MakeTensor(
-                AscendC::Te::MakeMemPtr<AscendC::Te::Location::L0B, BType>(HALF_L0_SIZE * l0BufId), bl0KLayout);
+            auto bl0KTensor = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::L0B, BType>(
+                AscendC::TOTAL_L0A_SIZE / BUFFER_NUM * l0BufId), bl0KLayout);
             auto bl1Slice = bl1Tensor.Slice(AscendC::Te::MakeCoord(tileInfo.bl0BatchStart,
                 AscendC::Te::MakeCoord(tileInfo.iterK * baseK_, tileInfo.iterN * baseN_)),
                 AscendC::Te::MakeShape(tileInfo.curBl0Cnt, AscendC::Te::MakeShape(tileInfo.curK, tileInfo.curN)));
@@ -405,7 +406,7 @@ private:
         auto l0cOutLayout = AscendC::Te::MakeFrameLayout<AscendC::Te::NZLayoutPtn,
             AscendC::Std::Int<16>>(curIterBatchL0, m_, n_);
         auto l0cOutTensor = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<
-            AscendC::Te::Location::L0C, float>(HALF_L0C_SIZE * l0cBufId), l0cOutLayout);
+            AscendC::Te::Location::L0C, float>(AscendC::TOTAL_L0C_SIZE / BUFFER_NUM * l0cBufId), l0cOutLayout);
         auto gmCSlice = gmC.Slice(AscendC::Te::MakeCoord(iter1 * mainIterBatchL0_,
             AscendC::Te::MakeCoord(0, 0)), AscendC::Te::MakeShape(curIterBatchL0, AscendC::Te::MakeShape(m_, n_)));
 
@@ -418,19 +419,19 @@ private:
         uint64_t l0BufId, const L0TileInfo& tileInfo, uint64_t offsetAl1,
         CopyL12L0AT copyL12L0A)
     {
-        const uint64_t c0SizeA = BLOCK_BYTE_SIZE / sizeof(A_T);
+        const uint64_t c0SizeA = BLOCK_BYTE_SIZE / sizeof(AType);
         uint64_t l0aBatchStrideBytes = CeilAlign(tileInfo.curM,
-            static_cast<uint64_t>(BLOCK_CUBE)) * CeilAlign(tileInfo.curK, c0SizeA) * sizeof(A_T);
+            static_cast<uint64_t>(BLOCK_CUBE)) * CeilAlign(tileInfo.curK, c0SizeA) * sizeof(AType);
         for (uint64_t bIdx = 0; bIdx < tileInfo.curAl0Cnt; ++bIdx) {
             uint64_t al1AbsBatchIdx = tileInfo.al0BatchStart + GetABatchIdx(bIdx);
-            uint64_t al1ByteOff = offsetAl1 + al1AbsBatchIdx * aL1BatchStrideElems_ * sizeof(A_T);
+            uint64_t al1ByteOff = offsetAl1 + al1AbsBatchIdx * aL1BatchStrideElems_ * sizeof(AType);
             auto al1BatchLayout = AscendC::Te::MakeFrameLayout<L1Ptn, AscendC::Te::LayoutTraitDefault<AType>>(m_, k_);
             auto al1BatchTensor = AscendC::Te::MakeTensor(
                 AscendC::Te::MakeMemPtr<AscendC::Te::Location::L1, AType>(al1ByteOff), al1BatchLayout);
             auto al1Slice = al1BatchTensor.Slice(
                 AscendC::Te::MakeCoord(tileInfo.iterM * baseM_, tileInfo.iterK * baseK_),
                 AscendC::Te::MakeShape(tileInfo.curM, tileInfo.curK));
-            uint64_t al0ByteOff = HALF_L0_SIZE * l0BufId + bIdx * l0aBatchStrideBytes;
+            uint64_t al0ByteOff = AscendC::TOTAL_L0A_SIZE / BUFFER_NUM * l0BufId + bIdx * l0aBatchStrideBytes;
             auto al0BatchLayout = AscendC::Te::MakeFrameLayout<
                 AscendC::Te::NZLayoutPtn, AscendC::Te::LayoutTraitDefault<AType>>(tileInfo.curM, tileInfo.curK);
             auto al0BatchTensor = AscendC::Te::MakeTensor(
@@ -444,12 +445,12 @@ private:
         uint64_t l0BufId, const L0TileInfo& tileInfo, uint64_t offsetAl1,
         CopyL12L0BT copyL12L0B)
     {
-        const uint64_t c0SizeB = BLOCK_BYTE_SIZE / sizeof(B_T);
+        const uint64_t c0SizeB = BLOCK_BYTE_SIZE / sizeof(BType);
         uint64_t l0bBatchStrideBytes = CeilAlign(tileInfo.curK, c0SizeB) *
-            CeilAlign(tileInfo.curN, static_cast<uint64_t>(BLOCK_CUBE)) * sizeof(B_T);
+            CeilAlign(tileInfo.curN, static_cast<uint64_t>(BLOCK_CUBE)) * sizeof(BType);
         for (uint64_t bIdx = 0; bIdx < tileInfo.curBl0Cnt; ++bIdx) {
             uint64_t bl1AbsBatchIdx = tileInfo.bl0BatchStart + GetBBatchIdx(bIdx);
-            uint64_t bl1ByteOff = offsetAl1 + aL1OneBuffer_ + bl1AbsBatchIdx * bL1BatchStrideElems_ * sizeof(B_T);
+            uint64_t bl1ByteOff = offsetAl1 + aL1OneBuffer_ + bl1AbsBatchIdx * bL1BatchStrideElems_ * sizeof(BType);
             auto bl1BatchLayout = AscendC::Te::MakeFrameLayout<L1Ptn,
                 AscendC::Te::LayoutTraitDefault<BType>>(k_, n_);
             auto bl1BatchTensor = AscendC::Te::MakeTensor(
@@ -457,7 +458,7 @@ private:
             auto bl1Slice = bl1BatchTensor.Slice(
                 AscendC::Te::MakeCoord(tileInfo.iterK * baseK_, tileInfo.iterN * baseN_),
                 AscendC::Te::MakeShape(tileInfo.curK, tileInfo.curN));
-            uint64_t bl0ByteOff = HALF_L0_SIZE * l0BufId + bIdx * l0bBatchStrideBytes;
+            uint64_t bl0ByteOff = AscendC::TOTAL_L0A_SIZE / BUFFER_NUM * l0BufId + bIdx * l0bBatchStrideBytes;
             auto bl0BatchLayout = AscendC::Te::MakeFrameLayout<
                 AscendC::Te::ZNLayoutPtn, AscendC::Te::LayoutTraitDefault<BType>>(tileInfo.curK, tileInfo.curN);
             auto bl0BatchTensor = AscendC::Te::MakeTensor(
@@ -500,7 +501,9 @@ private:
                         AscendC::SetFlag<AscendC::HardEvent::MTE1_M>(static_cast<uint16_t>(l0BufId));
                         AscendC::WaitFlag<AscendC::HardEvent::MTE1_M>(static_cast<uint16_t>(l0BufId));
                         ComputeMmad(curM, curN, curK, iterKl0, mmadAtom,
-                            HALF_L0_SIZE * l0BufId, HALF_L0_SIZE * l0BufId, HALF_L0C_SIZE * l0cBufId);
+                            AscendC::TOTAL_L0A_SIZE / BUFFER_NUM * l0BufId,
+                            AscendC::TOTAL_L0A_SIZE / BUFFER_NUM * l0BufId,
+                            AscendC::TOTAL_L0C_SIZE / BUFFER_NUM * l0cBufId);
                         AscendC::SetFlag<AscendC::HardEvent::M_MTE1>(static_cast<uint16_t>(l0BufId) + SIXTH_FLAG);
                     }
                     FixL0CToGMSingleBatch(gmC, l0cBufId, curM, curN, batchIdx, iterMl0, iterNl0, copyL0C2GM);
@@ -529,7 +532,8 @@ private:
         auto al0Layout = AscendC::Te::MakeFrameLayout<
             AscendC::Te::NZLayoutPtn, AscendC::Te::LayoutTraitDefault<AType>>(tileInfo.curM, tileInfo.curK);
         auto al0Tensor = AscendC::Te::MakeTensor(
-            AscendC::Te::MakeMemPtr<AscendC::Te::Location::L0A, AType>(HALF_L0_SIZE * tileInfo.l0BufId), al0Layout);
+            AscendC::Te::MakeMemPtr<AscendC::Te::Location::L0A, AType>(
+                AscendC::TOTAL_L0A_SIZE / BUFFER_NUM * tileInfo.l0BufId), al0Layout);
         AscendC::Te::Copy(copyL12L0A, al0Tensor, al1Slice);
 
         auto bl1PerBatch = bl1Tensor.Slice(
@@ -543,7 +547,8 @@ private:
         auto bl0Layout = AscendC::Te::MakeFrameLayout<
             AscendC::Te::ZNLayoutPtn, AscendC::Te::LayoutTraitDefault<BType>>(tileInfo.curK, tileInfo.curN);
         auto bl0Tensor = AscendC::Te::MakeTensor(
-            AscendC::Te::MakeMemPtr<AscendC::Te::Location::L0B, BType>(HALF_L0_SIZE * tileInfo.l0BufId), bl0Layout);
+            AscendC::Te::MakeMemPtr<AscendC::Te::Location::L0B, BType>(
+                AscendC::TOTAL_L0A_SIZE / BUFFER_NUM * tileInfo.l0BufId), bl0Layout);
         AscendC::Te::Copy(copyL12L0B, bl0Tensor, bl1Slice);
 
         if (isBias_ && tileInfo.iterK == 0) {
@@ -567,7 +572,7 @@ private:
         AscendC::WaitFlag<AscendC::HardEvent::M_FIX>(static_cast<uint16_t>(l0cBufId));
         auto l0cOutLayout = AscendC::Te::MakeFrameLayout<AscendC::Te::NZLayoutPtn, AscendC::Std::Int<16>>(curM, curN);
         auto l0cOutTensor = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<
-            AscendC::Te::Location::L0C, float>(HALF_L0C_SIZE * l0cBufId), l0cOutLayout);
+            AscendC::Te::Location::L0C, float>(AscendC::TOTAL_L0C_SIZE / BUFFER_NUM * l0cBufId), l0cOutLayout);
         auto gmCPerBatch = gmC.Slice(AscendC::Te::MakeCoord(batchIdx, AscendC::Te::MakeCoord(0, 0)),
             AscendC::Te::MakeShape(1, AscendC::Te::MakeShape(m_, n_)));
         auto gmCPerBatch2D = AscendC::Te::MakeTensor(gmCPerBatch.Data(),
@@ -582,7 +587,7 @@ private:
     __aicore__ inline uint64_t GetAl1Count(uint64_t iterBatchL1) const
     {
         if constexpr (A_BROADCAST) {
-            if (broadcastAxisA_ == LAST_BATCH_DIM) { return 1; }
+            if (aBroadcastSingleBatch_) { return 1; }
         }
         return iterBatchL1;
     }
@@ -590,7 +595,7 @@ private:
     __aicore__ inline uint64_t GetBl1Count(uint64_t iterBatchL1) const
     {
         if constexpr (B_BROADCAST) {
-            if (broadcastAxisB_ == LAST_BATCH_DIM) { return 1; }
+            if (bBroadcastSingleBatch_) { return 1; }
         }
         return iterBatchL1;
     }
@@ -598,7 +603,7 @@ private:
     __aicore__ inline uint64_t GetAl0Count(uint64_t iterBatchL0) const
     {
         if constexpr (A_BROADCAST) {
-            if (broadcastAxisA_ == LAST_BATCH_DIM) { return 1; }
+            if (aBroadcastSingleBatch_) { return 1; }
         }
         return iterBatchL0;
     }
@@ -606,7 +611,7 @@ private:
     __aicore__ inline uint64_t GetBl0Count(uint64_t iterBatchL0) const
     {
         if constexpr (B_BROADCAST) {
-            if (broadcastAxisB_ == LAST_BATCH_DIM) { return 1; }
+            if (bBroadcastSingleBatch_) { return 1; }
         }
         return iterBatchL0;
     }
@@ -614,7 +619,7 @@ private:
     __aicore__ inline uint64_t GetAl0BatchStart(uint64_t iterIdx) const
     {
         if constexpr (A_BROADCAST) {
-            if (broadcastAxisA_ == LAST_BATCH_DIM) { return 0; }
+            if (aBroadcastSingleBatch_) { return 0; }
         }
         return iterIdx * mainIterBatchL0_;
     }
@@ -622,7 +627,7 @@ private:
     __aicore__ inline uint64_t GetBl0BatchStart(uint64_t iterIdx) const
     {
         if constexpr (B_BROADCAST) {
-            if (broadcastAxisB_ == LAST_BATCH_DIM) { return 0; }
+            if (bBroadcastSingleBatch_) { return 0; }
         }
         return iterIdx * mainIterBatchL0_;
     }
@@ -630,7 +635,7 @@ private:
     __aicore__ inline uint64_t GetABatchIdx(uint64_t batchL1Idx) const
     {
         if constexpr (A_BROADCAST) {
-            if (broadcastAxisA_ == LAST_BATCH_DIM) { return 0; }
+            if (aBroadcastSingleBatch_) { return 0; }
         }
         return batchL1Idx;
     }
@@ -638,7 +643,7 @@ private:
     __aicore__ inline uint64_t GetBBatchIdx(uint64_t batchL1Idx) const
     {
         if constexpr (B_BROADCAST) {
-            if (broadcastAxisB_ == LAST_BATCH_DIM) { return 0; }
+            if (bBroadcastSingleBatch_) { return 0; }
         }
         return batchL1Idx;
     }

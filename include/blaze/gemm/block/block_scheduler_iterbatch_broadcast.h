@@ -136,6 +136,22 @@ public:
                batchB2 * bBatchDim3_ + batchB3;
     }
 
+    __aicore__ inline bool IsBroadcastSideSingleBatch() const
+    {
+        bool isBroadcastA = broadcastAxisA_ < static_cast<int64_t>(MAX_BATCH_DIM);
+        int64_t bcAxis = isBroadcastA ? broadcastAxisA_ : broadcastAxisB_;
+        if (bcAxis >= static_cast<int64_t>(MAX_BATCH_DIM)) {
+            return false;
+        }
+        const int64_t aBatchDims[MAX_BATCH_DIM] = {aBatchDim0_, aBatchDim1_, aBatchDim2_, aBatchDim3_};
+        const int64_t bBatchDims[MAX_BATCH_DIM] = {bBatchDim0_, bBatchDim1_, bBatchDim2_, bBatchDim3_};
+        int64_t innerProduct = 1;
+        for (int64_t i = bcAxis + 1; i < static_cast<int64_t>(MAX_BATCH_DIM); ++i) {
+            innerProduct *= isBroadcastA ? aBatchDims[i] : bBatchDims[i];
+        }
+        return innerProduct == 1;
+    }
+
 private:
     int64_t m_{0};
     int64_t n_{0};

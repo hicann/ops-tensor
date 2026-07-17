@@ -20,8 +20,6 @@
 
 #pragma once
 
-#define ASCENDC_CUBE_ONLY
-
 #if ASC_DEVKIT_MAJOR >= 9
 #include "kernel_basic_intf.h"
 #else
@@ -57,10 +55,6 @@ public:
     using BlockScheduler = BlockScheduler_;
     using BlockEpilogue = BlockEpilogue_;
     using DispatchPolicy = typename BlockMmad::DispatchPolicy;
-    static constexpr bool TRANS_A = BlockMmad::TRANS_A;
-    static constexpr bool TRANS_B = BlockMmad::TRANS_B;
-    static constexpr bool A_BROADCAST = DispatchPolicy::A_BROADCAST;
-    static constexpr bool B_BROADCAST = DispatchPolicy::B_BROADCAST;
     using BlockMmadParams = typename BlockMmad::Params;
     using BlockEpilogueParams = typename BlockEpilogue::Params;
     using AType = typename BlockMmad::AType;
@@ -120,19 +114,17 @@ public:
         if (curBlockIdx >= realCoreNums) {
             return;
         }
-        uint64_t mainIterBatchL1 = static_cast<uint64_t>(schP.iterBatchL1);
-        uint64_t mainIterBatchL0 = static_cast<uint64_t>(schP.iterBatchL0);
-        uint64_t baseM = static_cast<uint64_t>(schP.baseM);
-        uint64_t baseN = static_cast<uint64_t>(schP.baseN);
-        uint64_t baseK = static_cast<uint64_t>(schP.baseK);
-        uint64_t bcAxisA = static_cast<uint64_t>(schP.broadcastAxisA);
-        uint64_t bcAxisB = static_cast<uint64_t>(schP.broadcastAxisB);
+        bool broadcastSingleBatch = bs.IsBroadcastSideSingleBatch();
+        bool aSingleBatch = A_BROADCAST && broadcastSingleBatch;
+        bool bSingleBatch = B_BROADCAST && broadcastSingleBatch;
         if (params.schedulerParams.isHf32) {
             AscendC::SetHF32Mode(1);
             AscendC::SetHF32TransMode(1);
         }
-        blockMmad.Init(params.problemShape, mainIterBatchL1, mainIterBatchL0, isBias_,
-            baseM, baseN, baseK, bcAxisA, bcAxisB);
+        BlockMmadParams mmadParams = params.mmadParams;
+        mmadParams.aBroadcastSingleBatch = aSingleBatch;
+        mmadParams.bBroadcastSingleBatch = bSingleBatch;
+        blockMmad.Init(mmadParams);
         uint64_t totalABatches = static_cast<uint64_t>(
             params.schedulerParams.aBatchDim0 * params.schedulerParams.aBatchDim1 *
             params.schedulerParams.aBatchDim2 * params.schedulerParams.aBatchDim3);
@@ -162,8 +154,8 @@ public:
             uint64_t curIterBatchL1 = static_cast<uint64_t>(AscendC::Te::Get<MNK_B>(blockShape));
             uint64_t aGmStartBatch = static_cast<uint64_t>(bs.ComputeABroadcastIndex(startBatchIdx));
             uint64_t bGmStartBatch = static_cast<uint64_t>(bs.ComputeBBroadcastIndex(startBatchIdx));
-            uint64_t al1Count = (A_BROADCAST && bcAxisA == LAST_BATCH_DIM) ? 1UL : curIterBatchL1;
-            uint64_t bl1Count = (B_BROADCAST && bcAxisB == LAST_BATCH_DIM) ? 1UL : curIterBatchL1;
+            uint64_t al1Count = aSingleBatch ? 1UL : curIterBatchL1;
+            uint64_t bl1Count = bSingleBatch ? 1UL : curIterBatchL1;
             uint64_t agmStart = A_BROADCAST ? aGmStartBatch : startBatchIdx;
             uint64_t bgmStart = B_BROADCAST ? bGmStartBatch : startBatchIdx;
             auto gmASlice = gmA.Slice(
@@ -175,13 +167,14 @@ public:
             auto gmCSlice = gmC.Slice(
                 AscendC::Te::MakeCoord(startBatchIdx, AscendC::Te::MakeCoord(0, 0)),
                 AscendC::Te::MakeShape(curIterBatchL1, AscendC::Te::MakeShape(m_, n_)));
-            blockMmad(gmCSlice, gmASlice, gmBSlice, gmBias, curIterBatchL1);
+            blockMmad(gmASlice, gmBSlice, gmBias, gmCSlice, curIterBatchL1);
         }
-        AscendC::SetMMLayoutTransform(false);
         UnsetHf32();
     }
 
 private:
+    static constexpr bool A_BROADCAST = DispatchPolicy::A_BROADCAST;
+    static constexpr bool B_BROADCAST = DispatchPolicy::B_BROADCAST;
     bool isBias_ = false;
     uint64_t m_{1};
     uint64_t n_{1};
