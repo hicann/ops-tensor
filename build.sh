@@ -78,6 +78,8 @@ BUILD_OUT_DIR=build_out
 VERBOSE=""
 CANN_3RD_LIB_PATH="${SCRIPT_DIR}/third_party"
 OP_KERNEL_MODE=false
+EXAMPLES_MODE=false
+EXAMPLE_TARGET=""
 
 # 设置 _ASCEND_INSTALL_PATH（优先级：ASCEND_INSTALL_PATH > ASCEND_HOME_PATH > 默认值）
 if [ -n "$ASCEND_INSTALL_PATH" ]; then
@@ -244,6 +246,15 @@ Kernel UT Examples:
   $(basename "$0") --opkernel -u --ops=mat_mul,quant_batch_matmul
   $(basename "$0") --opkernel -u
 
+Examples Mode:
+  --examples              Build and run all examples (uses built-in shapes)
+  --ops=X                 Specify operator for examples (e.g., mat_mul)
+  --target=Y              Specify example for examples (e.g., mat_mul_streamk)
+
+  $(basename "$0") --examples                                    # All examples
+  $(basename "$0") --examples --ops=mat_mul                      # mat_mul all examples
+  $(basename "$0") --examples --ops=mat_mul --target=mat_mul_streamk  # Single example
+
 EOF
 }
 
@@ -405,22 +416,22 @@ build_project() {
 # 打包
 build_package() {
     log_info "Building package..."
-    
+
     local PKG_NAME="cann-${SOC_NAME_LOWER}-ops-tensor_1.0.0_linux-${ARCH}.run"
     local BUILD_OUT_DIR="${SCRIPT_DIR}/build_out"
-    
+
     mkdir -p "${BUILD_OUT_DIR}"
-    
+
     # 创建临时目录
     local TMP_DIR=$(mktemp -d)
     log_info "Working directory: ${TMP_DIR}"
-    
+
     # 准备目录结构
     mkdir -p "${TMP_DIR}/ops_tensor"
-    
+
     # 复制 include 目录
     cp -r "${SCRIPT_DIR}/include" "${TMP_DIR}/ops_tensor/"
-    
+
     # 创建安装脚本
     cat > "${TMP_DIR}/install.sh" << 'EOF'
 #!/bin/bash
@@ -446,19 +457,19 @@ exit 0
 
 __ARCHIVE_BELOW__
 EOF
-    
+
     # 打包成 tar.gz
     cd "${TMP_DIR}"
     tar -czf archive.tar.gz ops_tensor
-    
+
     # 合成 .run 文件
     cat "${TMP_DIR}/install.sh" "${TMP_DIR}/archive.tar.gz" > "${BUILD_OUT_DIR}/${PKG_NAME}"
     chmod +x "${BUILD_OUT_DIR}/${PKG_NAME}"
-    
+
     # 清理
     rm -rf "${TMP_DIR}"
     cd "${SCRIPT_DIR}"
-    
+
     if [ -f "${BUILD_OUT_DIR}/${PKG_NAME}" ]; then
         log_success "Package created: ${BUILD_OUT_DIR}/${PKG_NAME}"
     else
@@ -602,6 +613,130 @@ build_kernel_ut() {
     cd "$SCRIPT_DIR"
 }
 
+# 构建并运行 Examples
+build_examples() {
+    local examples_dir="${SCRIPT_DIR}/examples"
+
+    if [ ! -d "$examples_dir" ]; then
+        log_error "Examples directory not found: $examples_dir"
+        exit 1
+    fi
+
+    # 1. Validate parameters
+    if [ -n "$EXAMPLE_TARGET" ] && [ "$BUILD_OPERATORS" = "all" ]; then
+        log_error "--target must be paired with --ops (specify which operator the target belongs to)"
+        exit 1
+    fi
+
+    # 2. Discover target examples
+    local examples=()
+    if [ -n "$EXAMPLE_TARGET" ]; then
+        local op_dir="${examples_dir}/${BUILD_OPERATORS}"
+        local target_dir="${op_dir}/${EXAMPLE_TARGET}"
+        if [ ! -d "$target_dir" ]; then
+            log_error "Target example not found: $target_dir"
+            exit 1
+        fi
+        examples+=("${BUILD_OPERATORS}/${EXAMPLE_TARGET}")
+    elif [ "$BUILD_OPERATORS" = "all" ]; then
+        for op_dir in "${examples_dir}"/*/; do
+            [ -d "$op_dir" ] || continue
+            local op_name=$(basename "$op_dir")
+            [ "$op_name" = "common" ] && continue
+            for example_dir in "${op_dir}"/*/; do
+                [ -d "$example_dir" ] || continue
+                local example_name=$(basename "$example_dir")
+                [ "$example_name" = "scripts" ] && continue
+                [ "$example_name" = "common" ] && continue
+                examples+=("${op_name}/${example_name}")
+            done
+        done
+    else
+        local op_dir="${examples_dir}/${BUILD_OPERATORS}"
+        if [ ! -d "$op_dir" ]; then
+            log_error "Operator directory not found: $op_dir"
+            exit 1
+        fi
+        for example_dir in "${op_dir}"/*/; do
+            [ -d "$example_dir" ] || continue
+            local example_name=$(basename "$example_dir")
+            [ "$example_name" = "scripts" ] && continue
+            [ "$example_name" = "common" ] && continue
+            examples+=("${BUILD_OPERATORS}/${example_name}")
+        done
+    fi
+
+    if [ ${#examples[@]} -eq 0 ]; then
+        log_warning "No example examples found"
+        return 0
+    fi
+
+    log_info "Found ${#examples[@]} example example(s) to run"
+    echo ""
+
+    # 3. Run each example's run.sh
+    local total_pass=0
+    local total_fail=0
+    local total_skip=0
+
+    for example_path in "${examples[@]}"; do
+        local op_name=$(echo "$example_path" | cut -d'/' -f1)
+        local example_name=$(echo "$example_path" | cut -d'/' -f2)
+        local example_dir="${examples_dir}/${op_name}/${example_name}"
+        local run_sh="${example_dir}/run.sh"
+
+        echo ""
+        log_info "========== example: ${op_name}/${example_name} =========="
+
+        if [ ! -f "$run_sh" ]; then
+            log_warning "  run.sh not found in ${example_name}, skipping"
+            total_skip=$((total_skip + 1))
+            continue
+        fi
+
+        local csv_file="${example_dir}/${example_name}.csv"
+        local run_args=()
+        if [ -f "$csv_file" ]; then
+            log_info "  Found CSV: ${example_name}.csv, running in batch mode"
+            run_args+=(--case="${csv_file}")
+        else
+            log_info "  No CSV found, running with built-in defaults"
+        fi
+
+        set +e
+        bash "$run_sh" "${run_args[@]}"
+        local run_result=$?
+        set -e
+
+        if [ $run_result -eq 0 ]; then
+            total_pass=$((total_pass + 1))
+            log_success "  [PASS] ${example_name}"
+        else
+            total_fail=$((total_fail + 1))
+            log_error "  [FAIL] ${example_name} (exit code: $run_result)"
+        fi
+    done
+
+    # 4. Summarize results
+    echo ""
+    log_info "========== Examples Summary =========="
+    log_success "  PASS: ${total_pass}"
+    if [ $total_fail -gt 0 ]; then
+        log_error "  FAIL: ${total_fail}"
+    else
+        log_info "  FAIL: ${total_fail}"
+    fi
+    if [ $total_skip -gt 0 ]; then
+        log_warning "  SKIP: ${total_skip}"
+    fi
+    echo "========================================="
+
+    if [ $total_fail -gt 0 ]; then
+        log_error "Some examples failed"
+        exit 1
+    fi
+}
+
 # 解析命令行参数
 parse_arguments() {
     while [[ $# -gt 0 ]]; do
@@ -679,6 +814,14 @@ parse_arguments() {
                 RUN_TESTS=true
                 shift
                 ;;
+            --examples)
+                EXAMPLES_MODE=true
+                shift
+                ;;
+            --target=*)
+                EXAMPLE_TARGET="${1#*=}"
+                shift
+                ;;
             *)
                 log_error "Unknown option: $1"
                 echo ""
@@ -736,7 +879,12 @@ check_dependencies() {
 
     # 检查Python (用于测试脚本)
     if ! command -v python3 &> /dev/null && ! command -v python &> /dev/null; then
-        log_warning "Python is not installed, some test scripts may not run"
+        if [ "$EXAMPLES_MODE" = true ]; then
+            log_error "Python is not installed, required for examples mode"
+            missing_deps=$((missing_deps + 1))
+        else
+            log_warning "Python is not installed, some test scripts may not run"
+        fi
     else
         local python_cmd="python3"
         if ! command -v python3 &> /dev/null; then
@@ -778,6 +926,22 @@ main() {
         fi
     fi
 
+    # --examples validation
+    if [ "$EXAMPLES_MODE" = true ]; then
+        if [ "$RUN_TESTS" = true ]; then
+            log_error "--examples cannot be used with --run"
+            exit 1
+        fi
+        if [ "$ENABLE_PACKAGE" = true ]; then
+            log_error "--examples cannot be used with --pkg"
+            exit 1
+        fi
+        if [ "$OP_KERNEL_MODE" = true ]; then
+            log_error "--examples cannot be used with --opkernel"
+            exit 1
+        fi
+    fi
+
     # 依赖检查
     check_dependencies
 
@@ -792,7 +956,7 @@ main() {
         IFS=',' read -ra OPS <<< "$BUILD_OPERATORS"
         if [ "$OP_KERNEL_MODE" = true ]; then
             validate_kernel_ut_operators "${OPS[*]}"
-        else
+        elif [ "$EXAMPLES_MODE" != true ]; then
             validate_operators "${OPS[*]}"
         fi
     fi
@@ -846,6 +1010,12 @@ main() {
     fi
     echo "=================================="
     echo ""
+
+    if [ "$EXAMPLES_MODE" = true ]; then
+        build_examples
+        log_success "All examples operations completed!"
+        exit 0
+    fi
 
     if [ "$OP_KERNEL_MODE" = true ]; then
         build_kernel_ut

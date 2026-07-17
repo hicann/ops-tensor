@@ -116,7 +116,7 @@ ops-tensor 提供一键式编译能力，使用 `build.sh` 脚本：
 ./build.sh --help
 ```
 
-## Kernel UT 测试
+## Kernel-UT测试
 
 Kernel UT（单元测试）用于验证算子内核的正确性。
 
@@ -160,6 +160,55 @@ Kernel UT（单元测试）用于验证算子内核的正确性。
 ```
 
 更详细的 Kernel UT 开发流程请参阅 [算子开发指南](./QUICK_OP_INVOCATION.md)。
+
+## Samples测试
+
+Samples 测试用于验证算子样例在 NPU 上的编译、执行和精度正确性。通过 CSV 测试用例表驱动，自动完成编译、数据生成、kernel 执行和精度验证。
+
+### 1. 执行所有样例
+
+```bash
+./build.sh --examples
+```
+
+`build.sh` 会自动发现 `examples/` 下所有样例目录中的同名 CSV 文件（`{example}.csv`），以 `--case` 参数委托各样例的 `run.sh` 执行。
+
+### 2. 执行指定算子的样例
+
+```bash
+# 单个算子下的所有样例
+./build.sh --examples --ops=mat_mul
+
+# 指定样例
+./build.sh --examples --ops=mat_mul --target=mat_mul_streamk
+```
+
+### 3. 通过 run.sh 执行
+
+进入样例目录，直接指定 CSV 文件执行：
+
+```bash
+cd examples/mat_mul/mat_mul_streamk
+bash run.sh --case=mat_mul_streamk.csv
+```
+
+### 4. CSV 测试用例格式
+
+每个样例目录下有一个与样例同名的 CSV 文件，定义所有测试用例：
+
+```csv
+casename,m,k,n,bias,dtype,transA,transB,hf32,format
+mat_mul_streamk_fp16,100,8192,100,100,float16,false,false,false,"(ND,ND)"
+mat_mul_streamk_fp32,100,8192,100,100,float32,false,false,false,"(ND,ND)"
+```
+
+若提示如下信息，则说明 Samples 测试通过：
+
+```bash
+[SUCCESS] All examples operations completed!
+```
+
+更详细的 Samples 使用说明请参阅 [Examples 文档](./examples/README.md)。
 
 
 ## 相关文档

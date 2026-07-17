@@ -51,7 +51,8 @@ Ascend 950PR / Ascend 950DT
 - [环境准备](./QUICKSTART.md#环境准备)：安装软件包之前，需要完成搭建基础环境，包括第三方依赖等；基础环境搭建后需要完成社区版CANN软件包安装、环境变量配置等。
 - [源码下载](./QUICKSTART.md#源码下载)：本项目源码下载。
 - [编译执行](./QUICKSTART.md#编译执行)：环境准备好后，可对源码修改编译生成可执行的文件。
-- [Kernel UT 测试](./QUICKSTART.md#Kernel-UT测试)：基于项目根目录的 build.sh 脚本，可执行 Kernel UT 用例，快速验证功能。
+- [Kernel UT 测试](./QUICKSTART.md#Kernel-UT测试)：基于项目根目录的 build.sh 脚本，可执行 Kernel UT 用例，快速验证编译能力。
+- [Samples 测试](./QUICKSTART.md#Samples测试)：基于项目根目录的 build.sh 脚本，可执行 Samples 用例，快速验证功能。
 - [打包安装](./QUICKSTART.md#打包安装)：编译并打包生成 .run 安装包。
 
 ## 📖文档介绍
