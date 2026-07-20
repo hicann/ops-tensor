@@ -38,11 +38,11 @@ namespace Kernel {
             AscendC::Std::is_same_v<KernelMmadWithScaleMixWithoutBatch, typename BlockMmad::DispatchPolicy::ScheduleType>>
 
 QBMM_MIX_WITHOUT_BATCH_KERNEL_CLASS_TEM_PARAMS
-class QbmmMixWithoutBatch {
+class GemmUniversal<QBMM_MIX_WITHOUT_BATCH_KERNEL_TEM_PARAMS> {
 public:
-    __aicore__ inline QbmmMixWithoutBatch()
+    __aicore__ inline GemmUniversal()
     {}
-    __aicore__ inline ~QbmmMixWithoutBatch()
+    __aicore__ inline ~GemmUniversal()
     {}
 
     using AType = typename BlockMmad::AType;
@@ -56,25 +56,10 @@ public:
     using BlockShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
     using BlockCoord = AscendC::Te::Coord<int64_t, int64_t, int64_t, int64_t>;
 
-    struct QBMMTiling {
-        uint32_t groupSizeM;
-        uint32_t groupSizeN;
-        uint32_t groupSizeK;
-        uint32_t baseM;
-        uint32_t baseN;
-        uint32_t baseK;
-        uint32_t kAL1;
-        uint32_t kBL1;
-        uint32_t nBufferNum;
-        uint32_t dbL0C;
-        uint32_t isBias;
-    };
-
     struct Params {
         ProblemShape problemShape;
         BlockMmadParams mmParams;
         BlockSchedulerParams schParams;
-        QBMMTiling qbmmParams;
         EpilogueParams epilogueParams;
     };
 
@@ -178,20 +163,6 @@ private:
     static constexpr int64_t C0_SIZE = AscendC::Te::C0_ELEMENT<AType>;
     using MakeLayoutA = AscendC::Te::FrameLayoutFormat<LayoutA, AscendC::Std::Int<C0_SIZE>>;
     using MakeLayoutB = AscendC::Te::FrameLayoutFormat<LayoutB, AscendC::Std::Int<C0_SIZE>>;
-};
-
-QBMM_MIX_WITHOUT_BATCH_KERNEL_CLASS_TEM_PARAMS
-class GemmUniversal<QBMM_MIX_WITHOUT_BATCH_KERNEL_TEM_PARAMS>
-    : public QbmmMixWithoutBatch<ProblemShape, BlockMmad, BlockEpilogue, BlockScheduler> {
-public:
-    using Base = QbmmMixWithoutBatch<ProblemShape, BlockMmad, BlockEpilogue, BlockScheduler>;
-    using Params = typename Base::Params;
-    using Base::operator();
-
-    __aicore__ inline GemmUniversal()
-    {}
-    __aicore__ inline ~GemmUniversal()
-    {}
 };
 
 } // namespace Kernel

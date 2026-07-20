@@ -12,7 +12,7 @@
  * \file qbmm_mix.h
  * \brief QBMM MIX A8W8 Kernel UT Wrapper（AIC int8 GEMM + AIV 反量化）。
  *        与 qbmm_cube.h 的 fixpipe wrapper 平级：装配 MatmulWithScaleMix / BlockEpilogueDequant /
- *        （多 batch）GemmUniversal 或（单 batch）QbmmMixWithoutBatch，并填好各子 Params。
+ *        GemmUniversal（多 batch / 单 batch without_batch 特化），并填好各子 Params。
  */
 
 #pragma once
@@ -129,7 +129,7 @@ __aicore__ inline void QBMMMixWrapper(
     kernel(params);
 }
 
-// 单 batch MIX：QbmmMixWithoutBatch（裁剪 batch 广播路径）。
+// 单 batch MIX：GemmUniversal（KernelMmadWithScaleMixWithoutBatch 特化，裁剪 batch 广播路径）。
 template <typename AType, typename BType, typename OutType, typename X2ScaleType = float,
     typename X1ScaleType = float, typename BiasType = int32_t,
     uint64_t FullLoadMode = Blaze::Gemm::NONE_FULL_LOAD_MODE>
@@ -138,8 +138,13 @@ __aicore__ inline void QBMMMixWithoutBatchWrapper(
     const QBMMV3TilingData& tilingData)
 {
     using Types = QBMMMixTypes<AType, BType, OutType, X2ScaleType, X1ScaleType, BiasType, FullLoadMode>;
-    using QBMMKernel = Blaze::Gemm::Kernel::QbmmMixWithoutBatch<
-        typename Types::ProblemShape, typename Types::BlockMmad, typename Types::BlockEpilogue,
+    using DispatchPolicy =
+        Blaze::Gemm::MatmulWithScaleMix<FullLoadMode, false, Blaze::Gemm::KernelMmadWithScaleMixWithoutBatch>;
+    using BlockMmad = Blaze::Gemm::Block::BlockMmad<
+        DispatchPolicy, AType, typename Types::LayoutA, typename Types::BTypeTuple, typename Types::LayoutB, int32_t,
+        typename Types::LayoutC, BiasType, typename Types::LayoutBias>;
+    using QBMMKernel = Blaze::Gemm::Kernel::GemmUniversal<
+        typename Types::ProblemShape, BlockMmad, typename Types::BlockEpilogue,
         typename Types::BlockScheduler>;
     using Params = typename QBMMKernel::Params;
 
@@ -147,12 +152,6 @@ __aicore__ inline void QBMMMixWithoutBatchWrapper(
     params.problemShape = {tilingData.m, tilingData.n, tilingData.k, tilingData.b};
     FillMixMmadParams(params.mmParams, x1GM, x2GM, tilingData);
     FillQbmmSchParams(params.schParams, tilingData);
-
-    // without_batch 的 QBMMTiling 仅有 groupSize*/tile 字段（kernel 未直接读取），按 tile 尺寸填充。
-    params.qbmmParams.groupSizeM = tilingData.baseM_qbmm;
-    params.qbmmParams.groupSizeN = tilingData.baseN_qbmm;
-    params.qbmmParams.groupSizeK = tilingData.baseK_qbmm;
-    FillQbmmTileParams(params.qbmmParams, tilingData);
 
     FillEpilogueParams(params.epilogueParams, pertokenScaleGM, scaleGM, biasGM, yGM, tilingData);
 

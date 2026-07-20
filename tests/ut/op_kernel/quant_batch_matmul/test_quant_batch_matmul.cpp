@@ -825,7 +825,7 @@ TEST_F(QBMMV3Test, Test_MIX_A8W8_Output_BF16)
     RunMixSmoke(kernelFunc, cfg);
 }
 
-// 单 batch 特化：走 QbmmMixWithoutBatch，激活 per-token + 权重 per-channel，half 输出。
+// 单 batch 特化：走 GemmUniversal without_batch，激活 per-token + 权重 per-channel，half 输出。
 TEST_F(QBMMV3Test, Test_MIX_A8W8_WithoutBatch)
 {
     MixCaseCfg cfg{16, 16, 16, 1, QM_PERTOKEN, QM_PERCHANNEL, false, GE_DT_FLOAT,

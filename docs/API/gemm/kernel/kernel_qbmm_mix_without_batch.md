@@ -10,10 +10,10 @@ MIX 模板量化 Matmul Kernel（无 Batch 变体），与 [kernel_qbmm_mix](./k
 ## 与带 Batch 版本的差异
 | 维度 | kernel_qbmm_mix | kernel_qbmm_mix_without_batch |
 |------|-----------------|-------------------------------|
-| 类名 | `GemmUniversal<...>`（SFINAE 特化） | `QbmmMixWithoutBatch` |
+| 类名 | `GemmUniversal<...>`（SFINAE 特化） | `GemmUniversal<...>`（`KernelMmadWithScaleMixWithoutBatch` 特化） |
 | Batch | 4 维 Batch 广播 + 尾块 latch | 仅单 Batch，无 Batch 偏移逻辑 |
 | 尾块切分 | 跨 Batch latch（needUpdateTail_ + restBatch） | 单轮判断即可 |
-| QBMMTiling | batchA/B/C 等 12 个字段 | groupSizeM/N/K（无 batch 字段） |
+| QBMMTiling | batchA/B/C 等 12 个字段 | 无 |
 | 偏移计算 | 含 `batchCOffset_` | `mPos * n + nPos` |
 
 ## 特殊约束
@@ -29,20 +29,7 @@ struct Params {
     ProblemShape problemShape;       // 问题 shape (m, n, k)
     BlockMmadParams mmParams;        // mmad 参数（A/B/C GM 地址）
     BlockSchedulerParams schParams;  // scheduler 参数（含 mTailTile / nTailTile）
-    QBMMTiling qbmmParams;           // QBMM tiling
     EpilogueParams epilogueParams;   // dequant epilogue 参数
-};
-```
-
-### QBMMTiling
-```
-struct QBMMTiling {
-    uint32_t groupSizeM, groupSizeN, groupSizeK;  // group 切分
-    uint32_t kAL1, kBL1;       // A/B 的 L1 K 轴切分
-    uint32_t nBufferNum;       // L1 缓冲数量
-    uint32_t baseM, baseN, baseK;  // L0 tile 形状
-    uint32_t isBias;           // 是否启用 bias
-    uint32_t dbL0C;            // L0C 双缓冲标志
 };
 ```
 
@@ -75,7 +62,7 @@ __aicore__ inline void Run(const Params& params, BlockScheduler& bs)
 
 ## 调用示例
 ```
-using QBMMKernel = Blaze::Gemm::Kernel::QbmmMixWithoutBatch<
+using QBMMKernel = Blaze::Gemm::Kernel::GemmUniversal<
     ProblemShape, BlockMmad, BlockEpilogue, BlockScheduler>;
 QBMMKernel qbmm;
 qbmm(params);
