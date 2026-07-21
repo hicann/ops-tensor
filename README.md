@@ -53,7 +53,6 @@ Ascend 950PR / Ascend 950DT
 - [编译执行](./QUICKSTART.md#编译执行)：环境准备好后，可对源码修改编译生成可执行的文件。
 - [Kernel UT 测试](./QUICKSTART.md#Kernel-UT测试)：基于项目根目录的 build.sh 脚本，可执行 Kernel UT 用例，快速验证编译能力。
 - [Samples 测试](./QUICKSTART.md#Samples测试)：基于项目根目录的 build.sh 脚本，可执行 Samples 用例，快速验证功能。
-- [打包安装](./QUICKSTART.md#打包安装)：编译并打包生成 .run 安装包。
 
 ## 📖文档介绍
 
@@ -67,5 +66,6 @@ Ascend 950PR / Ascend 950DT
 ## 📝相关信息
 
 - [贡献指南](CONTRIBUTING.md)
+- [编程规范](CODING_CONVENTIONS.md)
 - [安全声明](SECURITY.md)
 - [许可证](LICENSE)
