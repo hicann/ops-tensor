@@ -30,12 +30,10 @@ uint64_t g_k3CtrlValue = 0;
 extern "C" {
 
 void pv_init(int pv_mode, int hijack, int bLoadInstByPvwrapSelf, const char* out_dir, uint32_t core_id)
-{
-}
+{}
 
 void pv_launch_sub_core(uint64_t pc, const char* bin_file, uint32_t sub_core_id, uint32_t core_id)
-{
-}
+{}
 
 uint32_t pv_step(uint32_t pipe_id, uint32_t sub_core_id, uint32_t core_id)
 {
@@ -43,12 +41,10 @@ uint32_t pv_step(uint32_t pipe_id, uint32_t sub_core_id, uint32_t core_id)
 }
 
 void pv_reset(uint32_t sub_core_id, uint32_t core_id)
-{
-}
+{}
 
 void set_read_record()
-{
-}
+{}
 
 bool pv_reg_read(uint32_t reg_type, uint32_t reg_id, svOpenArrayHandle buf, uint32_t sub_core_id, uint32_t core_id)
 {
