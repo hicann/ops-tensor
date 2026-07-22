@@ -36,6 +36,7 @@
 #   --soc=ascend950 --pkg  为 Ascend950 芯片打包 (支持小写)
 #   -j16                  使用 16 个线程编译
 #   --opkernel -u          构建并执行 Kernel UT (必须组合使用)
+#                          执行前会自动初始化 tensor_api submodule（使用 pinned commit）
 #   --opkernel -u --ops=OP 构建并执行指定算子的 Kernel UT (tests/ut/op_kernel/ 下子目录名)
 #
 # 示例:
@@ -237,6 +238,7 @@ Examples:
 
 Kernel UT:
   --opkernel -u          Build and run kernel unit tests (required combination)
+                         Automatically initializes tensor_api submodule before build
   --opkernel -u --ops=OP Build and run kernel UT for specified operators
                          Operators are subdirectories under tests/ut/op_kernel/
                          Examples: mat_mul, quant_batch_matmul
@@ -248,6 +250,7 @@ Kernel UT Examples:
 
 Examples Mode:
   --examples              Build and run all examples (uses built-in shapes)
+                          Automatically initializes tensor_api submodule before build
   --ops=X                 Specify operator for examples (e.g., mat_mul)
   --target=Y              Specify example for examples (e.g., mat_mul_streamk)
 
@@ -553,8 +556,61 @@ run_kernel_ut() {
     fi
 }
 
+# 初始化 tensor_api submodule（Kernel UT / Examples 编译依赖）
+# 使用 superproject 记录的 pinned commit，不更新到分支最新
+update_tensor_api_submodule() {
+    log_info "Initializing tensor_api submodule (at pinned commit)..."
+
+    if ! command -v git &> /dev/null; then
+        log_error "git is not installed, cannot initialize tensor_api submodule"
+        exit 1
+    fi
+
+    # submodule 命令必须在仓库根目录执行
+    local _orig_dir="$(pwd)"
+    cd "${SCRIPT_DIR}"
+
+    if ! git rev-parse --is-inside-work-tree &> /dev/null; then
+        log_error "Not a git repository: ${SCRIPT_DIR}"
+        log_error "Cannot initialize tensor_api submodule. Please ensure ops-tensor is a git clone."
+        cd "${_orig_dir}"
+        exit 1
+    fi
+
+    # --init / --recursive: 初始化 submodule 并递归处理嵌套 submodule
+    # 不使用 --remote：checkout superproject 记录的 commit，不从配置分支拉取最新
+    set +e
+    git submodule update --init --recursive include/tensor_api 2>&1
+    local _rc=$?
+    set -e
+
+    cd "${_orig_dir}"
+
+    if [ ${_rc} -ne 0 ]; then
+        log_error "Failed to initialize tensor_api submodule (exit code: ${_rc})"
+        log_error "Possible causes:"
+        log_error "  1. Network issue - check connectivity to gitcode.com"
+        log_error "  2. Authentication issue - configure git credentials for gitcode.com"
+        log_error "  3. Pinned commit no longer exists in remote (run 'git fetch' in submodule)"
+        log_error ""
+        log_error "Manual recovery:"
+        log_error "  cd ${SCRIPT_DIR} && git submodule update --init --recursive include/tensor_api"
+        exit 1
+    fi
+
+    if [ -z "$(ls -A ${SCRIPT_DIR}/include/tensor_api/ 2>/dev/null)" ]; then
+        log_error "tensor_api submodule directory is empty after init"
+        log_error "This should not happen - please verify submodule configuration in .gitmodules"
+        exit 1
+    fi
+
+    log_success "tensor_api submodule initialized successfully"
+}
+
 build_kernel_ut() {
     log_info "Starting Kernel UT build..."
+
+    update_tensor_api_submodule
 
     local KERNEL_UT_SRC="${SCRIPT_DIR}/tests/ut/op_kernel"
     local KERNEL_UT_BUILD="${SCRIPT_DIR}/build/kernel_ut"
@@ -621,6 +677,11 @@ build_examples() {
         log_error "Examples directory not found: $examples_dir"
         exit 1
     fi
+
+    # 初始化 tensor_api submodule（Examples 编译依赖）
+    # examples/CMakeLists.txt 的 include 路径指向 ${OPS_TENSOR_ROOT}/include/tensor_api/
+    # 若 submodule 未初始化，编译会失败（不会回退到 CANN 环境）
+    update_tensor_api_submodule
 
     # 1. Validate parameters
     if [ -n "$EXAMPLE_TARGET" ] && [ "$BUILD_OPERATORS" = "all" ]; then

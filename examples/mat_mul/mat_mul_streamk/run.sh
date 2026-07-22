@@ -17,6 +17,8 @@ SCENARIO_NAME="$(basename "${SCRIPT_DIR}")"
 OP_DIR="$(dirname "${SCRIPT_DIR}")"
 OP_SCRIPTS_DIR="${OP_DIR}/scripts"
 EXAMPLES_DIR="$(dirname "${OP_DIR}")"
+EXAMPLES_COMMON_DIR="${EXAMPLES_DIR}/common"
+REPO_ROOT="$(dirname "${EXAMPLES_DIR}")"
 BUILD_DIR="${SCRIPT_DIR}/build"
 WORK_DIR="${SCRIPT_DIR}"
 
@@ -233,9 +235,15 @@ resolve_params() {
 }
 
 # ── Build ─────────────────────────────────────────────────────────────────────
+source "${EXAMPLES_COMMON_DIR}/submodule_utils.sh"
+
 do_build() {
     local target="${EXAMPLE:-${TARGET:-mat_mul_streamk}}"
     log_info "Building ${SCENARIO_NAME} ..."
+
+    if ! ensure_tensor_api_submodule "${REPO_ROOT}"; then
+        return 1
+    fi
 
     rm -rf "${BUILD_DIR}"
 
@@ -367,7 +375,10 @@ run_example() {
     # Step 2: Build (unless skipped)
     local exec_path="./build/mat_mul/${SCENARIO_NAME}/${EXAMPLE}"
     if [[ "$SKIP_BUILD" != true ]]; then
-        do_build
+        if ! do_build; then
+            log_error "build examples:${SCENARIO_NAME} failed"
+            return 1
+        fi
     else
         log_info "Skipping build (--skip-build)"
         if [[ ! -x "${exec_path}" ]]; then

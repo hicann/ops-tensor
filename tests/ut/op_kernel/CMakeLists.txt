@@ -148,6 +148,8 @@ foreach(_soc_short ${KERNEL_UT_SOC_LIST})
 
         target_include_directories(${_tgt} PRIVATE
             ${OPS_TENSOR_ROOT}/include
+            ${OPS_TENSOR_ROOT}/include/tensor_api/include
+            ${OPS_TENSOR_ROOT}/include/tensor_api
             ${ASCEND_HOME_PATH}/${SYSTEM_PREFIX}/asc
             ${ASCEND_HOME_PATH}/${SYSTEM_PREFIX}/asc/include
             ${ASCEND_HOME_PATH}/${SYSTEM_PREFIX}/asc/include/basic_api
@@ -191,6 +193,8 @@ foreach(_soc_short ${KERNEL_UT_SOC_LIST})
 
     target_include_directories(${_exe} PRIVATE
         ${OPS_TENSOR_ROOT}/include
+        ${OPS_TENSOR_ROOT}/include/tensor_api/include
+        ${OPS_TENSOR_ROOT}/include/tensor_api
         ${ASCEND_HOME_PATH}/${SYSTEM_PREFIX}/asc/include
         ${ASCEND_HOME_PATH}/include
         ${UT_KERNEL_INC}
