@@ -33,11 +33,11 @@ namespace Gemm {
 namespace Block {
 #if (defined(__NPU_ARCH__) && __NPU_ARCH__ == 3510)
 template <
-    uint64_t FullLoadMode_, bool AtomicAdd_, class ScheduleType_, class AType_, class LayoutA_, class BType_,
-    class LayoutB_, class CType_, class LayoutC_, class BiasType_, class LayoutBias_>
+    uint64_t FullLoadMode_, bool AtomicAdd_, class ScheduleType_, uint64_t L0C2UBMode_, class AType_, class LayoutA_,
+    class BType_, class LayoutB_, class CType_, class LayoutC_, class BiasType_, class LayoutBias_>
 class BlockMmad<
-    MatmulWithScaleMx<FullLoadMode_, AtomicAdd_, ScheduleType_>, AType_, LayoutA_, BType_, LayoutB_, CType_, LayoutC_,
-    BiasType_, LayoutBias_> {
+    MatmulWithScaleMx<FullLoadMode_, AtomicAdd_, ScheduleType_, L0C2UBMode_>, AType_, LayoutA_, BType_, LayoutB_,
+    CType_, LayoutC_, BiasType_, LayoutBias_> {
 public:
     using AType = AType_;
     using BType = BType_;
@@ -46,7 +46,7 @@ public:
     using LayoutB = LayoutB_;
     using LayoutC = LayoutC_;
     using BiasType = BiasType_;
-    using DispatchPolicy = MatmulWithScaleMx<FullLoadMode_, AtomicAdd_, ScheduleType_>;
+    using DispatchPolicy = MatmulWithScaleMx<FullLoadMode_, AtomicAdd_, ScheduleType_, L0C2UBMode_>;
     using ProblemShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
     using BlockShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
 
@@ -213,9 +213,20 @@ public:
         if (isLastSplitK) {
             if constexpr (AscendC::Std::is_same_v<AscendC::Te::GetMemLocation<TensorC>, AscendC::Te::Location::UB>) {
                 // C L0C->UB
-                auto CopyL0C2UB = AscendC::Te::MakeCopy(AscendC::Te::CopyL0C2UB{});
-                AscendC::Te::Copy(
-                    CopyL0C2UB.with(AscendC::Te::FixpipeParams(FINAL_ACCUMULATION)), gmC, tensorL0C);
+                if constexpr (DispatchPolicy::L0C2UB_MODE == L0C2UB_MODE_DUAL_DST_SPLIT_M) {
+                    auto CopyL0C2UB = AscendC::Te::MakeCopy(
+                        AscendC::Te::CopyL0C2UB{},
+                        Blaze::Gemm::Tile::CopyL0C2UBTraitSplitM{}
+                    );
+                    auto tensorL0CAligned = tensorL0C.Slice(AscendC::Te::MakeCoord(0L, 0L),
+                        AscendC::Te::MakeShape((tileL1L0Param.curM + 1) & ~1, Align32(tileL1L0Param.curN)));
+                    AscendC::Te::Copy(CopyL0C2UB.with(AscendC::Te::FixpipeParams(FINAL_ACCUMULATION)),
+                        gmC, tensorL0CAligned);
+                } else {
+                    auto CopyL0C2UB = AscendC::Te::MakeCopy(AscendC::Te::CopyL0C2UB{});
+                    AscendC::Te::Copy(
+                        CopyL0C2UB.with(AscendC::Te::FixpipeParams(FINAL_ACCUMULATION)), gmC, tensorL0C);
+                }
             } else {
                 // C L0C->GM
                 auto CopyL0C2GM = AscendC::Te::MakeCopy(AscendC::Te::CopyL0C2GM{});

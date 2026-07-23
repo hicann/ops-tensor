@@ -8,6 +8,7 @@
 | [kernel_qbmm_cube](./kernel_qbmm_cube.md) | Fixpipe 量化 Batch Matmul，支持 int8/HiFloat8/FP8 输入与 per-tensor/per-channel scale |
 | [kernel_qbmm_mx](./kernel_qbmm_mx.md) | MX 量化 Batch Matmul，支持 MxFP4/MxFP8 |
 | [kernel_qbmm_mx_without_batch](./kernel_qbmm_mx_without_batch.md) | MX 量化单 Batch Matmul，裁剪 Batch 广播路径 |
+| [kernel_qbmm_mx_activation_quant](./kernel_qbmm_mx_activation_quant.md) | MX 量化 Batch Matmul + Gelu 激活 + 动态 MX 量化融合 Kernel，AIC+AIV 双核 |
 | [kernel_qbmm_mix](./kernel_qbmm_mix.md) | MIX 模板 A8W8 量化 Batch Matmul，AIC cube + AIV dequant 后处理 |
 | [kernel_qbmm_mix_without_batch](./kernel_qbmm_mix_without_batch.md) | MIX 模板 A8W8 量化单 Batch Matmul，裁剪 Batch 广播路径 |
 | [kernel_qgmm_mx_basic](./kernel_qgmm_mx_basic.md) | MX 量化 Grouped Matmul，支持 group list 与 tail split |
@@ -39,6 +40,7 @@ KernelMatmul
 | KernelMatmulBasic | 仅 AIC | 不支持 | 不支持 | BlockEpilogueEmpty | 不需要 | 单 batch | MatmulBasic | 无 | 通用 Matmul |
 | KernelQbmmCube | 仅 AIC | int8/HiFloat8/FP8 | X2 scale + Fixpipe | 无 | 不需要 | 多 batch | BlockSchedulerQuantBatchMatmulV3 | 无 | Fixpipe 量化 Batch Matmul |
 | KernelQbmmMx | 仅 AIC | MX FP4/MX FP8 | ScaleA + ScaleB | 无 | 不需要 | 多 batch | BlockSchedulerQbmm | 无 | 量化 Batch Matmul |
+| KernelQbmmMxActivationQuant | AIC + AIV 双核 | MX FP4/MX FP8 | ScaleA + ScaleB | BlockEpilogueGeluQuant | 不需要 | 多 batch | BlockSchedulerQbmm | 有 | 量化 Matmul + Gelu 激活 + 动态 MX 量化融合 |
 | KernelQbmmMxWithoutBatch | 仅 AIC | MX FP4/MX FP8 | ScaleA + ScaleB | 无 | 不需要 | 单 batch | BlockSchedulerQbmm | 无 | 量化单 Batch Matmul |
 | KernelQbmmMix | AIC + AIV 双核 | int8 (A8W8) | x2Scale + x1Scale(可选) | BlockEpilogueDequant | 不需要 | 多 batch | BlockSchedulerQbmm | 有 | int8 量化 Batch Matmul（ND/WeightNz） |
 | KernelQbmmMixWithoutBatch | AIC + AIV 双核 | int8 (A8W8) | x2Scale + x1Scale(可选) | BlockEpilogueDequant | 不需要 | 单 batch | BlockSchedulerQbmm | 有 | int8 量化单 Batch Matmul（ND/WeightNz） |

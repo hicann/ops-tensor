@@ -121,6 +121,14 @@ constexpr uint16_t QBMM_MIX_AIC_SYNC_AIV_FLAG = 0;
 constexpr uint16_t QBMM_MIX_AIV_SYNC_AIC_FLAG = 1;
 constexpr uint16_t QBMM_MIX_FLAG_ID_MAX = 16;
 
+// (kernel_qbmm_mx_activation_quant.h).
+constexpr int64_t BLOCK_SIZE = 32;
+constexpr int64_t ALIGN_NUM_2 = 2;
+
+// L0C->UB copy mode: 0 = single dst (default), 1 = dual dst split M, reserved for split N etc.
+constexpr uint64_t L0C2UB_MODE_NONE = 0UL;
+constexpr uint64_t L0C2UB_MODE_DUAL_DST_SPLIT_M = 1UL;
+
 enum class QuantMode : uint32_t
 {
     DEFAULT = 0x0U,
