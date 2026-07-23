@@ -14,7 +14,7 @@ MIX 模板 A8W8 量化矩阵乘 Block，基于 Tensor API，仅在 **AIC** 上�
 ### 量化数据类型
 - A/B：int8（A8W8）。
 - L0C 累加类型 `L0CType = GetMmDstType<AType>::Type`（int8 → int32）。
-- C0_SIZE = `AuxGetC0Size<int8_t>()`（32）；C0_SIZE_L0C = 16。
+- C0_SIZE = `AscendC::Te::C0_ELEMENT<int8_t>`（32）；C0_SIZE_L0C = 16。
 
 ### 计算模式与输出目标
 - 仅 AIC 模式。
