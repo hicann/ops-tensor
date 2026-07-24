@@ -35,6 +35,7 @@ struct KernelMmadMultiBlockBmmBroadcast {}; // Multi-tile batchMatmul broadcast
 struct KernelMmadMultiBlockAFullLoad {};     // Multi-tile aFullLoad
 struct KernelMmadMultiBlockBFullLoad {}; // Multi-tile fullLoad
 struct KernelMmadMultiBlockFixpipeOpti {}; // Multi-tile FixpipeOpti
+struct KernelMmadMultiBlockTBMM {}; // tbmm schedule
 enum class MatMulL0C2Out : std::uint8_t
 {
     ON_THE_FLY = 0,

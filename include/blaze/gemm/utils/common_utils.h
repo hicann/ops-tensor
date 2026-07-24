@@ -32,6 +32,7 @@ constexpr int32_t MNK_M = 0;
 constexpr int32_t MNK_N = 1;
 constexpr int32_t MNK_K = 2;
 constexpr int32_t MNK_B = 3;
+constexpr int32_t MNK_SplitB = 4;
 constexpr int32_t EVEN_NUMBER = 2;
 
 constexpr uint64_t A_FULL_LOAD_MODE = 1UL;
@@ -86,6 +87,7 @@ constexpr uint64_t SCALE_C0 = 2UL;
 constexpr uint64_t SCALE_BUFFER_NUM = 2UL;
 
 constexpr uint64_t NON_CONTIGUOUS_TYPE_SLICE = 1UL;
+constexpr uint64_t NON_CONTIGUOUS_TYPE_PERM_X1 = 2UL;
 // FusedMatMul OpType
 constexpr uint64_t OP_TYPE_EMPTY = 0UL;
 constexpr uint64_t OP_TYPE_ADD = 1UL;
