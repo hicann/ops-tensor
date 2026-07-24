@@ -196,15 +196,15 @@ public:
     // =====================================================================
     __aicore__ inline void InitAL1(uint32_t idx, uint64_t byteOffset, uint8_t bufferId)
     {
-        aSlots_[idx] = {byteOffset, bufferId};
+        aL1Slots_[idx] = {byteOffset, bufferId};
     }
     __aicore__ inline void InitBL1(uint32_t idx, uint64_t byteOffset, uint8_t bufferId)
     {
-        bSlots_[idx] = {byteOffset, bufferId};
+        bL1Slots_[idx] = {byteOffset, bufferId};
     }
     __aicore__ inline void InitBias(uint32_t idx, uint64_t byteOffset, uint8_t bufferId)
     {
-        biasSlots_[idx] = {byteOffset, bufferId};
+        biasL1Slots_[idx] = {byteOffset, bufferId};
     }
 
     __aicore__ inline void InitBT(uint64_t btOneSize)
@@ -231,15 +231,15 @@ public:
     // =====================================================================
     __aicore__ inline const BufferSlot& GetL1ASlot(uint32_t idx) const
     {
-        return aSlots_[idx];
+        return aL1Slots_[idx];
     }
     __aicore__ inline const BufferSlot& GetL1BSlot(uint32_t idx) const
     {
-        return bSlots_[idx];
+        return bL1Slots_[idx];
     }
     __aicore__ inline const BufferSlot& GetL1BiasSlot(uint32_t idx) const
     {
-        return biasSlots_[idx];
+        return biasL1Slots_[idx];
     }
     __aicore__ inline const BufferSlot& GetBTSlot(uint32_t idx) const
     {
@@ -255,9 +255,9 @@ public:
     }
 
 private:
-    BufferSlot aSlots_[MaxL1ASlots];
-    BufferSlot bSlots_[MaxL1BSlots];
-    BufferSlot biasSlots_[MaxL1ASlots > MaxL1BSlots ? MaxL1ASlots : MaxL1BSlots];
+    BufferSlot aL1Slots_[MaxL1ASlots];
+    BufferSlot bL1Slots_[MaxL1BSlots];
+    BufferSlot biasL1Slots_[MaxL1ASlots > MaxL1BSlots ? MaxL1ASlots : MaxL1BSlots];
     BufferSlot btSlots_[MaxL0Slots];
     BufferSlot l0Slots_[MaxL0Slots];
     BufferSlot l0cSlots_[MaxL0Slots];

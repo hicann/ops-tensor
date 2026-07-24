@@ -107,16 +107,17 @@ public:
         l0PingPong_ = 0;
         abL1LoopCnt_ = 0;
         l0cPingPong_ = 0;
-        uint64_t aOneSize = mL1_ * kL1_ * sizeof(AType);
-        uint64_t bOneSize = nL1_ * kL1_ * sizeof(BType);
+        uint64_t aL1OneSize = mL1_ * kL1_ * sizeof(AType);
+        uint64_t bL1OneSize = nL1_ * kL1_ * sizeof(BType);
         constexpr uint64_t slotSize = AscendC::TOTAL_L1_SIZE / QUADRUPLE_BUFFER_COUNT;
         uint64_t stride = QUADRUPLE_BUFFER_COUNT / l1Stages_;
-
+        // 2buffer时：|APing,BPing,BiasPing------|APong,BPong,BiasPong---|
+        // 4buffer时：|A0,B0,Bias0 |A1,B1,Bias1 |A2,B2,Bias2 |A3,B3,Bias3 |
         for (uint32_t i = 0; i < l1Stages_; ++i) {
             uint64_t base = slotSize * stride * i;
             bufMgr_.InitAL1(i, base, i);
-            bufMgr_.InitBL1(i, base + aOneSize, i);
-            bufMgr_.InitBias(i, base + aOneSize + bOneSize, i);
+            bufMgr_.InitBL1(i, base + aL1OneSize, i);
+            bufMgr_.InitBias(i, base + aL1OneSize + bL1OneSize, i);
         }
         // the bias in BT must be float32
         bufMgr_.InitBT(sizeof(float) * baseN_);
@@ -145,14 +146,14 @@ public:
             uint64_t l1BufId = abL1LoopCnt_ & (l1Stages_ - 1);
             uint64_t btBufId = abL1LoopCnt_ & 0x1;
 
-            const auto& aSlot = bufMgr_.GetL1ASlot(l1BufId);
-            const auto& bSlot = bufMgr_.GetL1BSlot(l1BufId);
-            const auto& biasSlot = bufMgr_.GetL1BiasSlot(l1BufId);
+            const auto& aL1Slot = bufMgr_.GetL1ASlot(l1BufId);
+            const auto& bL1Slot = bufMgr_.GetL1BSlot(l1BufId);
+            const auto& biasL1Slot = bufMgr_.GetL1BiasSlot(l1BufId);
             const auto& btSlot = bufMgr_.GetBTSlot(btBufId);
 
             // GM->L1
             TripleShape l1Shape{curM, curN, static_cast<int64_t>(curKL1)};
-            auto l1Slots = AscendC::Std::make_tuple(aSlot, bSlot, biasSlot);
+            auto l1Slots = AscendC::Std::make_tuple(aL1Slot, bL1Slot, biasL1Slot);
             auto l1TensorTuple = CopyL1FromGM(gmA, gmB, gmBias, l1Shape, l1Slots, iter0);
             auto tensorAL1 = AscendC::Te::Get<0>(l1TensorTuple);
             auto tensorBL1 = AscendC::Te::Get<1>(l1TensorTuple);
@@ -210,17 +211,17 @@ private:
         uint64_t curML1 = AscendC::Te::Get<0>(l1Shape);
         uint64_t curNL1 = AscendC::Te::Get<1>(l1Shape);
         uint64_t curKL1 = AscendC::Te::Get<2>(l1Shape);
-        const auto& aSlot = AscendC::Te::Get<0>(slotsTuple);
-        const auto& bSlot = AscendC::Te::Get<1>(slotsTuple);
-        const auto& biasSlot = AscendC::Te::Get<2>(slotsTuple);
+        const auto& aL1Slot = AscendC::Te::Get<0>(slotsTuple);
+        const auto& bL1Slot = AscendC::Te::Get<1>(slotsTuple);
+        const auto& biasL1Slot = AscendC::Te::Get<2>(slotsTuple);
 
         // A GM->L1
         auto layoutAL1 = MakeLayoutAL1{}(curML1, curKL1);
         auto copyGM2L1 = AscendC::Te::MakeCopy(AscendC::Te::CopyGM2L1{});
-        auto tensorAL1 =
-            AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::L1, AType>(aSlot.Addr()), layoutAL1);
+        auto tensorAL1 = AscendC::Te::MakeTensor(
+            AscendC::Te::MakeMemPtr<AscendC::Te::Location::L1, AType>(aL1Slot.Addr()), layoutAL1);
         {
-            auto lock = aSlot.LockMte2();
+            auto lock = aL1Slot.LockMte2();
             if constexpr (NON_CONTIGUOUS_TYPE == NON_CONTIGUOUS_TYPE_SLICE) {
                 auto layoutGmA = tensorA.Layout();
                 auto sliceM = AscendC::Te::Get<0>(AscendC::Te::Get<1>(layoutGmA.Shape()));
@@ -238,19 +239,19 @@ private:
 
         // B GM->L1
         auto layoutBL1 = MakeLayoutBL1{}(curKL1, curNL1);
-        auto tensorBL1 =
-            AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::L1, BType>(bSlot.Addr()), layoutBL1);
+        auto tensorBL1 = AscendC::Te::MakeTensor(
+            AscendC::Te::MakeMemPtr<AscendC::Te::Location::L1, BType>(bL1Slot.Addr()), layoutBL1);
         auto gmTileB = tensorB.Slice(AscendC::Te::MakeCoord(kIdx * kL1_, 0), AscendC::Te::MakeShape(curKL1, curNL1));
         {
-            auto lock = bSlot.LockMte2();
+            auto lock = bL1Slot.LockMte2();
             AscendC::Te::Copy(copyGM2L1, tensorBL1, gmTileB);
         }
         // Bias GM->L1
         auto layoutBiasL1 = AscendC::Te::MakeFrameLayout<AscendC::Te::NDExtLayoutPtn>(1UL, curNL1);
         auto tensorBiasL1 = AscendC::Te::MakeTensor(
-            AscendC::Te::MakeMemPtr<AscendC::Te::Location::L1, BiasType>(biasSlot.Addr()), layoutBiasL1);
+            AscendC::Te::MakeMemPtr<AscendC::Te::Location::L1, BiasType>(biasL1Slot.Addr()), layoutBiasL1);
         if (isBias_ && kIdx == 0) {
-            auto lock = biasSlot.LockMte2();
+            auto lock = biasL1Slot.LockMte2();
             AscendC::Te::Copy(copyGM2L1, tensorBiasL1, tensorBias);
         }
 
@@ -265,9 +266,9 @@ private:
         auto curM0 = AscendC::Te::Get<0>(l0Shape);
         auto curN0 = AscendC::Te::Get<1>(l0Shape);
         auto curK0 = AscendC::Te::Get<2>(l0Shape);
-        const auto& aSlot = AscendC::Te::Get<0>(slotsTuple);
-        const auto& bSlot = AscendC::Te::Get<1>(slotsTuple);
-        const auto& biasSlot = AscendC::Te::Get<2>(slotsTuple);
+        const auto& aL1Slot = AscendC::Te::Get<0>(slotsTuple);
+        const auto& bL1Slot = AscendC::Te::Get<1>(slotsTuple);
+        const auto& biasL1Slot = AscendC::Te::Get<2>(slotsTuple);
         // A L1->L0A
         auto copyL12L0A = AscendC::Te::MakeCopy(AscendC::Te::CopyL12L0A{});
         auto layoutAL0 = AscendC::Te::MakeFrameLayout<AscendC::Te::NZLayoutPtn, AscendC::Te::LayoutTraitDefault<AType>>(
@@ -276,7 +277,7 @@ private:
             AscendC::Te::MakeMemPtr<AscendC::Te::Location::L0A, AType>(l0Slot.Addr()), layoutAL0);
         auto tensorBlockAL1 = tensorAL1.Slice(AscendC::Te::MakeCoord(0, kIdx), AscendC::Te::MakeShape(curM0, curK0));
         {
-            auto dataLockA = aSlot.LockMte1();
+            auto l1LockA = aL1Slot.LockMte1();
             auto l0Lock = l0Slot.LockMte1();
             AscendC::Te::Copy(copyL12L0A, tensorAL0, tensorBlockAL1);
         }
@@ -289,7 +290,7 @@ private:
             AscendC::Te::MakeMemPtr<AscendC::Te::Location::L0B, BType>(l0Slot.Addr()), layoutBL0);
         auto tensorBlockBL1 = tensorBL1.Slice(AscendC::Te::MakeCoord(kIdx, 0), AscendC::Te::MakeShape(curK0, curN0));
         {
-            auto dataLockB = bSlot.LockMte1();
+            auto l1LockB = bL1Slot.LockMte1();
             auto l0Lock = l0Slot.LockMte1();
             AscendC::Te::Copy(copyL12L0B, tensorBL0, tensorBlockBL1);
         }
@@ -300,7 +301,7 @@ private:
         auto tensorBiasL0 = AscendC::Te::MakeTensor(
             AscendC::Te::MakeMemPtr<AscendC::Te::Location::BIAS, float>(btSlot.Addr()), layoutBiasL0);
         if (needBias) {
-            auto biasLock = biasSlot.LockMte1();
+            auto biasLock = biasL1Slot.LockMte1();
             auto btLock = btSlot.LockMte1();
             auto copyL12BT = AscendC::Te::MakeCopy(AscendC::Te::CopyL12BT{});
             AscendC::Te::Copy(copyL12BT, tensorBiasL0, tensorBiasL1);
