@@ -1,0 +1,9 @@
+casename,m,k,n,batch,bias,dtype,trans_batch_a,hf32
+tbmm_basic_fp16_batch2,128,128,128,2,0,float16,false,false
+tbmm_basic_bf16_batch4,128,128,128,4,0,bfloat16,false,false
+tbmm_basic_fp32_batch2,128,128,128,2,0,float32,false,false
+tbmm_basic_fp16_trans_batch_a,128,128,128,2,0,float16,true,false
+tbmm_basic_bf16_trans_batch_a,128,128,128,4,0,bfloat16,true,false
+tbmm_basic_fp32_trans_batch_a,128,128,128,2,0,float32,true,false
+tbmm_basic_fp16_bias,128,128,128,2,128,float16,false,false
+tbmm_basic_fp32_hf32,128,128,128,2,0,float32,false,true

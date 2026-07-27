@@ -86,8 +86,6 @@ constexpr uint16_t MXFP_MULTI_BASE_SHIFT = 1;
 constexpr uint64_t SCALE_C0 = 2UL;
 constexpr uint64_t SCALE_BUFFER_NUM = 2UL;
 
-constexpr uint64_t NON_CONTIGUOUS_TYPE_SLICE = 1UL;
-constexpr uint64_t NON_CONTIGUOUS_TYPE_PERM_X1 = 2UL;
 // FusedMatMul OpType
 constexpr uint64_t OP_TYPE_EMPTY = 0UL;
 constexpr uint64_t OP_TYPE_ADD = 1UL;
@@ -140,6 +138,12 @@ enum class QuantMode : uint32_t
     MX_PERGROUP_MODE = 0x1U << 3,
     PERBLOCK_MODE = 0x1U << 4,
     PERGROUP_MODE = 0x1U << 5,
+};
+
+enum class NoContiguousType : uint64_t
+{
+    NON_CONTIGUOUS_TYPE_SLICE = 1UL,
+    NON_CONTIGUOUS_TYPE_PERM_X1 = 2UL,
 };
 
 template <typename...>

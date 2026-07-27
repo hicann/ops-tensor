@@ -215,7 +215,8 @@ private:
 private:
     static constexpr bool TRANS_B = BlockMmad::TRANS_B;
     static constexpr uint64_t NON_CONTIGUOUS_TYPE = BlockMmad::NON_CONTIGUOUS_TYPE;
-    static constexpr bool TRANS_BATCH_A = (NON_CONTIGUOUS_TYPE == NON_CONTIGUOUS_TYPE_PERM_X1);
+    static constexpr bool TRANS_BATCH_A =
+        (NON_CONTIGUOUS_TYPE == static_cast<uint64_t>(NoContiguousType::NON_CONTIGUOUS_TYPE_PERM_X1));
     __gm__ AType* aGmAddr_;
     __gm__ BType* bGmAddr_;
     __gm__ CType* cGmAddr_;

@@ -96,3 +96,4 @@ endmacro()
 ##############################################################################
 
 add_subdirectory(mat_mul)
+add_subdirectory(transpose_batch_mat_mul)

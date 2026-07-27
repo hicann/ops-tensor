@@ -43,6 +43,6 @@ __global__ __aicore__ void mat_mul_v3_kernel_entry(
             DTYPE_X1, DTYPE_X2, DTYPE_Y, DTYPE_BIAS, NON_CONTIGUOUS_TYPE>(
             x1GM, x2GM, biasGM, yGM, workspaceGM, tilingData);
     } else {
-        static_assert(sizeof(OP_TYPE) == 0, "Unsupported OP_TYPE value for mat_mul_v3_kernel_entry");
+        static_assert((OP_TYPE == OP_TYPE_MATMUL_BASIC || OP_TYPE == OP_TYPE_MATMUL_STREAMK), "Unsupported OP_TYPE value for mat_mul_v3_kernel_entry");
     }
 }

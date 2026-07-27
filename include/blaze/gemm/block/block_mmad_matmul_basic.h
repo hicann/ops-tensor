@@ -222,7 +222,9 @@ private:
             AscendC::Te::MakeMemPtr<AscendC::Te::Location::L1, AType>(aL1Slot.Addr()), layoutAL1);
         {
             auto lock = aL1Slot.LockMte2();
-            if constexpr (NON_CONTIGUOUS_TYPE == NON_CONTIGUOUS_TYPE_SLICE) {
+            if constexpr (
+                NON_CONTIGUOUS_TYPE ==
+                static_cast<uint64_t>(NoContiguousType::NON_CONTIGUOUS_TYPE_SLICE)) {
                 auto layoutGmA = tensorA.Layout();
                 auto sliceM = AscendC::Te::Get<0>(AscendC::Te::Get<1>(layoutGmA.Shape()));
                 auto gmTileASlice = tensorA.Slice(

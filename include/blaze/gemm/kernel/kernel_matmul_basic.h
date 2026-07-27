@@ -100,7 +100,8 @@ public:
         }
         blockMmad.Init(params.mmadParams);
 
-        if constexpr (NON_CONTIGUOUS_TYPE == NON_CONTIGUOUS_TYPE_SLICE) {
+        if constexpr (
+            NON_CONTIGUOUS_TYPE == static_cast<uint64_t>(NoContiguousType::NON_CONTIGUOUS_TYPE_SLICE)) {
             MatmulSliceProcess(params, blockMmad, bs, curBlockIdx, AscendC::GetBlockNum(), bs.GetBlockNums());
         } else {
             MatmulProcess(params, blockMmad, bs, curBlockIdx, AscendC::GetBlockNum(), bs.GetBlockNums());
