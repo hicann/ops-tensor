@@ -49,6 +49,12 @@ public:
     using BlockShape = Shape<int64_t, int64_t, int64_t, int64_t>;
     using ProblemShape = Shape<int64_t, int64_t, int64_t, int64_t>;
 
+    constexpr static uint16_t AIC_SYNC_AIV_MODE_4 = 4;
+    constexpr static uint16_t AIV_SYNC_AIC_FLAG = 4;
+    constexpr static uint16_t AIC_SYNC_AIV_FLAG = 6;
+    constexpr static uint16_t FLAG_ID_MAX = 16;
+    constexpr static int64_t SPLIT_M_ALIGN = 2;
+
     // input ub tensor and output global tensor
     AscendC::LocalTensor<DataTypeIn> ubLocal_{AscendC::TPosition::VECIN, 0, AscendC::TOTAL_UB_SIZE};
     AscendC::LocalTensor<DataTypeIn> ubLocalTmp_;
@@ -56,6 +62,7 @@ public:
 
     // attribute
     ProblemShape problemShape_;
+    uint64_t cvPingPong_{0};
 
     __aicore__ inline void Init(Params const& params, ProblemShape& problemShape)
     {
@@ -68,60 +75,74 @@ public:
     }
 
     __aicore__ inline void Run(
-        BlockShape const& blockShape, int64_t dstOffset, bool splitM, int64_t baseM, int64_t baseN)
+        BlockShape const& blockShape, int64_t dstOffset, bool splitM, int64_t baseM, int64_t baseN, uint64_t ubDB = 1)
     {
-        // mL1, nL1, k, batch
-        int64_t blockShapeM = Get<MNK_M>(blockShape);
+        cvPingPong_ = 0;
+        int64_t mL1 = Get<MNK_M>(blockShape);
+        int64_t curM = mL1;
         if (baseM != 0) {
             // mL0 = min(curM, baseM)
-            blockShapeM = Blaze::Gemm::Min(blockShapeM, baseM);
+            curM = Blaze::Gemm::Min(curM, baseM);
         }
-        int64_t halfBlockShapeM = Blaze::Gemm::CeilDiv(blockShapeM, AscendC::GetTaskRation());
+        int64_t halfBlockShapeM = Blaze::Gemm::CeilDiv(curM, AscendC::GetTaskRation());
+        int64_t blockShapeM = curM;
         if (splitM) {
-            blockShapeM = (static_cast<uint64_t>(blockShapeM) & 1UL) > 0UL ?
+            blockShapeM = (static_cast<uint64_t>(curM) & 1UL) > 0UL ?
                               (halfBlockShapeM - AscendC::GetSubBlockIdx()) :
                               halfBlockShapeM;
         }
-        int64_t blockShapeN = Get<MNK_N>(blockShape);
-        if (baseN != 0) {
-            // nL0 = min(curN, baseN)
-            blockShapeN = Blaze::Gemm::Min(blockShapeN, baseN);
-        }
-        int64_t blockShapeNAlign = AlignBlock<DataTypeOut>(blockShapeN);
-        // real copy data size
-        int64_t inputSize = blockShapeM * blockShapeNAlign;
-        // copyOut dstStride
+        int64_t nL1 = Get<MNK_N>(blockShape);
+        int64_t curBaseN = (baseN != 0) ? Blaze::Gemm::Min(nL1, baseN) : nL1;
+        int64_t nL1Iter = Blaze::Gemm::CeilDiv(nL1, curBaseN);
         int64_t N = Get<MNK_N>(problemShape_);
-        if (inputSize <= 0) {
-            return;
-        }
-        // UB 0 offset: 0
-        // UB 1 offset: halfBlockShapeM * N
-        int64_t offset = dstOffset + halfBlockShapeM * N * (AscendC::GetSubBlockIdx() & 0x1); // subBlockIdx()
-        DataCopyExtParams copyParams{
-            static_cast<uint16_t>(blockShapeM), static_cast<uint32_t>(blockShapeN * sizeof(DataTypeOut)), 0,
-            static_cast<int64_t>((N - blockShapeN) * sizeof(DataTypeOut)), 0};
-        if constexpr (
-            DispatchPolicy::FUSED_OP_TYPE == OP_TYPE_RELU && !AscendC::IsSameType<DataTypeOut, bfloat16_t>::value) {
-            AscendC::Relu(ubLocalTmp_, ubLocalTmp_, blockShapeM * blockShapeN);
-            AscendC::SetFlag<AscendC::HardEvent::V_MTE3>(0x0);
-            AscendC::WaitFlag<AscendC::HardEvent::V_MTE3>(0x0);
-        }
-        DataCopyPad<DataTypeOut>(outputGlobal_[offset], ubLocalTmp_, copyParams);
-    }
+        constexpr int64_t c0Size = static_cast<int64_t>(AscendC::Te::C0_ELEMENT<DataTypeOut>);
+        constexpr int64_t ubHalfElems = static_cast<int64_t>(AscendC::TOTAL_UB_SIZE / sizeof(DataTypeIn) / DOUBLE_BUFFER_COUNT);
+        bool enablePp = (ubDB > 1) && (nL1Iter > 1);
 
-    __aicore__ inline auto GetTensor(uint64_t uBPingPong)
-    {
-        // GetTensor from ub
-        int64_t ubOffset = (uBPingPong * AscendC::TOTAL_UB_SIZE / sizeof(DataTypeOut)) >> 1;
-        ubLocalTmp_ = ubLocal_[ubOffset];
-        return ubOffset;
+        for (int64_t nIdx = 0; nIdx < nL1Iter; ++nIdx) {
+            int64_t tileN = (nIdx + 1 == nL1Iter) ? (nL1 - curBaseN * nIdx) : curBaseN;
+            int64_t blockShapeNAlign = Blaze::Gemm::CeilAlign(tileN, c0Size);
+            int64_t inputSize = blockShapeM * blockShapeNAlign;
+            uint16_t slot = enablePp ? static_cast<uint16_t>(cvPingPong_ & 1UL) : 0U;
+
+            // wait for AIC fixpipe (chunk ready) on the pipe that consumes UB first
+            if constexpr (DispatchPolicy::FUSED_OP_TYPE == OP_TYPE_RELU) {
+                AscendC::CrossCoreWaitFlag<AIC_SYNC_AIV_MODE_4, PIPE_V>(AIC_SYNC_AIV_FLAG + slot);
+            } else {
+                AscendC::CrossCoreWaitFlag<AIC_SYNC_AIV_MODE_4, PIPE_MTE3>(AIC_SYNC_AIV_FLAG + slot);
+            }
+
+            // point UB source to this chunk's ping-pong slot
+            ubLocalTmp_ = ubLocal_[slot * ubHalfElems];
+
+            if (inputSize > 0) {
+                // copyOut dstOffset along N advances per chunk; subBlock M split preserved
+                int64_t offset = dstOffset + nIdx * curBaseN +
+                                 halfBlockShapeM * N * (AscendC::GetSubBlockIdx() & 0x1);
+                DataCopyExtParams copyParams{
+                    static_cast<uint16_t>(blockShapeM), static_cast<uint32_t>(tileN * sizeof(DataTypeOut)), 0,
+                    static_cast<int64_t>((N - tileN) * sizeof(DataTypeOut)), 0};
+                if constexpr (
+                    DispatchPolicy::FUSED_OP_TYPE == OP_TYPE_RELU &&
+                    !AscendC::IsSameType<DataTypeOut, bfloat16_t>::value) {
+                    AscendC::Relu(ubLocalTmp_, ubLocalTmp_, blockShapeM * tileN);
+                    AscendC::SetFlag<AscendC::HardEvent::V_MTE3>(0x0);
+                    AscendC::WaitFlag<AscendC::HardEvent::V_MTE3>(0x0);
+                }
+                DataCopyPad<DataTypeOut>(outputGlobal_[offset], ubLocalTmp_, copyParams);
+            }
+
+            // notify AIC the UB slot is free
+            AscendC::CrossCoreSetFlag<AIC_SYNC_AIV_MODE_4, PIPE_MTE3>(AIV_SYNC_AIC_FLAG + slot);
+            cvPingPong_++;
+        }
     }
 
     __aicore__ inline void operator()(
-        BlockShape const& blockShape, int64_t dstOffset = 0, bool splitM = false, int64_t baseM = 0, int64_t baseN = 0)
+        BlockShape const& blockShape, int64_t dstOffset = 0, bool splitM = false, int64_t baseM = 0,
+        int64_t baseN = 0, uint64_t ubDB = 1)
     {
-        Run(blockShape, dstOffset, splitM, baseM, baseN);
+        Run(blockShape, dstOffset, splitM, baseM, baseN, ubDB);
         return;
     }
 };

@@ -136,10 +136,6 @@ private:
         auto gmBias =
             AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(biasGmAddr_), layoutBias);
 
-        uint64_t cvIndex = 0;
-        bool enableUbDB = (params.mmadParams.ubDB > 1);
-        uint64_t cvPingPongBit = enableUbDB ? 1 : 0;
-        // Process tiles in ping-pong mode
         for (int64_t blockIdx = curBlockIdx; blockIdx < totalBlockNums; blockIdx += coreNums) {
             auto blockShape = bs.template GetBlockShape<TRANS_B, BType>(blockIdx);
             auto blockCoord = bs.GetBlockCoord(blockIdx); // (m_, n_, k_, b)
@@ -149,45 +145,30 @@ private:
             auto shapeM = AscendC::Te::Get<MNK_M>(blockShape);
             auto shapeN = AscendC::Te::Get<MNK_N>(blockShape);
             auto shapeK = AscendC::Te::Get<MNK_K>(blockShape);
+            shapeN = AscendC::Std::min(shapeN, static_cast<int64_t>(n_) - coordN);
+            TupleShape validBlockShape{shapeM, shapeN, shapeK, AscendC::Te::Get<MNK_B>(blockShape)};
 
             auto gmBlockA = gmA.Slice(AscendC::MakeCoord(coordM, 0L), AscendC::MakeShape(shapeM, shapeK));
             auto gmBlockB = gmB.Slice(AscendC::MakeCoord(0L, coordN), AscendC::MakeShape(shapeK, shapeN));
 
-            uint16_t pingPongIdx = cvIndex & cvPingPongBit;
-            auto ubOffsetElems = epilogueOp.GetTensor(pingPongIdx);
+            int64_t ubOffsetElems = 0;
             auto layoutUB = MakeLayoutC{}(shapeM, shapeN);
             auto ubLocal = AscendC::Te::MakeTensor(
                 AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB, CType>(ubOffsetElems * sizeof(CType)), layoutUB);
             auto gmBlockBias = gmBias.Slice(AscendC::MakeCoord(0L, coordN), AscendC::MakeShape(1L, shapeN));
             if ASCEND_IS_AIC {
-                CrossCoreWaitFlag<AIC_SYNC_AIV_MODE_4, PIPE_FIX>(AIV_SYNC_AIC_FLAG + (pingPongIdx));
-                if (params.mmadParams.splitM) {
-                    CrossCoreWaitFlag<AIC_SYNC_AIV_MODE_4, PIPE_FIX>(AIV_SYNC_AIC_FLAG + (pingPongIdx) + FLAG_ID_MAX);
-                }
                 if constexpr (BlockMmad::DispatchPolicy::FULL_LOAD_MODE == B_FULL_LOAD_MODE) {
-                    blockMmad(gmBlockA, gmB, gmBias, ubLocal, blockShape);
+                    blockMmad(gmBlockA, gmB, gmBias, ubLocal, validBlockShape);
                 } else {
-                    blockMmad(gmBlockA, gmBlockB, gmBlockBias, ubLocal, blockShape);
-                }
-                CrossCoreSetFlag<AIC_SYNC_AIV_MODE_4, PIPE_FIX>(AIC_SYNC_AIV_FLAG + (pingPongIdx));
-                if (params.mmadParams.splitM) {
-                    CrossCoreSetFlag<AIC_SYNC_AIV_MODE_4, PIPE_FIX>(AIC_SYNC_AIV_FLAG + (pingPongIdx) + FLAG_ID_MAX);
+                    blockMmad(gmBlockA, gmBlockB, gmBlockBias, ubLocal, validBlockShape);
                 }
             }
             if ASCEND_IS_AIV {
-                // Synchronize with aic
-                if constexpr (BlockMmad::DispatchPolicy::FUSED_OP_TYPE == OP_TYPE_RELU) {
-                    CrossCoreWaitFlag<AIC_SYNC_AIV_MODE_4, PIPE_V>(AIC_SYNC_AIV_FLAG + (pingPongIdx));
-                } else {
-                    CrossCoreWaitFlag<AIC_SYNC_AIV_MODE_4, PIPE_MTE3>(AIC_SYNC_AIV_FLAG + (pingPongIdx));
-                }
-                // Calculate epilogue
+                // Calculate epilogue (internally loops N with per-chunk cv sync)
                 epilogueOp(
-                    blockShape, offsetC, params.mmadParams.splitM, params.schParams.baseM, params.schParams.baseN);
-                // Notify aic
-                CrossCoreSetFlag<AIC_SYNC_AIV_MODE_4, PIPE_MTE3>(AIV_SYNC_AIC_FLAG + (pingPongIdx));
+                    validBlockShape, offsetC, params.mmadParams.splitM, params.schParams.baseM, params.schParams.baseN,
+                    params.mmadParams.ubDB);
             }
-            cvIndex++;
         }
         }
     __aicore__ inline void Init(Params const& params)

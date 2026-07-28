@@ -50,6 +50,13 @@ public:
     static constexpr bool TRANS_A = IsTrans<LayoutA>::value;
     static constexpr bool TRANS_B = IsTrans<LayoutB>::value;
     static constexpr bool WEIGHTNZ_FORMAT = IsWeightNz<LayoutB>::value;
+    // AIC(cube) <-> AIV(vector) cross-core sync flags, mirrored from the fixpipe opti kernel.
+    // Per (baseM, baseN) N-chunk: AIC waits AIV_SYNC_AIC_FLAG (UB slot free) before fixpipe,
+    // sets AIC_SYNC_AIV_FLAG (chunk ready) after fixpipe. splitM uses the +FLAG_ID_MAX mirror.
+    constexpr static uint16_t AIC_SYNC_AIV_MODE_4 = 4;
+    constexpr static uint16_t AIV_SYNC_AIC_FLAG = 4;  // AIV -> AIC (UB slot free)
+    constexpr static uint16_t AIC_SYNC_AIV_FLAG = 6;  // AIC -> AIV (chunk ready)
+    constexpr static uint16_t FLAG_ID_MAX = 16;
     // AL1 Layout
     using MakeLayoutAL1 = AscendC::Std::conditional_t<
         TRANS_A, AscendC::Te::FrameLayoutFormat<AscendC::Te::ZNLayoutPtn, AscendC::Te::LayoutTraitDefault<AType>>,
@@ -158,6 +165,7 @@ public:
         static constexpr uint64_t HALF_L0C_SIZE = AscendC::TOTAL_L0C_SIZE / DOUBLE_BUFFER_COUNT;
         static constexpr uint64_t HALF_L0_SIZE = AscendC::TOTAL_L0A_SIZE / DOUBLE_BUFFER_COUNT;
 
+        cvPingPong_ = 0;
         uint64_t curM = AscendC::Te::Get<MNK_M>(tileShape);
         uint64_t curN = AscendC::Te::Get<MNK_N>(tileShape);
         uint64_t curK = AscendC::Te::Get<MNK_K>(tileShape);
@@ -239,10 +247,21 @@ public:
                 abL1LoopCnt_++;
             }
 
-            // 数据搬出到GM
+            // 数据搬出到GM/UB
             AscendC::Te::FixpipeParams fixpParams{FINAL_ACCUMULATION};
             if constexpr (DispatchPolicy::L0C2OUT_MODEL != ON_THE_FLY) {
-                CopyOutFromL0C2UB(tensorC, tensorL0C, tileN, curM, iterN);
+                // 以 (baseM, baseN) 为基本块搬入 UB，ping-pong 两个槽位，与 AIV epilogue 逐块 cv 同步
+                uint16_t slot = ((ubDB_ > 1) && (nL1Iter_ > 1)) ? static_cast<uint16_t>(cvPingPong_ & 0x1) : 0U;
+                AscendC::CrossCoreWaitFlag<AIC_SYNC_AIV_MODE_4, PIPE_FIX>(AIV_SYNC_AIC_FLAG + slot);
+                if (splitM_) {
+                    AscendC::CrossCoreWaitFlag<AIC_SYNC_AIV_MODE_4, PIPE_FIX>(AIV_SYNC_AIC_FLAG + slot + FLAG_ID_MAX);
+                }
+                CopyOutFromL0C2UB(tensorC, tensorL0C, tileN, curM, slot);
+                AscendC::CrossCoreSetFlag<AIC_SYNC_AIV_MODE_4, PIPE_FIX>(AIC_SYNC_AIV_FLAG + slot);
+                if (splitM_) {
+                    AscendC::CrossCoreSetFlag<AIC_SYNC_AIV_MODE_4, PIPE_FIX>(AIC_SYNC_AIV_FLAG + slot + FLAG_ID_MAX);
+                }
+                cvPingPong_++;
             } else {
                 auto tensorGmC = tensorC.Slice(AscendC::Te::MakeCoord(0, iterN * curBaseN_), AscendC::Te::MakeShape(curM, tileN));
                 auto copyL0C2GM = AscendC::Te::MakeCopy(AscendC::Te::CopyL0C2GM{});
@@ -291,17 +310,17 @@ private:
     }
 
     template <typename TensorUB, typename TensorC>
-    __aicore__ inline void CopyOutFromL0C2UB(TensorUB& tensorC, TensorC& tensorL0C, uint64_t tileN, uint64_t curM, uint64_t iterN)
+    __aicore__ inline void CopyOutFromL0C2UB(TensorUB& tensorC, TensorC& tensorL0C, uint64_t tileN, uint64_t curM, uint16_t slotIdx)
     {
-        // 数据搬出到UB
+        // 数据搬出到UB，按 ping-pong 槽位 slotIdx 写入，槽位步长固定为 (baseM 对齐) * (baseN 对齐)
         AscendC::Te::FixpipeParams fixpParams{FINAL_ACCUMULATION};
-        constexpr uint64_t c0Size = static_cast<uint64_t>(AscendC::AuxGetC0Size<CType>());
+        constexpr uint64_t c0Size = static_cast<uint64_t>(AscendC::Te::C0_ELEMENT<CType>);
         uint64_t tileNAlign = Blaze::Gemm::CeilAlign(tileN, c0Size);
         auto layoutUB = AscendC::Te::MakeFrameLayout<AscendC::Te::NDExtLayoutPtn>(
             Blaze::Gemm::CeilAlign(curM, SPLIT_M_ALIGN), tileNAlign);
-        uint64_t ubOffsetBytes = iterN * Blaze::Gemm::CeilAlign(curM, SPLIT_M_ALIGN) * Blaze::Gemm::CeilAlign(curBaseN_, c0Size) * sizeof(CType);
-        auto ubTensor =
-            AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB>(tensorC.Data().Get() + ubOffsetBytes), layoutUB);
+        constexpr int64_t ubHalfElems = static_cast<int64_t>(AscendC::TOTAL_UB_SIZE / sizeof(CType) / DOUBLE_BUFFER_COUNT);
+        auto ubTensor = AscendC::Te::MakeTensor(
+            AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB>(tensorC.Data().Get() + slotIdx * ubHalfElems), layoutUB);
         if (splitM_) {
             auto copyL0C2UBSplitM =
                 AscendC::Te::MakeCopy(AscendC::Te::CopyL0C2UB{}, Blaze::Gemm::Tile::CopyL0C2UBTraitSplitM{});
@@ -446,6 +465,7 @@ private:
     uint64_t bL1Buffer_[4] = {0};
     uint64_t biasL1Buffer_[4] = {0};
     bool isBL1Loaded_{false};
+    uint64_t cvPingPong_{0};    // continuous ping-pong counter across all N chunks of all blocks
 };
 } // namespace Block
 } // namespace Gemm
