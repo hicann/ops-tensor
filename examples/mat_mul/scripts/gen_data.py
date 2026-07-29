@@ -47,7 +47,7 @@ def write_artifacts(base_dir, a_data, b_data, out, dtype):
 
 
 def generate_bias(n, dtype):
-    """生成 bias 数据，大小为 n，并返回 bias tensor 供 golden 计算复用"""
+    """生成 bias 数据大小为 n, 并返回 bias tensor 供 golden 计算复用"""
     lo, hi = (-1, 1) if dtype in (torch.float16, torch.bfloat16) else (0.0, 1.0)
     bias = np.random.uniform(lo, hi, n).astype(np.float32)
     bias_tensor = torch.from_numpy(bias).to(dtype)

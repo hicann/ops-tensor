@@ -49,7 +49,11 @@ if(NOT ASCEND_HOME_PATH)
     endif()
 endif()
 
-set(SYSTEM_PREFIX "x86_64-linux")
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")
+    set(SYSTEM_PREFIX "aarch64-linux")
+else()
+    set(SYSTEM_PREFIX "x86_64-linux")
+endif()
 set(UT_KERNEL_INC ${CMAKE_CURRENT_SOURCE_DIR})
 
 add_cann_third_party(gtest)

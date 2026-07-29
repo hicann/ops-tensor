@@ -1,0 +1,11 @@
+casename,m,k,n,batch,batchA,batchB,iterBatchL1,iterBatchL0,bias,dtype,transA,transB,hf32
+iterbatch_fp16_ab,32,16,32,8,1,8,4,1,0,float16,false,false,false
+iterbatch_fp16_bb,32,16,32,8,8,1,4,1,0,float16,false,false,false
+iterbatch_bf16,16,16,16,4,1,4,2,1,0,bfloat16,false,false,false
+iterbatch_fp32,16,32,16,4,4,4,2,1,0,float32,false,false,false
+iterbatch_hf32,16,32,16,4,4,4,2,1,0,float32,false,false,true
+iterbatch_fp16_bb_l0,32,16,32,8,8,1,4,2,0,float16,false,false,false
+iterbatch_fp16_ab_both,32,16,32,4,1,1,2,1,0,float16,false,false,false
+iterbatch_fp16_both_l0,32,16,32,8,1,1,4,2,0,float16,false,false,false
+iterbatch_bf16_bb_l0,16,16,16,4,4,1,2,2,0,bfloat16,false,false,false
+iterbatch_fp32_bb_l0,16,32,16,4,4,1,2,2,0,float32,false,false,false

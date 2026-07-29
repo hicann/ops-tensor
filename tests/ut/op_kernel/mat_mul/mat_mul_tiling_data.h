@@ -58,3 +58,80 @@ struct MatMulV3BasicTilingData {
     uint32_t innerBatch = 1;
 };
 #pragma pack(pop)
+
+#pragma pack(push, 8)
+struct MatMulV3BmmBroadcastTilingData {
+    uint32_t usedCoreNum = 0;
+    uint32_t m = 0;
+    uint32_t n = 0;
+    uint32_t k = 0;
+    uint32_t mL1 = 0;
+    uint32_t nL1 = 0;
+    uint32_t kL1 = 0;
+    uint32_t baseM = 0;
+    uint32_t baseN = 0;
+    uint32_t baseK = 0;
+    uint32_t mTailCnt = 0;
+    uint32_t nTailCnt = 0;
+    uint32_t mBaseTailSplitCnt = 1;
+    uint32_t nBaseTailSplitCnt = 1;
+    uint32_t mTailMain = 1;
+    uint32_t nTailMain = 1;
+    uint8_t isHf32 = 0;
+    uint8_t l1BufferNum = 0;
+    uint8_t l0cDB = 1;
+    uint8_t ubDB = 1;
+    L2CacheMode l2CacheDisable = L2CacheMode::L2_CACHE_DEFAULT;
+    uint32_t sliceM = 1;
+    uint32_t srcNdStride = 1;
+    uint32_t innerBatch = 1;
+
+    uint32_t aBatchDim0 = 1;
+    uint32_t aBatchDim1 = 1;
+    uint32_t aBatchDim2 = 1;
+    uint32_t aBatchDim3 = 1;
+    uint32_t bBatchDim0 = 1;
+    uint32_t bBatchDim1 = 1;
+    uint32_t bBatchDim2 = 1;
+    uint32_t bBatchDim3 = 1;
+    uint32_t cBatchDim0 = 1;
+    uint32_t cBatchDim1 = 1;
+    uint32_t cBatchDim2 = 1;
+    uint32_t cBatchDim3 = 1;
+    uint32_t biasBatchDimAll = 1;
+};
+#pragma pack(pop)
+
+#pragma pack(push, 8)
+struct MatMulV3IterBatchTilingData {
+    uint32_t m = 0;
+    uint32_t n = 0;
+    uint32_t k = 0;
+    uint32_t mL1 = 0;
+    uint32_t nL1 = 0;
+    uint32_t kL1 = 0;
+    uint32_t baseM = 0;
+    uint32_t baseN = 0;
+    uint32_t baseK = 0;
+    uint8_t isHf32 = 0;
+    uint8_t l1BufferNum = 0;
+    uint8_t l0cDB = 1;
+    uint8_t ubDB = 1;
+    uint32_t iterBatchL1 = 1;
+    uint32_t iterBatchL0 = 1;
+    uint32_t broadcastAxisA = 1;
+    uint32_t broadcastAxisB = 1;
+    uint32_t aBatchDim0 = 1;
+    uint32_t aBatchDim1 = 1;
+    uint32_t aBatchDim2 = 1;
+    uint32_t aBatchDim3 = 1;
+    uint32_t bBatchDim0 = 1;
+    uint32_t bBatchDim1 = 1;
+    uint32_t bBatchDim2 = 1;
+    uint32_t bBatchDim3 = 1;
+    uint32_t cBatchDim0 = 1;
+    uint32_t cBatchDim1 = 1;
+    uint32_t cBatchDim2 = 1;
+    uint32_t cBatchDim3 = 1;
+};
+#pragma pack(pop)

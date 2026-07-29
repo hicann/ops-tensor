@@ -125,7 +125,7 @@ public:
         UpdateAivBasicBlock();
         for (uint64_t index = 0; index < aivMte2Num_; ++index) {
             UpdateAivParams(index);
-            AscendC::LocalTensor<float> ubAddTensor{AscendC::TPosition::VECIN, 0, AscendC::TOTAL_UB_SIZE};
+            AscendC::LocalTensor<float> ubAddTensor{AscendC::TPosition::VECIN, 0, AscendC::TOTAL_UB_SIZE / sizeof(float)};
             AscendC::DataCopyExtParams dataCopyExtParams{
                 static_cast<uint16_t>(copyGm2UbParams_.kCnt),
                 static_cast<uint32_t>(copyGm2UbParams_.burstLen * sizeof(float)),
@@ -155,7 +155,7 @@ public:
                 AscendC::Relu(ubAddTensor, ubAddTensor, copyGm2UbParams_.burstLen);
             }
             if constexpr (sizeof(OutType) == sizeof(half)) {
-                AscendC::LocalTensor<OutType> ubCastDst{AscendC::TPosition::VECIN, 0, AscendC::TOTAL_UB_SIZE};
+                AscendC::LocalTensor<OutType> ubCastDst{AscendC::TPosition::VECIN, 0, AscendC::TOTAL_UB_SIZE / sizeof(OutType)};
                 AscendC::Cast(ubCastDst, ubAddTensor, AscendC::RoundMode::CAST_RINT, copyGm2UbParams_.burstLen);
                 if constexpr (
                     DispatchPolicy::FUSED_OP_TYPE == Blaze::Gemm::OP_TYPE_RELU &&

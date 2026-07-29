@@ -53,10 +53,10 @@ public:
     // AIC(cube) <-> AIV(vector) cross-core sync flags, mirrored from the fixpipe opti kernel.
     // Per (baseM, baseN) N-chunk: AIC waits AIV_SYNC_AIC_FLAG (UB slot free) before fixpipe,
     // sets AIC_SYNC_AIV_FLAG (chunk ready) after fixpipe. splitM uses the +FLAG_ID_MAX mirror.
-    constexpr static uint16_t AIC_SYNC_AIV_MODE_4 = 4;
-    constexpr static uint16_t AIV_SYNC_AIC_FLAG = 4;  // AIV -> AIC (UB slot free)
-    constexpr static uint16_t AIC_SYNC_AIV_FLAG = 6;  // AIC -> AIV (chunk ready)
-    constexpr static uint16_t FLAG_ID_MAX = 16;
+    static constexpr uint16_t AIC_SYNC_AIV_MODE_4 = 4;
+    static constexpr uint16_t AIV_SYNC_AIC_FLAG = 4;  // AIV -> AIC (UB slot free)
+    static constexpr uint16_t AIC_SYNC_AIV_FLAG = 6;  // AIC -> AIV (chunk ready)
+    static constexpr uint16_t FLAG_ID_MAX = 16;
     // AL1 Layout
     using MakeLayoutAL1 = AscendC::Std::conditional_t<
         TRANS_A, AscendC::Te::FrameLayoutFormat<AscendC::Te::ZNLayoutPtn, AscendC::Te::LayoutTraitDefault<AType>>,

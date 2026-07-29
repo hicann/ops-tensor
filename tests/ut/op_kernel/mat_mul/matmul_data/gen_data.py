@@ -13,7 +13,8 @@ import argparse
 import os
 import numpy as np
 
-def gen_matmul_data(m, n, k, dtype='float16', output_dir='./'):
+
+def gen_matmul_data(m, n, k, dtype='float16', output_dir='./', batch=1):
     os.makedirs(output_dir, exist_ok=True)
 
     dtype_map = {
@@ -24,18 +25,30 @@ def gen_matmul_data(m, n, k, dtype='float16', output_dir='./'):
 
     np_dtype = dtype_map[dtype]
 
-    a = np.random.randn(m, k).astype(np_dtype)
-    b = np.random.randn(k, n).astype(np_dtype)
-
-    if dtype == 'float16':
-        golden = np.matmul(a.astype(np.float32), b.astype(np.float32)).astype(np.float16)
-    elif dtype == 'bfloat16':
-        golden = np.matmul(a, b)
-        a = float32_to_bfloat16(a)
-        b = float32_to_bfloat16(b)
-        golden = float32_to_bfloat16(golden)
+    if batch > 1:
+        a = np.random.randn(batch, m, k).astype(np_dtype)
+        b = np.random.randn(batch, k, n).astype(np_dtype)
+        if dtype == 'float16':
+            golden = np.matmul(a.astype(np.float32), b.astype(np.float32)).astype(np.float16)
+        elif dtype == 'bfloat16':
+            golden = np.matmul(a, b)
+            a = float32_to_bfloat16(a)
+            b = float32_to_bfloat16(b)
+            golden = float32_to_bfloat16(golden)
+        else:
+            golden = np.matmul(a, b)
     else:
-        golden = np.matmul(a, b)
+        a = np.random.randn(m, k).astype(np_dtype)
+        b = np.random.randn(k, n).astype(np_dtype)
+        if dtype == 'float16':
+            golden = np.matmul(a.astype(np.float32), b.astype(np.float32)).astype(np.float16)
+        elif dtype == 'bfloat16':
+            golden = np.matmul(a, b)
+            a = float32_to_bfloat16(a)
+            b = float32_to_bfloat16(b)
+            golden = float32_to_bfloat16(golden)
+        else:
+            golden = np.matmul(a, b)
 
     a.tofile(os.path.join(output_dir, 'input_a.bin'))
     b.tofile(os.path.join(output_dir, 'input_b.bin'))
@@ -62,10 +75,11 @@ def main():
     parser.add_argument('--dtype', type=str, default='float16',
                        choices=['float16', 'float32', 'bfloat16'])
     parser.add_argument('--output_dir', type=str, default='./')
+    parser.add_argument('--batch', type=int, default=1, help='Batch dimension')
 
     args = parser.parse_args()
 
-    gen_matmul_data(args.m, args.n, args.k, args.dtype, args.output_dir)
+    gen_matmul_data(args.m, args.n, args.k, args.dtype, args.output_dir, args.batch)
 
 if __name__ == '__main__':
     main()

@@ -144,7 +144,7 @@ void MyFunction(int32_t input_size, GM_ADDR src_addr) {
 constexpr uint32_t c0Size = AscendC::AuxGetC0Size<AType>()>;
 
 // 正确：使用 tensor_api/utils 封装
-constexpr uint32_t c0Size = C0_ELEMENT<AType>;
+constexpr uint32_t c0Size = AscendC::Te::C0_ELEMENT<AType>;
 ```
 
 ### 2.2 禁止全局作用域中引入大命名空间

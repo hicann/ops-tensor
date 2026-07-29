@@ -46,17 +46,20 @@ public:
     using DispatchPolicy = DispatchPolicy_;
 
     // block shape
-    using BlockShape = Shape<int64_t, int64_t, int64_t, int64_t>;
-    using ProblemShape = Shape<int64_t, int64_t, int64_t, int64_t>;
+    using BlockShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
+    using ProblemShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
 
-    constexpr static uint16_t AIC_SYNC_AIV_MODE_4 = 4;
-    constexpr static uint16_t AIV_SYNC_AIC_FLAG = 4;
-    constexpr static uint16_t AIC_SYNC_AIV_FLAG = 6;
-    constexpr static uint16_t FLAG_ID_MAX = 16;
-    constexpr static int64_t SPLIT_M_ALIGN = 2;
+    static constexpr uint32_t DATA_BLOCK = 32;
+    static constexpr uint32_t OUT_ALIGN = DATA_BLOCK / sizeof(DataTypeOut);
+
+    static constexpr uint16_t AIC_SYNC_AIV_MODE_4 = 4;
+    static constexpr uint16_t AIV_SYNC_AIC_FLAG = 4;
+    static constexpr uint16_t AIC_SYNC_AIV_FLAG = 6;
+    static constexpr uint16_t FLAG_ID_MAX = 16;
+    static constexpr int64_t SPLIT_M_ALIGN = 2;
 
     // input ub tensor and output global tensor
-    AscendC::LocalTensor<DataTypeIn> ubLocal_{AscendC::TPosition::VECIN, 0, AscendC::TOTAL_UB_SIZE};
+
     AscendC::LocalTensor<DataTypeIn> ubLocalTmp_;
     AscendC::GlobalTensor<DataTypeOut> outputGlobal_;
 
@@ -69,16 +72,14 @@ public:
         // init output global
         outputGlobal_.SetGlobalBuffer(reinterpret_cast<__gm__ DataTypeOut*>(params.outGmAddr));
         problemShape_ = problemShape;
-        ASCENDC_ASSERT(sizeof(DataTypeIn) >= sizeof(DataTypeOut), {
-            KERNEL_LOG(KERNEL_EORROR, "Unsupported dtype size %zu, %zu!", sizeof(DataTypeIn), sizeof(DataTypeOut));
-        });
+        static_assert(sizeof(DataTypeIn) >= sizeof(DataTypeOut), "DataTypeIn size must be >= DataTypeOut size");
     }
 
     __aicore__ inline void Run(
         BlockShape const& blockShape, int64_t dstOffset, bool splitM, int64_t baseM, int64_t baseN, uint64_t ubDB = 1)
     {
         cvPingPong_ = 0;
-        int64_t mL1 = Get<MNK_M>(blockShape);
+        int64_t mL1 = AscendC::Te::Get<Gemm::MNK_M>(blockShape);
         int64_t curM = mL1;
         if (baseM != 0) {
             // mL0 = min(curM, baseM)
@@ -91,12 +92,12 @@ public:
                               (halfBlockShapeM - AscendC::GetSubBlockIdx()) :
                               halfBlockShapeM;
         }
-        int64_t nL1 = Get<MNK_N>(blockShape);
+        int64_t nL1 = AscendC::Te::Get<Gemm::MNK_N>(blockShape);
         int64_t curBaseN = (baseN != 0) ? Blaze::Gemm::Min(nL1, baseN) : nL1;
         int64_t nL1Iter = Blaze::Gemm::CeilDiv(nL1, curBaseN);
-        int64_t N = Get<MNK_N>(problemShape_);
+        int64_t N = AscendC::Te::Get<Gemm::MNK_N>(problemShape_);
         constexpr int64_t c0Size = static_cast<int64_t>(AscendC::Te::C0_ELEMENT<DataTypeOut>);
-        constexpr int64_t ubHalfElems = static_cast<int64_t>(AscendC::TOTAL_UB_SIZE / sizeof(DataTypeIn) / DOUBLE_BUFFER_COUNT);
+        constexpr int64_t ubHalfElems = static_cast<int64_t>(AscendC::TOTAL_UB_SIZE / sizeof(DataTypeIn) / Gemm::DOUBLE_BUFFER_COUNT);
         bool enablePp = (ubDB > 1) && (nL1Iter > 1);
 
         for (int64_t nIdx = 0; nIdx < nL1Iter; ++nIdx) {
@@ -106,12 +107,12 @@ public:
             uint16_t slot = enablePp ? static_cast<uint16_t>(cvPingPong_ & 1UL) : 0U;
 
             // wait for AIC fixpipe (chunk ready) on the pipe that consumes UB first
-            if constexpr (DispatchPolicy::FUSED_OP_TYPE == OP_TYPE_RELU) {
+            if constexpr (DispatchPolicy::FUSED_OP_TYPE == Gemm::OP_TYPE_RELU) {
                 AscendC::CrossCoreWaitFlag<AIC_SYNC_AIV_MODE_4, PIPE_V>(AIC_SYNC_AIV_FLAG + slot);
             } else {
                 AscendC::CrossCoreWaitFlag<AIC_SYNC_AIV_MODE_4, PIPE_MTE3>(AIC_SYNC_AIV_FLAG + slot);
             }
-
+            AscendC::LocalTensor<DataTypeIn> ubLocal_{AscendC::TPosition::VECIN, 0, AscendC::TOTAL_UB_SIZE / sizeof(DataTypeIn)};
             // point UB source to this chunk's ping-pong slot
             ubLocalTmp_ = ubLocal_[slot * ubHalfElems];
 
@@ -119,17 +120,17 @@ public:
                 // copyOut dstOffset along N advances per chunk; subBlock M split preserved
                 int64_t offset = dstOffset + nIdx * curBaseN +
                                  halfBlockShapeM * N * (AscendC::GetSubBlockIdx() & 0x1);
-                DataCopyExtParams copyParams{
+                AscendC::DataCopyExtParams copyParams{
                     static_cast<uint16_t>(blockShapeM), static_cast<uint32_t>(tileN * sizeof(DataTypeOut)), 0,
                     static_cast<int64_t>((N - tileN) * sizeof(DataTypeOut)), 0};
                 if constexpr (
-                    DispatchPolicy::FUSED_OP_TYPE == OP_TYPE_RELU &&
+                    DispatchPolicy::FUSED_OP_TYPE == Gemm::OP_TYPE_RELU &&
                     !AscendC::IsSameType<DataTypeOut, bfloat16_t>::value) {
                     AscendC::Relu(ubLocalTmp_, ubLocalTmp_, blockShapeM * tileN);
                     AscendC::SetFlag<AscendC::HardEvent::V_MTE3>(0x0);
                     AscendC::WaitFlag<AscendC::HardEvent::V_MTE3>(0x0);
                 }
-                DataCopyPad<DataTypeOut>(outputGlobal_[offset], ubLocalTmp_, copyParams);
+                AscendC::DataCopyPad<DataTypeOut>(outputGlobal_[offset], ubLocalTmp_, copyParams);
             }
 
             // notify AIC the UB slot is free

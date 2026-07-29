@@ -216,9 +216,9 @@ template <
     class KernelSchedule_ = KernelMmadMultiBlockBFullLoad>
 struct MatmulMultiBlockFullLoadOrFixpipe {
     using ScheduleType = KernelSchedule_;
-    constexpr static uint64_t FULL_LOAD_MODE = FullLoadMode_;
-    constexpr static uint64_t L0C2OUT_MODEL = L0C2OutModel_;
-    constexpr static uint64_t FUSED_OP_TYPE = FusedOpType_;
+    static constexpr uint64_t FULL_LOAD_MODE = FullLoadMode_;
+    static constexpr uint64_t L0C2OUT_MODEL = L0C2OutModel_;
+    static constexpr uint64_t FUSED_OP_TYPE = FusedOpType_;
 };
 
 } // namespace Gemm

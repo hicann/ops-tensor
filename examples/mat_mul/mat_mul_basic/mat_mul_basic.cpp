@@ -9,8 +9,8 @@
  */
 
 /**
- * @file mat_mul_streamk.cpp
- * @brief Unified StreamK MatMul example supporting multiple dtypes and formats.
+ * @file mat_mul_basic.cpp
+ * @brief Unified Basic MatMul example supporting multiple dtypes and formats.
  *
  * Supported dtypes: float16, bfloat16, float32
  * Supported formats: (ND,ND), (ND,NZ)
@@ -31,10 +31,10 @@
 #include <vector>
 
 #include "acl/acl.h"
-#include "blaze/epilogue/block/block_epilogue_matmul_streamk.h"
-#include "blaze/gemm/block/block_mmad_matmul_streamk.h"
-#include "blaze/gemm/block/block_scheduler_matmul_streamk.h"
-#include "blaze/gemm/kernel/kernel_matmul_streamk.h"
+#include "blaze/epilogue/block/block_epilogue_empty.h"
+#include "blaze/gemm/block/block_mmad_matmul_basic.h"
+#include "blaze/gemm/block/block_scheduler_matmul_basic.h"
+#include "blaze/gemm/kernel/kernel_matmul_basic.h"
 #include "blaze/gemm/policy/dispatch_policy.h"
 #include "blaze/gemm/utils/common_utils.h"
 #include "data_utils.h"
@@ -45,11 +45,11 @@
 /* Macros                                                                     */
 /* ========================================================================== */
 
-#define LAUNCH_KERNEL_IMPL(L0C2OUT)                                                                          \
-    matmul_streamk_kernel<A_TYPE, B_TYPE, C_TYPE, BIAS_TYPE, LAYOUT_A, LAYOUT_B, LAYOUT_C, L0C2OUT>          \
-        <<<p.blockNum, 0, p.stream>>>(p.dA, p.dB, p.dC, p.dBias, p.dWorkSpace, p.m, p.n, p.k, p.blockNum,    \
-                                      p.tiling->skSingleK, p.cfg->mL1, p.cfg->nL1, p.cfg->kL1, p.cfg->baseM, \
-                                      p.cfg->baseN, p.cfg->baseK, p.isHf32)
+#define LAUNCH_KERNEL_IMPL()                                                                                         \
+    matmul_basic_kernel<A_TYPE, B_TYPE, C_TYPE, BIAS_TYPE, LAYOUT_A, LAYOUT_B, LAYOUT_C>                             \
+        <<<p.blockNum, 0, p.stream>>>(p.dA, p.dB, p.dC, p.dBias, p.m, p.n, p.k, p.cfg->mL1, p.cfg->nL1, p.cfg->kL1,  \
+                                      p.cfg->baseM, p.cfg->baseN, p.cfg->baseK, p.tiling->mTailCnt,                  \
+                                      p.tiling->nTailCnt, p.isHf32)
 
 #define DISPATCH(TYPE, BIAS_TYPE, TRANS_A, TRANS_B, IS_NZ, PARAMS)                          \
     do {                                                                                    \
@@ -108,56 +108,34 @@ static TilingConfig GetTilingConfig(const std::string &dtype) {
 /* Tiling computation                                                         */
 /* ========================================================================== */
 
-struct StreamKTiling {
-    int64_t skSingleK = 0;
-    int64_t usedCoreNum = 0;
-    bool isNdFixpipe12 = false;
+struct BasicTiling {
+    uint32_t mTailCnt = 1;
+    uint32_t nTailCnt = 1;
 };
 
 static constexpr int64_t BLOCK_16 = 16L;
-static constexpr int64_t L0A_SIZE_2 = 64 * 1024L;
-static constexpr int64_t BASIC_BLOCK_SIZE_64 = 64L;
-static constexpr int64_t BASIC_BLOCK_SIZE_128 = 128L;
-static constexpr int64_t BASIC_BLOCK_SIZE_256 = 256L;
-static constexpr int64_t NUM_TWO = 2L;
-static constexpr size_t RPC_WORKSPACE_PADDING = 20UL * 1024UL * 1024UL;
 
-static StreamKTiling ComputeTiling(TilingConfig &cfg, int64_t m, int64_t k, int64_t n, bool transA, bool transB,
-                                   int64_t aicNum) {
-    StreamKTiling tiling;
-    tiling.usedCoreNum = aicNum;
+static BasicTiling ComputeTiling(TilingConfig &cfg, int64_t m, int64_t k, int64_t n) {
+    BasicTiling tiling;
 
     int64_t mCnt = CeilDiv(m, cfg.baseM);
     int64_t nCnt = CeilDiv(n, cfg.baseN);
-    int64_t totalMNCnt = mCnt * nCnt;
 
-    if (totalMNCnt <= aicNum / 2) {
-        cfg.baseM = CeilAlign(CeilDiv(m, mCnt), BLOCK_16);
-        cfg.baseN = CeilAlign(CeilDiv(n, nCnt), BLOCK_16);
-        int64_t kCnt = aicNum / totalMNCnt;
-        tiling.skSingleK = CeilDiv(k, kCnt);
-    } else {
-        int64_t rem = totalMNCnt % aicNum;
-        int64_t kCnt = (rem > 0) ? (aicNum / rem) : 1;
-        int64_t skSingleCoreK = CeilDiv(k, kCnt);
-        kCnt = CeilDiv(k, skSingleCoreK);
-        tiling.skSingleK = skSingleCoreK;
+    int64_t tailM = m - (mCnt - 1) * cfg.baseM;
+    int64_t tailN = n - (nCnt - 1) * cfg.baseN;
+
+    if (tailM > 0 && tailM < cfg.baseM) {
+        int64_t splitM = CeilDiv(tailM, 2L);
+        tiling.mTailCnt = static_cast<uint32_t>(CeilDiv(tailM, splitM));
     }
-    int64_t baseKAlignValue = !transA || transB ? BASIC_BLOCK_SIZE_128 / cfg.dtypeSize : BLOCK_16;
-;
-    int64_t kValueMax =
-        (L0A_SIZE_2 / 2 / cfg.dtypeSize / std::max(cfg.baseM, cfg.baseN)) / baseKAlignValue * baseKAlignValue;
-    cfg.baseK = std::min(tiling.skSingleK, kValueMax);
+    if (tailN > 0 && tailN < cfg.baseN) {
+        int64_t splitN = CeilDiv(tailN, 2L);
+        tiling.nTailCnt = static_cast<uint32_t>(CeilDiv(tailN, splitN));
+    }
+
     cfg.mL1 = cfg.baseM;
     cfg.nL1 = cfg.baseN;
-    cfg.kL1 = cfg.baseK * 2; // baseK * stepKa(2)
-    if (transB) {
-        tiling.skSingleK = CeilAlign(tiling.skSingleK, BLOCK_16);
-    }
-
-    if (n > BASIC_BLOCK_SIZE_64 && n % BLOCK_16 != 0 && m > NUM_TWO && m * n >= BASIC_BLOCK_SIZE_256) {
-        tiling.isNdFixpipe12 = true;
-    }
+    cfg.kL1 = cfg.baseK * 2;
 
     return tiling;
 }
@@ -190,11 +168,9 @@ inline void ConvertToNZ(const half *rowMajor, half *nzBuffer, int64_t k, int64_t
     };
 
     if (transB) {
-        // ZNLayoutPtn: [k_tile, n_tile, N(16), K(16)]
         for (int64_t ki = 0; ki < numKTiles; ki++)
             for (int64_t ni = 0; ni < numNTiles; ni++) writeTile(ki, ni, false);
     } else {
-        // NZLayoutPtn: [n_tile, k_tile, K(16), N(16)]
         for (int64_t ni = 0; ni < numNTiles; ni++)
             for (int64_t ki = 0; ki < numKTiles; ki++) writeTile(ki, ni, true);
     }
@@ -257,7 +233,6 @@ static bool ParseCliArgs(int argc, const char **argv, CliArgs &args) {
         args.format = argv[9];
     }
 
-    // Validation
     if (args.m <= 0 || args.k <= 0 || args.n <= 0) {
         std::cerr << "Error: M, K, N must be positive integers.\n";
         return false;
@@ -296,34 +271,32 @@ static bool ParseCliArgs(int argc, const char **argv, CliArgs &args) {
 /* ========================================================================== */
 
 using ProblemShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
-using BlockScheduler = Blaze::Gemm::Block::BlockSchedulerMatmulStreamK<ProblemShape>;
+using BlockScheduler = Blaze::Gemm::Block::BlockSchedulerMatmulBasic<ProblemShape>;
 
-template <class A_TYPE, class B_TYPE, class C_TYPE, class BIAS_TYPE, class LAYOUT_A, class LAYOUT_B, class LAYOUT_C,
-          Blaze::Gemm::MatMulL0C2Out L0C2OUT>
-__global__ __aicore__ void matmul_streamk_kernel(GM_ADDR aGM, GM_ADDR bGM, GM_ADDR cGM, GM_ADDR biasGM,
-                                                 GM_ADDR workspaceGM, int64_t m, int64_t n, int64_t k,
-                                                 int64_t usedCoreNum, int64_t skSingleK, int64_t mL1, int64_t nL1,
-                                                 int64_t kL1, int64_t baseM, int64_t baseN, int64_t baseK,
-                                                 bool isHf32) {
-    KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_MIX_AIC_1_2);
+template <class A_TYPE, class B_TYPE, class C_TYPE, class BIAS_TYPE, class LAYOUT_A, class LAYOUT_B, class LAYOUT_C>
+__global__ __aicore__ void matmul_basic_kernel(GM_ADDR aGM, GM_ADDR bGM, GM_ADDR cGM, GM_ADDR biasGM, int64_t m,
+                                               int64_t n, int64_t k, int64_t mL1, int64_t nL1, int64_t kL1,
+                                               int64_t baseM, int64_t baseN, int64_t baseK, uint32_t mTailCnt,
+                                               uint32_t nTailCnt, bool isHf32) {
+    KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_AIC_ONLY);
     AscendC::InitSocState();
 
-    using DispatchPolicy = Blaze::Gemm::MatmulMultiBlockWithStreamK<L0C2OUT, 0>;
+    using DispatchPolicy = Blaze::Gemm::MatmulMultiBlockBasic<>;
     using BlockMmad = Blaze::Gemm::Block::BlockMmad<DispatchPolicy, A_TYPE, LAYOUT_A, B_TYPE, LAYOUT_B, C_TYPE,
                                                     LAYOUT_C, BIAS_TYPE, LAYOUT_C>;
-    using BlockEpilogue = Blaze::Gemm::Block::BlockEpilogueMatmulStreamK<float, C_TYPE, DispatchPolicy>;
+    using BlockEpilogue = Blaze::Gemm::Block::BlockEpilogueEmpty;
     using MatmulKernel = Blaze::Gemm::Kernel::GemmUniversal<ProblemShape, BlockMmad, BlockEpilogue, BlockScheduler>;
 
     using Params = typename MatmulKernel::Params;
     Params params = {
         {m, n, k, 1},
-        {aGM, bGM, cGM, biasGM, nullptr, workspaceGM, static_cast<uint32_t>(mL1), static_cast<uint32_t>(nL1),
-         static_cast<uint32_t>(kL1), static_cast<uint32_t>(baseM), static_cast<uint32_t>(baseN),
+        {aGM, bGM, cGM, biasGM, nullptr, nullptr, static_cast<uint64_t>(mL1), static_cast<uint64_t>(nL1),
+         static_cast<uint64_t>(kL1), static_cast<uint32_t>(baseM), static_cast<uint32_t>(baseN),
          static_cast<uint32_t>(baseK), TilingConfig::L1_BUFFER_NUM, TilingConfig::L0C_DB},
-        {cGM, workspaceGM},
-        {static_cast<uint32_t>(usedCoreNum), static_cast<uint32_t>(baseM), static_cast<uint32_t>(baseN),
-         static_cast<uint32_t>(baseK), static_cast<uint32_t>(skSingleK), static_cast<uint32_t>(kL1),
-         static_cast<uint8_t>(isHf32 ? 1 : 0), Blaze::Gemm::L2_CACHE_DEFAULT}};
+        {},
+        {static_cast<uint32_t>(mL1), static_cast<uint32_t>(nL1), static_cast<uint32_t>(kL1),
+         static_cast<uint32_t>(baseM), static_cast<uint32_t>(baseN), static_cast<uint32_t>(baseK), mTailCnt, nTailCnt,
+         1, 1, 1, 1, static_cast<uint8_t>(isHf32 ? 1 : 0), Blaze::Gemm::L2_CACHE_DEFAULT}};
 
     MatmulKernel kernel;
     kernel(params);
@@ -340,10 +313,9 @@ struct LaunchParams {
     uint8_t *dB;
     uint8_t *dC;
     uint8_t *dBias;
-    uint8_t *dWorkSpace;
     int64_t m, n, k;
     int64_t blockNum;
-    const StreamKTiling *tiling;
+    const BasicTiling *tiling;
     const TilingConfig *cfg;
     aclrtStream stream;
     bool transA, transB, isHf32;
@@ -359,11 +331,7 @@ void LaunchKernel(const LaunchParams &p) {
 
     using LAYOUT_C = AscendC::Te::NDExtLayoutPtn;
 
-    if (p.tiling->isNdFixpipe12) {
-        LAUNCH_KERNEL_IMPL(Blaze::Gemm::MatMulL0C2Out::ND_FIXPIPE_1_2);
-    } else {
-        LAUNCH_KERNEL_IMPL(Blaze::Gemm::MatMulL0C2Out::ON_THE_FLY);
-    }
+    LAUNCH_KERNEL_IMPL();
 }
 
 }  // namespace
@@ -375,27 +343,21 @@ void LaunchKernel(const LaunchParams &p) {
 static void Run(const CliArgs &args) {
     aclrtStream stream{nullptr};
 
-    ACLDeviceGuard guard(stream);
-
     TilingConfig tilingCfg = GetTilingConfig(args.dtype);
     int64_t blockNum = GetAicCoreNum();
     if (blockNum <= 0) {
         std::cout << "blockNum cannot less than 0, but current: " << blockNum << std::endl;
         return;
     }
-    StreamKTiling tiling = ComputeTiling(tilingCfg, args.m, args.k, args.n, args.transA, args.transB, blockNum);
 
-    // dtype-based size calculation
+    ACLDeviceGuard guard(stream);
+    BasicTiling tiling = ComputeTiling(tilingCfg, args.m, args.k, args.n);
+
     size_t dtypeSize = (args.dtype == "float32") ? sizeof(float) : sizeof(half);
     size_t sizeA = static_cast<size_t>(args.m) * args.k * dtypeSize;
     size_t sizeC = static_cast<size_t>(args.m) * args.n * dtypeSize;
-
     size_t sizeB = static_cast<size_t>(args.k) * args.n * dtypeSize;
-
-    // bias size
     size_t sizeBias = (args.bias > 0) ? static_cast<size_t>(args.bias) * dtypeSize : 0;
-
-    size_t workspaceSize = blockNum * tilingCfg.baseM * tilingCfg.baseN * sizeof(float) + RPC_WORKSPACE_PADDING;
 
     std::string inputDir = "./input";
     std::string outputDir = "./output";
@@ -408,7 +370,6 @@ static void Run(const CliArgs &args) {
         return;
     }
 
-    // Allocate host buffers
     std::vector<uint8_t> hostA(sizeA);
     std::vector<uint8_t> hostB(sizeB);
     std::vector<uint8_t> hostC(sizeC, 0);
@@ -425,7 +386,6 @@ static void Run(const CliArgs &args) {
         return;
     }
 
-    // For (ND,NZ) format, convert B from ND to NZ format
     std::vector<uint8_t> hostBNz;
     if (args.format == "(ND,NZ)") {
         int64_t bRows = args.transB ? args.n : args.k;
@@ -452,7 +412,6 @@ static void Run(const CliArgs &args) {
         std::cout << "[INFO] Converted B to NZ format: " << sizeB << " bytes" << std::endl;
     }
 
-    // Bias: read and upload
     std::vector<uint8_t> hostBias(sizeBias, 0);
     uint8_t *deviceBias = nullptr;
 
@@ -472,18 +431,14 @@ static void Run(const CliArgs &args) {
         std::cout << "[INFO] Loaded bias: " << args.bias << " elements" << std::endl;
     }
 
-    // Allocate device buffers
     uint8_t *deviceA{nullptr};
     uint8_t *deviceB{nullptr};
     uint8_t *deviceC{nullptr};
-    uint8_t *deviceWorkspace{nullptr};
 
     ACL_CHECK(aclrtMalloc(reinterpret_cast<void **>(&deviceA), sizeA, ACL_MEM_MALLOC_HUGE_FIRST));
     ACL_CHECK(aclrtMalloc(reinterpret_cast<void **>(&deviceB), sizeB, ACL_MEM_MALLOC_HUGE_FIRST));
     ACL_CHECK(aclrtMalloc(reinterpret_cast<void **>(&deviceC), sizeC, ACL_MEM_MALLOC_HUGE_FIRST));
-    ACL_CHECK(aclrtMalloc(reinterpret_cast<void **>(&deviceWorkspace), workspaceSize, ACL_MEM_MALLOC_HUGE_FIRST));
 
-    // Copy H2D
     ACL_CHECK(aclrtMemcpy(deviceA, sizeA, hostA.data(), sizeA, ACL_MEMCPY_HOST_TO_DEVICE));
     if (args.format == "(ND,NZ)") {
         ACL_CHECK(aclrtMemcpy(deviceB, sizeB, hostBNz.data(), sizeB, ACL_MEMCPY_HOST_TO_DEVICE));
@@ -491,13 +446,11 @@ static void Run(const CliArgs &args) {
         ACL_CHECK(aclrtMemcpy(deviceB, sizeB, hostB.data(), sizeB, ACL_MEMCPY_HOST_TO_DEVICE));
     }
 
-    // Print execution summary
     std::string layoutA = args.transA ? "DN" : "ND";
     std::string layoutB = (args.format == "(ND,NZ)") ? (args.transB ? "ZN" : "NZ") : (args.transB ? "DN" : "ND");
-    std::string l0c2out = tiling.isNdFixpipe12 ? "ND_FIXPIPE_1_2" : "ON_THE_FLY";
 
     std::cout << "============================================================" << std::endl;
-    std::cout << "  MatMul StreamK — Execution Summary" << std::endl;
+    std::cout << "  MatMul Basic — Execution Summary" << std::endl;
     std::cout << "============================================================" << std::endl;
     std::cout << "  Shape    : M=" << args.m << ", K=" << args.k << ", N=" << args.n << std::endl;
     std::cout << "  Dtype    : " << args.dtype << std::endl;
@@ -511,17 +464,16 @@ static void Run(const CliArgs &args) {
               << std::endl;
     std::cout << "  L0 Tile  : [" << tilingCfg.baseM << ", " << tilingCfg.baseN << ", " << tilingCfg.baseK << "]"
               << std::endl;
-    std::cout << "  skSingleK: " << tiling.skSingleK << std::endl;
-    std::cout << "  L0C2Out  : " << l0c2out << std::endl;
+    std::cout << "  mTailCnt : " << tiling.mTailCnt << std::endl;
+    std::cout << "  nTailCnt : " << tiling.nTailCnt << std::endl;
     std::cout << "  BlockNum : " << blockNum << std::endl;
-    std::cout << "  Workspace: " << (workspaceSize / 1024) << " KB" << std::endl;
     std::cout << "============================================================" << std::endl;
 
     std::cout << "[INFO] Launching kernel..." << std::endl;
 
-    LaunchParams launchParams = {deviceA,    deviceB, deviceC,     deviceBias,  deviceWorkspace,
-                                 args.m,     args.n,  args.k,      blockNum,    &tiling,
-                                 &tilingCfg, stream,  args.transA, args.transB, args.isHf32};
+    LaunchParams launchParams = {deviceA,    deviceB, deviceC,     deviceBias,  args.m,
+                                 args.n,     args.k,  blockNum,    &tiling,     &tilingCfg,
+                                 stream,     args.transA, args.transB, args.isHf32};
 
     bool isNzFormat = (args.format == "(ND,NZ)");
 
@@ -535,10 +487,8 @@ static void Run(const CliArgs &args) {
 
     ACL_CHECK(aclrtSynchronizeStream(stream));
 
-    // Copy D2H
     ACL_CHECK(aclrtMemcpy(hostC.data(), sizeC, deviceC, sizeC, ACL_MEMCPY_DEVICE_TO_HOST));
 
-    // Write output
     std::string outPath = outputDir + "/npu_out.bin";
     std::cout << "[INFO] Writing " << outPath << " (" << sizeC << " bytes)..." << std::endl;
     if (!WriteFile(outPath, hostC.data(), sizeC)) {
@@ -547,11 +497,9 @@ static void Run(const CliArgs &args) {
 
     std::cout << "[INFO] Kernel execution completed successfully." << std::endl;
 
-    // Cleanup
     ACL_CHECK(aclrtFree(deviceA));
     ACL_CHECK(aclrtFree(deviceB));
     ACL_CHECK(aclrtFree(deviceC));
-    ACL_CHECK(aclrtFree(deviceWorkspace));
     if (deviceBias != nullptr) {
         ACL_CHECK(aclrtFree(deviceBias));
     }

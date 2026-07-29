@@ -35,6 +35,39 @@
     } while (0)
 
 /*============================================================================
+ * ACL Device Auto-Cleanup Guard
+ *============================================================================*/
+
+/**
+ * @brief RAII guard that ensures ResetDevice+Finalize on any exit path,
+ *        including std::exit() from ACL_CHECK failures.
+ *
+ * Usage: put "ACLDeviceGuard guard;" right after SetDevice succeeds.
+ */
+class ACLDeviceGuard {
+public:
+    ACLDeviceGuard(aclrtStream& stream) : stream_(&stream)
+    {
+        ACL_CHECK(aclInit(nullptr));
+        ACL_CHECK(aclrtSetDevice(0));
+        ACL_CHECK(aclrtCreateStream(stream_));
+    }
+
+    ~ACLDeviceGuard()
+    {
+        if (stream_ != nullptr) {
+            aclrtDestroyStream(*stream_);
+            stream_ = nullptr;
+        }
+        aclrtResetDevice(0);
+        aclFinalize();
+    }
+
+private:
+    aclrtStream* stream_;
+};
+
+/*============================================================================
  * File I/O Utilities
  *============================================================================*/
 

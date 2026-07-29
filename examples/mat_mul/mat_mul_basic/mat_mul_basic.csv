@@ -1,0 +1,6 @@
+casename,m,k,n,bias,dtype,transA,transB,hf32,format
+mat_mul_basic_fp16,128,512,128,128,float16,false,false,false,"(ND,ND)"
+mat_mul_basic_bf16,128,512,128,128,bfloat16,false,false,false,"(ND,ND)"
+mat_mul_basic_fp32,128,512,128,128,float32,false,false,false,"(ND,ND)"
+mat_mul_basic_hf32,128,512,128,128,float32,false,false,true,"(ND,ND)"
+mat_mul_basic_weightNz,128,512,128,0,float16,false,false,false,"(ND,NZ)"

@@ -37,17 +37,17 @@ public:
     __aicore__ inline GemmUniversal()
     {
         if ASCEND_IS_AIV {
-            CrossCoreSetFlag<AIC_SYNC_AIV_MODE_4, PIPE_MTE3>(AIV_SYNC_AIC_FLAG);     // ping
-            CrossCoreSetFlag<AIC_SYNC_AIV_MODE_4, PIPE_MTE3>(AIV_SYNC_AIC_FLAG + 1); // pong
+            AscendC::CrossCoreSetFlag<AIC_SYNC_AIV_MODE_4, PIPE_MTE3>(AIV_SYNC_AIC_FLAG);     // ping
+            AscendC::CrossCoreSetFlag<AIC_SYNC_AIV_MODE_4, PIPE_MTE3>(AIV_SYNC_AIC_FLAG + 1); // pong
         }
     }
     __aicore__ inline ~GemmUniversal()
     {
         if ASCEND_IS_AIC {
-            CrossCoreWaitFlag<AIC_SYNC_AIV_MODE_4, PIPE_FIX>(AIV_SYNC_AIC_FLAG);                   // ping
-            CrossCoreWaitFlag<AIC_SYNC_AIV_MODE_4, PIPE_FIX>(AIV_SYNC_AIC_FLAG + FLAG_ID_MAX);     // ping
-            CrossCoreWaitFlag<AIC_SYNC_AIV_MODE_4, PIPE_FIX>(AIV_SYNC_AIC_FLAG + 1);               // pong
-            CrossCoreWaitFlag<AIC_SYNC_AIV_MODE_4, PIPE_FIX>(AIV_SYNC_AIC_FLAG + 1 + FLAG_ID_MAX); // pong
+            AscendC::CrossCoreWaitFlag<AIC_SYNC_AIV_MODE_4, PIPE_FIX>(AIV_SYNC_AIC_FLAG);                   // ping
+            AscendC::CrossCoreWaitFlag<AIC_SYNC_AIV_MODE_4, PIPE_FIX>(AIV_SYNC_AIC_FLAG + FLAG_ID_MAX);     // ping
+            AscendC::CrossCoreWaitFlag<AIC_SYNC_AIV_MODE_4, PIPE_FIX>(AIV_SYNC_AIC_FLAG + 1);               // pong
+            AscendC::CrossCoreWaitFlag<AIC_SYNC_AIV_MODE_4, PIPE_FIX>(AIV_SYNC_AIC_FLAG + 1 + FLAG_ID_MAX); // pong
         }
     }
 
@@ -95,7 +95,7 @@ public:
         Init(params);
         if ASCEND_IS_AIV
         {
-            if (!params.mmadParams.splitM && GetSubBlockIdx() > 0) {
+            if (!params.mmadParams.splitM && AscendC::GetSubBlockIdx() > 0) {
                 return;
             }
             curBlockIdx /= AscendC::GetTaskRation();
@@ -208,10 +208,10 @@ private:
     static constexpr bool TRANS_A = BlockMmad::TRANS_A;
     static constexpr bool WEIGHTNZ_FORMAT = BlockMmad::WEIGHTNZ_FORMAT;
 
-    constexpr static uint64_t AIC_SYNC_AIV_MODE_4 = 4;
-    constexpr static uint16_t AIV_SYNC_AIC_FLAG = 4;
-    constexpr static uint16_t AIC_SYNC_AIV_FLAG = 6;
-    constexpr static uint16_t FLAG_ID_MAX = 16;
+    static constexpr uint64_t AIC_SYNC_AIV_MODE_4 = 4;
+    static constexpr uint16_t AIV_SYNC_AIC_FLAG = 4;
+    static constexpr uint16_t AIC_SYNC_AIV_FLAG = 6;
+    static constexpr uint16_t FLAG_ID_MAX = 16;
     __gm__ AType* aGmAddr_;
     __gm__ BType* bGmAddr_;
     __gm__ CType* cGmAddr_;
