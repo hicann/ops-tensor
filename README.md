@@ -8,7 +8,7 @@
 
 ## 🚀概述
 
-ops-tensor 内置了 **Blaze**（Basic Linear Algebra optimiZed Engine）基础线性代数加速引擎，为融合算子开发提供高性能 MM 公共能力，构建 NPU 通用高性能 CUBE 底座。采用模块化设计，支持灵活的算子开发、测试和部署。
+ops-tensor 内置了 **Blaze**（Basic Linear Algebra optimiZed Engine）基础线性代数加速引擎，构建 NPU 高性能 CUBE 底座, 为算子开发提供 CUBE 公共能力。
 
 ## 🔍目录结构
 
