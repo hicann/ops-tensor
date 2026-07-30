@@ -135,18 +135,14 @@ private:
             // Block offset
             if (preBatchIdx != curBatchIdx_) {
                 UpdateBatchOffset(params);
-                gmA = AscendC::Te::MakeTensor(
-                    AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(aGmAddr_), layoutA);
-                gmC = AscendC::Te::MakeTensor(
-                    AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(cGmAddr_), layoutC);
+                gmA = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(aGmAddr_), layoutA);
+                gmC = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(cGmAddr_), layoutC);
                 preBatchIdx = curBatchIdx_;
                 SetL2Cache(gmA, gmB, params.schParams.l2CacheMode);
             }
             // Block offset
-            auto gmBlockA =
-                gmA.Slice(AscendC::MakeCoord(coordM, 0L), AscendC::MakeShape(shapeM, shapeK));
-            auto gmBlockC = gmC.Slice(
-                AscendC::MakeCoord(coordM, 0), AscendC::MakeShape(shapeM, n_));
+            auto gmBlockA = gmA.Slice(AscendC::MakeCoord(coordM, 0L), AscendC::MakeShape(shapeM, shapeK));
+            auto gmBlockC = gmC.Slice(AscendC::MakeCoord(coordM, 0), AscendC::MakeShape(shapeM, n_));
             blockMmad(gmBlockA, gmB, gmBias, gmBlockC, tileShape);
         }
     }

@@ -93,8 +93,7 @@ public:
         BlockMmad blockMmad;
         int64_t curBlockIdx = AscendC::GetBlockIdx();
         Init(params);
-        if ASCEND_IS_AIV
-        {
+        if ASCEND_IS_AIV {
             if (!params.mmadParams.splitM && AscendC::GetSubBlockIdx() > 0) {
                 return;
             }
@@ -111,8 +110,7 @@ public:
             AscendC::SetHF32TransMode(1);
         }
         epilogueOp.Init(params.epilogueParams, problemShape_);
-        if ASCEND_IS_AIC
-        {
+        if ASCEND_IS_AIC {
             blockMmad.Init(params.mmadParams);
         }
         MatmulProcess(params, epilogueOp, blockMmad, bs, curBlockIdx, AscendC::GetBlockNum(), bs.GetBlockNums());
@@ -170,7 +168,7 @@ private:
                     params.mmadParams.ubDB);
             }
         }
-        }
+    }
     __aicore__ inline void Init(Params const& params)
     {
         problemShape_ = params.problemShape;
