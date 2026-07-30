@@ -1,0 +1,3 @@
+casename,m,k,n,bias,layout,base_m,base_n,base_k,tile_k_l1,scale_k_l1,k_bub,n_bub,l1_buffers,block_num
+nd_multik_tail_n,32,128,40,0,nd,32,32,64,64,64,64,32,2,1
+nz_multik_tail_n_bias,32,128,40,40,nz,32,32,64,64,64,64,32,2,1

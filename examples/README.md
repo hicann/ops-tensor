@@ -41,9 +41,10 @@ examples 的完整编译与运行涉及三类依赖：**系统工具链**、**CA
 | 包 | 用途 | 安装命令 |
 |----|------|---------|
 | numpy | 二进制数据读写、数组操作 | `pip install numpy` |
+| ml_dtypes | `float8_e4m3fn` golden 计算 | `pip install ml_dtypes` |
 | torch | CPU golden 参考计算（`torch.matmul`/`torch.addmm`）、dtype 映射 | `pip install torch` |
 
-> **注意**：仓库根目录的 `requirements.txt` 列出了主项目依赖（pyyaml、sympy 等），但 examples 的 Python 脚本额外需要 `numpy` 和 `torch`，需单独安装。
+> **注意**：仓库根目录的 `requirements.txt` 列出了主项目依赖（pyyaml、sympy 等），但 examples 的 Python 脚本额外需要 `numpy`、`ml_dtypes` 和 `torch`，需单独安装。
 
 ### 2.4 依赖检查清单
 
@@ -60,6 +61,7 @@ bisheng --version 2>&1 | head -1
 
 # 3. Python 依赖
 python3 -c "import numpy; print('numpy', numpy.__version__)"
+python3 -c "import ml_dtypes; print('ml_dtypes', ml_dtypes.__version__)"
 python3 -c "import torch; print('torch', torch.__version__)"
 
 # 4. NPU 设备
@@ -101,6 +103,10 @@ examples/
 | L2 | `examples/{op}/` | `add_subdirectory()` 加载子场景 |
 | L3 | `examples/{op}/{example}/` | `ops_example_add_executable()` 注册可执行样例 |
 
+MXA8W4 QBMM 使用独立的数据流目录，不归入 `mat_mul`：
+`examples/quant_batch_matmul_mx/weight_quant_batch_matmul_mx/`。数据生成和 golden 校验脚本位于算子级
+`examples/quant_batch_matmul_mx/scripts/`，CSV 驱动脚本位于场景目录；新增模板实现时在同级增加子目录。
+
 ## 4. 执行方法
 
 ### 4.1 通过 build.sh 执行（推荐）
@@ -113,6 +119,9 @@ bash build.sh --examples --ops=mat_mul
 
 # 运行指定场景
 bash build.sh --examples --ops=mat_mul --target=mat_mul_streamk
+
+# QBMM MXA8W4 Blaze 模板
+bash build.sh --examples --ops=quant_batch_matmul_mx --target=weight_quant_batch_matmul_mx
 
 # 运行所有算子的所有场景
 bash build.sh --examples

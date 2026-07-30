@@ -63,3 +63,5 @@ tbetoolkits-*.log
 /third_party
 # version info (generated at build time)
 version.info
+.claude/
+.opencode/

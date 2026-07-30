@@ -14,6 +14,7 @@
 | [kernel_qgmm_mx_basic](./kernel_qgmm_mx_basic.md) | MX 量化 Grouped Matmul，支持 group list 与 tail split |
 | [kernel_matmul_streamk](./kernel_matmul_streamk.md) | StreamK 矩阵乘 Kernel，AIC+AIV 双核计算，支持 workspace |
 | [kernel_qbmm_streamk](./kernel_qbmm_streamk.md) | MX 量化 StreamK Kernel，支持单 Batch MxFP4/MxFP8 workspace 归约 |
+| [kernel_matmul_mix_weight_prologue](./kernel_matmul_mix_weight_prologue.md) | AIV 权重前处理 + AIC MX MMAD 的 Mix Kernel |
 
 ## 公共框架
 
@@ -47,11 +48,12 @@ KernelMatmul
 | KernelQgmmMx | 仅 AIC | MX FP4/MX FP8 | ScaleA + ScaleB | 无 | 不需要 | group list | BlockSchedulerGmmSwatWithTailSplit | 无 | 量化 Grouped Matmul |
 | KernelMatmulStreamK | AIC + AIV 双核 | 不支持 | 不支持 | BlockEpilogueStreamK | 需要 | 单 batch | StreamK Scheduler | 有 | 切 K 场景 Matmul |
 | KernelQbmmStreamK | AIC + AIV 双核 | MX FP4/MX FP8 | ScaleA + ScaleB | BlockEpilogueStreamK（复用） | 需要 | 单 batch | StreamK Scheduler（复用） | 有 | 量化切 K 场景 Matmul |
+| GemmUniversal (Weight Prologue) | AIC + AIV 双核 | FP8 激活 + packed FP4 权重 | ScaleA + ScaleB | `void` | 不需要 | 单 batch | Matmul SWAT | 有（ready/free 标志） | MXA8W4 Weight ND/NZ |
 
 ## 使用流程
 
 1. **查看公共框架**：了解模板参数和核心接口 → [kernel.md](./kernel.md)
-2. **选择具体实现**：根据场景选择 Basic、QBMM Cube、QBMM MX、QBMM MIX、QGMM MX 或 StreamK
+2. **选择具体实现**：根据场景选择 Basic、TBMM、QBMM Cube、QBMM MX、QBMM MIX、Weight Prologue、QGMM MX 或 StreamK
 3. **查看特殊约束**：了解各实现的特有约束和方法
 4. **组装组件**：定义 ProblemShape、BlockMmad、BlockEpilogue、BlockScheduler
 5. **准备参数**：构造 Params 结构体

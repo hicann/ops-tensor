@@ -165,9 +165,21 @@ struct BufferSlot {
     {
         return Lock<pipe_t::PIPE_MTE1>();
     }
+    __aicore__ inline auto LockMte3() const
+    {
+        return Lock<pipe_t::PIPE_MTE3>();
+    }
     __aicore__ inline auto LockM() const
     {
         return Lock<pipe_t::PIPE_M>();
+    }
+    __aicore__ inline auto LockV() const
+    {
+        return Lock<pipe_t::PIPE_V>();
+    }
+    __aicore__ inline auto LockFix() const
+    {
+        return Lock<pipe_t::PIPE_FIX>();
     }
 };
 

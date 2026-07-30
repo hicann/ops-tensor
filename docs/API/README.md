@@ -2,7 +2,7 @@
 
 ## 简介
 
-Blaze (**B**asic **L**inear **A**lgebra optimi**Z**ed **E**ngine) 是一个高性能矩阵乘库，专为华为 Ascend NPU 平台优化。采用分层架构设计，提供灵活的组件组装能力，支持多种矩阵乘场景（Basic、StreamK、MX 量化）。
+Blaze (**B**asic **L**inear **A**lgebra optimi**Z**ed **E**ngine) 是一个高性能矩阵乘库，专为华为 Ascend NPU 平台优化。采用分层架构设计，提供灵活的组件组装能力，支持多种矩阵乘场景（Basic、StreamK、Mix、MX 量化和 Weight Quant MX）。
 
 ## Blaze 整体架构
 
@@ -25,7 +25,7 @@ Blaze (**B**asic **L**inear **A**lgebra optimi**Z**ed **E**ngine) 是一个高�
 
 详细文档：
 
-[Block 层 API](gemm/block/README.md) 
+[Block 层 API](gemm/block/README.md)
 包含 `BlockScheduler` 和 `BlockMmad` 组件。
 
 ### Epilogue Layer（Epilogue 层 ）
@@ -35,7 +35,7 @@ Blaze (**B**asic **L**inear **A**lgebra optimi**Z**ed **E**ngine) 是一个高�
 [Epilogue 层 API](epilogue/README.md)
 
 ### Tile Layer（Tile 层）
-职责：底层辅助组件，数据对齐、Scale 搬运、Trait 定义。
+职责：底层辅助组件，数据对齐、Scale 搬运、Trait 定义，以及权重前处理和布局转换。
 
 详细文档：[Tile 层 API](gemm/tile/README.md)
 
@@ -290,6 +290,7 @@ blaze/
 │       │   ├── kernel_qbmm_cube.h
 │       │   ├── kernel_qbmm_mx.h
 │       │   ├── kernel_qbmm_mx_without_batch.h
+│       │   ├── kernel_matmul_mix_weight_prologue.h
 │       │   └── kernel_qbmm_streamk.h
 │       │
 │       ├── block/               # Block 层组件
@@ -299,6 +300,8 @@ blaze/
 │       │   ├── block_mmad_matmul_streamk.h  # Matmul StreamK BlockMmad
 │       │   ├── block_mmad_qbmm_mx.h         # Qbmm MX BlockMmad
 │       │   ├── block_mmad_qbmm_mx_l0c_pingpong.h # L0C PingPong Qbmm MX BlockMmad
+│       │   ├── block_mmad_weight_prologue_mx.h
+│       │   ├── block_scheduler_matmul_swat_with_tail_split.h
 │       │   ├── block_scheduler_matmul_basic.h
 │       │   ├── block_scheduler_matmul_streamk.h
 │       │   └── block_scheduler_qbmm.h
@@ -306,8 +309,9 @@ blaze/
 │       ├── tile/                # Tile 层组件
 │       │   ├── tile_mmad_mx.h
 │       │   ├── pad_mx_kl1.h
-│       │   ├── copy_scale_l1_to_l0a.h
-│       │   └── copy_scale_l1_to_l0b.h
+│       │   ├── copy_gm_to_ub.h
+│       │   ├── scale_mx_bias.h
+│       │   └── shift_w4_to_w8.h
 │       │
 │       ├── policy/              # Policy 层
 │       │   └── dispatch_policy.h

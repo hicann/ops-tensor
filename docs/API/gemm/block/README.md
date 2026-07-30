@@ -12,6 +12,7 @@
 | [block_mmad_qgmm_mx](./block_mmad_qgmm_mx.md) | MX 量化 Grouped Matmul Block，支持 group list、ScaleA/ScaleB |
 | [block_mmad_qbmm_mx_l0c_pingpong](./block_mmad_qbmm_mx_l0c_pingpong.md) | MX 量化矩阵乘 L0C PingPong Block，支持 N 方向拆分、Scale 复用和 SplitK 写回控制 |
 | [block_mmad_matmul_streamk](./block_mmad_matmul_streamk.md) | StreamK 矩阵乘 Block，支持 workspace 输出、K 轴切分 |
+| [block_mmad_weight_prologue_mx](./block_mmad_weight_prologue_mx.md) | AIV 已写入 B/Bias L1 后的 MX AIC BlockMmad |
 
 ### BlockScheduler（任务调度）
 | 组件名 | 描述 |
@@ -21,6 +22,7 @@
 | [block_scheduler_matmul_streamk](./block_scheduler_matmul_streamk.md) | StreamK 调度器：DP+SK 混合策略、K 轴切分 |
 | [block_scheduler_qbmm_mx](./block_scheduler_qbmm_mx.md) | QBMM 调度器：Batch 维度切分、量化对齐 |
 | [block_scheduler_gmm_swat_with_tail_split](./block_scheduler_gmm_swat_with_tail_split.md) | QGMM 调度器：group 间连续分核、SWAT 扫描、末组 tail split |
+| [block_scheduler_matmul_swat_with_tail_split](./block_scheduler_matmul_swat_with_tail_split.md) | 通用 M/N SWAT 扫描、尾块合并和 compact tail split |
 
 ## 公共框架
 
@@ -51,6 +53,7 @@ BlockMmad
     │       ├── MatmulWithScaleFixpipeQuant (Fixpipe 量化)
     │       ├── MatmulWithScaleMx (QBMM MX 量化)
     │       ├── MatmulWithScaleMix (QBMM MIX A8W8 量化)
+    │       ├── MatmulWithWeightQuantMx (MXA8W4 权重前处理)
     │       ├── MatmulWithScaleMxL0CPingpong (QBMM MX L0C PingPong)
     │       └── GroupedMatmulWithScaleMx (QGMM MX 量化)
     ├── 数据类型 (AType, BType, CType, BiasType)
@@ -72,12 +75,13 @@ BlockMmad
 | BlockMmadA8W8Mix | MatmulWithScaleMix | UB (L0C→UB) | int8 (A8W8) | 不在本层（由 epilogue 处理） | 可配置 (2 或 4) | 可配置 | 不在本层 | 无（Kernel 层处理） | QBMM MIX Kernel |
 | BlockMmadQGmmMx | GroupedMatmulWithScaleMx | GM | MxFP4/MxFP8 | ScaleA + ScaleB | 固定双缓冲 | 可配置 | 支持 | 无 | QGMM MX Kernel |
 | BlockMmadMxL0CPingpong | MatmulWithScaleMxL0CPingpong | GM | MxFP4/MxFP8 | ScaleA + ScaleB | 可配置 (2、3 或 4) | 固定双缓冲 | 支持 | 无 | QBMM MX L0C PingPong Kernel |
+| BlockMmadWeightPrologueMx | MatmulWithWeightQuantMx | GM | FP8 + packed FP4 | ScaleA + ScaleB | 2 或 4 | 固定单缓冲 | AIV 提供 | 有（Kernel 层 ready/free 标志） | MXA8W4 Weight ND/NZ |
 
 ## 使用流程
 
 1. **查看公共框架**：了解模板参数和核心接口 → [block_mmad.md](./block_mmad.md)
-2. **选择具体实现**：根据 Kernel 类型选择 Basic、StreamK、FixpipeQuant、MX 或 L0C PingPong MX
-3. **定义调度策略**：选择 DispatchPolicy（TensorApi、StreamK、FixpipeQuant、ScaleMx 或 ScaleMxL0CPingpong）
+2. **选择具体实现**：根据 Kernel 类型选择 Basic、StreamK、FixpipeQuant、MX、Weight Prologue 或 L0C PingPong MX
+3. **定义调度策略**：选择 DispatchPolicy（TensorApi、StreamK、FixpipeQuant、ScaleMx、WeightQuantMx 或 ScaleMxL0CPingpong）
 4. **组装组件**：定义数据类型、布局类型
 5. **初始化**：调用 Init 设置 tile 形状、缓冲策略
 6. **执行计算**：调用 operator 执行矩阵乘

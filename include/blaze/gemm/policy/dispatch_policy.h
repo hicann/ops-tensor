@@ -36,6 +36,7 @@ struct KernelMmadMultiBlockAFullLoad {};     // Multi-tile aFullLoad
 struct KernelMmadMultiBlockBFullLoad {}; // Multi-tile fullLoad
 struct KernelMmadMultiBlockFixpipeOpti {}; // Multi-tile FixpipeOpti
 struct KernelMmadMultiBlockTBMM {}; // tbmm schedule
+struct KernelMixWithWeightPrologue {}; // Mix matmul with AIV weight preprocessing
 enum class MatMulL0C2Out : std::uint8_t
 {
     ON_THE_FLY = 0,
@@ -80,6 +81,14 @@ struct MatmulWithScaleMx {
     static constexpr uint64_t FULL_LOAD_MODE = FullLoadMode_;
     static constexpr bool IS_ATOMIC_ADD = AtomicAdd_;
     static constexpr uint64_t L0C2UB_MODE = L0C2UBMode_;
+};
+
+/**
+ * @struct MatmulWithWeightQuantMx
+ * @brief Weight-only MX matrix multiplication with AIV weight conversion.
+ */
+struct MatmulWithWeightQuantMx {
+    using ScheduleType = KernelMixWithWeightPrologue;
 };
 
 /**

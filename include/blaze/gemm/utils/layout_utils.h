@@ -23,6 +23,12 @@ namespace Gemm {
 // Slice 3D Layout Pattern
 struct NDSliceLayoutPtn {};
 
+// Physical UB layouts emitted by the MXA8W4 conversion. They are intentionally
+// distinct from standard tensor-api patterns because their physical interleave
+// and stride contracts are consumed by custom vector/copy tiles.
+struct Weight8BitZnToZnUbLayoutPtn {};
+struct Weight8BitDnToZnUbLayoutPtn {};
+
 // IsTrans
 template <typename LayoutPattern>
 constexpr bool GetTransValue()

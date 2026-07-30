@@ -152,6 +152,7 @@ Kernel UT（单元测试）用于验证算子内核的正确性。
 **支持的 Kernel UT 算子**（位于 `tests/ut/op_kernel/`）：
 - `mat_mul` - 矩阵乘算子
 - `quant_batch_matmul` - 量化批量矩阵乘算子
+- `weight_quant_batch_matmul_mx` - MXA8W4 权重量化矩阵乘组件
 
 若提示如下信息，则说明 Kernel UT 测试通过：
 

@@ -25,9 +25,57 @@ struct CopyGM2UBWeight {
     template <typename Tp, const Tp& traits, typename T, typename U>
     __aicore__ inline static void Copy(const T& dst, const U& src)
     {
+        using SrcLayoutPattern = AscendC::Te::GetLayoutPattern<typename U::layoutType>;
+        using DstLayoutPattern = AscendC::Te::GetLayoutPattern<typename T::layoutType>;
+        constexpr bool IS_ZN_WEIGHT = AscendC::Std::is_same_v<SrcLayoutPattern, AscendC::Te::ZNLayoutPtn>;
+        constexpr bool IS_DN_WEIGHT = AscendC::Std::is_same_v<SrcLayoutPattern, AscendC::Te::DNExtLayoutPtn>;
+        static_assert(IS_ZN_WEIGHT || IS_DN_WEIGHT, "Packed weight copy only supports ZN and DNExt source layouts");
+        static_assert(AscendC::Std::is_same_v<DstLayoutPattern, SrcLayoutPattern>,
+            "Packed weight copy source and destination layouts must match");
+        static_assert(
+            sizeof(typename T::elementType) == sizeof(typename U::elementType) &&
+                sizeof(typename T::elementType) == 1,
+            "Packed weight copy requires matching packed source and destination elements");
+
+        if constexpr (IS_DN_WEIGHT) {
+            CopyDnPackedWeight(dst, src);
+        } else {
+            CopyZnPackedWeight(dst, src);
+        }
+    }
+
+private:
+    template <typename T, typename U>
+    __aicore__ inline static void CopyDnPackedWeight(const T& dst, const U& src)
+    {
         const auto& dstLayout = dst.Layout();
         const auto& srcLayout = src.Layout();
 
+        uint8_t cacheMode = src.Engine().GetCacheMode();
+        auto srcShape = AscendC::Te::GetShape(srcLayout);
+        auto srcStrideTuple = AscendC::Te::GetStride(srcLayout);
+        auto dstStrideTuple = AscendC::Te::GetStride(dstLayout);
+
+        uint16_t blockCount = AscendC::Std::get<1>(AscendC::Std::get<1>(srcShape));
+        uint32_t kLen = AscendC::Std::get<1>(AscendC::Std::get<0>(srcShape));
+        uint32_t srcRowStride = AscendC::Std::get<1>(AscendC::Std::get<1>(srcStrideTuple));
+        uint32_t dstRowStride = AscendC::Std::get<1>(AscendC::Std::get<1>(dstStrideTuple));
+
+        // Packed FP4 stores two logical K elements in one byte. The direct
+        // intrinsic consumes the byte distance between adjacent N-row starts.
+        uint32_t blockLen = kLen >> 1U;
+        int64_t srcRowSpanBytes = srcRowStride >> 1U;
+        int64_t dstRowSpanBytes = dstRowStride >> 1U;
+        asc_copy_gm2ub_align(
+            (__ubuf__ uint8_t*)dst.Data().Get(), (__gm__ uint8_t*)src.Data().Get(), blockCount, blockLen, 0, 0, false,
+            cacheMode, srcRowSpanBytes, dstRowSpanBytes);
+    }
+
+    template <typename T, typename U>
+    __aicore__ inline static void CopyZnPackedWeight(const T& dst, const U& src)
+    {
+        const auto& dstLayout = dst.Layout();
+        const auto& srcLayout = src.Layout();
         uint8_t cacheMode = src.Engine().GetCacheMode();
 
         // Get shape and stride
