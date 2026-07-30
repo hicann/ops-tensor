@@ -69,7 +69,7 @@ QBMM MX StreamK Kernel 是面向 MxFP4/MxFP8 量化矩阵乘的 `GemmUniversal` 
 ```cpp
 struct Params {
     ProblemShape problemShape;          // 问题 shape (m, n, k, batch)
-    BlockMmadParams blockMmadParams;    // MX BlockMmad 参数
+    BlockMmadParams mmadParams;         // MX BlockMmad 参数
     BlockEpilogueParams epilogueParams; // StreamK epilogue 参数
     BlockSchedulerParams schParams;     // StreamK scheduler 参数
     QBMMStreamKParams qbmmParams;       // QBMM StreamK 特有参数
@@ -82,8 +82,11 @@ struct Params {
 struct QBMMStreamKParams {
     uint32_t scaleKL1; // Scale 在 L1 上的 K 方向长度
     uint32_t dbL0C;    // L0C 双缓冲标志
+    uint32_t bMustHitL2 = 1U; // B 是否必须保留在 L2 Cache
 };
 ```
+
+`bMustHitL2` 为 1 时，B 矩阵的 `L2CacheHint` 设置为 `NORMAL`；为 0 时，Kernel 根据当前 tile 动态设置为 `NORMAL` 或 `DISABLE`。仅当当前 M tile 覆盖完整 M，且 B 已转置或当前 N tile 按 128 Bytes 对齐时，设置为 `DISABLE`。
 
 Scale L1 约束：
 - `scaleKL1 >= schParams.kL1`
@@ -236,7 +239,7 @@ Params params{
     {aGM, bGM, cGM, biasGM, scaleAGM, scaleBGM},
     {cGM, workspaceGM},
     {usedCoreNum, baseM, baseN, baseK, singleCoreK, kL1},
-    {scaleKL1, dbL0C}                     // scaleKL1 >= kL1 and scaleKL1 % kL1 == 0
+    {scaleKL1, dbL0C, bMustHitL2}         // scaleKL1 >= kL1 and scaleKL1 % kL1 == 0
 };
 ```
 

@@ -45,8 +45,11 @@ struct QBMMTiling {
     uint32_t baseK;   // L0 tile K 维度
     uint32_t isBias;  // 是否启用 bias
     uint32_t dbL0C;   // L0C 双缓冲标志
+    uint32_t bMustHitL2 = 1U; // B 是否必须保留在 L2 Cache
 };
 ```
+
+`bMustHitL2` 为 1 时，B 矩阵的 `L2CacheHint` 设置为 `NORMAL`；为 0 时，Kernel 根据当前 tile 动态设置为 `NORMAL` 或 `DISABLE`。仅当当前 M tile 覆盖完整 M，且 B 已转置或当前 N tile 按 128 Bytes 对齐时，设置为 `DISABLE`。
 
 ### BlockMmadParams
 ```
@@ -109,7 +112,7 @@ Params params = {
     {aGM, bGM, cGM, biasGM, scaleAGM, scaleBGM},
     {kL1, scaleKL1, l1BufNum},
     {baseM, baseN, mTailTile, nTailTile, mBaseTailSplitCnt, nBaseTailSplitCnt, mTailMain, nTailMain},
-    {baseM, baseN, baseK, isBias, dbL0C}
+    {baseM, baseN, baseK, isBias, dbL0C, bMustHitL2}
 };
 
 QBMMKernel kernel;

@@ -77,6 +77,7 @@ public:
         uint32_t baseK;
         uint32_t isBias;
         uint32_t dbL0C;
+        uint32_t bMustHitL2 = 1U;
     };
 
     struct Params {
@@ -120,9 +121,9 @@ private:
         const Params& params, uint64_t aBatchElementStride, uint64_t bBatchElementStride, uint64_t cBatchStride,
         uint64_t scaleABatchStride, uint64_t scaleBBatchStride, uint64_t biasBatchStride);
 
-    template <typename TensorB, typename TensorC>
-    __aicore__ inline void SetL2Cache(
-        const ProblemShape& problemShape, uint64_t baseM, uint64_t baseN, TensorB& gmB, TensorC& gmC);
+    template <typename TensorB>
+    __aicore__ inline void SetBL2Cache(const ProblemShape& problemShape, uint64_t currentBasicBlockM,
+                                      uint64_t currentBasicBlockN, uint32_t bMustHitL2, TensorB& gmB);
 
     BlockMmad mmadOp_;
 
@@ -138,7 +139,6 @@ private:
     uint64_t batchBOffset_{0};
     bool isBiasThreeDim_{false};
     bool isBias_{false};
-    bool isSameBatch_{false};
     bool needUpdateTail_{false};
 };
 
@@ -174,39 +174,19 @@ __aicore__ inline void GemmUniversal<QBMM_MX_KERNEL_TEM_PARAMS>::Run(const Param
 }
 
 QBMM_MX_KERNEL_CLASS_TEM_PARAMS
-template <typename TensorB, typename TensorC>
-__aicore__ inline void GemmUniversal<QBMM_MX_KERNEL_TEM_PARAMS>::SetL2Cache(
-    const ProblemShape& problemShape, uint64_t baseM, uint64_t baseN, TensorB& gmB, TensorC& gmC)
+template <typename TensorB>
+__aicore__ inline void GemmUniversal<QBMM_MX_KERNEL_TEM_PARAMS>::SetBL2Cache(
+    const ProblemShape& problemShape, uint64_t currentBasicBlockM, uint64_t currentBasicBlockN,
+    uint32_t bMustHitL2, TensorB& gmB)
 {
-    if constexpr (IS_ATOMIC_ADD) {
-        gmC.SetL2CacheHint(AscendC::Te::CacheMode::CACHE_MODE_DISABLE);
-    }
-
-    const bool fullMBlock = baseM >= AscendC::Te::Get<MNK_M>(problemShape);
-    if (!(isSameBatch_ && fullMBlock)) {
-        return;
-    }
-
-    if constexpr (WEIGHT_NZ) {
-        gmB.SetL2CacheHint(AscendC::Te::CacheMode::CACHE_MODE_DISABLE);
-    } else {
-        constexpr int64_t cacheLineAlignMask = IsFp4<AType>() ? 0xff : 0x7f;
-        // 0xff: 256 cache line alignment for FP4 weight GM streaming
-        // 0x7f: 128 cache line alignment for FP8 weight GM streaming
-        if constexpr (TRANS_B) {
-            bool bAlignForL2Stream = (AscendC::Te::Get<MNK_K>(problemShape) & cacheLineAlignMask) == 0;
-            gmB.SetL2CacheHint(
-                bAlignForL2Stream ? AscendC::Te::CacheMode::CACHE_MODE_DISABLE
-                                  : AscendC::Te::CacheMode::CACHE_MODE_NORMAL);
-        } else {
-            bool bAlignForL2Stream =
-                (AscendC::Te::Get<MNK_N>(problemShape) & cacheLineAlignMask) == 0 &&
-                (baseN & cacheLineAlignMask) == 0;
-            gmB.SetL2CacheHint(
-                bAlignForL2Stream ? AscendC::Te::CacheMode::CACHE_MODE_DISABLE
-                                  : AscendC::Te::CacheMode::CACHE_MODE_NORMAL);
-        }
-    }
+    // 0xff: 256 cache line alignment for FP4 B matrix GM streaming
+    // 0x7f: 128 cache line alignment for FP8 B matrix GM streaming
+    constexpr uint64_t cacheLineAlignMask = IsFp4<BType>() ? 0xffUL : 0x7fUL;
+    const bool isCurrentNAligned = TRANS_B || (currentBasicBlockN & cacheLineAlignMask) == 0UL;
+    const bool disableWeightL2 = bMustHitL2 == 0U &&
+                                 currentBasicBlockM >= AscendC::Te::Get<MNK_M>(problemShape) && isCurrentNAligned;
+    gmB.SetL2CacheHint(disableWeightL2 ? AscendC::Te::CacheMode::CACHE_MODE_DISABLE :
+                                        AscendC::Te::CacheMode::CACHE_MODE_NORMAL);
 }
 
 QBMM_MX_KERNEL_CLASS_TEM_PARAMS
@@ -218,10 +198,6 @@ __aicore__ inline void GemmUniversal<QBMM_MX_KERNEL_TEM_PARAMS>::Init(const Para
             isBiasThreeDim_ = true;
         }
         isBias_ = true;
-    }
-    if (qbmmParams.batchA1 == qbmmParams.batchB1 && qbmmParams.batchA2 == qbmmParams.batchB2 &&
-        qbmmParams.batchA3 == qbmmParams.batchB3 && qbmmParams.batchA4 == qbmmParams.batchB4) {
-        isSameBatch_ = true;
     }
     ResetGmAddr(params);
 }
@@ -380,8 +356,9 @@ __aicore__ inline void GemmUniversal<QBMM_MX_KERNEL_TEM_PARAMS>::ProcessSingleBa
         needUpdateTail_ = true;
         bs.UpdateTailTile(mTailTile, nTailTile);
     }
-    SetL2Cache(problemShape, params.qbmmParams.baseM, params.qbmmParams.baseN, gmB, gmC);
-
+    if constexpr (IS_ATOMIC_ADD) {
+        gmC.SetL2CacheHint(AscendC::Te::CacheMode::CACHE_MODE_DISABLE);
+    }
     BlockCoord blockCoord;
     int64_t mPos = 0L;
     int64_t nPos = 0L;
@@ -394,6 +371,7 @@ __aicore__ inline void GemmUniversal<QBMM_MX_KERNEL_TEM_PARAMS>::ProcessSingleBa
         if (baseM <= 0 || baseN <= 0) {
             return;
         }
+        SetBL2Cache(problemShape, baseM, baseN, params.qbmmParams.bMustHitL2, gmB);
 
         bs.GetTileCoord(blockCoord, mPos, nPos);
         auto gmBlockA = gmA.Slice(AscendC::Te::MakeCoord(mPos, kPos), AscendC::Te::MakeShape(baseM, k));

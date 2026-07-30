@@ -22,6 +22,7 @@
 #include "kernel_operator_intf.h"
 #endif
 #include "blaze/gemm/utils/common_utils.h"
+#include "blaze/gemm/utils/layout_utils.h"
 #include "blaze/gemm/policy/dispatch_policy.h"
 #include "blaze/gemm/block/block_scheduler_qbmm.h"
 #include "tensor_api/tensor.h"
@@ -56,11 +57,16 @@ public:
     using BlockShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
     using BlockCoord = AscendC::Te::Coord<int64_t, int64_t, int64_t, int64_t>;
 
+    struct QBMMTiling {
+        uint32_t bMustHitL2 = 1U;
+    };
+
     struct Params {
         ProblemShape problemShape;
         BlockMmadParams mmParams;
         BlockSchedulerParams schParams;
         EpilogueParams epilogueParams;
+        QBMMTiling qbmmParams;
     };
 
     __aicore__ inline void operator()(const Params& params)
@@ -76,6 +82,22 @@ public:
     }
 
 private:
+    template <typename TensorB>
+    __aicore__ inline void SetBL2Cache(const ProblemShape& problemShape, uint64_t currentBasicBlockM,
+                                      uint64_t currentBasicBlockN, uint32_t bMustHitL2, TensorB& gmB)
+    {
+        if ASCEND_IS_AIC {
+            // 0x7f: 128-element alignment for 128-byte B matrix GM streaming
+            constexpr uint64_t cacheLineAlignMask = 0x7fUL;
+            const bool isCurrentNAligned = TRANS_B || (currentBasicBlockN & cacheLineAlignMask) == 0UL;
+            const bool disableWeightL2 = bMustHitL2 == 0U &&
+                                         currentBasicBlockM >= AscendC::Te::Get<MNK_M>(problemShape) &&
+                                         isCurrentNAligned;
+            gmB.SetL2CacheHint(disableWeightL2 ? AscendC::Te::CacheMode::CACHE_MODE_DISABLE :
+                                                AscendC::Te::CacheMode::CACHE_MODE_NORMAL);
+        }
+    }
+
     // Process one block on AIC(cube) and AIV(dequant), keeping Run compact.
     // hasBlock is only used by AIC WaitForVector; AIV does not read it.
     template <class GmTensorA, class GmTensorB>
@@ -146,6 +168,7 @@ private:
             const int64_t curM = AscendC::Te::Get<IDX_M_TILEIDX>(singleShape);
             const int64_t curN = AscendC::Te::Get<IDX_N_TILEIDX>(singleShape);
             const int64_t l0cUbBaseOffset = 0;
+            SetBL2Cache(params.problemShape, curM, curN, params.qbmmParams.bMustHitL2, gmB);
             ProcessOneBlock(gmA, gmB, singleShape, mPos, nPos, curM, curN, k, n, l0cUbBaseOffset, hasBlock);
             hasBlock = true;
         }
@@ -160,6 +183,7 @@ private:
     BlockEpilogue epilogueOp_;
 
     static constexpr bool WEIGHT_NZ = IsWeightNz<LayoutB>::value;
+    static constexpr bool TRANS_B = IsTrans<LayoutB>::value;
     static constexpr int64_t C0_SIZE = AscendC::Te::C0_ELEMENT<AType>;
     using MakeLayoutA = AscendC::Te::FrameLayoutFormat<LayoutA, AscendC::Std::Int<C0_SIZE>>;
     using MakeLayoutB = AscendC::Te::FrameLayoutFormat<LayoutB, AscendC::Std::Int<C0_SIZE>>;

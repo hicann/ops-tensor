@@ -65,6 +65,7 @@ public:
         uint32_t baseK;
         uint32_t isBias;
         uint32_t dbL0C;
+        uint32_t bMustHitL2 = 1U;
     };
 
     struct Params {
@@ -101,8 +102,8 @@ private:
     __aicore__ inline void Process(const Params& params, BlockScheduler& bs);
 
     template <typename TensorB>
-    __aicore__ inline void SetL2Cache(
-        const ProblemShape& problemShape, uint64_t baseM, uint64_t baseN, TensorB& gmB);
+    __aicore__ inline void SetBL2Cache(const ProblemShape& problemShape, uint64_t currentBasicBlockM,
+                                      uint64_t currentBasicBlockN, uint32_t bMustHitL2, TensorB& gmB);
 
     BlockMmad mmadOp_;
 
@@ -148,36 +149,18 @@ __aicore__ inline void GemmUniversal<QBMM_MX_WITHOUT_BATCH_KERNEL_TEM_PARAMS>::R
 
 QBMM_MX_WITHOUT_BATCH_KERNEL_CLASS_TEM_PARAMS
 template <typename TensorB>
-__aicore__ inline void GemmUniversal<QBMM_MX_WITHOUT_BATCH_KERNEL_TEM_PARAMS>::SetL2Cache(
-    const ProblemShape& problemShape, uint64_t baseM, uint64_t baseN, TensorB& gmB)
+__aicore__ inline void GemmUniversal<QBMM_MX_WITHOUT_BATCH_KERNEL_TEM_PARAMS>::SetBL2Cache(
+    const ProblemShape& problemShape, uint64_t currentBasicBlockM, uint64_t currentBasicBlockN,
+    uint32_t bMustHitL2, TensorB& gmB)
 {
-    const bool fullMBlock = baseM >= AscendC::Te::Get<MNK_M>(problemShape);
-
-    if constexpr (WEIGHT_NZ) {
-        gmB.SetL2CacheHint(
-            fullMBlock ?
-            AscendC::Te::CacheMode::CACHE_MODE_DISABLE :
-            AscendC::Te::CacheMode::CACHE_MODE_NORMAL);
-    } else {
-        constexpr int64_t cacheLineAlignMask = IsFp4<AType>() ? 0xff : 0x7f;
-        // 0xff: 256 cache line alignment for FP4 weight GM streaming
-        // 0x7f: 128 cache line alignment for FP8 weight GM streaming
-        if constexpr (TRANS_B) {
-            const bool bAlignForL2Stream = (AscendC::Te::Get<MNK_K>(problemShape) & cacheLineAlignMask) == 0;
-            gmB.SetL2CacheHint(
-                (fullMBlock && bAlignForL2Stream) ?
-                AscendC::Te::CacheMode::CACHE_MODE_DISABLE :
-                AscendC::Te::CacheMode::CACHE_MODE_NORMAL);
-        } else {
-            const bool bAlignForL2Stream =
-                (AscendC::Te::Get<MNK_N>(problemShape) & cacheLineAlignMask) == 0 &&
-                (baseN & cacheLineAlignMask) == 0;
-            gmB.SetL2CacheHint(
-                (fullMBlock && bAlignForL2Stream) ?
-                AscendC::Te::CacheMode::CACHE_MODE_DISABLE :
-                AscendC::Te::CacheMode::CACHE_MODE_NORMAL);
-        }
-    }
+    // 0xff: 256 cache line alignment for FP4 B matrix GM streaming
+    // 0x7f: 128 cache line alignment for FP8 B matrix GM streaming
+    constexpr uint64_t cacheLineAlignMask = IsFp4<BType>() ? 0xffUL : 0x7fUL;
+    const bool isCurrentNAligned = TRANS_B || (currentBasicBlockN & cacheLineAlignMask) == 0UL;
+    const bool disableWeightL2 = bMustHitL2 == 0U &&
+                                 currentBasicBlockM >= AscendC::Te::Get<MNK_M>(problemShape) && isCurrentNAligned;
+    gmB.SetL2CacheHint(disableWeightL2 ? AscendC::Te::CacheMode::CACHE_MODE_DISABLE :
+                                        AscendC::Te::CacheMode::CACHE_MODE_NORMAL);
 }
 
 QBMM_MX_WITHOUT_BATCH_KERNEL_CLASS_TEM_PARAMS
@@ -225,7 +208,7 @@ __aicore__ inline void GemmUniversal<QBMM_MX_WITHOUT_BATCH_KERNEL_TEM_PARAMS>::P
         if (baseM <= 0 || baseN <= 0) {
             return;
         }
-        SetL2Cache(problemShape, baseM, baseN, gmB);
+        SetBL2Cache(problemShape, baseM, baseN, params.qbmmParams.bMustHitL2, gmB);
         bs.GetTileCoord(blockCoord, mPos, nPos);
         auto gmBlockA = gmA.Slice(AscendC::Te::MakeCoord(mPos, kPos), AscendC::Te::MakeShape(baseM, k));
         auto gmBlockScaleA =

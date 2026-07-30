@@ -88,6 +88,7 @@ public:
         uint32_t baseK;
         uint32_t isBias;
         uint32_t dbL0C;
+        uint32_t bMustHitL2 = 1U;
     };
 
     struct Params {
@@ -122,6 +123,10 @@ private:
     __aicore__ inline void ProcessSingleBatch(
         const Params& params, BlockScheduler& bs, uint64_t batchCnt, bool isTailRound);
     __aicore__ inline void ProcessWithBatch(const Params& params, BlockScheduler& bs);
+
+    template <typename TensorB>
+    __aicore__ inline void SetBL2Cache(const ProblemShape& problemShape, uint64_t currentBasicBlockM,
+                                      uint64_t currentBasicBlockN, uint32_t bMustHitL2, TensorB& gmB);
 
     BlockMmad mmadOp_;
     __gm__ AType* aGmBase_{nullptr};
@@ -324,6 +329,21 @@ __aicore__ inline void GemmUniversal<QBMM_CUBE_KERNEL_TEM_PARAMS>::ProcessWithBa
 }
 
 QBMM_CUBE_KERNEL_CLASS_TEMPLATE_DEF_PARAMS
+template <typename TensorB>
+__aicore__ inline void GemmUniversal<QBMM_CUBE_KERNEL_TEM_PARAMS>::SetBL2Cache(
+    const ProblemShape& problemShape, uint64_t currentBasicBlockM, uint64_t currentBasicBlockN,
+    uint32_t bMustHitL2, TensorB& gmB)
+{
+    // 0x7f: 128-element alignment for 128-byte B matrix GM streaming
+    constexpr uint64_t cacheLineAlignMask = 0x7fUL;
+    const bool isCurrentNAligned = TRANS_B || (currentBasicBlockN & cacheLineAlignMask) == 0UL;
+    const bool disableWeightL2 = bMustHitL2 == 0U &&
+                                 currentBasicBlockM >= AscendC::Te::Get<MNK_M>(problemShape) && isCurrentNAligned;
+    gmB.SetL2CacheHint(disableWeightL2 ? AscendC::Te::CacheMode::CACHE_MODE_DISABLE :
+                                        AscendC::Te::CacheMode::CACHE_MODE_NORMAL);
+}
+
+QBMM_CUBE_KERNEL_CLASS_TEMPLATE_DEF_PARAMS
 __aicore__ inline void GemmUniversal<QBMM_CUBE_KERNEL_TEM_PARAMS>::ProcessSingleBatch(
     const Params& params, BlockScheduler& bs, uint64_t restBatch, bool isTailRound)
 {
@@ -371,6 +391,7 @@ __aicore__ inline void GemmUniversal<QBMM_CUBE_KERNEL_TEM_PARAMS>::ProcessSingle
         bs.GetTileCoord(blockCoord, mPos, nPos);
         const int64_t curM = AscendC::Te::Get<IDX_M_TILEIDX>(singleShape);
         const int64_t curN = AscendC::Te::Get<IDX_N_TILEIDX>(singleShape);
+        SetBL2Cache(params.problemShape, curM, curN, params.qbmmParams.bMustHitL2, gmB);
 
         auto gmBlockA = gmA.Slice(AscendC::Te::MakeCoord(mPos, kPos), AscendC::Te::MakeShape(curM, k));
         auto gmBlockB = gmB.Slice(AscendC::Te::MakeCoord(kPos, nPos), AscendC::Te::MakeShape(k, curN));

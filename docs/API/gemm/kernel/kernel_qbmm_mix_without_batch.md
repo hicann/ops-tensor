@@ -13,7 +13,7 @@ MIX 模板量化 Matmul Kernel（无 Batch 变体），与 [kernel_qbmm_mix](./k
 | 类名 | `GemmUniversal<...>`（SFINAE 特化） | `GemmUniversal<...>`（`KernelMmadWithScaleMixWithoutBatch` 特化） |
 | Batch | 4 维 Batch 广播 + 尾块 latch | 仅单 Batch，无 Batch 偏移逻辑 |
 | 尾块切分 | 跨 Batch latch（needUpdateTail_ + restBatch） | 单轮判断即可 |
-| QBMMTiling | batchA/B/C 等 12 个字段 | 无 |
+| QBMMTiling | batchA/B/C 等 12 个字段 | 仅包含 B 的 L2 Cache 控制字段 |
 | 偏移计算 | 含 `batchCOffset_` | `mPos * n + nPos` |
 
 ## 特殊约束
@@ -30,8 +30,19 @@ struct Params {
     BlockMmadParams mmParams;        // mmad 参数（A/B/C GM 地址）
     BlockSchedulerParams schParams;  // scheduler 参数（含 mTailTile / nTailTile）
     EpilogueParams epilogueParams;   // dequant epilogue 参数
+    QBMMTiling qbmmParams;           // QBMM 特有 tiling
 };
 ```
+
+### QBMMTiling
+
+```
+struct QBMMTiling {
+    uint32_t bMustHitL2 = 1U; // B 是否必须保留在 L2 Cache
+};
+```
+
+`bMustHitL2` 为 1 时，B 矩阵的 `L2CacheHint` 设置为 `NORMAL`；为 0 时，Kernel 根据当前 tile 动态设置为 `NORMAL` 或 `DISABLE`。仅当当前 M tile 覆盖完整 M，且 B 已转置或当前 N tile 按 128 Bytes 对齐时，设置为 `DISABLE`。
 
 ## 特殊成员方法
 

@@ -48,6 +48,7 @@ public:
     struct QBMMStreamKParams {
         uint32_t scaleKL1;
         uint32_t dbL0C;
+        uint32_t bMustHitL2 = 1U;
     };
 
     struct Params {
@@ -179,6 +180,22 @@ private:
             AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(workspaceGmAddr_ + offsetWorkspace), layoutWorkspace);
     }
 
+    template <typename TensorB, typename BlockShape>
+    __aicore__ inline void SetBL2Cache(Params const& params, BlockShape const& currentBasicBlock, TensorB& gmB) const
+    {
+        // 0xff: 256 cache line alignment for FP4 B matrix GM streaming
+        // 0x7f: 128 cache line alignment for FP8 B matrix GM streaming
+        constexpr uint64_t cacheLineAlignMask = IsFp4<BType>() ? 0xffUL : 0x7fUL;
+        const bool isCurrentNAligned =
+            TRANS_B || (AscendC::Te::Get<MNK_N>(currentBasicBlock) & cacheLineAlignMask) == 0UL;
+        const bool disableWeightL2 = params.qbmmParams.bMustHitL2 == 0U &&
+                                     AscendC::Te::Get<MNK_M>(currentBasicBlock) >=
+                                         AscendC::Te::Get<MNK_M>(problemShape_) &&
+                                     isCurrentNAligned;
+        gmB.SetL2CacheHint(disableWeightL2 ? AscendC::Te::CacheMode::CACHE_MODE_DISABLE :
+                                            AscendC::Te::CacheMode::CACHE_MODE_NORMAL);
+    }
+
     template <typename TensorA, typename TensorScaleA, typename TensorB, typename TensorScaleB,
               typename TensorBias, typename TensorC>
     __aicore__ inline void ProcessAicBlock(
@@ -188,6 +205,7 @@ private:
     {
         auto singleCoreShape = bs.GetBlockShape(tmpBlockIdx);
         auto singleCoreCoord = bs.GetBlockCoord(tmpBlockIdx);
+        SetBL2Cache(params, singleCoreShape, gmB);
         bool isSkScene = bs.CheckIsSkScene(tmpBlockIdx);
         int64_t kSingleCore = isSkScene ? params.schParams.singleCoreK : AscendC::Te::Get<MNK_K>(problemShape_);
         int64_t offsetWorkspace = (((tmpBlockIdx % usedCoreNums_) / skBlockNums_) * skBlockNums_ +

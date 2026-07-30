@@ -85,6 +85,7 @@ public:
         uint32_t baseK;
         uint32_t isBias;
         uint32_t dbL0C;
+        uint32_t bMustHitL2 = 1U;
     };
 
     struct Params {
@@ -108,6 +109,22 @@ private:
     __aicore__ inline void ProcessSingleBatch(
         const Params& params, BlockScheduler& bs, uint64_t restBatch, bool isTailRound);
     __aicore__ inline void ProcessWithBatch(const Params& params, BlockScheduler& bs);
+
+    template <typename TensorB>
+    __aicore__ inline void SetBL2Cache(const ProblemShape& problemShape, uint64_t currentBasicBlockM,
+                                      uint64_t currentBasicBlockN, uint32_t bMustHitL2, TensorB& gmB)
+    {
+        if ASCEND_IS_AIC {
+            // 0x7f: 128-element alignment for 128-byte B matrix GM streaming
+            constexpr uint64_t cacheLineAlignMask = 0x7fUL;
+            const bool isCurrentNAligned = TRANS_B || (currentBasicBlockN & cacheLineAlignMask) == 0UL;
+            const bool disableWeightL2 = bMustHitL2 == 0U &&
+                                         currentBasicBlockM >= AscendC::Te::Get<MNK_M>(problemShape) &&
+                                         isCurrentNAligned;
+            gmB.SetL2CacheHint(disableWeightL2 ? AscendC::Te::CacheMode::CACHE_MODE_DISABLE :
+                                                AscendC::Te::CacheMode::CACHE_MODE_NORMAL);
+        }
+    }
 
     // Precompute batch dimension products and A(B)->C broadcast multipliers used by ProcessWithBatch.
     struct BatchMultipliers {
@@ -368,6 +385,7 @@ __aicore__ inline void GemmUniversal<QBMM_MIX_KERNEL_TEM_PARAMS>::ProcessSingleB
         const int64_t curM = AscendC::Te::Get<IDX_M_TILEIDX>(singleShape);
         const int64_t curN = AscendC::Te::Get<IDX_N_TILEIDX>(singleShape);
         const int64_t l0cUbBaseOffset = 0;
+        SetBL2Cache(params.problemShape, curM, curN, params.qbmmParams.bMustHitL2, gmB);
         ProcessOneBlock(gmA, gmB, singleShape, mPos, nPos, curM, curN, k, m, n, l0cUbBaseOffset);
     }
     bs.UpdateNextBatchBlockRoundParams();
