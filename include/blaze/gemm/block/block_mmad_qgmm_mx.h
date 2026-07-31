@@ -54,7 +54,6 @@ public:
     static constexpr bool TRANS_A = IsTrans<LayoutA>::value;
     static constexpr bool TRANS_B = IsTrans<LayoutB>::value;
     static constexpr bool IS_FP4_TYPE = IsFp4<AType>();
-    static_assert(DOUBLE_BUFFER_COUNT == 2, "QGMM MX block mmad only supports double buffer.");
 
     struct Params {
         GM_ADDR aGmAddr{nullptr};
@@ -76,6 +75,7 @@ public:
         L1Params l1Params;
         bool isBias;
         bool enableL0cPingPong;
+        uint8_t l1BufferStage{DOUBLE_BUFFER_COUNT};
     };
 
     template <typename TensorScaleAL1, typename TensorScaleBL1>
@@ -118,6 +118,7 @@ public:
         baseK_ = AscendC::Te::Get<MNK_K>(params.tileShapeL0);
         isBias_ = params.isBias;
         enableL0cPingPong_ = params.enableL0cPingPong;
+        l1BufferStage_ = params.l1BufferStage == TRIPLE_BUFFER_COUNT ? TRIPLE_BUFFER_COUNT : DOUBLE_BUFFER_COUNT;
         orderAL1BL1_ = kAL1_ >= kBL1_;
         scaleKL1_ = Max(params.l1Params.scaleKL1, 1UL);
 
@@ -156,7 +157,9 @@ private:
                                                 (AscendC::Std::is_one_of_v<BType, fp4x2_e2m1_t, fp4x2_e1m2_t> &&
                                                  !TRANS_B);
     static constexpr uint64_t C0_SIZE = IS_FP4_TYPE ? C0_SIZE_B4 : C0_SIZE_B8;
-    static constexpr uint8_t MTE1_MTE2_EVENT_ID_NUM = INPUT_BUFFER_FLAG_3 + 1 + SCALE_BUFFER_NUM;
+    static constexpr uint8_t L1_OPERAND_NUM = 2;
+    static constexpr uint8_t MTE1_MTE2_EVENT_ID_NUM =
+        TRIPLE_BUFFER_COUNT * L1_OPERAND_NUM + SCALE_BUFFER_NUM;
 
     using MakeLayoutAL1 = AscendC::Std::conditional_t<
         TRANS_A, AscendC::Te::FrameLayoutFormat<AscendC::Te::ZNLayoutPtn, AscendC::Std::Int<C0_SIZE>>,
@@ -178,6 +181,15 @@ private:
             l1BufferScaleBOffset_[bufferId] = l1BufferScaleAOffset_[bufferId] + scaleAL1OneBuffer_;
             l1BufferBiasOffset_[bufferId] = l1BufferScaleBOffset_[bufferId] + scaleBL1OneBuffer_;
         }
+        if (l1BufferStage_ == TRIPLE_BUFFER_COUNT) {
+            l1BufferAOffset_[2] = l1BufferBiasOffset_[0] + biasL1OneBuffer_;
+            l1BufferBOffset_[2] = l1BufferBiasOffset_[1] + biasL1OneBuffer_;
+        }
+    }
+
+    __aicore__ inline uint64_t GetL1BufId(uint64_t loopCnt) const
+    {
+        return l1BufferStage_ == TRIPLE_BUFFER_COUNT ? loopCnt % TRIPLE_BUFFER_COUNT : (loopCnt & 1UL);
     }
 
     __aicore__ inline uint64_t GetScaleSpan(uint64_t kSpan) const
@@ -211,7 +223,8 @@ private:
             layoutScaleBL1);
 
         if (kL1Offset % scaleKL1_ == 0) {
-            AscendC::WaitFlag<AscendC::HardEvent::MTE1_MTE2>(SCALE_BUFFER_FLAG_0 + scaleL1BufId);
+            AscendC::WaitFlag<AscendC::HardEvent::MTE1_MTE2>(
+                static_cast<uint16_t>(l1BufferStage_ * SCALE_BUFFER_NUM) + scaleL1BufId);
             uint64_t curScaleKL1 = scaleKL1_;
             if (kL1Offset + curScaleKL1 > k_) {
                 curScaleKL1 = k_ - kL1Offset;
@@ -408,7 +421,7 @@ private:
             // A-major: kAL1 >= kBL1, so A is reused across the inner B K strips.
             for (uint64_t kOuter = 0; kOuter < k_; kOuter += kAL1_) {
                 uint64_t scaleL1BufId = scaleLoopCnt_ & 1UL;
-                uint64_t aL1BufId = aL1LoopCnt_ & 1UL;
+                uint64_t aL1BufId = GetL1BufId(aL1LoopCnt_);
                 uint64_t nextKOuter = kOuter + kAL1_;
                 uint64_t curGmAKL1 = (nextKOuter > k_) ? (k_ - kOuter) : kAL1_;
                 // Copy scales once per scaleKL1 window; this may be a no-op inside the window.
@@ -422,21 +435,22 @@ private:
 
                 // Walk B K strips under the current A strip, then stage A/B/scale to L0 and MMAD.
                 for (uint64_t kInner = kOuter; kInner < Min(kOuter + kAL1_, k_); kInner += kBL1_) {
-                    uint64_t bL1BufId = bL1LoopCnt_ & 1UL;
+                    uint64_t bL1BufId = GetL1BufId(bL1LoopCnt_);
                     uint64_t curGmBKL1 = (kInner + kBL1_ > k_) ? (k_ - kInner) : kBL1_;
-                    AscendC::WaitFlag<AscendC::HardEvent::MTE1_MTE2>(INPUT_BUFFER_FLAG_2 + bL1BufId);
+                    AscendC::WaitFlag<AscendC::HardEvent::MTE1_MTE2>(static_cast<uint16_t>(l1BufferStage_) + bL1BufId);
                     auto tensorBL1 = CopyBInL1(gmB, curN, curGmBKL1, bL1BufId, kInner);
                     AscendC::SetFlag<AscendC::HardEvent::MTE2_MTE1>(bL1BufId);
                     AscendC::WaitFlag<AscendC::HardEvent::MTE2_MTE1>(bL1BufId);
                     Iterate(tensorL0C, tensorAL1, tensorBL1, tensorScaleAL1, tensorScaleBL1, tensorBiasL1, curM, curN,
                             curGmAKL1, curGmBKL1, scaleL1BufId, kOuter, kInner, kInner - kOuter, 0);
-                    AscendC::SetFlag<AscendC::HardEvent::MTE1_MTE2>(INPUT_BUFFER_FLAG_2 + bL1BufId);
+                    AscendC::SetFlag<AscendC::HardEvent::MTE1_MTE2>(static_cast<uint16_t>(l1BufferStage_) + bL1BufId);
                     bL1LoopCnt_++;
                 }
                 AscendC::SetFlag<AscendC::HardEvent::MTE1_MTE2>(aL1BufId);
                 // Release the scale buffer when the copied scale window has been fully consumed.
                 if ((nextKOuter % scaleKL1_) == 0 || nextKOuter >= k_) {
-                    AscendC::SetFlag<AscendC::HardEvent::MTE1_MTE2>(SCALE_BUFFER_FLAG_0 + scaleL1BufId);
+                    AscendC::SetFlag<AscendC::HardEvent::MTE1_MTE2>(
+                        static_cast<uint16_t>(l1BufferStage_ * SCALE_BUFFER_NUM) + scaleL1BufId);
                     scaleLoopCnt_++;
                 }
                 aL1LoopCnt_++;
@@ -445,21 +459,21 @@ private:
             // B-major: kBL1 > kAL1, so B is reused across the inner A K strips.
             for (uint64_t kOuter = 0; kOuter < k_; kOuter += kBL1_) {
                 uint64_t scaleL1BufId = scaleLoopCnt_ & 1UL;
-                uint64_t bL1BufId = bL1LoopCnt_ & 1UL;
+                uint64_t bL1BufId = GetL1BufId(bL1LoopCnt_);
                 uint64_t nextKOuter = kOuter + kBL1_;
                 uint64_t curGmBKL1 = (nextKOuter > k_) ? (k_ - kOuter) : kBL1_;
                 // Copy scales once per scaleKL1 window; this may be a no-op inside the window.
                 auto scalePair = CopyScalesInL1(gmScaleA, gmScaleB, curM, curN, kOuter, scaleL1BufId);
                 auto& tensorScaleAL1 = scalePair.scaleA;
                 auto& tensorScaleBL1 = scalePair.scaleB;
-                AscendC::WaitFlag<AscendC::HardEvent::MTE1_MTE2>(INPUT_BUFFER_FLAG_2 + bL1BufId);
+                AscendC::WaitFlag<AscendC::HardEvent::MTE1_MTE2>(static_cast<uint16_t>(l1BufferStage_) + bL1BufId);
                 auto tensorBL1 = CopyBInL1(gmB, curN, curGmBKL1, bL1BufId, kOuter);
                 // Bias is consumed only by the first effective K tile.
                 auto tensorBiasL1 = CopyBiasInL1(gmBias, curN, scaleL1BufId, NeedBias(kOuter));
 
                 // Walk A K strips under the current B strip, then stage A/B/scale to L0 and MMAD.
                 for (uint64_t kInner = kOuter; kInner < Min(kOuter + kBL1_, k_); kInner += kAL1_) {
-                    uint64_t aL1BufId = aL1LoopCnt_ & 1UL;
+                    uint64_t aL1BufId = GetL1BufId(aL1LoopCnt_);
                     uint64_t curGmAKL1 = (kInner + kAL1_ > k_) ? (k_ - kInner) : kAL1_;
                     AscendC::WaitFlag<AscendC::HardEvent::MTE1_MTE2>(aL1BufId);
                     auto tensorAL1 = CopyAInL1(gmA, curM, curGmAKL1, aL1BufId, kInner);
@@ -470,10 +484,11 @@ private:
                     AscendC::SetFlag<AscendC::HardEvent::MTE1_MTE2>(aL1BufId);
                     aL1LoopCnt_++;
                 }
-                AscendC::SetFlag<AscendC::HardEvent::MTE1_MTE2>(INPUT_BUFFER_FLAG_2 + bL1BufId);
+                AscendC::SetFlag<AscendC::HardEvent::MTE1_MTE2>(static_cast<uint16_t>(l1BufferStage_) + bL1BufId);
                 // Release the scale buffer when the copied scale window has been fully consumed.
                 if ((nextKOuter % scaleKL1_) == 0 || nextKOuter >= k_) {
-                    AscendC::SetFlag<AscendC::HardEvent::MTE1_MTE2>(SCALE_BUFFER_FLAG_0 + scaleL1BufId);
+                    AscendC::SetFlag<AscendC::HardEvent::MTE1_MTE2>(
+                        static_cast<uint16_t>(l1BufferStage_ * SCALE_BUFFER_NUM) + scaleL1BufId);
                     scaleLoopCnt_++;
                 }
                 bL1LoopCnt_++;
@@ -508,8 +523,9 @@ private:
     uint64_t scaleAL1OneBuffer_{0};
     uint64_t scaleBL1OneBuffer_{0};
     uint64_t biasL1OneBuffer_{0};
-    uint64_t l1BufferAOffset_[2] = {0, 0};
-    uint64_t l1BufferBOffset_[2] = {0, 0};
+    uint64_t l1BufferStage_{DOUBLE_BUFFER_COUNT};
+    uint64_t l1BufferAOffset_[TRIPLE_BUFFER_COUNT] = {0, 0, 0};
+    uint64_t l1BufferBOffset_[TRIPLE_BUFFER_COUNT] = {0, 0, 0};
     uint64_t l1BufferScaleAOffset_[2] = {0, 0};
     uint64_t l1BufferScaleBOffset_[2] = {0, 0};
     uint64_t l1BufferBiasOffset_[2] = {0, 0};

@@ -90,7 +90,8 @@ public:
         uint32_t scaleKAL1; // ScaleA L1 K-axis split size; must equal scaleKBL1 for MX.
         uint32_t scaleKBL1; // ScaleB L1 K-axis split size; kept for tiling compatibility.
         uint8_t isBias;
-        uint8_t dbL0C;
+        uint8_t dbL0C{DOUBLE_BUFFER_COUNT};
+        uint8_t l1BufferStage{DOUBLE_BUFFER_COUNT};
         // Reserved for GMM tiling compatibility. Current kernel does not read this field;
         // The split axis is selected by LayoutA: !TRANS_A means split-M, TRANS_A means split-K.
         int8_t groupType;
@@ -272,7 +273,8 @@ private:
         // MX uses one shared scale K window for ScaleA/ScaleB. Tiling must provide scaleKAL1 == scaleKBL1.
         const L1Params l1Params{static_cast<uint64_t>(gmmParams.kAL1), static_cast<uint64_t>(gmmParams.kBL1),
                                 static_cast<uint64_t>(gmmParams.scaleKAL1)};
-        const typename BlockMmad::MmadParams mmadParams{l0Shape, l1Params, isBias_, gmmParams.dbL0C == 2};
+        const typename BlockMmad::MmadParams mmadParams{
+            l0Shape, l1Params, isBias_, gmmParams.dbL0C == DOUBLE_BUFFER_COUNT, gmmParams.l1BufferStage};
         mmadOp_.Init(initProblemShape, mmadParams);
     }
 

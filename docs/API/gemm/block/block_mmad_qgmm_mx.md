@@ -106,8 +106,27 @@ struct MmadParams {
     L1Params l1Params;
     bool isBias;
     bool enableL0cPingPong;
+    uint8_t l1BufferStage{DOUBLE_BUFFER_COUNT};
 };
 ```
+
+参数说明：
+
+| 参数 | 说明 |
+|------|------|
+| `tileShapeL0` | L0 tile 形状 |
+| `l1Params` | A、B 和 Scale 的 L1 K 轴切分参数 |
+| `isBias` | 是否计算 bias |
+| `enableL0cPingPong` | 是否启用 L0C ping-pong |
+| `l1BufferStage` | A/B 的 L1 缓冲级数，默认值为 `DOUBLE_BUFFER_COUNT` |
+
+`l1BufferStage` 取值说明：
+
+- `DOUBLE_BUFFER_COUNT`：使用双缓冲，L1 占用较小，也是默认配置。
+- `TRIPLE_BUFFER_COUNT`：使用三缓冲，增加 A/B 搬运与计算的流水重叠，以提升性能。
+- 仅值为 `TRIPLE_BUFFER_COUNT` 时启用三缓冲；其他值均按双缓冲处理。
+- 该字段只控制 A/B 的 L1 缓冲级数，ScaleA/ScaleB 仍使用 `SCALE_BUFFER_NUM` 指定的双缓冲。
+- 启用三缓冲前，调用方应通过 tiling 确认 L1 空间可以容纳对应布局；空间不足时应设置为 `DOUBLE_BUFFER_COUNT`。
 
 ## 特殊成员方法
 
@@ -121,7 +140,7 @@ __aicore__ inline void Init(
 功能：
 - 初始化当前 group 的 `m/n/k`
 - 设置 L0 tile 和 L1 切分参数
-- 重置组内双缓冲状态
+- 根据 `l1BufferStage` 初始化并重置组内双缓冲或三缓冲状态
 
 ### UpdateParamsForNextProblem 函数
 ```cpp
@@ -176,7 +195,8 @@ BlockMmad blockMmad;
 BlockMmad::ProblemShape problemShape{m, n, k, 0};
 BlockMmad::BlockShape tileShapeL0{baseM, baseN, baseK, 0};
 BlockMmad::L1Params l1Params{kAL1, kBL1, scaleKL1};
-BlockMmad::MmadParams params{tileShapeL0, l1Params, isBias, enableL0cPingPong};
+uint8_t l1BufferStage = TRIPLE_BUFFER_COUNT;
+BlockMmad::MmadParams params{tileShapeL0, l1Params, isBias, enableL0cPingPong, l1BufferStage};
 
 blockMmad.Init(problemShape, params);
 ```
