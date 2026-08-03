@@ -17,27 +17,23 @@
 #include "transpose_batch_mat_mul_basic.h"
 #include "transpose_batch_mat_mul_tiling_data.h"
 
-enum TbmmOpType : int8_t
-{
+enum TbmmOpType : int8_t {
     OP_TYPE_TBMM_BASIC = 0,
     OP_TYPE_TBMM_TRANS_BATCH_A = 1,
 };
 
-template <
-    int8_t OP_TYPE, typename DTYPE_X1, typename DTYPE_X2, typename DTYPE_Y, typename DTYPE_BIAS,
-    uint64_t NON_CONTIGUOUS_TYPE = 0>
-__global__ __aicore__ void transpose_batch_mat_mul_kernel_entry(
-    GM_ADDR x1GM, GM_ADDR x2GM, GM_ADDR biasGM, GM_ADDR yGM, GM_ADDR workspaceGM, GM_ADDR tilingGM)
+template <int8_t OP_TYPE, typename DTYPE_X1, typename DTYPE_X2, typename DTYPE_Y, typename DTYPE_BIAS,
+          uint64_t NON_CONTIGUOUS_TYPE = 0>
+__global__ __aicore__ void transpose_batch_mat_mul_kernel_entry(GM_ADDR x1GM, GM_ADDR x2GM, GM_ADDR biasGM, GM_ADDR yGM,
+                                                                GM_ADDR workspaceGM, GM_ADDR tilingGM, GM_ADDR scaleGM)
 {
     const auto* tilingData = reinterpret_cast<const TbmmBasicTilingData*>(tilingGM);
 
     if constexpr (OP_TYPE == OP_TYPE_TBMM_BASIC || OP_TYPE == OP_TYPE_TBMM_TRANS_BATCH_A) {
-        TbmmUT::TbmmBasicWrapper<
-            DTYPE_X1, DTYPE_X2, DTYPE_Y, DTYPE_BIAS, NON_CONTIGUOUS_TYPE>(
-            x1GM, x2GM, biasGM, yGM, workspaceGM, *tilingData);
+        TbmmUT::TbmmBasicWrapper<DTYPE_X1, DTYPE_X2, DTYPE_Y, DTYPE_BIAS, NON_CONTIGUOUS_TYPE>(
+            x1GM, x2GM, biasGM, yGM, workspaceGM, *tilingData, scaleGM);
     } else {
-        static_assert(
-            (OP_TYPE == OP_TYPE_TBMM_BASIC || OP_TYPE == OP_TYPE_TBMM_TRANS_BATCH_A),
-            "Unsupported OP_TYPE value for transpose_batch_mat_mul_kernel_entry");
+        static_assert((OP_TYPE == OP_TYPE_TBMM_BASIC || OP_TYPE == OP_TYPE_TBMM_TRANS_BATCH_A),
+                      "Unsupported OP_TYPE value for transpose_batch_mat_mul_kernel_entry");
     }
 }

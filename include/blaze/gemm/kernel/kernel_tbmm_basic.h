@@ -29,15 +29,12 @@ namespace Gemm {
 namespace Kernel {
 
 template <class ProblemShape_, class BlockMmad_, class BlockEpilogue_, class BlockScheduler_>
-class GemmUniversal<
-    ProblemShape_, BlockMmad_, BlockEpilogue_, BlockScheduler_,
-    AscendC::Std::enable_if_t<
-        AscendC::Std::is_same_v<KernelMmadMultiBlockTBMM, typename BlockMmad_::DispatchPolicy::ScheduleType>>> {
+class GemmUniversal<ProblemShape_, BlockMmad_, BlockEpilogue_, BlockScheduler_,
+                    AscendC::Std::enable_if_t<AscendC::Std::is_same_v<
+                        KernelMmadMultiBlockTBMM, typename BlockMmad_::DispatchPolicy::ScheduleType>>> {
 public:
-    __aicore__ inline GemmUniversal()
-    {}
-    __aicore__ inline ~GemmUniversal()
-    {}
+    __aicore__ inline GemmUniversal() {}
+    __aicore__ inline ~GemmUniversal() {}
 
     using BlockMmad = BlockMmad_;
     using ProblemShape = ProblemShape_;
@@ -58,8 +55,8 @@ public:
     using LayoutBias = typename BlockMmad::LayoutBias;
     using BlockShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
     using MakeLayoutB = AscendC::Te::FrameLayoutFormat<LayoutB, AscendC::Std::Int<AscendC::Te::C0_ELEMENT<BType>>>;
-    using MakeLayoutBias =
-        AscendC::Te::FrameLayoutFormat<LayoutBias, AscendC::Std::Int<AscendC::Te::C0_ELEMENT<BiasType>>>;
+    using MakeLayoutBias = AscendC::Te::FrameLayoutFormat<LayoutBias,
+                                                          AscendC::Std::Int<AscendC::Te::C0_ELEMENT<BiasType>>>;
     struct Params {
         ProblemShape problemShape;
         BlockMmadParams mmadParams;
@@ -97,9 +94,8 @@ public:
     }
 
 private:
-    __aicore__ inline void MatmulProcess(
-        Params const& params, BlockMmad& blockMmad, BlockScheduler& bs, int64_t curBlockIdx, int64_t coreNums,
-        int64_t totalBlockNums)
+    __aicore__ inline void MatmulProcess(Params const& params, BlockMmad& blockMmad, BlockScheduler& bs,
+                                         int64_t curBlockIdx, int64_t coreNums, int64_t totalBlockNums)
     {
         uint64_t batchStrideA = TRANS_BATCH_A ? k_ : m_ * k_;
         uint64_t mStrideA = TRANS_BATCH_A ? batch_ * k_ : k_;
@@ -113,18 +109,18 @@ private:
             AscendC::Te::NDLayoutPtn,
             AscendC::Te::LayoutTrait<CType, AscendC::Std::Int<AscendC::Te::C0_ELEMENT<CType>>>>(
             AscendC::Te::MakeShape(batchSplitFactor_, innerBatch, AscendC::Te::MakeShape(m_, n_)),
-            AscendC::Te::MakeStride(
-                m_ * innerBatch * n_, n_, AscendC::Te::MakeStride(innerBatch * n_, AscendC::Te::_1{})));
+            AscendC::Te::MakeStride(m_ * innerBatch * n_, n_,
+                                    AscendC::Te::MakeStride(innerBatch * n_, AscendC::Te::_1{})));
 
         auto layoutBias = MakeLayoutBias{}(1L, n_);
         // A,B,C Gm Tensor
         auto gmA = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(aGmAddr_), layoutA);
         auto gmB = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(bGmAddr_), layoutB);
         auto gmC = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(cGmAddr_), layoutC);
-        auto splitBatchGmC =
-            AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(cGmAddr_), splitBatchLayoutC);
-        auto gmBias =
-            AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(biasGmAddr_), layoutBias);
+        auto splitBatchGmC = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(cGmAddr_),
+                                                     splitBatchLayoutC);
+        auto gmBias = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(biasGmAddr_),
+                                              layoutBias);
 
         // 使能双页表
         SetL2Cache(gmA, gmB, params.schParams.l2CacheMode);
@@ -141,40 +137,40 @@ private:
             curBatchIdx_ = AscendC::Te::Get<MNK_B>(blockCoord);
 
             // Block offset
-            auto subTensorA = gmA.Slice(
-                AscendC::MakeCoord(curBatchIdx_, AscendC::MakeCoord(coordM, 0L)),
-                AscendC::MakeShape(1L, AscendC::MakeShape(shapeM, shapeK)));
+            auto subTensorA = gmA.Slice(AscendC::MakeCoord(curBatchIdx_, AscendC::MakeCoord(coordM, 0L)),
+                                        AscendC::MakeShape(1L, AscendC::MakeShape(shapeM, shapeK)));
             auto gmBlockA = AscendC::Te::Squeeze<0>(subTensorA);
-            auto subTensorB = gmB.Slice(
-                AscendC::MakeCoord(curBatchIdx_, AscendC::MakeCoord(0L, coordN)),
-                AscendC::MakeShape(1L, AscendC::MakeShape(shapeK, shapeN)));
+            auto subTensorB = gmB.Slice(AscendC::MakeCoord(curBatchIdx_, AscendC::MakeCoord(0L, coordN)),
+                                        AscendC::MakeShape(1L, AscendC::MakeShape(shapeK, shapeN)));
             auto gmBlockB = AscendC::Te::Squeeze<0>(subTensorB);
-            auto subTensorC = gmC.Slice(
-                AscendC::MakeCoord(curBatchIdx_, AscendC::MakeCoord(coordM, coordN)),
-                AscendC::MakeShape(1L, AscendC::MakeShape(shapeM, shapeN)));
+            auto subTensorC = gmC.Slice(AscendC::MakeCoord(curBatchIdx_, AscendC::MakeCoord(coordM, coordN)),
+                                        AscendC::MakeShape(1L, AscendC::MakeShape(shapeM, shapeN)));
             auto gmBlockC = AscendC::Te::Squeeze<0>(subTensorC);
 
             auto outerBatchIdx = curBatchIdx_ / innerBatch;
             auto innerBatchIdx = curBatchIdx_ % innerBatch;
             auto splitBatchSubTensorC = splitBatchGmC.Slice(
-                AscendC::MakeCoord(
-                    outerBatchIdx, innerBatchIdx, AscendC::MakeCoord(coordM, coordN)),
-                AscendC::MakeShape(
-                    AscendC::Te::_1{}, AscendC::Te::_1{}, AscendC::MakeShape(shapeM, shapeN)));
+                AscendC::MakeCoord(outerBatchIdx, innerBatchIdx, AscendC::MakeCoord(coordM, coordN)),
+                AscendC::MakeShape(AscendC::Te::_1{}, AscendC::Te::_1{}, AscendC::MakeShape(shapeM, shapeN)));
             auto splitBatchGmBlockC = AscendC::Te::Squeeze<0, 1>(splitBatchSubTensorC);
 
             auto gmBlockBias = gmBias.Slice(AscendC::MakeCoord(0L, coordN), AscendC::MakeShape(1L, shapeN));
+
+            __gm__ uint64_t* gmScalePtr = nullptr;
+            if (scaleGmAddr_ != nullptr) {
+                gmScalePtr = scaleGmAddr_ + curBatchIdx_ * n_ + coordN;
+            }
             if (batchSplitFactor_ > 1) {
-                blockMmad(gmBlockA, gmBlockB, gmBlockBias, splitBatchGmBlockC, blockShape);
+                blockMmad(gmBlockA, gmBlockB, gmBlockBias, splitBatchGmBlockC, blockShape, gmScalePtr);
             } else {
-                blockMmad(gmBlockA, gmBlockB, gmBlockBias, gmBlockC, blockShape);
+                blockMmad(gmBlockA, gmBlockB, gmBlockBias, gmBlockC, blockShape, gmScalePtr);
             }
         }
     }
 
     template <typename T>
-    __aicore__ inline auto MakeNDBatchLayout(
-        uint64_t batch, uint64_t row, uint64_t col, uint64_t batchStride, uint64_t colStride)
+    __aicore__ inline auto MakeNDBatchLayout(uint64_t batch, uint64_t row, uint64_t col, uint64_t batchStride,
+                                             uint64_t colStride)
     {
         return AscendC::Te::MakePatternLayout<
             AscendC::Te::NDLayoutPtn, AscendC::Te::LayoutTrait<T, AscendC::Std::Int<AscendC::Te::C0_ELEMENT<T>>>>(
@@ -194,12 +190,10 @@ private:
         bGmAddr_ = reinterpret_cast<__gm__ BType*>(blockMmadParams.bGmAddr);
         cGmAddr_ = reinterpret_cast<__gm__ CType*>(blockMmadParams.cGmAddr);
         biasGmAddr_ = reinterpret_cast<__gm__ BiasType*>(blockMmadParams.biasGmAddr);
+        scaleGmAddr_ = reinterpret_cast<__gm__ uint64_t*>(blockMmadParams.scaleGmAddr);
     }
 
-    __aicore__ inline void UnsetHf32()
-    {
-        AscendC::SetHF32Mode(0);
-    }
+    __aicore__ inline void UnsetHf32() { AscendC::SetHF32Mode(0); }
 
     template <typename TensorA, typename TensorB>
     __aicore__ inline void SetL2Cache(TensorA& gmA, TensorB& gmB, uint32_t l2CacheMode)
@@ -215,12 +209,13 @@ private:
 private:
     static constexpr bool TRANS_B = BlockMmad::TRANS_B;
     static constexpr uint64_t NON_CONTIGUOUS_TYPE = BlockMmad::NON_CONTIGUOUS_TYPE;
-    static constexpr bool TRANS_BATCH_A =
-        (NON_CONTIGUOUS_TYPE == static_cast<uint64_t>(NoContiguousType::NON_CONTIGUOUS_TYPE_PERM_X1));
+    static constexpr bool TRANS_BATCH_A = (NON_CONTIGUOUS_TYPE ==
+                                           static_cast<uint64_t>(NoContiguousType::NON_CONTIGUOUS_TYPE_PERM_X1));
     __gm__ AType* aGmAddr_;
     __gm__ BType* bGmAddr_;
     __gm__ CType* cGmAddr_;
-    __gm__ BiasType* biasGmAddr_ = nullptr; // 可选输入，直接初始化
+    __gm__ BiasType* biasGmAddr_ = nullptr;  // 可选输入，直接初始化
+    __gm__ uint64_t* scaleGmAddr_ = nullptr; // 可选输入，int8输出量化scale
 
     uint64_t curBatchIdx_ = {0};
     uint64_t m_{1};

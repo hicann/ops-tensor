@@ -84,26 +84,15 @@ struct BufferIdLayout {
     static constexpr uint32_t L0C_BASE = L0_MAX;
     static constexpr uint32_t L0C_MAX = L0C_BASE + MaxL0Slots;
 
-    static constexpr uint8_t L1ADataBufferId(uint32_t idx)
-    {
-        return L1A_DATA_BASE + idx;
-    }
-    static constexpr uint8_t L1BDataBufferId(uint32_t idx)
-    {
-        return L1B_DATA_BASE + idx;
-    }
-    static constexpr uint8_t BTBufferId(uint32_t idx)
-    {
-        return BT_BASE + idx;
-    }
-    static constexpr uint8_t L0BufferId(uint32_t idx)
-    {
-        return L0_BASE + idx;
-    }
-    static constexpr uint8_t L0CBufferId(uint32_t idx)
-    {
-        return L0C_BASE + idx;
-    }
+    static constexpr uint32_t SCALE_BASE = L0C_MAX;
+    static constexpr uint32_t SCALE_MAX = SCALE_BASE + 1;
+
+    static constexpr uint8_t L1ADataBufferId(uint32_t idx) { return L1A_DATA_BASE + idx; }
+    static constexpr uint8_t L1BDataBufferId(uint32_t idx) { return L1B_DATA_BASE + idx; }
+    static constexpr uint8_t BTBufferId(uint32_t idx) { return BT_BASE + idx; }
+    static constexpr uint8_t L0BufferId(uint32_t idx) { return L0_BASE + idx; }
+    static constexpr uint8_t L0CBufferId(uint32_t idx) { return L0C_BASE + idx; }
+    static constexpr uint8_t ScaleBufferId() { return SCALE_BASE; }
 };
 
 /* =========================================================================
@@ -112,15 +101,9 @@ struct BufferIdLayout {
 template <pipe_t Pipe>
 class ScopedSyncLock {
 public:
-    __aicore__ inline ScopedSyncLock(uint8_t bufferId) : bufferId_(bufferId)
-    {
-        asc_lock(Pipe, bufferId_);
-    }
+    __aicore__ inline ScopedSyncLock(uint8_t bufferId) : bufferId_(bufferId) { asc_lock(Pipe, bufferId_); }
 
-    __aicore__ inline ~ScopedSyncLock()
-    {
-        asc_unlock(Pipe, bufferId_);
-    }
+    __aicore__ inline ~ScopedSyncLock() { asc_unlock(Pipe, bufferId_); }
 
     ScopedSyncLock(const ScopedSyncLock&) = delete;
     ScopedSyncLock& operator=(const ScopedSyncLock&) = delete;
@@ -142,14 +125,8 @@ struct BufferSlot {
     uint64_t byteOffset = 0;
     uint8_t bufferId = 0;
 
-    __aicore__ inline uint64_t Addr() const
-    {
-        return byteOffset;
-    }
-    __aicore__ inline uint8_t Id() const
-    {
-        return bufferId;
-    }
+    __aicore__ inline uint64_t Addr() const { return byteOffset; }
+    __aicore__ inline uint8_t Id() const { return bufferId; }
 
     template <pipe_t Pipe>
     __aicore__ inline auto Lock() const
@@ -157,30 +134,12 @@ struct BufferSlot {
         return ScopedSyncLock<Pipe>(bufferId);
     }
 
-    __aicore__ inline auto LockMte2() const
-    {
-        return Lock<pipe_t::PIPE_MTE2>();
-    }
-    __aicore__ inline auto LockMte1() const
-    {
-        return Lock<pipe_t::PIPE_MTE1>();
-    }
-    __aicore__ inline auto LockMte3() const
-    {
-        return Lock<pipe_t::PIPE_MTE3>();
-    }
-    __aicore__ inline auto LockM() const
-    {
-        return Lock<pipe_t::PIPE_M>();
-    }
-    __aicore__ inline auto LockV() const
-    {
-        return Lock<pipe_t::PIPE_V>();
-    }
-    __aicore__ inline auto LockFix() const
-    {
-        return Lock<pipe_t::PIPE_FIX>();
-    }
+    __aicore__ inline auto LockMte2() const { return Lock<pipe_t::PIPE_MTE2>(); }
+    __aicore__ inline auto LockMte1() const { return Lock<pipe_t::PIPE_MTE1>(); }
+    __aicore__ inline auto LockMte3() const { return Lock<pipe_t::PIPE_MTE3>(); }
+    __aicore__ inline auto LockM() const { return Lock<pipe_t::PIPE_M>(); }
+    __aicore__ inline auto LockV() const { return Lock<pipe_t::PIPE_V>(); }
+    __aicore__ inline auto LockFix() const { return Lock<pipe_t::PIPE_FIX>(); }
 };
 
 /* =========================================================================
@@ -219,6 +178,8 @@ public:
         biasL1Slots_[idx] = {byteOffset, bufferId};
     }
 
+    __aicore__ inline void InitScaleL1(uint64_t byteOffset) { scaleL1Slot_ = {byteOffset, Layout::ScaleBufferId()}; }
+
     __aicore__ inline void InitBT(uint64_t btOneSize)
     {
         for (uint32_t i = 0; i < MaxL0Slots; ++i) {
@@ -241,30 +202,13 @@ public:
     // =====================================================================
     // Slot 引用访问
     // =====================================================================
-    __aicore__ inline const BufferSlot& GetL1ASlot(uint32_t idx) const
-    {
-        return aL1Slots_[idx];
-    }
-    __aicore__ inline const BufferSlot& GetL1BSlot(uint32_t idx) const
-    {
-        return bL1Slots_[idx];
-    }
-    __aicore__ inline const BufferSlot& GetL1BiasSlot(uint32_t idx) const
-    {
-        return biasL1Slots_[idx];
-    }
-    __aicore__ inline const BufferSlot& GetBTSlot(uint32_t idx) const
-    {
-        return btSlots_[idx];
-    }
-    __aicore__ inline const BufferSlot& GetL0Slot(uint32_t idx) const
-    {
-        return l0Slots_[idx];
-    }
-    __aicore__ inline const BufferSlot& GetL0CSlot(uint32_t idx) const
-    {
-        return l0cSlots_[idx];
-    }
+    __aicore__ inline const BufferSlot& GetL1ASlot(uint32_t idx) const { return aL1Slots_[idx]; }
+    __aicore__ inline const BufferSlot& GetL1BSlot(uint32_t idx) const { return bL1Slots_[idx]; }
+    __aicore__ inline const BufferSlot& GetL1BiasSlot(uint32_t idx) const { return biasL1Slots_[idx]; }
+    __aicore__ inline const BufferSlot& GetBTSlot(uint32_t idx) const { return btSlots_[idx]; }
+    __aicore__ inline const BufferSlot& GetL0Slot(uint32_t idx) const { return l0Slots_[idx]; }
+    __aicore__ inline const BufferSlot& GetL0CSlot(uint32_t idx) const { return l0cSlots_[idx]; }
+    __aicore__ inline const BufferSlot& GetScaleL1Slot() const { return scaleL1Slot_; }
 
 private:
     BufferSlot aL1Slots_[MaxL1ASlots];
@@ -273,6 +217,7 @@ private:
     BufferSlot btSlots_[MaxL0Slots];
     BufferSlot l0Slots_[MaxL0Slots];
     BufferSlot l0cSlots_[MaxL0Slots];
+    BufferSlot scaleL1Slot_;
 };
 
 } // namespace Gemm

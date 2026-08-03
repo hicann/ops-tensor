@@ -29,11 +29,9 @@
 
 namespace TbmmUT {
 
-template <
-    typename A_TYPE, typename B_TYPE, typename C_TYPE, typename BIAS_TYPE, uint64_t NON_CONTIGUOUS_TYPE = 0>
-__aicore__ inline void TbmmBasicWrapper(
-    GM_ADDR aGM, GM_ADDR bGM, GM_ADDR biasGM, GM_ADDR cGM, GM_ADDR workspaceGM,
-    const TbmmBasicTilingData& tilingData)
+template <typename A_TYPE, typename B_TYPE, typename C_TYPE, typename BIAS_TYPE, uint64_t NON_CONTIGUOUS_TYPE = 0>
+__aicore__ inline void TbmmBasicWrapper(GM_ADDR aGM, GM_ADDR bGM, GM_ADDR biasGM, GM_ADDR cGM, GM_ADDR workspaceGM,
+                                        const TbmmBasicTilingData& tilingData, GM_ADDR scaleGM)
 {
     using AType = A_TYPE;
     using BType = B_TYPE;
@@ -47,13 +45,13 @@ __aicore__ inline void TbmmBasicWrapper(
 
     using ProblemShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t, int64_t>;
 
-    using DispatchPolicy =
-        Blaze::Gemm::MatmulMultiBlockBasic<0, 0, Blaze::Gemm::KernelMmadMultiBlockTBMM, NON_CONTIGUOUS_TYPE>;
+    using DispatchPolicy = Blaze::Gemm::MatmulMultiBlockBasic<0, 0, Blaze::Gemm::KernelMmadMultiBlockTBMM,
+                                                              NON_CONTIGUOUS_TYPE>;
 
     using BlockScheduler = Blaze::Gemm::Block::BlockSchedulerMatmulBasic<ProblemShape>;
 
-    using BlockMmad = Blaze::Gemm::Block::BlockMmad<
-        DispatchPolicy, AType, LayoutA, BType, LayoutB, OutType, LayoutC, BiasType, LayoutBias>;
+    using BlockMmad = Blaze::Gemm::Block::BlockMmad<DispatchPolicy, AType, LayoutA, BType, LayoutB, OutType, LayoutC,
+                                                    BiasType, LayoutBias>;
 
     using BlockEpilogue = Blaze::Gemm::Block::BlockEpilogueEmpty;
 
@@ -63,8 +61,8 @@ __aicore__ inline void TbmmBasicWrapper(
     Params params = {
         {static_cast<int64_t>(tilingData.m), static_cast<int64_t>(tilingData.n), static_cast<int64_t>(tilingData.k),
          static_cast<int64_t>(tilingData.batch), static_cast<int64_t>(tilingData.batchSplitFactor)},
-        {aGM, bGM, cGM, biasGM, nullptr, workspaceGM, tilingData.mL1, tilingData.nL1, tilingData.kL1,
-         tilingData.baseM, tilingData.baseN, tilingData.baseK, tilingData.l1BufferNum, tilingData.l0cDB},
+        {aGM, bGM, cGM, biasGM, nullptr, workspaceGM, tilingData.mL1, tilingData.nL1, tilingData.kL1, tilingData.baseM,
+         tilingData.baseN, tilingData.baseK, tilingData.l1BufferNum, tilingData.l0cDB, scaleGM},
         {},
         {static_cast<uint32_t>(tilingData.mL1), static_cast<uint32_t>(tilingData.nL1),
          static_cast<uint32_t>(tilingData.kL1), static_cast<uint32_t>(tilingData.baseM),
@@ -73,8 +71,8 @@ __aicore__ inline void TbmmBasicWrapper(
          static_cast<uint32_t>(tilingData.mBaseTailSplitCnt), static_cast<uint32_t>(tilingData.nBaseTailSplitCnt),
          static_cast<uint32_t>(tilingData.mTailMain), static_cast<uint32_t>(tilingData.nTailMain),
          static_cast<uint8_t>(tilingData.isHf32), static_cast<uint32_t>(tilingData.l2CacheDisable),
-         static_cast<uint32_t>(tilingData.sliceM),
-         static_cast<uint32_t>(tilingData.srcNdStride), static_cast<uint32_t>(tilingData.innerBatch)}};
+         static_cast<uint32_t>(tilingData.sliceM), static_cast<uint32_t>(tilingData.srcNdStride),
+         static_cast<uint32_t>(tilingData.innerBatch)}};
 
     MatmulKernel kernel;
     kernel(params);
