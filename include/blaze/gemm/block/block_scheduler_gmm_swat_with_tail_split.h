@@ -30,6 +30,42 @@ public:
     // M block size, N block size, M split offset, N split offset.
     using BlockShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
     using BlockCoord = AscendC::Te::Coord<int64_t, int64_t, int64_t, int64_t>;
+    struct BlockInfo {
+        BlockShape blockShape{};
+        BlockCoord blockCoord{};
+    };
+
+    struct SwigluGroupParams {
+        uint32_t groupIdx{0};
+        int64_t groupMEndOffset{0};
+        ProblemShape problemShape{};
+        bool singleW{true};
+    };
+
+    struct SwigluGroupInfo {
+        int64_t aOffset{0};
+        int64_t bOffset{0};
+        int64_t scaleAOffset{0};
+        int64_t scaleBOffset{0};
+        int64_t outputOffset{0};
+        int64_t outputScaleOffset{0};
+        int64_t inputScaleK{0};
+    };
+
+    struct SwigluOutputOffsets {
+        int64_t outputOffset{0};
+        int64_t outputScaleOffset{0};
+    };
+
+    struct SwigluBlockInfo {
+        BlockShape blockShape{};
+        BlockShape epilogueBlockShape{};
+        int64_t aMOffset{0};
+        int64_t bLeftNOffset{0};
+        int64_t bRightNOffset{0};
+        SwigluOutputOffsets outputOffsets{};
+    };
+
     struct Params {
         int32_t baseM{0};
         int32_t baseN{0};
@@ -83,10 +119,7 @@ public:
         }
     }
 
-    __aicore__ inline void UpdateBaseM(uint32_t baseM)
-    {
-        baseM_ = baseM;
-    }
+    __aicore__ inline void UpdateBaseM(uint32_t baseM) { baseM_ = baseM; }
 
     __aicore__ inline void SetTailAlign(uint32_t mTailAlign, uint32_t nTailAlign)
     {
@@ -206,12 +239,87 @@ public:
         return {singleCoreM, singleCoreN, mSplitAddrOffset, nSplitAddrOffset};
     }
 
-    __aicore__ inline int64_t GetEndBlockIdx() const
+    __aicore__ inline bool GetNextBlock(BlockInfo& blockInfo)
     {
-        return endBlockIdx_;
+        BlockCoord blockIndex;
+        if (!GetNextBlockCoord(blockIndex)) {
+            return false;
+        }
+
+        // Convert the internal SWAT tile index and tail-split offsets to an element coordinate and a true MNKB shape.
+        const BlockShape legacyBlockShape = GetBlockShape(blockIndex);
+        const int64_t blockM = AscendC::Te::Get<MNK_M>(legacyBlockShape);
+        const int64_t blockN = AscendC::Te::Get<MNK_N>(legacyBlockShape);
+        const int64_t mSplitOffset = AscendC::Te::Get<MNK_K>(legacyBlockShape);
+        const int64_t nSplitOffset = AscendC::Te::Get<MNK_B>(legacyBlockShape);
+        const int64_t mOffset = AscendC::Te::Get<MNK_M>(blockIndex) * baseM_ + mSplitOffset;
+        const int64_t nOffset = AscendC::Te::Get<MNK_N>(blockIndex) * baseN_ + nSplitOffset;
+
+        blockInfo.blockShape = BlockShape{blockM, blockN, k_, 1};
+        blockInfo.blockCoord = BlockCoord{mOffset, nOffset, 0, 0};
+        return true;
     }
 
+    __aicore__ inline void UpdateSwigluGroup(const SwigluGroupParams& params)
+    {
+        const int64_t groupIdx = static_cast<int64_t>(params.groupIdx);
+        const int64_t problemM = AscendC::Te::Get<MNK_M>(params.problemShape);
+        const int64_t problemN = AscendC::Te::Get<MNK_N>(params.problemShape);
+        const int64_t problemK = AscendC::Te::Get<MNK_K>(params.problemShape);
+        const int64_t mPrefixOffset = params.groupMEndOffset - problemM;
+        const int64_t inputScaleK = GetScaleK(problemK);
+        swigluOutputN_ = problemN / SWIGLU_SPLIT_COUNT;
+        swigluOutputScaleK_ = GetScaleK(swigluOutputN_);
+
+        swigluGroupInfo_.aOffset = mPrefixOffset * problemK;
+        swigluGroupInfo_.bOffset = params.singleW ? groupIdx * problemN * problemK : 0;
+        swigluGroupInfo_.scaleAOffset = mPrefixOffset * inputScaleK;
+        swigluGroupInfo_.scaleBOffset = params.singleW ? groupIdx * problemN * inputScaleK : 0;
+        swigluGroupInfo_.outputOffset = mPrefixOffset * swigluOutputN_;
+        swigluGroupInfo_.outputScaleOffset = mPrefixOffset * swigluOutputScaleK_;
+        swigluGroupInfo_.inputScaleK = inputScaleK;
+    }
+
+    __aicore__ inline const SwigluGroupInfo& GetSwigluGroupInfo() const { return swigluGroupInfo_; }
+
+    __aicore__ inline bool GetNextSwigluBlock(SwigluBlockInfo& swigluBlockInfo)
+    {
+        BlockInfo blockInfo;
+        if (!GetNextBlock(blockInfo)) {
+            return false;
+        }
+
+        // Resolve all SwiGLU-specific input coordinates and epilogue offsets before returning to the kernel.
+        const int64_t blockM = AscendC::Te::Get<MNK_M>(blockInfo.blockShape);
+        const int64_t blockN = AscendC::Te::Get<MNK_N>(blockInfo.blockShape);
+        const int64_t mOffset = AscendC::Te::Get<MNK_M>(blockInfo.blockCoord);
+        const int64_t nOffset = AscendC::Te::Get<MNK_N>(blockInfo.blockCoord);
+
+        swigluBlockInfo.blockShape = blockInfo.blockShape;
+        swigluBlockInfo.epilogueBlockShape = BlockShape{blockM, blockN, 0, 0};
+        swigluBlockInfo.aMOffset = mOffset;
+        swigluBlockInfo.bLeftNOffset = nOffset;
+        swigluBlockInfo.bRightNOffset = nOffset + swigluOutputN_;
+        swigluBlockInfo.outputOffsets.outputOffset = mOffset * swigluOutputN_ + nOffset;
+        swigluBlockInfo.outputOffsets.outputScaleOffset = mOffset * swigluOutputScaleK_ +
+                                                          nOffset / MX_OUTPUT_SCALE_BLOCK_SIZE;
+        return true;
+    }
+
+    __aicore__ inline int64_t GetEndBlockIdx() const { return endBlockIdx_; }
+
 private:
+    static constexpr int64_t SWIGLU_SPLIT_COUNT = 2;
+    static constexpr int64_t MX_OUTPUT_SCALE_BLOCK_SIZE = MXFP_DIVISOR_SIZE / MXFP_MULTI_BASE_SIZE;
+
+    __aicore__ inline int64_t GetScaleK(int64_t k) const
+    {
+        return ((k + MXFP_DIVISOR_SIZE - 1) >> MXFP_DIVISOR_SHIFT) << MXFP_MULTI_BASE_SHIFT;
+    }
+
+    SwigluGroupInfo swigluGroupInfo_{};
+    int64_t swigluOutputN_{0};
+    int64_t swigluOutputScaleK_{0};
     int64_t mBlockNums_{0};
     int64_t nBlockNums_{0};
     int64_t totalBlockNums_{0};
