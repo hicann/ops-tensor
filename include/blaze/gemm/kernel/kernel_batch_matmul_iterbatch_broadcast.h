@@ -40,15 +40,12 @@ namespace Gemm {
 namespace Kernel {
 
 template <class ProblemShape_, class BlockMmad_, class BlockEpilogue_, class BlockScheduler_>
-class GemmUniversal<
-    ProblemShape_, BlockMmad_, BlockEpilogue_, BlockScheduler_,
-    AscendC::Std::enable_if_t<
-        AscendC::Std::is_same_v<KernelIterBatchBroadcast, typename BlockMmad_::DispatchPolicy::ScheduleType>>> {
+class GemmUniversal<ProblemShape_, BlockMmad_, BlockEpilogue_, BlockScheduler_,
+                    AscendC::Std::enable_if_t<AscendC::Std::is_same_v<
+                        KernelIterBatchBroadcast, typename BlockMmad_::DispatchPolicy::ScheduleType>>> {
 public:
-    __aicore__ inline GemmUniversal()
-    {}
-    __aicore__ inline ~GemmUniversal()
-    {}
+    __aicore__ inline GemmUniversal() {}
+    __aicore__ inline ~GemmUniversal() {}
 
     using BlockMmad = BlockMmad_;
     using ProblemShape = ProblemShape_;
@@ -69,8 +66,8 @@ public:
     using MakeLayoutA = AscendC::Te::FrameLayoutFormat<LayoutA, AscendC::Std::Int<AscendC::Te::C0_ELEMENT<AType>>>;
     using MakeLayoutB = AscendC::Te::FrameLayoutFormat<LayoutB, AscendC::Std::Int<AscendC::Te::C0_ELEMENT<BType>>>;
     using MakeLayoutC = AscendC::Te::FrameLayoutFormat<LayoutC, AscendC::Std::Int<AscendC::Te::C0_ELEMENT<CType>>>;
-    using MakeLayoutBias =
-        AscendC::Te::FrameLayoutFormat<LayoutBias, AscendC::Std::Int<AscendC::Te::C0_ELEMENT<BiasType>>>;
+    using MakeLayoutBias = AscendC::Te::FrameLayoutFormat<LayoutBias,
+                                                          AscendC::Std::Int<AscendC::Te::C0_ELEMENT<BiasType>>>;
     using BlockSchedulerParams = typename Block::BlockSchedulerIterBatchBroadcast<ProblemShape>::Params;
     struct Params {
         ProblemShape problemShape;
@@ -117,36 +114,30 @@ public:
         bool broadcastSingleBatch = bs.IsBroadcastSideSingleBatch();
         bool aSingleBatch = A_BROADCAST && broadcastSingleBatch;
         bool bSingleBatch = B_BROADCAST && broadcastSingleBatch;
-        if (params.schedulerParams.isHf32) {
-            AscendC::SetHF32Mode(1);
-            AscendC::SetHF32TransMode(1);
-        }
+        Blaze::Gemm::SetHF32(params.schedulerParams.isHf32);
         BlockMmadParams mmadParams = params.mmadParams;
         mmadParams.aBroadcastSingleBatch = aSingleBatch;
         mmadParams.bBroadcastSingleBatch = bSingleBatch;
         blockMmad.Init(mmadParams);
         uint64_t totalABatches = static_cast<uint64_t>(
-            params.schedulerParams.aBatchDim0 * params.schedulerParams.aBatchDim1 *
-            params.schedulerParams.aBatchDim2 * params.schedulerParams.aBatchDim3);
+            params.schedulerParams.aBatchDim0 * params.schedulerParams.aBatchDim1 * params.schedulerParams.aBatchDim2 *
+            params.schedulerParams.aBatchDim3);
         uint64_t totalBBatches = static_cast<uint64_t>(
-            params.schedulerParams.bBatchDim0 * params.schedulerParams.bBatchDim1 *
-            params.schedulerParams.bBatchDim2 * params.schedulerParams.bBatchDim3);
+            params.schedulerParams.bBatchDim0 * params.schedulerParams.bBatchDim1 * params.schedulerParams.bBatchDim2 *
+            params.schedulerParams.bBatchDim3);
         uint64_t totalCBatches = static_cast<uint64_t>(
-            params.schedulerParams.cBatchDim0 * params.schedulerParams.cBatchDim1 *
-            params.schedulerParams.cBatchDim2 * params.schedulerParams.cBatchDim3);
+            params.schedulerParams.cBatchDim0 * params.schedulerParams.cBatchDim1 * params.schedulerParams.cBatchDim2 *
+            params.schedulerParams.cBatchDim3);
 
         auto layoutA3D = AscendC::Te::MakeFrameLayout<LayoutA>(totalABatches, m_, k_);
         auto layoutB3D = AscendC::Te::MakeFrameLayout<LayoutB>(totalBBatches, k_, n_);
-        auto layoutC3D = AscendC::Te::MakeFrameLayout<
-            AscendC::Te::NDExtLayoutPtn>(totalCBatches, m_, n_);
+        auto layoutC3D = AscendC::Te::MakeFrameLayout<AscendC::Te::NDExtLayoutPtn>(totalCBatches, m_, n_);
         auto layoutBias = MakeLayoutBias{}(1L, n_);
-        auto gmA = AscendC::Te::MakeTensor(
-            AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(aGmAddr_), layoutA3D);
-        auto gmB = AscendC::Te::MakeTensor(
-            AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(bGmAddr_), layoutB3D);
+        auto gmA = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(aGmAddr_), layoutA3D);
+        auto gmB = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(bGmAddr_), layoutB3D);
         auto gmC = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(cGmAddr_), layoutC3D);
-        auto gmBias =
-            AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(biasGmAddr_), layoutBias);
+        auto gmBias = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(biasGmAddr_),
+                                              layoutBias);
         for (int64_t blockIdx = curBlockIdx; blockIdx < blockNums; blockIdx += coreNums) {
             auto blockShape = bs.GetBlockShape(blockIdx, blockNums);
             auto blockCoord = bs.GetBlockCoord(blockIdx);
@@ -158,18 +149,15 @@ public:
             uint64_t bl1Count = bSingleBatch ? 1UL : curIterBatchL1;
             uint64_t agmStart = A_BROADCAST ? aGmStartBatch : startBatchIdx;
             uint64_t bgmStart = B_BROADCAST ? bGmStartBatch : startBatchIdx;
-            auto gmASlice = gmA.Slice(
-                AscendC::Te::MakeCoord(agmStart, AscendC::Te::MakeCoord(0, 0)),
-                AscendC::Te::MakeShape(al1Count, AscendC::Te::MakeShape(m_, k_)));
-            auto gmBSlice = gmB.Slice(
-                AscendC::Te::MakeCoord(bgmStart, AscendC::Te::MakeCoord(0, 0)),
-                AscendC::Te::MakeShape(bl1Count, AscendC::Te::MakeShape(k_, n_)));
-            auto gmCSlice = gmC.Slice(
-                AscendC::Te::MakeCoord(startBatchIdx, AscendC::Te::MakeCoord(0, 0)),
-                AscendC::Te::MakeShape(curIterBatchL1, AscendC::Te::MakeShape(m_, n_)));
+            auto gmASlice = gmA.Slice(AscendC::Te::MakeCoord(agmStart, AscendC::Te::MakeCoord(0, 0)),
+                                      AscendC::Te::MakeShape(al1Count, AscendC::Te::MakeShape(m_, k_)));
+            auto gmBSlice = gmB.Slice(AscendC::Te::MakeCoord(bgmStart, AscendC::Te::MakeCoord(0, 0)),
+                                      AscendC::Te::MakeShape(bl1Count, AscendC::Te::MakeShape(k_, n_)));
+            auto gmCSlice = gmC.Slice(AscendC::Te::MakeCoord(startBatchIdx, AscendC::Te::MakeCoord(0, 0)),
+                                      AscendC::Te::MakeShape(curIterBatchL1, AscendC::Te::MakeShape(m_, n_)));
             blockMmad(gmASlice, gmBSlice, gmBias, gmCSlice, curIterBatchL1);
         }
-        UnsetHf32();
+        Blaze::Gemm::UnsetHF32(params.schedulerParams.isHf32);
     }
 
 private:
@@ -184,12 +172,6 @@ private:
     __gm__ BType* bGmAddr_;
     __gm__ CType* cGmAddr_;
     __gm__ BiasType* biasGmAddr_ = nullptr;
-
-    __aicore__ inline void UnsetHf32()
-    {
-        AscendC::SetHF32Mode(0);
-    }
-
 };
 
 } // namespace Kernel

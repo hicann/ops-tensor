@@ -129,8 +129,7 @@ constexpr int64_t ALIGN_NUM_2 = 2;
 constexpr uint64_t L0C2UB_MODE_NONE = 0UL;
 constexpr uint64_t L0C2UB_MODE_DUAL_DST_SPLIT_M = 1UL;
 
-enum class QuantMode : uint32_t
-{
+enum class QuantMode : uint32_t {
     DEFAULT = 0x0U,
     PERTENSOR_MODE = 0x1U,
     PERCHANNEL_MODE = 0x1U << 1,
@@ -140,8 +139,7 @@ enum class QuantMode : uint32_t
     PERGROUP_MODE = 0x1U << 5,
 };
 
-enum class NoContiguousType : uint64_t
-{
+enum class NoContiguousType : uint64_t {
     NON_CONTIGUOUS_TYPE_SLICE = 1UL,
     NON_CONTIGUOUS_TYPE_PERM_X1 = 2UL,
 };
@@ -176,20 +174,11 @@ __aicore__ inline T CeilAlign(T a, T b)
     return (a + b - 1) / b * b;
 }
 
-__aicore__ inline uint64_t Align64(uint64_t x)
-{
-    return (x + ALIGN_MASK_64) & ~ALIGN_MASK_64;
-}
+__aicore__ inline uint64_t Align64(uint64_t x) { return (x + ALIGN_MASK_64) & ~ALIGN_MASK_64; }
 
-__aicore__ inline uint64_t Align32(uint64_t x)
-{
-    return (x + ALIGN_MASK_32) & ~ALIGN_MASK_32;
-}
+__aicore__ inline uint64_t Align32(uint64_t x) { return (x + ALIGN_MASK_32) & ~ALIGN_MASK_32; }
 
-__aicore__ inline uint64_t Align16(uint64_t x)
-{
-    return (x + ALIGN_MASK_16) & ~ALIGN_MASK_16;
-}
+__aicore__ inline uint64_t Align16(uint64_t x) { return (x + ALIGN_MASK_16) & ~ALIGN_MASK_16; }
 
 template <typename T>
 __aicore__ inline T Max(T a, T b)
@@ -212,11 +201,11 @@ __aicore__ inline int64_t GetPerBlockNum(int64_t coreNum, int64_t mTileNum, int6
 __aicore__ inline uint64_t CalWeightNZGmAddrOffset(bool transB, int64_t batchIdx, int64_t n, int64_t k, int64_t c0Size)
 {
     if (transB) {
-        return batchIdx * Blaze::Gemm::CeilDiv(k, c0Size) *
-               Blaze::Gemm::CeilDiv(n, static_cast<int64_t>(BLOCK_CUBE)) * BLOCK_CUBE * c0Size;
+        return batchIdx * Blaze::Gemm::CeilDiv(k, c0Size) * Blaze::Gemm::CeilDiv(n, static_cast<int64_t>(BLOCK_CUBE)) *
+               BLOCK_CUBE * c0Size;
     } else {
-        return batchIdx * Blaze::Gemm::CeilDiv(n, c0Size) *
-               Blaze::Gemm::CeilDiv(k, static_cast<int64_t>(BLOCK_CUBE)) * BLOCK_CUBE * c0Size;
+        return batchIdx * Blaze::Gemm::CeilDiv(n, c0Size) * Blaze::Gemm::CeilDiv(k, static_cast<int64_t>(BLOCK_CUBE)) *
+               BLOCK_CUBE * c0Size;
     }
 }
 
@@ -240,6 +229,22 @@ __aicore__ inline void NotifyCube()
 __aicore__ inline void WaitForCube()
 {
     AscendC::CrossCoreWaitFlag<QBMM_MIX_SYNC_MODE, PIPE_V>(QBMM_MIX_AIC_SYNC_AIV_FLAG);
+}
+
+__aicore__ inline void SetHF32(uint8_t isHf32)
+{
+    if (isHf32) {
+        AscendC::SetHF32Mode(1);
+        AscendC::SetHF32TransMode(1);
+    }
+}
+
+__aicore__ inline void UnsetHF32(uint8_t isHf32)
+{
+    if (isHf32) {
+        AscendC::SetHF32Mode(0);
+        AscendC::SetHF32TransMode(0);
+    }
 }
 
 } // namespace Gemm

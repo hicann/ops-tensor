@@ -15,7 +15,6 @@
 
 #pragma once
 
-
 #include "kernel_basic_intf.h"
 
 #include "blaze/epilogue/block/block_epilogue_empty.h"
@@ -30,15 +29,12 @@ namespace Gemm {
 namespace Kernel {
 
 template <class ProblemShape_, class BlockMmad_, class BlockEpilogue_, class BlockScheduler_>
-class GemmUniversal<
-    ProblemShape_, BlockMmad_, BlockEpilogue_, BlockScheduler_,
-    AscendC::Std::enable_if_t<
-        AscendC::Std::is_same_v<KernelMmadMultiBlockBmmBroadcast, typename BlockMmad_::DispatchPolicy::ScheduleType>>> {
+class GemmUniversal<ProblemShape_, BlockMmad_, BlockEpilogue_, BlockScheduler_,
+                    AscendC::Std::enable_if_t<AscendC::Std::is_same_v<
+                        KernelMmadMultiBlockBmmBroadcast, typename BlockMmad_::DispatchPolicy::ScheduleType>>> {
 public:
-    __aicore__ inline GemmUniversal()
-    {}
-    __aicore__ inline ~GemmUniversal()
-    {}
+    __aicore__ inline GemmUniversal() {}
+    __aicore__ inline ~GemmUniversal() {}
 
     using BlockMmad = BlockMmad_;
     using ProblemShape = ProblemShape_;
@@ -61,8 +57,8 @@ public:
     using MakeLayoutA = AscendC::Te::FrameLayoutFormat<LayoutA, AscendC::Std::Int<AscendC::Te::C0_ELEMENT<AType>>>;
     using MakeLayoutB = AscendC::Te::FrameLayoutFormat<LayoutB, AscendC::Std::Int<AscendC::Te::C0_ELEMENT<BType>>>;
     using MakeLayoutC = AscendC::Te::FrameLayoutFormat<LayoutC, AscendC::Std::Int<AscendC::Te::C0_ELEMENT<CType>>>;
-    using MakeLayoutBias =
-        AscendC::Te::FrameLayoutFormat<LayoutBias, AscendC::Std::Int<AscendC::Te::C0_ELEMENT<BiasType>>>;
+    using MakeLayoutBias = AscendC::Te::FrameLayoutFormat<LayoutBias,
+                                                          AscendC::Std::Int<AscendC::Te::C0_ELEMENT<BiasType>>>;
 
     struct BatchInfo {
         uint32_t aBatchDim0 = 1UL;
@@ -103,10 +99,7 @@ public:
             return;
         }
 
-        if (params.schParams.isHf32) {
-            AscendC::SetHF32Mode(1);
-            AscendC::SetHF32TransMode(1);
-        }
+        Blaze::Gemm::SetHF32(params.schParams.isHf32);
 
         BlockMmad blockMmad;
         blockMmad.Init(params.mmadParams);
@@ -120,16 +113,16 @@ public:
         auto gmA = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(aGmAddr_), layoutA);
         auto gmB = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(bGmAddr_), layoutB);
         auto gmC = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(cGmAddr_), layoutC);
-        auto gmBias =
-            AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(biasGmAddr_), layoutBias);
+        auto gmBias = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(biasGmAddr_),
+                                              layoutBias);
 
         uint64_t preBatchIdx = 0;
         int64_t totalBlockNums = bs.GetBlockNums(); // 切分总块数
-        int64_t coreNums = AscendC::GetBlockNum(); // 实际启用的物理核数
+        int64_t coreNums = AscendC::GetBlockNum();  // 实际启用的物理核数
         // Process tiles in ping-pong mode
         for (int64_t tileIdx = curBlockIdx; tileIdx < totalBlockNums; tileIdx += coreNums) {
             auto tileShape = bs.template GetBlockShape<TRANS_B, BType>(tileIdx); // 非全载
-            auto tileCoord = bs.GetBlockCoord(tileIdx);                         // (m, n, k, b)
+            auto tileCoord = bs.GetBlockCoord(tileIdx);                          // (m, n, k, b)
             auto coordM = AscendC::Te::Get<MNK_M>(tileCoord);
             auto coordN = AscendC::Te::Get<MNK_N>(tileCoord);
             auto shapeM = AscendC::Te::Get<MNK_M>(tileShape);
@@ -140,10 +133,10 @@ public:
             if (preBatchIdx != curBatchIdx_) {
                 uint64_t batchC1Index = curBatchIdx_ / (params.batchInfo.cBatchDim1 * params.batchInfo.cBatchDim2 *
                                                         params.batchInfo.cBatchDim3);
-                uint64_t batchC2Index =
-                    curBatchIdx_ %
-                    (params.batchInfo.cBatchDim1 * params.batchInfo.cBatchDim2 * params.batchInfo.cBatchDim3) /
-                    (params.batchInfo.cBatchDim2 * params.batchInfo.cBatchDim3);
+                uint64_t batchC2Index = curBatchIdx_ %
+                                        (params.batchInfo.cBatchDim1 * params.batchInfo.cBatchDim2 *
+                                         params.batchInfo.cBatchDim3) /
+                                        (params.batchInfo.cBatchDim2 * params.batchInfo.cBatchDim3);
                 uint64_t batchC3Index = curBatchIdx_ % (params.batchInfo.cBatchDim2 * params.batchInfo.cBatchDim3) /
                                         (params.batchInfo.cBatchDim3);
                 uint64_t batchC4Index = curBatchIdx_ % params.batchInfo.cBatchDim3;
@@ -171,8 +164,8 @@ public:
                 gmB = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(bGmAddr_), layoutB);
                 gmC = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(cGmAddr_), layoutC);
                 if (params.batchInfo.biasBatchDimAll != 1UL) {
-                    gmBias = AscendC::Te::MakeTensor(
-                        AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(biasGmAddr_), layoutBias);
+                    gmBias = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(biasGmAddr_),
+                                                     layoutBias);
                 }
                 preBatchIdx = curBatchIdx_;
             }
@@ -184,7 +177,7 @@ public:
             blockMmad(gmBlockA, gmBlockB, gmBlockBias, gmBlockC, tileShape);
         }
 
-        UnsetHf32();
+        Blaze::Gemm::UnsetHF32(params.schParams.isHf32);
     }
 
 private:
@@ -215,13 +208,9 @@ private:
         }
     }
 
-    __aicore__ inline void UnsetHf32()
-    {
-        AscendC::SetHF32Mode(0);
-    }
-
     template <typename TensorA, typename TensorB>
-    __aicore__ inline void SetL2Cache(TensorA& gmA, TensorB& gmB, uint32_t l2CacheMode) {
+    __aicore__ inline void SetL2Cache(TensorA& gmA, TensorB& gmB, uint32_t l2CacheMode)
+    {
         if (l2CacheMode == ALL_L2_CACHE_DISABLE || l2CacheMode == B_L2_CACHE_DISABLE) {
             gmB.SetL2CacheHint(AscendC::Te::CacheMode::CACHE_MODE_DISABLE);
         }

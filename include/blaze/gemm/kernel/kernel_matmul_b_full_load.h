@@ -29,15 +29,12 @@ namespace Gemm {
 namespace Kernel {
 
 template <class ProblemShape_, class BlockMmad_, class BlockEpilogue_, class BlockScheduler_>
-class GemmUniversal<
-    ProblemShape_, BlockMmad_, BlockEpilogue_, BlockScheduler_,
-    AscendC::Std::enable_if_t<
-        AscendC::Std::is_same_v<KernelMmadMultiBlockBFullLoad, typename BlockMmad_::DispatchPolicy::ScheduleType>>> {
+class GemmUniversal<ProblemShape_, BlockMmad_, BlockEpilogue_, BlockScheduler_,
+                    AscendC::Std::enable_if_t<AscendC::Std::is_same_v<
+                        KernelMmadMultiBlockBFullLoad, typename BlockMmad_::DispatchPolicy::ScheduleType>>> {
 public:
-    __aicore__ inline GemmUniversal()
-    {}
-    __aicore__ inline ~GemmUniversal()
-    {}
+    __aicore__ inline GemmUniversal() {}
+    __aicore__ inline ~GemmUniversal() {}
 
     using BlockMmad = BlockMmad_;
     using ProblemShape = ProblemShape_;
@@ -59,8 +56,8 @@ public:
     using MakeLayoutA = AscendC::Te::FrameLayoutFormat<LayoutA, AscendC::Std::Int<AscendC::Te::C0_ELEMENT<AType>>>;
     using MakeLayoutB = AscendC::Te::FrameLayoutFormat<LayoutB, AscendC::Std::Int<AscendC::Te::C0_ELEMENT<BType>>>;
     using MakeLayoutC = AscendC::Te::FrameLayoutFormat<LayoutC, AscendC::Std::Int<AscendC::Te::C0_ELEMENT<CType>>>;
-    using MakeLayoutBias =
-        AscendC::Te::FrameLayoutFormat<LayoutBias, AscendC::Std::Int<AscendC::Te::C0_ELEMENT<BiasType>>>;
+    using MakeLayoutBias = AscendC::Te::FrameLayoutFormat<LayoutBias,
+                                                          AscendC::Std::Int<AscendC::Te::C0_ELEMENT<BiasType>>>;
 
     static constexpr bool TRANS_B = BlockMmad::TRANS_B;
     using MakeLayoutBL1 = AscendC::Std::conditional_t<
@@ -90,21 +87,17 @@ public:
         if (curBlockIdx >= realCoreNums) {
             return;
         }
-        if (params.schParams.isHf32) {
-            AscendC::SetHF32Mode(1);
-            AscendC::SetHF32TransMode(1);
-        }
+        Blaze::Gemm::SetHF32(params.schParams.isHf32);
 
         BlockMmad blockMmad;
         blockMmad.Init(params.mmadParams);
         MatmulProcess(params, blockMmad, bs, curBlockIdx, AscendC::GetBlockNum(), bs.GetBlockNums());
-        UnsetHf32();
+        Blaze::Gemm::UnsetHF32(params.schParams.isHf32);
     }
 
 private:
-    __aicore__ inline void MatmulProcess(
-        Params const& params, BlockMmad& blockMmad, BlockScheduler& bs, int64_t curBlockIdx, int64_t coreNums,
-        int64_t totalBlockNums)
+    __aicore__ inline void MatmulProcess(Params const& params, BlockMmad& blockMmad, BlockScheduler& bs,
+                                         int64_t curBlockIdx, int64_t coreNums, int64_t totalBlockNums)
     {
         // 默认ND Format
         auto layoutA = MakeLayoutA{}(m_, k_);       // ND layout for A
@@ -115,8 +108,8 @@ private:
         auto gmA = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(aGmAddr_), layoutA);
         auto gmB = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(bGmAddr_), layoutB);
         auto gmC = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(cGmAddr_), layoutC);
-        auto gmBias =
-            AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(biasGmAddr_), layoutBias);
+        auto gmBias = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(biasGmAddr_),
+                                              layoutBias);
 
         // 使能双页表
         SetL2Cache(gmA, gmB, params.schParams.l2CacheMode);
@@ -164,11 +157,6 @@ private:
     {
         aGmAddr_ = reinterpret_cast<__gm__ AType*>(params.mmadParams.aGmAddr) + curBatchIdx_ * m_ * k_;
         cGmAddr_ = reinterpret_cast<__gm__ CType*>(params.mmadParams.cGmAddr) + curBatchIdx_ * m_ * n_;
-    }
-
-    __aicore__ inline void UnsetHf32()
-    {
-        AscendC::SetHF32Mode(0);
     }
 
     template <typename TensorA, typename TensorB>
