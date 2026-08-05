@@ -133,6 +133,15 @@ public:
                                        layoutOutUb);
     }
 
+    __aicore__ inline auto GetConcatL0c2UbTensor(int64_t rows, int64_t cols)
+    {
+        const uint64_t copyRows = Blaze::Gemm::CeilAlign(static_cast<uint64_t>(rows), SPLIT_M_ALIGN);
+        const auto
+            layoutOutUb = AscendC::Te::MakeFrameLayout<AscendC::Te::NDExtLayoutPtn, AscendC::Std::Int<OUTPUT_C0_SIZE>>(
+                copyRows, static_cast<uint64_t>(cols) * Constant::NUM_TWO);
+        return AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB, DataTypeIn>(0), layoutOutUb);
+    }
+
     __aicore__ inline void Init(Params const& params);
     __aicore__ inline void operator()(const BlockShape& blockShape, const OutputOffsets& outputOffsets);
     __aicore__ inline void UpdateNextProblem(const ProblemShape& problemShape);
@@ -370,7 +379,6 @@ __aicore__ inline void BlockEpilogueSwigluMxQuant<DataTypeOut_, DataTypeIn_, Dat
     uint16_t mSize)
 {
     __ubuf__ DataTypeIn* swishInputUbAddr = GetUbAddr<DataTypeIn>(0);
-    __ubuf__ DataTypeIn* gateInputUbAddr = GetUbAddr<DataTypeIn>(INPUT_UB_BUFFER_BYTES);
     __ubuf__ bfloat16_t* gluResAddr = GetUbAddr<bfloat16_t>(gluResUbOffset_);
 
     constexpr uint16_t sizePerRepeat = AscendC::VECTOR_REG_WIDTH / sizeof(DataTypeIn);
@@ -378,6 +386,7 @@ __aicore__ inline void BlockEpilogueSwigluMxQuant<DataTypeOut_, DataTypeIn_, Dat
                                                             static_cast<uint64_t>(sizePerRepeat));
     const uint32_t nSrcUbAligned = Blaze::Gemm::CeilAlign(static_cast<uint64_t>(singleN_),
                                                           AscendC::ONE_BLK_SIZE / sizeof(DataTypeIn));
+    const uint32_t concatNSrcUbAligned = nSrcUbAligned * Constant::NUM_TWO;
     const uint32_t nDstUbAligned64 = Blaze::Gemm::Align64(static_cast<uint64_t>(singleN_));
 
     const float scalarOne = 1.0f;
@@ -412,7 +421,7 @@ __aicore__ inline void BlockEpilogueSwigluMxQuant<DataTypeOut_, DataTypeIn_, Dat
                 AscendC::Reg::RegTensor<float> swishInput, gateInput;
                 AscendC::Reg::RegTensor<float> verg1, verg2, verg3, verg4, verg5, verg6, swishOutput;
 
-                uint32_t l0cOutOffset = mIdx * nSrcUbAligned + vfBlockIdx * sizePerRepeat;
+                uint32_t l0cOutOffset = mIdx * concatNSrcUbAligned + vfBlockIdx * sizePerRepeat;
                 AscendC::Reg::DataCopy(swishInput, swishInputUbAddr + l0cOutOffset);
 
                 // Swish: x / (1 + exp(-x))
@@ -422,7 +431,7 @@ __aicore__ inline void BlockEpilogueSwigluMxQuant<DataTypeOut_, DataTypeIn_, Dat
                 AscendC::Reg::Div<float, &DIV_MODE>(swishOutput, swishInput, verg4, mask);
 
                 // Load gate data
-                AscendC::Reg::DataCopy(gateInput, gateInputUbAddr + l0cOutOffset);
+                AscendC::Reg::DataCopy(gateInput, swishInputUbAddr + l0cOutOffset + nSrcUbAligned);
 
                 // SwiGLU = Swish(act) * gate
                 AscendC::Reg::Mul(verg6, swishOutput, gateInput, mask);

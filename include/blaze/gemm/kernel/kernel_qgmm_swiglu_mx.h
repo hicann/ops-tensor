@@ -159,6 +159,18 @@ private:
         bs.SetTailAlign(mTailAlign, nTailAlign);
     }
 
+    __aicore__ inline void BaseMBalance(BlockScheduler& scheduler, int64_t m, int64_t baseM)
+    {
+        if (m <= 0) {
+            return;
+        }
+        const int64_t safeBaseM = baseM > 0 ? baseM : static_cast<int64_t>(BLOCK_CUBE);
+        const int64_t mCnt = CeilDiv(m, safeBaseM);
+        const int64_t balancedBaseM = CeilDiv(m, mCnt);
+        curBaseM_ = static_cast<uint32_t>(CeilAlign(balancedBaseM, static_cast<int64_t>(BLOCK_CUBE)));
+        scheduler.UpdateBaseM(curBaseM_);
+    }
+
     template <typename TensorB, typename TensorScaleB>
     __aicore__ inline void SetL2CacheHint(TensorB& gmB, TensorScaleB& gmScaleB, int64_t mSize, int64_t curBaseM,
                                           int64_t baseN)
@@ -206,10 +218,10 @@ private:
             const int64_t problemM = AscendC::Te::Get<MNK_M>(problemShape_);
             const int64_t problemN = AscendC::Te::Get<MNK_N>(problemShape_);
             const int64_t problemK = AscendC::Te::Get<MNK_K>(problemShape_);
+            BaseMBalance(bs, problemM, gmmParams.baseM);
             if ASCEND_IS_AIC {
                 blockMmad.UpdateParamsForNextProblem(problemShape_);
             }
-
             bs.UpdateNextProblem(SchedulerShape{problemM, problemN >> 1, problemK, 0});
             ProcessSingleGroup(bs, groupIdx);
         }
@@ -345,12 +357,8 @@ private:
                 if (isVecSetSyncCom_) {
                     WaitForAiv();
                 }
-                using L0c2UbTensorType = typename BlockEpilogue::L0c2UbTensorType;
-                auto swishInputUb = blockEpilogue.GetL0c2UbTensor(blockM, blockN, L0c2UbTensorType::SWISH_INPUT);
-                auto gateInputUb = blockEpilogue.GetL0c2UbTensor(blockM, blockN, L0c2UbTensorType::GATE_INPUT);
-                // One logical SwiGLU block contains the left activation MMAD and the right gate MMAD.
-                blockMmad(gmBlockA, gmBlockBLeft, gmBlockBRight, gmBlockScaleA, gmBlockScaleBLeft, gmBlockScaleBRight,
-                          gmBias, swishInputUb, gateInputUb, singleShape);
+                auto ubOut = blockEpilogue.GetConcatL0c2UbTensor(blockM, blockN);
+                blockMmad(gmBlockA, gmBlockBLeft, gmBlockScaleA, gmBlockScaleBLeft, ubOut, singleShape);
                 SyncAicToAiv();
             }
             isVecSetSyncCom_ = true;

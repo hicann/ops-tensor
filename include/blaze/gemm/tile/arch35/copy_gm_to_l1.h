@@ -47,21 +47,22 @@ struct CopySliceGM2L1 {
         uint8_t cacheMode = src.Engine().GetCacheMode();
 
         if constexpr (sizeof(srcType) == sizeof(half)) {
-            CopyGmToCbufMultiNd2nz(
-                (__cbuf__ half*)(dst.Data().Get()), (__gm__ half*)(src.Data().Get()), ndNum, loop2DstStride,
-                loop3DstStride, loop4DstStride, loop1SrcStride, cacheMode, nValue, dValue, loop4SrcStride, false);
+            CopyGmToCbufMultiNd2nz((__cbuf__ half*)(dst.Data().Get()), (__gm__ half*)(src.Data().Get()), ndNum,
+                                   loop2DstStride, loop3DstStride, loop4DstStride, loop1SrcStride, cacheMode, nValue,
+                                   dValue, loop4SrcStride, false);
         } else if constexpr (sizeof(srcType) == sizeof(float)) {
-            CopyGmToCbufMultiNd2nz(
-                (__cbuf__ float*)(dst.Data().Get()), (__gm__ float*)(src.Data().Get()), ndNum, loop2DstStride,
-                loop3DstStride, loop4DstStride, loop1SrcStride, cacheMode, nValue, dValue, loop4SrcStride, false);
+            CopyGmToCbufMultiNd2nz((__cbuf__ float*)(dst.Data().Get()), (__gm__ float*)(src.Data().Get()), ndNum,
+                                   loop2DstStride, loop3DstStride, loop4DstStride, loop1SrcStride, cacheMode, nValue,
+                                   dValue, loop4SrcStride, false);
         }
     }
 
     template <typename T>
-    __aicore__ inline static void CopyGmToCbufMultiNd2nz(
-        __cbuf__ T* dst, __gm__ T* src, uint16_t ndNum, uint16_t loop2DstStride, uint16_t loop3DstStride,
-        uint16_t loop4DstStride, uint64_t loop1SrcStride, uint8_t cacheMode, uint16_t nValue, uint32_t dValue,
-        uint64_t loop4SrcStride, bool enableSmallC0)
+    __aicore__ inline static void CopyGmToCbufMultiNd2nz(__cbuf__ T* dst, __gm__ T* src, uint16_t ndNum,
+                                                         uint16_t loop2DstStride, uint16_t loop3DstStride,
+                                                         uint16_t loop4DstStride, uint64_t loop1SrcStride,
+                                                         uint8_t cacheMode, uint16_t nValue, uint32_t dValue,
+                                                         uint64_t loop4SrcStride, bool enableSmallC0)
     {
         if ASCEND_IS_AIV {
             return;
@@ -75,6 +76,32 @@ struct CopySliceGM2L1 {
             asc_copy_gm2l1_nd2nz(dst, src, loop1SrcStride, cacheMode, nValue, dValue, loop4SrcStride, enableSmallC0);
         }
     }
+
+    template <typename T>
+    __aicore__ inline static void CopyGmToCbufMultiDn2nz(uint64_t dstOffset, __gm__ T* src, uint16_t dnNum,
+                                                         uint32_t dValue, uint16_t nValue, uint64_t srcDnMatrixStride,
+                                                         uint64_t srcDValue, uint16_t dstNzC0Stride,
+                                                         uint16_t dstNzNStride, uint32_t dstNzMatrixStride)
+    {
+        if ASCEND_IS_AIV {
+            return;
+        }
+        AscendC::GlobalTensor<T> gmTensor;
+        gmTensor.SetGlobalBuffer(src);
+        AscendC::LocalTensor<uint8_t> l1TensorByte(AscendC::TPosition::A1, 0, AscendC::TOTAL_L1_SIZE);
+        auto l1Tensor = l1TensorByte[dstOffset].template ReinterpretCast<T>();
+
+        AscendC::Dn2NzParams dn2nzParams;
+        dn2nzParams.dnNum = dnNum;
+        dn2nzParams.dValue = dValue;
+        dn2nzParams.nValue = nValue;
+        dn2nzParams.srcDnMatrixStride = srcDnMatrixStride;
+        dn2nzParams.srcDValue = srcDValue;
+        dn2nzParams.dstNzC0Stride = dstNzC0Stride;
+        dn2nzParams.dstNzNStride = dstNzNStride;
+        dn2nzParams.dstNzMatrixStride = dstNzMatrixStride;
+        AscendC::DataCopy(l1Tensor, gmTensor, dn2nzParams);
+    }
 };
 } // namespace Blaze::Gemm::Tile
 
@@ -84,13 +111,11 @@ namespace Te {
 // 特化Traits，绑定自定义GM->L1拷贝实现
 template <typename Traits>
 struct CopyTraits<Blaze::Gemm::Tile::CopySliceGM2L1, Traits>
-    : public CopyTraits<Blaze::Gemm::Tile::CopySliceGM2L1, Traits, Blaze::Gemm::Tile::CopySliceGM2L1, Traits> {
-};
+    : public CopyTraits<Blaze::Gemm::Tile::CopySliceGM2L1, Traits, Blaze::Gemm::Tile::CopySliceGM2L1, Traits> {};
 
 template <>
 struct CopyTraits<Blaze::Gemm::Tile::CopySliceGM2L1>
-    : public CopyTraits<Blaze::Gemm::Tile::CopySliceGM2L1, CopyGM2L1TraitDefault> {
-};
+    : public CopyTraits<Blaze::Gemm::Tile::CopySliceGM2L1, CopyGM2L1TraitDefault> {};
 
 } // namespace Te
 } // namespace AscendC
