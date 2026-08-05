@@ -52,8 +52,8 @@ public:
         k_ = AscendC::Te::Get<MNK_K>(shape);
         batch_ = AscendC::Std::max(AscendC::Te::Get<MNK_B>(shape), 1L);
 
-        mL1_ = params.baseM; // size of m in L1 & L0 & singlecore, per core use L1 once in stream k
-        nL1_ = params.baseN; // size of n in L1 & L0 & singlecore, per core use L1 once in stream k
+        mL1_ = params.baseM;                 // size of m in L1 & L0 & singlecore, per core use L1 once in stream k
+        nL1_ = params.baseN;                 // size of n in L1 & L0 & singlecore, per core use L1 once in stream k
         skSingleCoreK_ = params.singleCoreK; // size of k in singlecore
 
         mBlockNums_ = CeilDiv(m_, mL1_);
@@ -68,10 +68,7 @@ public:
     /**
        获取总的分块数
     */
-    __aicore__ inline int64_t GetBlockNums()
-    {
-        return blockNums_ * batch_;
-    }
+    __aicore__ inline int64_t GetBlockNums() { return blockNums_ * batch_; }
 
     /**
        获取需要的核数
@@ -102,7 +99,7 @@ public:
     __aicore__ inline BlockCoord GetBlockCoord(int64_t blockIdx)
     {
         UpdateMNBlockIdx(blockIdx);
-        return {mBlockIdx_, nBlockIdx_, kBlockIdx_, 0};
+        return {mBlockIdx_, nBlockIdx_, kBlockIdx_, bBlockIdx_};
     }
 
     __aicore__ inline bool CheckIsSkScene(int64_t blockIdx)
@@ -118,13 +115,15 @@ private:
         }
         // judge now in dp loop (kTileNum = 1) or in sk loop
         curKBlockNums_ = CheckIsSkScene(blockIdx) ? skBlockNums_ : 1;
+        bBlockIdx_ = blockIdx / (mBlockNums_ * nBlockNums_ * skBlockNums_);
+        int64_t mnkBlockIdx = blockIdx % (mBlockNums_ * nBlockNums_ * skBlockNums_);
         int64_t mnIdxInCurLoop = 0;
         if (CheckIsSkScene(blockIdx)) { // SK scene
-            kBlockIdx_ = (blockIdx % usedCoreNums_) % curKBlockNums_;
-            mnIdxInCurLoop = (blockIdx % usedCoreNums_) / curKBlockNums_ + totalMNBlockNumsInDP_;
+            kBlockIdx_ = (mnkBlockIdx % usedCoreNums_) % curKBlockNums_;
+            mnIdxInCurLoop = (mnkBlockIdx % usedCoreNums_) / curKBlockNums_ + totalMNBlockNumsInDP_;
         } else { // DP scene
             kBlockIdx_ = 0;
-            mnIdxInCurLoop = blockIdx / curKBlockNums_;
+            mnIdxInCurLoop = mnkBlockIdx / curKBlockNums_;
         }
         int64_t mainWindow = AscendC::Std::min(WINDOW_LEN, mBlockNums_);
         int64_t mainRow = mBlockNums_ / mainWindow - 1UL;
@@ -161,6 +160,7 @@ private:
     int64_t mBlockIdx_{1};
     int64_t nBlockIdx_{1};
     int64_t kBlockIdx_{1};
+    int64_t bBlockIdx_{1};
     int64_t curKBlockNums_{1};
 
     int64_t mL1_{0};
