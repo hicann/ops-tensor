@@ -1,30 +1,143 @@
-# weight_quant_batch_matmul_mx 样例
+# weight_quant_batch_matmul_mx Example
 
-本样例通过一组精简的 CSV 用例运行 Blaze Weight-only MX Kernel。每个用例会生成 FP8 E4M3 激活值、
-打包的 FP4 E2M1 权重、E8M0 MX Scale、FP16 Bias，以及由 CPU 计算得到的 FP16 Golden 结果。
+## 概述
 
-## 在 NPU 上编译运行
+本示例演示基于 Blaze 框架的 Weight Quant Batch MatMul MX 算子在昇腾 NPU 上的实现。该算子使用
+FP8 E4M3 激活、打包的 FP4 E2M1 权重和 E8M0 MX Scale 完成矩阵乘，并输出 FP16 结果。
 
-```bash
-source /path/to/cann/set_env.sh
-bash run.sh
+- **算子**: quant_batch_matmul_mx
+- **场景**: weight_quant_batch_matmul_mx
+- **算法特点**: 支持 Weight ND 和 Weight NZ 布局，以及可选的 FP16 Bias
+- **参考实现**: 基于 Blaze 框架 `blaze/gemm/kernel/kernel_matmul_mix_weight_prologue.h`
+
+## 支持架构
+
+| 架构 | SoC | 支持状态 |
+|------|-----|----------|
+| dav-3510 | Ascend950 | 支持 |
+
+## 使用约束
+
+- 输入 A shape: `[M, K]`，数据类型为 FP8 E4M3
+- 输入 B 逻辑 shape: `[K, N]`，数据类型为打包的 FP4 E2M1
+- 输出 C shape: `[M, N]`，数据类型为 FP16
+- Scale A 逻辑 shape: `[M, align(K, 64) / 32]`，数据类型为 E8M0
+- Scale B 逻辑 shape: `[align(K, 64) / 32, N]`，数据类型为 E8M0
+- M、N 必须为正数，K 必须为 8 的倍数
+- Weight NZ 场景的 N 必须为 8 的倍数
+- bias 大小必须为 N 或 0（无 bias）
+- 数据生成和 Golden 校验依赖 `numpy` 和 `ml_dtypes`
+
+## 数据布局说明
+
+Weight ND 场景按照逻辑 `[N, K]` 排列权重，并沿 K 方向将相邻两个 FP4 编码打包为一个字节。
+
+Weight NZ 场景先将 K、N 分别补齐到 32、16 的倍数，再转换为 NZ 分形布局并打包 FP4 编码：
+
+```text
+Weight ND: [N, K / 2]
+Weight NZ: [align(K, 32) / 32, align(N, 16) / 16, 16, 16]
 ```
 
-数据生成和 Golden 校验脚本依赖 `numpy` 和 `ml_dtypes`（`float8_e4m3fn`、`float8_e8m0fnu` 和
-`float4_e2m1fn`），脚本位于 `../scripts/`。请在已安装这两个 Python 包的环境中运行。
+Scale A 按 M 行存储；Scale B 的原始字节按 N 优先存储，对应 kernel 使用的 ScaleBDN 布局。计算结果 C
+按照 `[M, N]` 的 ND 布局存储。
 
-仅编译、不启动 Device Kernel：
+## CSV 驱动测试
+
+### 执行方式
+
+安装 Python 依赖并初始化 CANN 环境后，通过 `run.sh --case=<csv>` 驱动，自动完成编译、数据生成、
+kernel 执行和精度验证：
+
+```bash
+python3 -m pip install numpy ml_dtypes
+source /path/to/cann/set_env.sh
+bash run.sh --case=weight_quant_batch_matmul_mx.csv
+```
+
+仅编译或复用已有构建结果：
 
 ```bash
 bash run.sh --build-only
+bash run.sh --case=weight_quant_batch_matmul_mx.csv --skip-build
 ```
 
-使用其他用例文件，或复用已有构建结果：
+### 测试用例定义
 
-```bash
-bash run.sh --case weight_quant_batch_matmul_mx.csv --skip-build
+测试用例定义在 `weight_quant_batch_matmul_mx.csv` 中，格式如下：
+
+```csv
+casename,m,k,n,bias,layout,base_m,base_n,base_k,tile_k_l1,scale_k_l1,k_bub,n_bub,l1_buffers,block_num
+ND_multik_tail_n,32,128,40,0,ND,32,32,64,64,64,64,32,2,1
+NZ_multik_tail_n_bias,32,128,40,40,NZ,32,32,64,64,64,64,32,2,1
 ```
 
-默认 CSV 用例数量较少，但覆盖了无 Bias 的 Weight ND 场景和带 FP16 Bias 的 Weight NZ 场景。两个用例均使用
-`M=32, N=40, K=128`、64 元素的 K Tile、两个 L1 Buffer，以及非对齐的 N 尾块。可执行文件要求运行在
-Ascend950 NPU 上；CPU 侧验证由 Kernel UT 提供。
+**列说明**：
+
+| 列 | 说明 |
+|----|------|
+| casename | 用例名称 |
+| m, k, n | 矩阵维度 |
+| bias | bias 元素数量，必须为 n 或 0 |
+| layout | 权重布局：ND / NZ |
+| base_m, base_n, base_k | Cube 基础分块大小 |
+| tile_k_l1 | L1 中 K 方向的 Tile 大小 |
+| scale_k_l1 | L1 中 Scale K 方向的 Tile 大小 |
+| k_bub, n_bub | BUB 中 K、N 方向的分块大小 |
+| l1_buffers | L1 Buffer 数量 |
+| block_num | 启动的 NPU Block 数量 |
+
+### 结果输出
+
+执行完成后结果写入 `weight_quant_batch_matmul_mx_result.csv`。
+
+## 数据与校验
+
+### 输入数据
+
+由 `../scripts/gen_data.py` 在 `data/<casename>/` 下生成：
+
+- `input_a.bin`: FP8 E4M3 激活矩阵
+- `input_b.bin`: 打包的 FP4 E2M1 权重矩阵
+- `scale_a.bin`: E8M0 激活 Scale
+- `scale_b.bin`: E8M0 权重 Scale
+- `bias.bin`: FP16 bias，禁用 bias 时内容为 0
+- `initial_c.bin`: 初始化的 FP16 输出矩阵
+- `golden_c.bin`: NumPy 计算得到的 FP16 Golden 结果
+
+### 输出数据
+
+- `npu_out.bin`: NPU 计算得到的 FP16 输出
+
+### 验证标准
+
+由 `../scripts/verify_result.py` 执行校验。FP16 逐点绝对误差超过 `ratio_tol` 时记为误差点，误差点占比
+不超过 `ratio_tol` 时校验通过：
+
+| dtype | ratio_tol |
+|-------|-----------|
+| float16 | 1e-3 |
+
+## 代码结构
+
+```text
+weight_quant_batch_matmul_mx/
+├── CMakeLists.txt                         # 构建配置
+├── weight_quant_batch_matmul_mx.cpp      # Kernel 和 Host 侧执行代码
+├── weight_quant_batch_matmul_mx.csv      # CSV 测试用例
+├── parse_csv.py                           # CSV 解析与批量执行
+├── run.sh                                 # 编译、运行、验证和清理脚本
+└── README.md                              # 本文档
+```
+
+## Blaze 组件
+
+本场景使用以下 Blaze 组件：
+
+| 组件 | 头文件 | 职责 |
+|------|--------|------|
+| Kernel | `blaze/gemm/kernel/kernel_matmul_mix_weight_prologue.h` | 完整 kernel 入口和 AIV 权重预处理 |
+| Block MMAD | `blaze/gemm/block/block_mmad_weight_prologue_mx.h` | Block 级 MXA8W4 矩阵乘 |
+| Block Scheduler | `blaze/gemm/block/block_scheduler_matmul_swat_with_tail_split.h` | M/N SWAT 分核与尾块调度 |
+| Tile | `blaze/gemm/tile/tile_weight_quant_mx_preprocess.h` | FP4 权重和 MX Scale 预处理 |
+| Dispatch Policy | `blaze/gemm/policy/dispatch_policy.h` | 派发策略 `MatmulWithWeightQuantMx` |

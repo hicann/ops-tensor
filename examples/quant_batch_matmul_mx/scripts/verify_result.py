@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/python3
 # coding=utf-8
 
 # ----------------------------------------------------------------------------------------------------------
@@ -11,35 +11,119 @@
 # See LICENSE in the root of the software repository for the full text of the License.
 # ----------------------------------------------------------------------------------------------------------
 
-"""Compare the NPU FP16 output with the generated NumPy golden result."""
+"""Verify the NPU FP16 output against the generated golden result."""
 
 import argparse
+from dataclasses import dataclass
 
 import numpy as np
 
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("golden")
-    parser.add_argument("actual")
-    parser.add_argument("--rtol", type=float, default=1e-3)
-    parser.add_argument("--atol", type=float, default=0.08)
-    args = parser.parse_args()
+FULL_TENSOR_PRINT_MAX_ELEMENTS = 128
 
-    golden = np.fromfile(args.golden, dtype=np.float16)
-    actual = np.fromfile(args.actual, dtype=np.float16)
-    if golden.shape != actual.shape:
-        raise ValueError(f"output size mismatch: {actual.size} != {golden.size}")
+DTYPE_CONFIG = {
+    "float16": {"np_dtype": np.float16, "ratio_tol": 1e-3},
+}
 
-    close = np.isclose(actual.astype(np.float32), golden.astype(np.float32), rtol=args.rtol, atol=args.atol)
-    if not np.all(close):
-        index = int(np.flatnonzero(~close)[0])
-        error = abs(float(actual[index]) - float(golden[index]))
+
+@dataclass(frozen=True)
+class VerifySummaryCfg:
+    num_elements: int
+    ratio_tol: float
+
+
+def _compute_ratio_error_mask(abs_diff, non_finite_mask, ratio_tol):
+    return (abs_diff > ratio_tol) | non_finite_mask
+
+
+def _ratio_label(ratio_tol):
+    return f"abs_diff > {ratio_tol:g}"
+
+
+def _max_abs_diff(abs_diff):
+    if not np.all(np.isfinite(abs_diff)):
+        return float("inf")
+    return float(np.max(abs_diff))
+
+
+def _print_summary(golden, actual, abs_diff, error_mask, config):
+    if config.num_elements <= FULL_TENSOR_PRINT_MAX_ELEMENTS:
+        print("\ncpu golden:\n", golden)
+        print("npu output:\n", actual)
+
+    error_count = int(np.count_nonzero(error_mask))
+    print(f"\n[verify] dtype=float16, elements={config.num_elements}")
+    print(f"  max abs diff: {_max_abs_diff(abs_diff):.6e}")
+    print(
+        f"  count({_ratio_label(config.ratio_tol)}): {error_count} / {config.num_elements}"
+    )
+
+
+def verify_result(golden_path, actual_path):
+    config = DTYPE_CONFIG["float16"]
+    ratio_tol = config["ratio_tol"]
+    golden = np.fromfile(golden_path, dtype=config["np_dtype"])
+    actual = np.fromfile(actual_path, dtype=config["np_dtype"])
+
+    if actual.size != golden.size:
         raise ValueError(
-            f"mismatch at {index}: expected {golden[index]}, got {actual[index]}, abs_error={error}")
-    max_error = float(np.max(np.abs(actual.astype(np.float32) - golden.astype(np.float32))))
-    print(f"[PASS] {actual.size} FP16 outputs, max_abs_error={max_error}")
+            f"NPU output size ({actual.size}) != CPU output size ({golden.size})"
+        )
+    if golden.size == 0:
+        raise ValueError("output tensor is empty")
+
+    golden_f32 = golden.astype(np.float32)
+    actual_f32 = actual.astype(np.float32)
+    abs_diff = np.abs(golden_f32 - actual_f32)
+    non_finite_mask = ~(
+        np.isfinite(golden_f32) & np.isfinite(actual_f32) & np.isfinite(abs_diff)
+    )
+    ratio_error_mask = _compute_ratio_error_mask(abs_diff, non_finite_mask, ratio_tol)
+
+    summary_cfg = VerifySummaryCfg(num_elements=golden.size, ratio_tol=ratio_tol)
+    _print_summary(golden, actual, abs_diff, ratio_error_mask, summary_cfg)
+
+    error_count = int(np.count_nonzero(ratio_error_mask))
+    error_ratio = error_count / golden.size
+    print(
+        f"ratio error count({_ratio_label(ratio_tol)}): {error_count}/{golden.size}, "
+        f"error ratio: {error_ratio:.6f}"
+    )
+
+    if error_ratio > ratio_tol:
+        first_error = int(np.flatnonzero(ratio_error_mask)[0])
+        print(
+            f"first error at {first_error}: expected={golden[first_error]}, "
+            f"actual={actual[first_error]}, abs_diff={abs_diff[first_error]}"
+        )
+
+    return error_ratio <= ratio_tol
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Verify NPU FP16 output against CPU golden data."
+    )
+    parser.add_argument("golden", help="Path to the CPU golden FP16 binary")
+    parser.add_argument("actual", help="Path to the NPU output FP16 binary")
+    return parser.parse_args()
+
+
+def main():
+    args = parse_args()
+    try:
+        if not verify_result(args.golden, args.actual):
+            ratio_tol = DTYPE_CONFIG["float16"]["ratio_tol"]
+            raise ValueError(
+                f"[ERROR] NPU results differ from CPU. The ratio of points with "
+                f"{_ratio_label(ratio_tol)} must be <= {ratio_tol:g}."
+            )
+        print("[PASS] NPU results are consistent with CPU.")
+        return 0
+    except (OSError, ValueError) as error:
+        print(error)
+        return 1
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
