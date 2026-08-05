@@ -42,6 +42,11 @@ set(OPS_TENSOR_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/..)
 set(BLAZE_INCLUDE_DIR ${OPS_TENSOR_ROOT}/include)
 set(EXAMPLES_COMMON_DIR ${CMAKE_CURRENT_SOURCE_DIR}/common)
 
+include(${OPS_TENSOR_ROOT}/cmake/variables.cmake)
+set(ASCEND_ARCH_DIR "${ARCH}-linux")
+
+message(STATUS "Examples CANN arch dir: ${ASCEND_ARCH_DIR}")
+
 ##############################################################################
 # 4. Public Include Directories
 ##############################################################################
@@ -57,7 +62,7 @@ include_directories(
     ${ASCEND_HOME_PATH}/pkg_inc/op_common/
     ${ASCEND_HOME_PATH}/pkg_inc/base/
     ${ASCEND_HOME_PATH}/pkg_inc/
-    ${ASCEND_HOME_PATH}/x86_64-linux/asc/include/tiling  # platform_ascendc.h
+    ${ASCEND_HOME_PATH}/${ASCEND_ARCH_DIR}/asc/include/tiling  # platform_ascendc.h
     ${ASCEND_HOME_PATH}/asc/impl/c_api  # instr_impl/ header resolution
     ${ASCEND_HOME_PATH}/asc/impl/utils  # impl/utils header resolution
 )
@@ -66,7 +71,7 @@ include_directories(
 # 5. Public Link Directories and Libraries
 ##############################################################################
 
-link_directories(${ASCEND_HOME_PATH}/lib64 ${ASCEND_HOME_PATH}/x86_64-linux/lib64)
+link_directories(${ASCEND_HOME_PATH}/lib64 ${ASCEND_HOME_PATH}/${ASCEND_ARCH_DIR}/lib64)
 link_libraries(ascendcl ascendc_runtime runtime mmpa c_sec dl)
 
 ##############################################################################
