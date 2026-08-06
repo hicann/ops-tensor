@@ -102,6 +102,7 @@ endmacro()
 
 add_subdirectory(mat_mul)
 add_subdirectory(transpose_batch_mat_mul)
+add_subdirectory(quant_batch_matmul_cube)
 add_subdirectory(weight_quant_batch_matmul_mx)
 add_subdirectory(quant_batch_matmul_mx)
 add_subdirectory(gmm)

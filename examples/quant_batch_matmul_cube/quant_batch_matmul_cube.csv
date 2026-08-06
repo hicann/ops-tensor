@@ -1,0 +1,7 @@
+casename,batch,M,K,N,AType,BType,CType,bias,biasType,transA,transB,x1quantmode,x2quantmode,x2ScaleType,baseM,baseN,baseK,kL1
+tt_nd,1,128,256,128,hifloat8_t,hifloat8_t,bfloat16_t,0,float,false,false,pertensor,pertensor,float,128,128,64,128
+tc_nd_transb,1,128,256,128,hifloat8_t,hifloat8_t,bfloat16_t,128,float,false,true,default,perchannel,uint64_t,128,128,64,128
+tc_nd_batch,2,128,256,128,hifloat8_t,hifloat8_t,bfloat16_t,0,float,false,false,default,perchannel,uint64_t,256,256,128,128
+int8_int32_nd,1,128,256,128,int8_t,int8_t,int32_t,0,int32_t,false,false,default,default,float,128,128,64,128
+int8_int32_nd_transab,1,128,256,128,int8_t,int8_t,int32_t,128,int32_t,true,true,default,default,float,128,128,64,128
+int8_int32_nd_batch_transb,2,128,256,128,int8_t,int8_t,int32_t,128,int32_t,false,true,default,default,float,256,256,128,128
