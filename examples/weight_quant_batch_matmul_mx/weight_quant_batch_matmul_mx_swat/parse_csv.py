@@ -27,8 +27,10 @@ import sys
 
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-CSV_PATH = os.path.join(SCRIPT_DIR, "weight_quant_batch_matmul_mx.csv")
-RESULT_CSV_PATH = os.path.join(SCRIPT_DIR, "weight_quant_batch_matmul_mx_result.csv")
+CSV_PATH = os.path.join(SCRIPT_DIR, "weight_quant_batch_matmul_mx_swat.csv")
+RESULT_CSV_PATH = os.path.join(
+    SCRIPT_DIR, "weight_quant_batch_matmul_mx_swat_result.csv"
+)
 SCRIPTS_DIR = os.path.join(os.path.dirname(SCRIPT_DIR), "scripts")
 DATA_ROOT = os.path.join(SCRIPT_DIR, "data")
 
@@ -137,9 +139,9 @@ def main():
     executable_path = os.path.join(
         SCRIPT_DIR,
         "build",
-        "quant_batch_matmul_mx",
         "weight_quant_batch_matmul_mx",
-        "weight_quant_batch_matmul_mx",
+        "weight_quant_batch_matmul_mx_swat",
+        "weight_quant_batch_matmul_mx_swat",
     )
     if len(sys.argv) >= 4:
         executable_path = sys.argv[1]

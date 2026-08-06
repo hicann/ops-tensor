@@ -103,10 +103,6 @@ examples/
 | L2 | `examples/{op}/` | `add_subdirectory()` 加载子场景 |
 | L3 | `examples/{op}/{example}/` | `ops_example_add_executable()` 注册可执行样例 |
 
-MXA8W4 QBMM 使用独立的数据流目录，不归入 `mat_mul`：
-`examples/quant_batch_matmul_mx/weight_quant_batch_matmul_mx/`。数据生成和 golden 校验脚本位于算子级
-`examples/quant_batch_matmul_mx/scripts/`，CSV 驱动脚本位于场景目录；新增模板实现时在同级增加子目录。
-
 ## 4. 执行方法
 
 ### 4.1 通过 build.sh 执行（推荐）
@@ -119,9 +115,6 @@ bash build.sh --examples --ops=mat_mul
 
 # 运行指定场景
 bash build.sh --examples --ops=mat_mul --target=mat_mul_streamk
-
-# QBMM MXA8W4 Blaze 模板
-bash build.sh --examples --ops=quant_batch_matmul_mx --target=weight_quant_batch_matmul_mx
 
 # 运行所有算子的所有场景
 bash build.sh --examples

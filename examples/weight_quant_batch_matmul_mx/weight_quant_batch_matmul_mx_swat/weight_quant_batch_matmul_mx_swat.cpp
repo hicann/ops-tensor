@@ -9,7 +9,7 @@
  */
 
 /*!
- * \file weight_quant_batch_matmul_mx.cpp
+ * \file weight_quant_batch_matmul_mx_swat.cpp
  * \brief CSV-driven weight-only MX quantized matmul example for ND and NZ weights.
  */
 
@@ -71,9 +71,9 @@ bool ParseArgs(int argc, const char** argv, ExampleConfig& config)
 {
     if (argc != 16) {
         std::fprintf(stderr,
-            "Usage: %s <m> <k> <n> <bias_elements> <layout> <base_m> <base_n> <base_k>"
-            " <tile_k_l1> <scale_k_l1> <k_bub> <n_bub> <l1_buffers> <block_num> <data_dir>\n",
-            argv[0]);
+                     "Usage: %s <m> <k> <n> <bias_elements> <layout> <base_m> <base_n> <base_k>"
+                     " <tile_k_l1> <scale_k_l1> <k_bub> <n_bub> <l1_buffers> <block_num> <data_dir>\n",
+                     argv[0]);
         return false;
     }
 
@@ -155,10 +155,7 @@ public:
     DeviceBuffer(const DeviceBuffer&) = delete;
     DeviceBuffer& operator=(const DeviceBuffer&) = delete;
 
-    uint8_t* Get() const
-    {
-        return data_;
-    }
+    uint8_t* Get() const { return data_; }
 
     void CopyFromFile(const std::string& path) const
     {
@@ -184,10 +181,12 @@ private:
 };
 
 template <bool WeightNz>
-__global__ __aicore__ void QuantBatchMatmulMxKernel(
-    GM_ADDR aGm, GM_ADDR bGm, GM_ADDR biasGm, GM_ADDR scaleAGm, GM_ADDR scaleBGm, GM_ADDR cGm,
-    int64_t m, int64_t k, int64_t n, uint64_t baseM, uint64_t baseN, uint64_t baseK, uint64_t tileShapeKL1,
-    uint64_t tileShapeScaleKL1, uint64_t kBubSize, uint64_t nBubSize, uint64_t l1BufferNum, uint64_t biasElements)
+__global__ __aicore__ void QuantBatchMatmulMxKernel(GM_ADDR aGm, GM_ADDR bGm, GM_ADDR biasGm, GM_ADDR scaleAGm,
+                                                    GM_ADDR scaleBGm, GM_ADDR cGm, int64_t m, int64_t k, int64_t n,
+                                                    uint64_t baseM, uint64_t baseN, uint64_t baseK,
+                                                    uint64_t tileShapeKL1, uint64_t tileShapeScaleKL1,
+                                                    uint64_t kBubSize, uint64_t nBubSize, uint64_t l1BufferNum,
+                                                    uint64_t biasElements)
 {
     KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_MIX_AIC_1_2);
     AscendC::InitSocState();
@@ -214,11 +213,9 @@ __global__ __aicore__ void QuantBatchMatmulMxKernel(
     typename Kernel::Params params{
         AscendC::Te::MakeShape(m, n, k),
         {aGm, scaleAGm, scaleBGm, cGm,
-         AscendC::Te::MakeShape(
-             static_cast<int64_t>(baseM), static_cast<int64_t>(baseN), static_cast<int64_t>(tileShapeKL1),
-             static_cast<int64_t>(tileShapeScaleKL1)),
-         AscendC::Te::MakeShape(
-             static_cast<int64_t>(baseM), static_cast<int64_t>(baseN), static_cast<int64_t>(baseK)),
+         AscendC::Te::MakeShape(static_cast<int64_t>(baseM), static_cast<int64_t>(baseN),
+                                static_cast<int64_t>(tileShapeKL1), static_cast<int64_t>(tileShapeScaleKL1)),
+         AscendC::Te::MakeShape(static_cast<int64_t>(baseM), static_cast<int64_t>(baseN), static_cast<int64_t>(baseK)),
          l1BufferNum, biasElements != 0U},
         {bGm, biasGm, kBubSize, nBubSize},
         {baseM, baseN, 1U, 1U, 1U, 1U, 0U, 0U}};
@@ -230,7 +227,8 @@ template <bool WeightNz>
 void RunCase(const ExampleConfig& config, aclrtStream stream)
 {
     const uint64_t weightElements = WeightNz ? AlignUp(static_cast<uint64_t>(config.k), 32U) *
-        AlignUp(static_cast<uint64_t>(config.n), 16U) : static_cast<uint64_t>(config.k * config.n);
+                                                   AlignUp(static_cast<uint64_t>(config.n), 16U) :
+                                               static_cast<uint64_t>(config.k * config.n);
     const uint64_t scaleK = AlignUp(static_cast<uint64_t>(config.k), 64U) / 32U;
     const size_t aSize = static_cast<size_t>(config.m * config.k);
     const size_t bSize = static_cast<size_t>(weightElements / FP4_PACK_FACTOR);
@@ -252,11 +250,10 @@ void RunCase(const ExampleConfig& config, aclrtStream stream)
     scaleB.CopyFromFile(config.dataDir + "/scale_b.bin");
     c.CopyFromFile(config.dataDir + "/initial_c.bin");
 
-    QuantBatchMatmulMxKernel<WeightNz>
-        <<<config.blockNum, 0, stream>>>(
-            a.Get(), b.Get(), bias.Get(), scaleA.Get(), scaleB.Get(), c.Get(), config.m, config.k, config.n,
-            config.baseM, config.baseN, config.baseK, config.tileShapeKL1, config.tileShapeScaleKL1, config.kBubSize,
-            config.nBubSize, config.l1BufferNum, config.biasElements);
+    QuantBatchMatmulMxKernel<WeightNz><<<config.blockNum, 0, stream>>>(
+        a.Get(), b.Get(), bias.Get(), scaleA.Get(), scaleB.Get(), c.Get(), config.m, config.k, config.n, config.baseM,
+        config.baseN, config.baseK, config.tileShapeKL1, config.tileShapeScaleKL1, config.kBubSize, config.nBubSize,
+        config.l1BufferNum, config.biasElements);
     ACL_CHECK(aclrtSynchronizeStream(stream));
     c.CopyToFile(config.dataDir + "/npu_out.bin");
 }

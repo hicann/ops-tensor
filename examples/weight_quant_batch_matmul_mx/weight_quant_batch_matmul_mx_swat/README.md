@@ -1,12 +1,12 @@
-# weight_quant_batch_matmul_mx Example
+# weight_quant_batch_matmul_mx_swat Example
 
 ## 概述
 
 本示例演示基于 Blaze 框架的 Weight Quant Batch MatMul MX 算子在昇腾 NPU 上的实现。该算子使用
 FP8 E4M3 激活、打包的 FP4 E2M1 权重和 E8M0 MX Scale 完成矩阵乘，并输出 FP16 结果。
 
-- **算子**: quant_batch_matmul_mx
-- **场景**: weight_quant_batch_matmul_mx
+- **算子**: weight_quant_batch_matmul_mx
+- **场景**: weight_quant_batch_matmul_mx_swat
 - **算法特点**: 支持 Weight ND 和 Weight NZ 布局，以及可选的 FP16 Bias
 - **参考实现**: 基于 Blaze 框架 `blaze/gemm/kernel/kernel_matmul_mix_weight_prologue.h`
 
@@ -52,19 +52,19 @@ kernel 执行和精度验证：
 ```bash
 python3 -m pip install numpy ml_dtypes
 source /path/to/cann/set_env.sh
-bash run.sh --case=weight_quant_batch_matmul_mx.csv
+bash run.sh --case=weight_quant_batch_matmul_mx_swat.csv
 ```
 
 仅编译或复用已有构建结果：
 
 ```bash
 bash run.sh --build-only
-bash run.sh --case=weight_quant_batch_matmul_mx.csv --skip-build
+bash run.sh --case=weight_quant_batch_matmul_mx_swat.csv --skip-build
 ```
 
 ### 测试用例定义
 
-测试用例定义在 `weight_quant_batch_matmul_mx.csv` 中，格式如下：
+测试用例定义在 `weight_quant_batch_matmul_mx_swat.csv` 中，格式如下：
 
 ```csv
 casename,m,k,n,bias,layout,base_m,base_n,base_k,tile_k_l1,scale_k_l1,k_bub,n_bub,l1_buffers,block_num
@@ -89,7 +89,7 @@ NZ_multik_tail_n_bias,32,128,40,40,NZ,32,32,64,64,64,64,32,2,1
 
 ### 结果输出
 
-执行完成后结果写入 `weight_quant_batch_matmul_mx_result.csv`。
+执行完成后结果写入 `weight_quant_batch_matmul_mx_swat_result.csv`。
 
 ## 数据与校验
 
@@ -121,13 +121,13 @@ NZ_multik_tail_n_bias,32,128,40,40,NZ,32,32,64,64,64,64,32,2,1
 ## 代码结构
 
 ```text
-weight_quant_batch_matmul_mx/
-├── CMakeLists.txt                         # 构建配置
-├── weight_quant_batch_matmul_mx.cpp      # Kernel 和 Host 侧执行代码
-├── weight_quant_batch_matmul_mx.csv      # CSV 测试用例
-├── parse_csv.py                           # CSV 解析与批量执行
-├── run.sh                                 # 编译、运行、验证和清理脚本
-└── README.md                              # 本文档
+weight_quant_batch_matmul_mx_swat/
+├── CMakeLists.txt                              # 构建配置
+├── weight_quant_batch_matmul_mx_swat.cpp      # Kernel 和 Host 侧执行代码
+├── weight_quant_batch_matmul_mx_swat.csv      # CSV 测试用例
+├── parse_csv.py                                # CSV 解析与批量执行
+├── run.sh                                      # 编译、运行、验证和清理脚本
+└── README.md                                   # 本文档
 ```
 
 ## Blaze 组件

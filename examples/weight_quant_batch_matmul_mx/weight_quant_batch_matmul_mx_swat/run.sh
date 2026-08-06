@@ -40,20 +40,20 @@ declare -A EXAMPLE_BASE_M EXAMPLE_BASE_N EXAMPLE_BASE_K
 declare -A EXAMPLE_TILE_K_L1 EXAMPLE_SCALE_K_L1 EXAMPLE_K_BUB EXAMPLE_N_BUB
 declare -A EXAMPLE_L1_BUFFERS EXAMPLE_BLOCK_NUM
 
-EXAMPLE_M[weight_quant_batch_matmul_mx]=32
-EXAMPLE_K[weight_quant_batch_matmul_mx]=128
-EXAMPLE_N[weight_quant_batch_matmul_mx]=40
-EXAMPLE_BIAS[weight_quant_batch_matmul_mx]=0
-EXAMPLE_LAYOUT[weight_quant_batch_matmul_mx]=ND
-EXAMPLE_BASE_M[weight_quant_batch_matmul_mx]=32
-EXAMPLE_BASE_N[weight_quant_batch_matmul_mx]=32
-EXAMPLE_BASE_K[weight_quant_batch_matmul_mx]=64
-EXAMPLE_TILE_K_L1[weight_quant_batch_matmul_mx]=64
-EXAMPLE_SCALE_K_L1[weight_quant_batch_matmul_mx]=64
-EXAMPLE_K_BUB[weight_quant_batch_matmul_mx]=64
-EXAMPLE_N_BUB[weight_quant_batch_matmul_mx]=32
-EXAMPLE_L1_BUFFERS[weight_quant_batch_matmul_mx]=2
-EXAMPLE_BLOCK_NUM[weight_quant_batch_matmul_mx]=1
+EXAMPLE_M[weight_quant_batch_matmul_mx_swat]=32
+EXAMPLE_K[weight_quant_batch_matmul_mx_swat]=128
+EXAMPLE_N[weight_quant_batch_matmul_mx_swat]=40
+EXAMPLE_BIAS[weight_quant_batch_matmul_mx_swat]=0
+EXAMPLE_LAYOUT[weight_quant_batch_matmul_mx_swat]=ND
+EXAMPLE_BASE_M[weight_quant_batch_matmul_mx_swat]=32
+EXAMPLE_BASE_N[weight_quant_batch_matmul_mx_swat]=32
+EXAMPLE_BASE_K[weight_quant_batch_matmul_mx_swat]=64
+EXAMPLE_TILE_K_L1[weight_quant_batch_matmul_mx_swat]=64
+EXAMPLE_SCALE_K_L1[weight_quant_batch_matmul_mx_swat]=64
+EXAMPLE_K_BUB[weight_quant_batch_matmul_mx_swat]=64
+EXAMPLE_N_BUB[weight_quant_batch_matmul_mx_swat]=32
+EXAMPLE_L1_BUFFERS[weight_quant_batch_matmul_mx_swat]=2
+EXAMPLE_BLOCK_NUM[weight_quant_batch_matmul_mx_swat]=1
 
 # ── CLI Defaults ──────────────────────────────────────────────────────────────
 TARGET=""
@@ -254,7 +254,7 @@ resolve_params() {
 source "${EXAMPLES_COMMON_DIR}/submodule_utils.sh"
 
 do_build() {
-    local target="${EXAMPLE:-${TARGET:-weight_quant_batch_matmul_mx}}"
+    local target="${EXAMPLE:-${TARGET:-weight_quant_batch_matmul_mx_swat}}"
     log_info "Building ${SCENARIO_NAME} ..."
 
     if ! ensure_tensor_api_submodule "${REPO_ROOT}"; then
@@ -292,7 +292,7 @@ do_gen_data() {
 do_run() {
     log_info "Running ${EXAMPLE} ..."
 
-    local exec_path="${BUILD_DIR}/quant_batch_matmul_mx/${SCENARIO_NAME}/${EXAMPLE}"
+    local exec_path="${BUILD_DIR}/weight_quant_batch_matmul_mx/${SCENARIO_NAME}/${EXAMPLE}"
     if [[ ! -x "${exec_path}" ]]; then
         log_error "Executable not found: ${exec_path}"
         return 1
@@ -339,8 +339,8 @@ run_csv_cases() {
         return 1
     fi
 
-    local target="${TARGET:-weight_quant_batch_matmul_mx}"
-    local executable="${BUILD_DIR}/quant_batch_matmul_mx/${SCENARIO_NAME}/${target}"
+    local target="${TARGET:-weight_quant_batch_matmul_mx_swat}"
+    local executable="${BUILD_DIR}/weight_quant_batch_matmul_mx/${SCENARIO_NAME}/${target}"
 
     if [[ ! -x "$executable" ]]; then
         log_error "Executable not found: $executable"
@@ -374,7 +374,7 @@ run_example() {
     echo "  base:    ${BASE_M_RESOLVED} x ${BASE_N_RESOLVED} x ${BASE_K_RESOLVED}"
     echo "========================================================================"
 
-    local exec_path="${BUILD_DIR}/quant_batch_matmul_mx/${SCENARIO_NAME}/${EXAMPLE}"
+    local exec_path="${BUILD_DIR}/weight_quant_batch_matmul_mx/${SCENARIO_NAME}/${EXAMPLE}"
     if [[ "$SKIP_BUILD" != true ]]; then
         if ! do_build; then
             log_error "build examples:${SCENARIO_NAME} failed"
@@ -412,7 +412,7 @@ run_example() {
 # ── Main ──────────────────────────────────────────────────────────────────────
 main() {
     echo "=========================================="
-    echo "  weight_quant_batch_matmul_mx Runner"
+    echo "  weight_quant_batch_matmul_mx_swat Runner"
     echo "  Scenario: ${SCENARIO_NAME}"
     echo "=========================================="
 
