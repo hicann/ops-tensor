@@ -38,6 +38,7 @@ struct KernelMmadMultiBlockFixpipeOpti {};      // Multi-tile FixpipeOpti
 struct KernelMmadMultiBlockTBMM {};             // tbmm schedule
 struct KernelMixWithWeightPrologue {};          // Mix matmul with AIV weight preprocessing
 struct KernelGmmSwiGluMixMx {};                 // MIX AIC+AIV schedule for GroupedMatmul + SwiGLU + MX quant
+struct KernelMatmulEmuSplitWeight {};           // Double bf16 matmul to simulate fp32 (AIC+AIV)
 enum class MatMulL0C2Out : std::uint8_t { ON_THE_FLY = 0, ND_FIXPIPE_1_1 = 1, ND_FIXPIPE_1_2 = 2 };
 
 /**
@@ -155,6 +156,14 @@ struct MatmulMultiBlockBasic {
     static constexpr uint64_t FULL_LOAD_MODE = FullLoadMode_;
     static constexpr uint64_t FUSED_OP_TYPE = FusedOpType_;
     static constexpr uint64_t NON_CONTIGUOUS_TYPE = NonContiguousType_;
+};
+
+/**
+ * @struct MatmulEmuSplitWeightPolicy
+ * @brief Dual matmul add dispatch policy for AIC+AIV fused dual-weight matmul (Tensor API / Blaze)
+ */
+struct MatmulEmuSplitWeightPolicy {
+    using ScheduleType = KernelMatmulEmuSplitWeight;
 };
 
 /**

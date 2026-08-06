@@ -247,5 +247,13 @@ __aicore__ inline void UnsetHF32(uint8_t isHf32)
     }
 }
 
+__aicore__ inline uint64_t GetCurrentBlockIdx()
+{
+    if ASCEND_IS_AIV {
+        return AscendC::GetBlockIdx() / AscendC::GetTaskRation();
+    }
+    return AscendC::GetBlockIdx();
+}
+
 } // namespace Gemm
 } // namespace Blaze
