@@ -1,0 +1,14 @@
+casename,e,m,k,n,dtype,transA,transB,format,weight_mode,bias,group_list_type,l1_buffer_stage
+qgmm_mgroup_e1_m16_k64_n64_fp8_e4m3_weight_nd_single_length_l1_2,1,16,64,64,mxfp8_e4m3,false,false,"(ND,ND)",single,false,length,2
+qgmm_mgroup_e2_m24_k64_n48_fp8_e5m2_weight_nd_single_tail_length_l1_2,2,24,64,48,mxfp8_e5m2,false,false,"(ND,ND)",single,false,length,2
+qgmm_mgroup_e4_m32_k128_n64_fp4_e2m1_weight_nd_single_length_l1_2,4,32,128,64,mxfp4_e2m1,false,false,"(ND,ND)",single,false,length,2
+qgmm_mgroup_e2_m16_k64_n64_fp8_e5m2_weight_nd_transpose_single_length_l1_2,2,16,64,64,mxfp8_e5m2,false,true,"(ND,DN)",single,false,length,2
+qgmm_mgroup_e2_m24_k64_n48_fp8_e4m3_weight_nz_single_length_l1_2,2,24,64,48,mxfp8_e4m3,false,false,"(ND,NZ)",single,false,length,2
+qgmm_mgroup_e2_m16_k64_n64_fp8_e4m3_weight_nz_transpose_single_length_l1_2,2,16,64,64,mxfp8_e4m3,false,true,"(ND,ZN)",single,false,length,2
+qgmm_mgroup_e2_m16_k64_n64_fp4_e2m1_weight_nd_transpose_single_length_l1_2,2,16,64,64,mxfp4_e2m1,false,true,"(ND,DN)",single,false,length,2
+qgmm_mgroup_e2_m16_k64_n64_fp4_e2m1_weight_nd_single_bias_offset_l1_2,2,16,64,64,mxfp4_e2m1,false,false,"(ND,ND)",single,true,offset,2
+qgmm_mgroup_e3_m16_k64_n64_fp8_e4m3_weight_nz_multi_length_l1_2,3,16,64,64,mxfp8_e4m3,false,false,"(ND,NZ)",multi,false,length,2
+qgmm_mgroup_e2_m32_k128_n64_fp4_e2m1_weight_nz_multi_length_l1_2,2,32,128,64,mxfp4_e2m1,false,false,"(ND,NZ)",multi,false,length,2
+qgmm_mgroup_e2_m32_k128_n64_fp4_e1m2_weight_nz_multi_length_l1_2,2,32,128,64,mxfp4_e1m2,false,false,"(ND,NZ)",multi,false,length,2
+qgmm_mgroup_e2_m16_k64_n64_fp8_e4m3_weight_nd_single_sparse_l1_2,2,16,64,64,mxfp8_e4m3,false,false,"(ND,ND)",single,false,sparse,2
+qgmm_mgroup_e2_m64_k192_n128_fp8_e4m3_weight_nd_single_length_l1_3,2,64,192,128,mxfp8_e4m3,false,false,"(ND,ND)",single,false,length,3
