@@ -192,6 +192,20 @@ __aicore__ inline T Min(T a, T b)
     return a > b ? b : a;
 }
 
+__aicore__ inline uint32_t Float32ToBits(float value)
+{
+    uint32_t bits;
+    __builtin_memcpy(&bits, &value, sizeof(bits));
+    return bits;
+}
+
+__aicore__ inline float BitsToFloat32(uint32_t bits)
+{
+    float value;
+    __builtin_memcpy(&value, &bits, sizeof(value));
+    return value;
+}
+
 __aicore__ inline int64_t GetPerBlockNum(int64_t coreNum, int64_t mTileNum, int64_t nTileNum, int64_t b = 1)
 {
     int64_t perCoreBlockNum = Blaze::Gemm::CeilDiv(mTileNum * nTileNum * b, coreNum);

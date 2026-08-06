@@ -101,7 +101,7 @@ Tensor和Layout关系如下：
 **为什么需要分形格式？**
 
 AI Core 中的 Cube 单元是专为矩阵运算优化的硬件模块，其计算模式并非逐元素操作，而是每次以小数据块(16×16×16)为单位进行并行计算（以half数据类型为例）。为了在一个时钟周期内高效地为计算单元提供数据，内存中的数据必须满足以下条件：
- 
+
 - **连续访问**：计算所需的数据块应尽量连续存储，以最大化内存带宽利用率。
 
 - **数据复用**：合理安排数据布局，使已加载的数据能在多次计算中被重复使用，减少数据搬运开销。
@@ -197,10 +197,10 @@ using MakeLayoutA = AscendC::Te::FrameLayoutFormat<
     LayoutA,                                   // Layout Pattern
     AscendC::Std::Int<C0_ELEMENT<AType>>>;     // C0对齐元素数
 using MakeLayoutB = AscendC::Te::FrameLayoutFormat<
-    LayoutB, 
+    LayoutB,
     AscendC::Std::Int<C0_ELEMENT<BType>>>;
 using MakeLayoutC = AscendC::Te::FrameLayoutFormat<
-    LayoutC, 
+    LayoutC,
     AscendC::Std::Int<C0_ELEMENT<CType>>>;
 
 // 3. Layout实例化
@@ -282,7 +282,8 @@ blaze/
 ├── include/blaze/
 │   ├── epilogue/            # Epilogue 层组件
 │   │   ├── block_epilogue_empty.h
-│   │   └── block_epilogue_matmul_streamk.h
+│   │   ├── block_epilogue_matmul_streamk.h
+│   │   └── block_epilogue_qbmm_pertensor_streamk.h
 |   └── gemm/
 │       ├── kernel/              # Kernel 层组件
 │       │   ├── kernel_matmul_basic.h
@@ -291,7 +292,8 @@ blaze/
 │       │   ├── kernel_qbmm_mx.h
 │       │   ├── kernel_qbmm_mx_without_batch.h
 │       │   ├── kernel_matmul_mix_weight_prologue.h
-│       │   └── kernel_qbmm_streamk.h
+│       │   ├── kernel_qbmm_streamk.h
+│       │   └── kernel_qbmm_pertensor_streamk.h
 │       │
 │       ├── block/               # Block 层组件
 │       │   ├── block_mmad.h          # BlockMmad 基类

@@ -2,7 +2,7 @@
 > [代码位置](../../../../include/blaze/gemm/block/block_mmad_a8w8_fixpipe_quant.h)
 
 ## 功能说明
-Fixpipe 量化矩阵乘 Block，基于 Tensor API 实现，仅支持 AIC 计算。该组件执行由 `AType/BType` 指定的量化 A/B Cube Mmad 累加，并在 L0C 搬出阶段通过 Fixpipe 完成反量化，适用于 QBMM Cube Kernel 场景。文件名沿用 A8W8 路径命名，但实际输入类型不限定为 `int8_t`。
+Fixpipe 量化矩阵乘 Block，基于 Tensor API 实现，仅支持 AIC 计算。该组件执行由 `AType/BType` 指定的量化 A/B Cube Mmad 累加，并根据调度策略选择 L0C 输出方式：普通 QBMM 和 StreamK 的 DP block 通过 Fixpipe 反量化写入 C GM，StreamK 的 SK block 将原始累加值写入 workspace，等待 AIV 归约后统一反量化。文件名沿用 A8W8 路径命名，但实际输入类型不限定为 `int8_t`。
 
 **继承自**：[Block Mmad 基础框架](./block_mmad.md)
 
@@ -14,10 +14,11 @@ Fixpipe 量化矩阵乘 Block，基于 Tensor API 实现，仅支持 AIC 计算�
 - `MatmulWithScaleFixpipeQuant<A_FULL_LOAD_MODE>`（A 矩阵全载模式）
 - `MatmulWithScaleFixpipeQuant<0, true>`（Atomic Add 非全载模式）
 - `MatmulWithScaleFixpipeQuant<A_FULL_LOAD_MODE, true>`（Atomic Add A 矩阵全载模式）
+- `MatmulWithScaleFixpipeQuant<0, false, KernelQbmmPertensorMultiBlockStreamK>`（QBMM per-tensor StreamK，DP/SK 混合输出）
 
-`MatmulWithScaleFixpipeQuant` 的 `ScheduleType` 固定为 `KernelMmadWithScaleFixpipeQuant`。Atomic Add 标志由 Kernel 层读取并配置，Block 内部不直接设置 atomic 状态。
+`MatmulWithScaleFixpipeQuant` 默认使用 `KernelMmadWithScaleFixpipeQuant`，不编译 workspace 输出分支；传入 `KernelQbmmPertensorMultiBlockStreamK` 后，Block 通过 `ScheduleType` 编译期判断开启 raw workspace 输出能力。Atomic Add 标志由 Kernel 层读取并配置，Block 内部不直接设置 atomic 状态。
 
-不支持 `MatmulWithScaleMx`、`GroupedMatmulWithScaleMx`、`MatmulMultiBlockBasic` 或 `MatmulMultiBlockWithStreamK`。
+不支持 `MatmulWithScaleMx`、`GroupedMatmulWithScaleMx` 或 `MatmulMultiBlockBasic`。
 
 ### 量化数据类型支持
 | 数据类型 | 说明 | C0_SIZE |
@@ -44,9 +45,14 @@ Fixpipe 反量化使用 X2 scale，支持两类输入方式：
 仅支持 AIC 模式，不支持 AIV 计算。
 
 ### 输出目标
-结果直接输出到 GM，不支持 workspace。输出类型由 `CType` 指定：
+普通 QBMM 以及 StreamK DP block 直接输出到 C GM：
 - `CType = int32_t`：L0C 累加结果直接搬出。
 - `CType = half/bfloat16_t/float`：通过 Fixpipe 搬出并应用 scalar/per-channel scale。
+
+StreamK SK block 输出到 workspace GM：
+- workspace 类型与 `L0CType` 相同；
+- 搬出时不传入 scale，不执行反量化；
+- 当前 K 分片的 raw partial 由 `BlockEpilogueQbmmPertensorStreamK` 归约后统一反量化。
 
 ### L1 切分要求
 - `kAL1`：A 矩阵 L1 K 轴切分大小。
@@ -67,7 +73,7 @@ using MmadAtomT = AscendC::Te::MmadAtom<
 AscendC::Te::Mmad(MmadAtomT{}.with(mmadParams), c1Local, l0aLocal, l0bLocal);
 ```
 
-Bias 仅在首个 K-L1/L0 迭代搬入 BT 并参与 Mmad。
+Bias 仅在首个 K-L1/L0 迭代搬入 BT 并参与 Mmad。StreamK SK block 还要求 `kCntIndex == 0`，确保反量化前 bias 在多个 K 分片中只累加一次。需要在反量化后处理的 bias 不应传给本 Block；包含 DP block 的上层通路应在 tiling 阶段拒绝此类组合。
 
 ## 特殊静态常量
 

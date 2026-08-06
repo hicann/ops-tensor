@@ -29,6 +29,7 @@ struct KernelMmadWithScaleMix {};               // Multi-block with fixpipe mix 
 struct KernelMmadWithScaleMixWithoutBatch {};   // Multi-block with fixpipe mix scale (WeightNZ), without batch
 struct KernelMultiBlockStreamK {};              // Multi-tile transfer with K-axis spliting and caching
 struct KernelQbmmMultiBlockStreamK {};          // QBMM MX StreamK schedule
+struct KernelQbmmPertensorMultiBlockStreamK {}; // QBMM per-tensor StreamK schedule
 struct KernelMmadMultiBlockBasic {};            // Multi-tile basic
 struct KernelIterBatchBroadcast {};             // Multi-tile batchMatmul broadcast + iterbatch
 struct KernelMmadMultiBlockBmmBroadcast {};     // Multi-tile batchMatmul broadcast
@@ -46,10 +47,11 @@ enum class MatMulL0C2Out : std::uint8_t { ON_THE_FLY = 0, ND_FIXPIPE_1_1 = 1, ND
  * @brief Quantized fixpipe matmul with scale and fixpipe dequant (Tensor API / Blaze)
  * @param [in] FullLoadMode_: full-load mode, 0 = none, A_FULL_LOAD_MODE = A full load
  * @param [in] AtomicAdd_: whether to enable atomic add on output
+ * @param [in] ScheduleType_: kernel schedule
  */
-template <uint64_t FullLoadMode_ = 0, bool AtomicAdd_ = false>
+template <uint64_t FullLoadMode_ = 0, bool AtomicAdd_ = false, class ScheduleType_ = KernelMmadWithScaleFixpipeQuant>
 struct MatmulWithScaleFixpipeQuant {
-    using ScheduleType = KernelMmadWithScaleFixpipeQuant;
+    using ScheduleType = ScheduleType_;
     static constexpr uint64_t FULL_LOAD_MODE = FullLoadMode_;
     static constexpr bool IS_ATOMIC_ADD = AtomicAdd_;
 };
