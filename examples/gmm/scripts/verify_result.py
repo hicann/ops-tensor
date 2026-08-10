@@ -22,6 +22,9 @@ def main():
     parser.add_argument("actual")
     parser.add_argument("--rtol", type=float, default=1e-3)
     parser.add_argument("--atol", type=float, default=1e-3)
+    parser.add_argument("--groups", type=int, default=1)
+    parser.add_argument("--m", type=int)
+    parser.add_argument("--n", type=int)
     args = parser.parse_args()
     golden = np.fromfile(args.golden, dtype=np.float32)
     actual = np.fromfile(args.actual, dtype=np.float32)
@@ -30,6 +33,16 @@ def main():
             f"output size mismatch: actual={actual.size}, golden={golden.size}"
         )
     close = np.isclose(actual, golden, rtol=args.rtol, atol=args.atol, equal_nan=False)
+    if args.m and args.n and actual.size == args.groups * args.m * args.n:
+        grouped_actual = actual.reshape(args.groups, args.m, args.n)
+        grouped_golden = golden.reshape(args.groups, args.m, args.n)
+        for group_index in range(args.groups):
+            group_error = float(
+                np.max(
+                    np.abs(grouped_actual[group_index] - grouped_golden[group_index])
+                )
+            )
+            print(f"[INFO] group {group_index}: max_abs_error={group_error}")
     if not np.all(close):
         mismatch = np.flatnonzero(~close)
         index = int(mismatch[0])

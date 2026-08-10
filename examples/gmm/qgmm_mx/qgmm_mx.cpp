@@ -15,7 +15,7 @@
 
 /**
  * @file qgmm_mx.cpp
- * @brief QGMM MX grouped-matmul example covering MXFP4/MXFP8 and ND/DN/NZ/ZN weights.
+ * @brief QGMM MX grouped-matmul example covering MXFP4/MXFP8 and ND/NZ weights.
  */
 #ifndef K_MAX_SHAPE_DIM
 #define K_MAX_SHAPE_DIM 0
@@ -45,16 +45,16 @@ using NdLayout = AscendC::Te::NDExtLayoutPtn;
 template <typename T>
 inline constexpr bool IS_FP4_TYPE = std::is_same_v<T, fp4x2_e2m1_t> || std::is_same_v<T, fp4x2_e1m2_t>;
 
-template <typename AType, typename BType, typename LayoutA, typename LayoutB>
+template <typename AType, typename BType, typename LayoutA, typename LayoutB, uint64_t FullLoadMode>
 __global__ __aicore__ void qgmm_mx_kernel(GM_ADDR a, GM_ADDR b, GM_ADDR scaleA, GM_ADDR scaleB, GM_ADDR c, GM_ADDR bias,
                                           GM_ADDR groupList, uint32_t groupNum, int64_t m, int64_t n, int64_t k,
-                                          uint8_t singleW, uint8_t groupListType, uint8_t l1BufferStage,
-                                          uint8_t withBias)
+                                          uint32_t baseK, uint32_t tileKL1, uint32_t scaleKL1, uint8_t l1BufferStage,
+                                          uint8_t dbL0C, uint8_t singleW, uint8_t groupListType, uint8_t withBias)
 {
     KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_MIX_AIC_1_2);
     AscendC::InitSocState();
     using ProblemShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
-    using Policy = Blaze::Gemm::GroupedMatmulWithScaleMx<0>;
+    using Policy = Blaze::Gemm::GroupedMatmulWithScaleMx<FullLoadMode>;
     using Mmad = Blaze::Gemm::Block::BlockMmad<Policy, AType, LayoutA, BType, LayoutB, float, NdLayout, float,
                                                NdLayout>;
     using Kernel = Blaze::Gemm::Kernel::GemmUniversal<ProblemShape, Mmad, Blaze::Gemm::Block::BlockEpilogueEmpty,
@@ -68,7 +68,16 @@ __global__ __aicore__ void qgmm_mx_kernel(GM_ADDR a, GM_ADDR b, GM_ADDR scaleA, 
     p.mmadParams.scaleBGmAddr = scaleB;
     p.mmadParams.biasGmAddr = bias;
     p.groupListGmAddr = groupList;
-    p.gmmParams = {groupNum, m, n, k, 16, 64, 64, 64, 64, 2, 2, withBias, 1, l1BufferStage, 0, groupListType, singleW};
+    constexpr uint8_t groupType = std::is_same_v<LayoutA, AscendC::Te::DNExtLayoutPtn> ? 2 : 0;
+    p.gmmParams = {groupNum,  m,
+                   n,         k,
+                   16,        64,
+                   baseK,     tileKL1,
+                   tileKL1,   scaleKL1,
+                   scaleKL1,  withBias,
+                   dbL0C,     l1BufferStage,
+                   groupType, groupListType,
+                   singleW};
     Kernel kernel;
     kernel(p);
 }
@@ -120,6 +129,14 @@ struct DeviceBuffers {
     }
 };
 
+struct QgmmTilingConfig {
+    uint32_t baseK;
+    uint32_t tileKL1;
+    uint32_t scaleKL1;
+    uint8_t l1BufferStage;
+    uint8_t dbL0C;
+};
+
 void AllocateCommonBuffers(DeviceBuffers& device, const CaseBytes& bytes, size_t biasBytes, size_t groupListBytes)
 {
     ACL_CHECK(aclrtMalloc(reinterpret_cast<void**>(&device.a), bytes.a, ACL_MEM_MALLOC_HUGE_FIRST));
@@ -144,15 +161,17 @@ std::vector<uint8_t> ReadBinary(const std::string& path, size_t size)
     return data;
 }
 
-template <bool MultiTensor>
+template <bool MultiTensor, bool KGrouped>
 void PrepareWeightBuffers(DeviceBuffers& device, const CaseBytes& bytes, uint32_t groupNum, const std::string& dataDir)
 {
     if constexpr (!MultiTensor) {
-        ACL_CHECK(aclrtMalloc(reinterpret_cast<void**>(&device.b), groupNum * bytes.bGroup, ACL_MEM_MALLOC_HUGE_FIRST));
-        ACL_CHECK(aclrtMalloc(reinterpret_cast<void**>(&device.scaleB), groupNum * bytes.scaleBGroup,
+        const size_t tensorCount = KGrouped ? 1U : groupNum;
+        ACL_CHECK(
+            aclrtMalloc(reinterpret_cast<void**>(&device.b), tensorCount * bytes.bGroup, ACL_MEM_MALLOC_HUGE_FIRST));
+        ACL_CHECK(aclrtMalloc(reinterpret_cast<void**>(&device.scaleB), tensorCount * bytes.scaleBGroup,
                               ACL_MEM_MALLOC_HUGE_FIRST));
-        const auto allWeights = ReadBinary(dataDir + "/input_b.bin", groupNum * bytes.bGroup);
-        const auto allScales = ReadBinary(dataDir + "/scale_b.bin", groupNum * bytes.scaleBGroup);
+        const auto allWeights = ReadBinary(dataDir + "/input_b.bin", tensorCount * bytes.bGroup);
+        const auto allScales = ReadBinary(dataDir + "/scale_b.bin", tensorCount * bytes.scaleBGroup);
         ACL_CHECK(
             aclrtMemcpy(device.b, allWeights.size(), allWeights.data(), allWeights.size(), ACL_MEMCPY_HOST_TO_DEVICE));
         ACL_CHECK(aclrtMemcpy(device.scaleB, allScales.size(), allScales.data(), allScales.size(),
@@ -211,15 +230,16 @@ void WriteOutput(const std::string& outputPath, const std::vector<float>& output
     }
 }
 
-template <typename AType, typename BType, typename LayoutA, typename LayoutB, bool MultiTensor>
+template <typename AType, typename BType, typename LayoutA, typename LayoutB, bool MultiTensor, uint64_t FullLoadMode>
 void LaunchKernel(DeviceBuffers& device, const CaseBytes& bytes, uint32_t groupNum, int64_t m, int64_t n, int64_t k,
-                  uint8_t groupListType, uint8_t l1BufferStage, bool withBias, const std::string& outputPath)
+                  uint8_t groupListType, const QgmmTilingConfig& tiling, bool withBias, const std::string& outputPath)
 {
     aclrtStream stream = nullptr;
     ACL_CHECK(aclrtCreateStream(&stream));
-    qgmm_mx_kernel<AType, BType, LayoutA, LayoutB><<<static_cast<uint32_t>(GetAicCoreNum()), 0, stream>>>(
+    qgmm_mx_kernel<AType, BType, LayoutA, LayoutB, FullLoadMode><<<static_cast<uint32_t>(GetAicCoreNum()), 0, stream>>>(
         device.a, device.b, device.scaleA, device.scaleB, device.c, device.bias, device.groupList, groupNum, m, n, k,
-        MultiTensor ? 0 : 1, groupListType, l1BufferStage, withBias ? 1 : 0);
+        tiling.baseK, tiling.tileKL1, tiling.scaleKL1, tiling.l1BufferStage, tiling.dbL0C, MultiTensor ? 0 : 1,
+        groupListType, withBias ? 1 : 0);
     ACL_CHECK(aclrtSynchronizeStream(stream));
     std::vector<float> output(bytes.c / sizeof(float), -1.0f);
     ACL_CHECK(aclrtMemcpy(output.data(), bytes.c, device.c, bytes.c, ACL_MEMCPY_DEVICE_TO_HOST));
@@ -240,8 +260,8 @@ std::vector<int64_t> MakeGroupList(uint32_t groupNum, int64_t splitValue, uint8_
     return groupList;
 }
 
-template <typename AType, typename BType, typename LayoutA, typename LayoutB, bool MultiTensor>
-int RunCase(uint32_t groupNum, int64_t m, int64_t n, int64_t k, uint8_t groupListType, uint8_t l1BufferStage,
+template <typename AType, typename BType, typename LayoutA, typename LayoutB, bool MultiTensor, uint64_t FullLoadMode>
+int RunCase(uint32_t groupNum, int64_t m, int64_t n, int64_t k, uint8_t groupListType, const QgmmTilingConfig& tiling,
             bool withBias, const std::string& dataDir, const std::string& outputPath)
 {
     constexpr bool transA = std::is_same_v<LayoutA, AscendC::Te::DNExtLayoutPtn>;
@@ -253,62 +273,66 @@ int RunCase(uint32_t groupNum, int64_t m, int64_t n, int64_t k, uint8_t groupLis
     const size_t storedK = weightNz ? (transB ? ((k + c0 - 1U) / c0 * c0) : ((k + 15U) / 16U * 16U)) : k;
     const size_t storedN = weightNz ? (transB ? ((n + 15U) / 16U * 16U) : ((n + c0 - 1U) / c0 * c0)) : n;
     const size_t scaleK = static_cast<size_t>((k + 63) / 64) * 2U;
-    const size_t scaleFactor = transA ? 2U : 1U;
-    const CaseBytes bytes = {MxBytes<AType>(static_cast<size_t>(groupNum) * m * k), MxBytes<BType>(storedK * storedN),
-                             static_cast<size_t>(groupNum) * m * scaleK * scaleFactor * sizeof(ScaleType),
-                             static_cast<size_t>(n) * scaleK * scaleFactor * sizeof(ScaleType),
-                             static_cast<size_t>(transA ? m : groupNum * m) * n * sizeof(float)};
+    const size_t aElements = transA ? static_cast<size_t>(m * k) : static_cast<size_t>(groupNum) * m * k;
+    const size_t bElements = transA ? static_cast<size_t>(k * n) : storedK * storedN;
+    const size_t scaleAElements = transA ? (static_cast<size_t>(k / 64) + groupNum) * m * 2U :
+                                           static_cast<size_t>(groupNum) * m * scaleK;
+    const size_t scaleBElements = transA ? (static_cast<size_t>(k / 64) + groupNum) * n * 2U :
+                                           static_cast<size_t>(n) * scaleK;
+    const CaseBytes bytes = {MxBytes<AType>(aElements), MxBytes<BType>(bElements), scaleAElements * sizeof(ScaleType),
+                             scaleBElements * sizeof(ScaleType), static_cast<size_t>(groupNum) * m * n * sizeof(float)};
     const std::vector<int64_t> groupList = MakeGroupList(groupNum, transA ? k : m, groupListType);
     DeviceBuffers device(groupNum);
     AllocateCommonBuffers(device, bytes, static_cast<size_t>(groupNum) * n * sizeof(float),
                           groupList.size() * sizeof(int64_t));
-    PrepareWeightBuffers<MultiTensor>(device, bytes, groupNum, dataDir);
+    PrepareWeightBuffers<MultiTensor, transA>(device, bytes, groupNum, dataDir);
     CopyCommonInputs(device, bytes, static_cast<size_t>(groupNum) * n * sizeof(float),
                      groupList.size() * sizeof(int64_t), dataDir);
-    LaunchKernel<AType, BType, LayoutA, LayoutB, MultiTensor>(device, bytes, groupNum, m, n, k, groupListType,
-                                                              l1BufferStage, withBias, outputPath);
+    LaunchKernel<AType, BType, LayoutA, LayoutB, MultiTensor, FullLoadMode>(
+        device, bytes, groupNum, m, n, k, groupListType, tiling, withBias, outputPath);
     return 0;
 }
 
-template <typename T, typename LayoutA, typename LayoutB>
-int DispatchMulti(bool multi, uint32_t e, int64_t m, int64_t n, int64_t k, uint8_t groupListType, uint8_t l1BufferStage,
-                  bool withBias, const std::string& dataDir, const std::string& outputPath)
+template <typename T, typename LayoutA, typename LayoutB, uint64_t FullLoadMode>
+int DispatchMulti(bool multi, uint32_t e, int64_t m, int64_t n, int64_t k, uint8_t groupListType,
+                  const QgmmTilingConfig& tiling, bool withBias, const std::string& dataDir,
+                  const std::string& outputPath)
 {
-    return multi ? RunCase<T, T, LayoutA, LayoutB, true>(e, m, n, k, groupListType, l1BufferStage, withBias, dataDir,
-                                                         outputPath) :
-                   RunCase<T, T, LayoutA, LayoutB, false>(e, m, n, k, groupListType, l1BufferStage, withBias, dataDir,
-                                                          outputPath);
+    return multi ? RunCase<T, T, LayoutA, LayoutB, true, FullLoadMode>(e, m, n, k, groupListType, tiling, withBias,
+                                                                       dataDir, outputPath) :
+                   RunCase<T, T, LayoutA, LayoutB, false, FullLoadMode>(e, m, n, k, groupListType, tiling, withBias,
+                                                                        dataDir, outputPath);
 }
 
-template <typename T, typename LayoutA>
+template <typename T, typename LayoutA, uint64_t FullLoadMode>
 int DispatchFormat(const std::string& format, bool multi, uint32_t e, int64_t m, int64_t n, int64_t k,
-                   uint8_t groupListType, uint8_t l1BufferStage, bool withBias, const std::string& dataDir,
+                   uint8_t groupListType, const QgmmTilingConfig& tiling, bool withBias, const std::string& dataDir,
                    const std::string& outputPath)
 {
     if (format == "nd")
-        return DispatchMulti<T, LayoutA, NdLayout>(multi, e, m, n, k, groupListType, l1BufferStage, withBias, dataDir,
-                                                   outputPath);
+        return DispatchMulti<T, LayoutA, NdLayout, FullLoadMode>(multi, e, m, n, k, groupListType, tiling, withBias,
+                                                                 dataDir, outputPath);
     if (format == "dn")
-        return DispatchMulti<T, LayoutA, AscendC::Te::DNExtLayoutPtn>(multi, e, m, n, k, groupListType, l1BufferStage,
-                                                                      withBias, dataDir, outputPath);
+        return DispatchMulti<T, LayoutA, AscendC::Te::DNExtLayoutPtn, FullLoadMode>(
+            multi, e, m, n, k, groupListType, tiling, withBias, dataDir, outputPath);
     if (format == "nz")
-        return DispatchMulti<T, LayoutA, AscendC::Te::NZLayoutPtn>(multi, e, m, n, k, groupListType, l1BufferStage,
-                                                                   withBias, dataDir, outputPath);
+        return DispatchMulti<T, LayoutA, AscendC::Te::NZLayoutPtn, FullLoadMode>(multi, e, m, n, k, groupListType,
+                                                                                 tiling, withBias, dataDir, outputPath);
     if (format == "zn")
-        return DispatchMulti<T, LayoutA, AscendC::Te::ZNLayoutPtn>(multi, e, m, n, k, groupListType, l1BufferStage,
-                                                                   withBias, dataDir, outputPath);
+        return DispatchMulti<T, LayoutA, AscendC::Te::ZNLayoutPtn, FullLoadMode>(multi, e, m, n, k, groupListType,
+                                                                                 tiling, withBias, dataDir, outputPath);
     return 2;
 }
 
-template <typename T>
+template <typename T, uint64_t FullLoadMode>
 int DispatchTransA(const std::string& format, bool multi, bool transA, uint32_t e, int64_t m, int64_t n, int64_t k,
-                   uint8_t groupListType, uint8_t l1BufferStage, bool withBias, const std::string& dataDir,
+                   uint8_t groupListType, const QgmmTilingConfig& tiling, bool withBias, const std::string& dataDir,
                    const std::string& outputPath)
 {
-    return transA ? DispatchFormat<T, AscendC::Te::DNExtLayoutPtn>(format, multi, e, m, n, k, groupListType,
-                                                                   l1BufferStage, withBias, dataDir, outputPath) :
-                    DispatchFormat<T, NdLayout>(format, multi, e, m, n, k, groupListType, l1BufferStage, withBias,
-                                                dataDir, outputPath);
+    return transA ? DispatchFormat<T, AscendC::Te::DNExtLayoutPtn, FullLoadMode>(
+                        format, multi, e, m, n, k, groupListType, tiling, withBias, dataDir, outputPath) :
+                    DispatchFormat<T, NdLayout, FullLoadMode>(format, multi, e, m, n, k, groupListType, tiling,
+                                                              withBias, dataDir, outputPath);
 }
 
 struct QgmmCaseConfig {
@@ -323,7 +347,8 @@ struct QgmmCaseConfig {
     bool withBias;
     std::string groupList;
     uint8_t groupListType;
-    uint8_t l1BufferStage;
+    QgmmTilingConfig tiling;
+    bool aFullLoad;
     std::string dataDir;
     std::string outputPath;
 };
@@ -332,7 +357,8 @@ void PrintUsage()
 {
     std::cerr << "Usage: qgmm_mx <mxfp4_e2m1|mxfp4_e1m2|mxfp8_e4m3|mxfp8_e5m2> "
                  "<nd|dn|nz|zn> <single|multi> <e> <m> <n> <k> <transA> <bias> "
-                 "<length|offset|sparse> <l1BufferStage> <dataDir> <outputPath>"
+                 "<length|offset|sparse> <baseK> <tileKL1> <scaleKL1> <l1Buffers> <dbL0C> <aFullLoad> "
+                 "<dataDir> <outputPath>"
               << std::endl;
 }
 
@@ -350,9 +376,14 @@ QgmmCaseConfig ParseConfig(char** argv)
     config.withBias = std::string(argv[9]) == "true";
     config.groupList = argv[10];
     config.groupListType = config.groupList == "offset" ? 0 : (config.groupList == "length" ? 1 : 2);
-    config.l1BufferStage = static_cast<uint8_t>(std::stoul(argv[11]));
-    config.dataDir = argv[12];
-    config.outputPath = argv[13];
+    config.tiling.baseK = static_cast<uint32_t>(std::stoul(argv[11]));
+    config.tiling.tileKL1 = static_cast<uint32_t>(std::stoul(argv[12]));
+    config.tiling.scaleKL1 = static_cast<uint32_t>(std::stoul(argv[13]));
+    config.tiling.l1BufferStage = static_cast<uint8_t>(std::stoul(argv[14]));
+    config.tiling.dbL0C = static_cast<uint8_t>(std::stoul(argv[15]));
+    config.aFullLoad = std::string(argv[16]) == "true";
+    config.dataDir = argv[17];
+    config.outputPath = argv[18];
     return config;
 }
 
@@ -361,17 +392,25 @@ bool IsValidConfig(const QgmmCaseConfig& config)
     const bool validShape = config.groupNum > 0 && config.m > 0 && config.n > 0 && config.k > 0;
     const bool validGroupList = config.groupList == "offset" || config.groupList == "length" ||
                                 config.groupList == "sparse";
-    const bool validL1Buffer = config.l1BufferStage == 2 || config.l1BufferStage == 3;
-    return validShape && validGroupList && validL1Buffer;
+    const bool validTiling = config.tiling.baseK > 0 && config.tiling.tileKL1 > 0 && config.tiling.scaleKL1 > 0 &&
+                             (config.tiling.l1BufferStage == 2 || config.tiling.l1BufferStage == 3) &&
+                             (config.tiling.dbL0C == 1 || config.tiling.dbL0C == 2);
+    return validShape && validGroupList && validTiling;
 }
 
-template <typename T>
+template <typename T, uint64_t FullLoadMode>
 int DispatchConfig(const QgmmCaseConfig& config)
 {
     const bool multi = config.weightMode == "multi";
-    return DispatchTransA<T>(config.format, multi, config.transA, config.groupNum, config.m, config.n, config.k,
-                             config.groupListType, config.l1BufferStage, config.withBias, config.dataDir,
-                             config.outputPath);
+    return DispatchTransA<T, FullLoadMode>(config.format, multi, config.transA, config.groupNum, config.m, config.n,
+                                           config.k, config.groupListType, config.tiling, config.withBias,
+                                           config.dataDir, config.outputPath);
+}
+
+template <typename T>
+int DispatchFullLoad(const QgmmCaseConfig& config)
+{
+    return config.aFullLoad ? DispatchConfig<T, 1>(config) : DispatchConfig<T, 0>(config);
 }
 
 int RunConfiguredCase(const QgmmCaseConfig& config)
@@ -379,13 +418,13 @@ int RunConfiguredCase(const QgmmCaseConfig& config)
     if (config.weightMode != "single" && config.weightMode != "multi")
         return 2;
     if (config.dtype == "mxfp8_e4m3")
-        return DispatchConfig<fp8_e4m3fn_t>(config);
+        return DispatchFullLoad<fp8_e4m3fn_t>(config);
     if (config.dtype == "mxfp8_e5m2")
-        return DispatchConfig<fp8_e5m2_t>(config);
+        return DispatchFullLoad<fp8_e5m2_t>(config);
     if (config.dtype == "mxfp4_e2m1")
-        return DispatchConfig<fp4x2_e2m1_t>(config);
+        return DispatchFullLoad<fp4x2_e2m1_t>(config);
     if (config.dtype == "mxfp4_e1m2")
-        return DispatchConfig<fp4x2_e1m2_t>(config);
+        return DispatchFullLoad<fp4x2_e1m2_t>(config);
     return 2;
 }
 
@@ -403,7 +442,7 @@ void PrintResult(int ret, const QgmmCaseConfig& config)
 
 int main(int argc, char** argv)
 {
-    if (argc != 14) {
+    if (argc != 19) {
         PrintUsage();
         return 2;
     }

@@ -55,15 +55,24 @@ M 轴分组场景分别计算各组矩阵乘并按 M 轴拼接结果。
 | `k` | K 维度 |
 | `n` | N 维度 |
 | `dtype` | MX 数据类型 |
-| `transA` | A 矩阵是否转置，当前样例配置为 `false` |
+| `transA` | A 矩阵是否转置 |
 | `transB` | B 矩阵是否转置 |
-| `format` | A、B 矩阵的数据格式及对应布局 |
+| `format` | A、B 矩阵的数据格式，支持 ND/NZ；转置由 `transA`/`transB` 表示 |
 | `weight_mode` | 权重存储模式，支持 `single` 和 `multi` |
 | `bias` | 是否启用偏置 |
 | `group_list_type` | Group List 类型 |
-| `l1_buffer_stage` | L1 buffer数 |
+| `group_list` | GroupList 原始值，以分号分隔；Length 填各组长度，Offset 填累计偏移，Sparse 填索引/长度对 |
+| `base_k` | L0 计算块的 K 大小 |
+| `tile_k_l1` | A/B 在 L1 中的 K 切分大小 |
+| `scale_k_l1` | ScaleA/ScaleB 在 L1 中的 K 切分大小 |
+| `l1_buffers` | L1 buffer 数量，支持 2 或 3 |
+| `db_l0c` | L0C buffer 数量 |
+| `a_full_load` | A 是否全载入；用于选择 kernel 编译期策略 |
 
-当前样例覆盖 MX 量化的 M 轴分组。GroupList 中的数值表示 M 轴上各组的大小或累计偏移。
+`transA` 表示 A 矩阵的转置状态，Group List 的分组轴用于区分 M 轴分组和 K 轴分组，两者的参数语义相互独立。当前 QGMM MX 样例根据 `transA` 选择分组路径：`transA=false` 对应 M 轴分组，`transA=true` 对应 K 轴分组。
+
+当前样例覆盖 MX 量化的 M 轴和 K 轴分组。Tiling 参数由每条 CSV case 独立配置，不在 kernel 中按分组类型固定。
+`group_list` 中的分组长度必须为正，并完整覆盖分组轴；M 轴分组的总长度为 `e*m`，K 轴分组的总长度为 `k`。
 
 ## 编译和运行
 

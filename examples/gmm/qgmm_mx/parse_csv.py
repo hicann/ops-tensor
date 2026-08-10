@@ -24,39 +24,64 @@ def _build_command(executable, case):
     trans_b = case["transB"].strip().lower() == "true"
     with_bias = case["bias"].strip().lower() == "true"
     group_list_type = case["group_list_type"].strip().lower()
-    l1_buffer_stage = int(case["l1_buffer_stage"])
+    base_k = int(case["base_k"])
+    tile_k_l1 = int(case["tile_k_l1"])
+    scale_k_l1 = int(case["scale_k_l1"])
+    l1_buffers = int(case["l1_buffers"])
+    db_l0c = int(case["db_l0c"])
+    a_full_load = case["a_full_load"].strip().lower() == "true"
     layout_pair = [
         item.strip() for item in case["format"].strip().strip('"()').lower().split(",")
     ]
-    expected_a = "dn" if trans_a else "nd"
-    expected_b = (
+    expected_b = layout_pair[-1]
+    kernel_layout_b = (
         ("zn" if trans_b else "nz")
-        if layout_pair[-1] in ("nz", "zn")
+        if expected_b == "nz"
         else ("dn" if trans_b else "nd")
     )
     supported = (
         case["dtype"].strip() in SUPPORTED_DTYPES
         and len(layout_pair) == 2
-        and layout_pair == [expected_a, expected_b]
+        and layout_pair == ["nd", expected_b]
+        and expected_b in ("nd", "nz")
         and case["weight_mode"].strip() in ("single", "multi")
         and (not with_bias or case["dtype"].strip().startswith("mxfp4"))
         and (case["dtype"].strip() != "mxfp4_e1m2" or layout_pair[1] in ("nz", "zn"))
         and group_list_type in SUPPORTED_GROUP_LISTS
-        and l1_buffer_stage in (2, 3)
+        and base_k > 0
+        and tile_k_l1 > 0
+        and scale_k_l1 > 0
+        and l1_buffers in (2, 3)
+        and db_l0c in (1, 2)
         and all(int(case[dim]) > 0 for dim in ("e", "m", "n", "k"))
+        and (
+            not trans_a
+            or (
+                case["dtype"].strip() in ("mxfp8_e4m3", "mxfp8_e5m2")
+                and layout_pair == ["nd", "nd"]
+                and case["weight_mode"].strip() == "single"
+                and not with_bias
+                and group_list_type in ("length", "offset")
+            )
+        )
     )
     if not supported:
         return None
     return [
         executable,
         case["dtype"].strip(),
-        layout_pair[1],
+        kernel_layout_b,
         case["weight_mode"].strip(),
         *(case[dim].strip() for dim in ("e", "m", "n", "k")),
         str(trans_a).lower(),
         str(with_bias).lower(),
         group_list_type,
-        str(l1_buffer_stage),
+        str(base_k),
+        str(tile_k_l1),
+        str(scale_k_l1),
+        str(l1_buffers),
+        str(db_l0c),
+        str(a_full_load).lower(),
     ]
 
 
@@ -73,7 +98,7 @@ def _print_details(completed):
     return details
 
 
-def _generation_command(scripts_dir, command, case_dir):
+def _generation_command(scripts_dir, command, case_dir, case):
     generation = [
         sys.executable,
         os.path.join(scripts_dir, "gen_data.py"),
@@ -91,6 +116,8 @@ def _generation_command(scripts_dir, command, case_dir):
         command[7],
         "--group-list-type",
         command[10],
+        "--group-list",
+        (case.get("group_list") or "").strip(),
         "--output-dir",
         case_dir,
     ]
@@ -117,7 +144,7 @@ def _run_case(executable, scripts_dir, output_root, case):
     case_dir = os.path.join(output_root, case_name)
     shutil.rmtree(case_dir, ignore_errors=True)
     os.makedirs(case_dir)
-    completed = _run(_generation_command(scripts_dir, command, case_dir))
+    completed = _run(_generation_command(scripts_dir, command, case_dir, case))
     details = _print_details(completed)
     if completed.returncode != 0:
         return _failure(case_name, "gen_data", details or "data generation failed")
@@ -132,6 +159,12 @@ def _run_case(executable, scripts_dir, output_root, case):
             os.path.join(scripts_dir, "verify_result.py"),
             os.path.join(case_dir, "golden_c.bin"),
             output_path,
+            "--groups",
+            command[4],
+            "--m",
+            command[5],
+            "--n",
+            command[6],
         ]
     )
     details = _print_details(completed)

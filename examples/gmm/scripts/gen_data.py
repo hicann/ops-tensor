@@ -83,15 +83,34 @@ def _format_weight(codes, weight_format, k, n, c0):
     )
 
 
-def _make_group_list(group_num, split_size, list_type):
-    lengths = np.full(group_num, split_size, np.int64)
-    if list_type == "offset":
-        return np.cumsum(lengths, dtype=np.int64)
+def _parse_group_list(text, group_num, total_size, list_type):
+    values = np.asarray([int(value) for value in text.split(";")], np.int64)
     if list_type == "sparse":
-        return np.column_stack((np.arange(group_num, dtype=np.int64), lengths)).reshape(
-            -1
-        )
-    return lengths
+        if values.size != group_num * 2:
+            raise ValueError("sparse group-list must contain e index/length pairs")
+        pairs = values.reshape(group_num, 2)
+        if sorted(pairs[:, 0].tolist()) != list(range(group_num)):
+            raise ValueError(
+                "sparse group-list indices must be a permutation of [0, e)"
+            )
+        lengths = pairs[:, 1]
+    elif list_type == "offset":
+        if (
+            values.size != group_num
+            or np.any(values < 0)
+            or np.any(np.diff(values) < 0)
+        ):
+            raise ValueError("offset group-list must contain e nondecreasing offsets")
+        lengths = np.diff(np.concatenate((np.zeros(1, np.int64), values)))
+    else:
+        if values.size != group_num:
+            raise ValueError("length group-list must contain e lengths")
+        lengths = values
+    if np.any(lengths <= 0):
+        raise ValueError("group-list lengths must be positive")
+    if int(lengths.sum()) != total_size:
+        raise ValueError("group-list must cover the complete grouped axis")
+    return values, lengths
 
 
 def _write_weights(output_dir, encoded, scales, multi_tensor):
@@ -108,46 +127,96 @@ def generate(args):
     os.makedirs(args.output_dir, exist_ok=True)
     values, codes, c0 = TYPE_INFO[args.dtype]
     rng = np.random.default_rng(args.seed)
-    a_indices = rng.integers(0, values.size, size=(args.e, args.m, args.k))
-    b_indices = rng.integers(0, values.size, size=(args.e, args.k, args.n))
-    a_values = values[a_indices]
-    b_values = values[b_indices]
-
     if args.trans_a:
-        input_a = _encode(codes[a_indices].transpose(0, 2, 1), args.dtype)
-        golden = sum(a_values[index] @ b_values[index] for index in range(args.e))
+        group_list, k_lengths = _parse_group_list(
+            args.group_list, args.e, args.k, args.group_list_type
+        )
+        a_indices = [
+            rng.integers(0, values.size, size=(args.m, int(group_k)))
+            for group_k in k_lengths
+        ]
+        b_indices = [
+            rng.integers(0, values.size, size=(int(group_k), args.n))
+            for group_k in k_lengths
+        ]
+        input_a = _encode(
+            np.concatenate([codes[index].T.reshape(-1) for index in a_indices]),
+            args.dtype,
+        )
+        encoded_b = [
+            _encode(codes[index].reshape(-1), args.dtype) for index in b_indices
+        ]
+        scale_slots = args.k // 64 + args.e
+        scale_a = np.full((scale_slots, args.m, 2), MX_SCALE_ONE, np.uint8)
+        scale_b_storage = np.full((scale_slots, args.n, 2), MX_SCALE_ONE, np.uint8)
+        golden_groups = []
+        cumulative_k = 0
+        for group_index, (group_k, a_index, b_index) in enumerate(
+            zip(k_lengths, a_indices, b_indices)
+        ):
+            scale_count = (int(group_k) + 31) // 32
+            scale_a_codes = rng.integers(
+                0x7D, 0x80, size=(args.m, scale_count), dtype=np.uint8
+            )
+            scale_b_codes = rng.integers(
+                0x7D, 0x80, size=(scale_count, args.n), dtype=np.uint8
+            )
+            scale_start = cumulative_k // 64 + group_index
+            for scale_index in range(scale_count):
+                slot = scale_start + scale_index // 2
+                lane = scale_index % 2
+                scale_a[slot, :, lane] = scale_a_codes[:, scale_index]
+                scale_b_storage[slot, :, lane] = scale_b_codes[scale_index, :]
+            a_scale = np.exp2(scale_a_codes.astype(np.int16) - 127)
+            b_scale = np.exp2(scale_b_codes.astype(np.int16) - 127)
+            k_scale_index = np.arange(int(group_k)) // 32
+            scaled_a = values[a_index] * a_scale[:, k_scale_index]
+            scaled_b = values[b_index] * b_scale[k_scale_index, :]
+            golden_groups.append(scaled_a @ scaled_b)
+            cumulative_k += int(group_k)
+        golden = np.stack(golden_groups)
+        scale_a = scale_a.reshape(-1)
+        scale_b = [scale_b_storage.reshape(-1)]
     else:
-        input_a = _encode(codes[a_indices], args.dtype)
+        group_list, m_groups = _parse_group_list(
+            args.group_list, args.e, args.e * args.m, args.group_list_type
+        )
+        a_indices = [
+            rng.integers(0, values.size, size=(int(group_m), args.k))
+            for group_m in m_groups
+        ]
+        b_indices = rng.integers(0, values.size, size=(args.e, args.k, args.n))
+        a_values = [values[index] for index in a_indices]
+        b_values = values[b_indices]
+        input_a = _encode(
+            np.concatenate([codes[index].reshape(-1) for index in a_indices]),
+            args.dtype,
+        )
         golden = np.concatenate(
             [a_values[index] @ b_values[index] for index in range(args.e)], axis=0
         )
-
-    encoded_b = [
-        _encode(
-            _format_weight(
-                codes[b_indices[index]], args.weight_format, args.k, args.n, c0
-            ),
-            args.dtype,
-        )
-        for index in range(args.e)
-    ]
-    scale_k = _align_up(args.k, 64) // 32
-    scale_factor = 2 if args.trans_a else 1
-    scale_a = np.full(args.e * args.m * scale_k * scale_factor, MX_SCALE_ONE, np.uint8)
-    scale_b = [
-        np.full(args.n * scale_k * scale_factor, MX_SCALE_ONE, np.uint8)
-        for _ in range(args.e)
-    ]
+        encoded_b = [
+            _encode(
+                _format_weight(
+                    codes[b_indices[index]], args.weight_format, args.k, args.n, c0
+                ),
+                args.dtype,
+            )
+            for index in range(args.e)
+        ]
+        scale_k = _align_up(args.k, 64) // 32
+        scale_a = np.full(args.e * args.m * scale_k, MX_SCALE_ONE, np.uint8)
+        scale_b = [
+            np.full(args.n * scale_k, MX_SCALE_ONE, np.uint8) for _ in range(args.e)
+        ]
     bias = np.full((args.e, args.n), 0.25 if args.with_bias else 0.0, np.float32)
     if args.with_bias:
-        golden += bias[0] if args.trans_a else np.repeat(bias, args.m, axis=0)
+        golden += bias[0] if args.trans_a else np.repeat(bias, m_groups, axis=0)
 
     input_a.tofile(os.path.join(args.output_dir, "input_a.bin"))
     scale_a.tofile(os.path.join(args.output_dir, "scale_a.bin"))
     bias.tofile(os.path.join(args.output_dir, "bias.bin"))
-    _make_group_list(
-        args.e, args.k if args.trans_a else args.m, args.group_list_type
-    ).tofile(os.path.join(args.output_dir, "group_list.bin"))
+    group_list.tofile(os.path.join(args.output_dir, "group_list.bin"))
     _write_weights(args.output_dir, encoded_b, scale_b, args.multi_tensor)
     golden.astype(np.float32).tofile(os.path.join(args.output_dir, "golden_c.bin"))
 
@@ -165,6 +234,7 @@ def main():
     parser.add_argument(
         "--group-list-type", choices=("length", "offset", "sparse"), required=True
     )
+    parser.add_argument("--group-list", required=True)
     parser.add_argument("--trans-a", action="store_true")
     parser.add_argument("--multi-tensor", action="store_true")
     parser.add_argument("--with-bias", action="store_true")
