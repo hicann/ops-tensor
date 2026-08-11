@@ -6,6 +6,8 @@
 | 组件名 | 描述 |
 | :----------------------------------------------------------- | :------: |
 | [block_mmad_matmul_basic](./block_mmad_matmul_basic.md) | 基础矩阵乘 Block，基于 Tensor API，支持 L1/L0 双缓冲 |
+| [block_mmad_matmul_bl1_full_load](./block_mmad_matmul_bl1_full_load.md) | B L1 全载矩阵乘 Block，B 常驻 L1，支持 ON_THE_FLY 直销和 Fixpipe（L0C→UB）两种输出 |
+| [block_mmad_matmul_fixpipe_opti](./block_mmad_matmul_fixpipe_opti.md) | Fixpipe 非全载矩阵乘 Block，A/B 均流水，输出固定 L0C→UB，用于 Fixpipe1v1/fixpipe1v2 场景 |
 | [block_mmad_a8w8_fixpipe_quant](./block_mmad_a8w8_fixpipe_quant.md) | Fixpipe 量化矩阵乘 Block，支持 int8/HiFloat8/FP8 输入、Fixpipe 反量化、per-tensor/per-channel scale |
 | [block_mmad_qbmm_mx](./block_mmad_qbmm_mx.md) | MX 量化矩阵乘 Block，支持 Scale 因子、MxFP4/MxFP8 量化 |
 | [block_mmad_a8w8_mix](./block_mmad_a8w8_mix.md) | MIX 模板 A8W8 量化矩阵乘 Block，int32 累加 + L0C→UB（fixpipe NoQuant），不做 scale/bias |
@@ -49,6 +51,8 @@
 BlockMmad
     ├── DispatchPolicy (调度策略)
     │       ├── MatmulMultiBlockBasic (Basic)
+    │       ├── MatmulMultiBlockBFullLoad (B L1 全载)
+    │       ├── MatmulMultiBlockFixpipeOpti (Fixpipe 非全载)
     │       ├── MatmulMultiBlockWithStreamK (StreamK)
     │       ├── MatmulWithScaleFixpipeQuant (Fixpipe 量化)
     │       ├── MatmulWithScaleMx (QBMM MX 量化)
@@ -69,6 +73,8 @@ BlockMmad
 | Block 类型 | 调度策略 | 输出目标 | 量化支持 | Scale 支持 | L1 双缓冲 | L0C 双缓冲 | Bias 支持 | AIC-AIV 同步 | 适用场景 |
 |-----------|---------|---------|---------|-----------|---------|-----------|---------|-------------|---------|
 | BlockMmadBasic | MatmulMultiBlockBasic | GM | 不支持 | 不支持 | 可配置 (1 或 2) | 可配置 | 支持 | 无 | Basic Kernel |
+| BlockMmadBL1FullLoad | MatmulMultiBlockBFullLoad | GM 或 UB | 不支持 | 不支持 | A 可配置，B 固定 1 | 可配置 | 支持 | 有（Fixpipe 模式） | B 全载，ON_THE_FLY / Fixpipe |
+| BlockMmadFixpipeOpti | MatmulMultiBlockFixpipeOpti | UB | 不支持 | 不支持 | A/B 均 l1Stages | 可配置 | 支持 | 有 | 非全载 Fixpipe，小 K 场景 |
 | BlockMmadStreamK | MatmulMultiBlockWithStreamK | GM 或 workspace | 不支持 | 不支持 | 固定双缓冲 | 固定单缓冲 | 支持 | 无（Kernel 层处理） | StreamK Kernel |
 | BlockMmadA8W8FixpipeQuant（StreamK 调度） | MatmulWithScaleFixpipeQuant + KernelQbmmPertensorMultiBlockStreamK | C GM（DP）或 workspace raw partial（SK） | int8/FP8/HiFloat8 | DP 使用 Fixpipe，SK 由 AIV epilogue 处理 | 2 或 4 | 固定单缓冲 | 支持反量化前 bias | 有（Kernel 层处理） | QBMM per-tensor StreamK |
 | BlockMmadA8W8FixpipeQuant | MatmulWithScaleFixpipeQuant | GM | int8/HiFloat8/FP8 | X2 scale + Fixpipe | 可配置 (2 或 4) | 可配置 | 支持 | 无 | QBMM Cube Kernel |

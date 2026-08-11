@@ -19,7 +19,8 @@
 
 #include "blaze/epilogue/block/block_epilogue_fixpipe.h"
 #include "blaze/gemm/block/block_mmad.h"
-#include "blaze/gemm/block/block_mmad_matmul_b_fullLoad_fixpipe_opti.h"
+#include "blaze/gemm/block/block_mmad_matmul_bl1_full_load.h"
+#include "blaze/gemm/block/block_mmad_matmul_fixpipe_opti.h"
 #include "blaze/gemm/utils/common_utils.h"
 #include "kernel_universal.h"
 #include "tensor_api/tensor.h"
@@ -171,8 +172,6 @@ private:
         m_ = static_cast<uint64_t>(AscendC::Te::Get<MNK_M>(params.problemShape));
         n_ = static_cast<uint64_t>(AscendC::Te::Get<MNK_N>(params.problemShape));
         k_ = static_cast<uint64_t>(AscendC::Te::Get<MNK_K>(params.problemShape));
-        kAlign_ = Blaze::Gemm::CeilAlign(k_, static_cast<uint64_t>(AscendC::BLOCK_CUBE));
-        isBias_ = blockMmadParams.biasGmAddr != nullptr;
         aGmAddr_ = reinterpret_cast<__gm__ AType*>(blockMmadParams.aGmAddr);
         bGmAddr_ = reinterpret_cast<__gm__ BType*>(blockMmadParams.bGmAddr);
         cGmAddr_ = reinterpret_cast<__gm__ CType*>(blockMmadParams.cGmAddr);
@@ -191,11 +190,6 @@ private:
     }
 
 private:
-    static constexpr bool IS_FP32 = (AscendC::Std::is_same_v<BType, float>);
-    static constexpr int64_t C0_SIZE = IS_FP32 ? C0_SIZE_fp32 : C0_SIZE_fp16;
-    static constexpr bool TRANS_A = BlockMmad::TRANS_A;
-    static constexpr bool WEIGHTNZ_FORMAT = BlockMmad::WEIGHTNZ_FORMAT;
-
     static constexpr uint64_t AIC_SYNC_AIV_MODE_4 = 4;
     static constexpr uint16_t AIV_SYNC_AIC_FLAG = 4;
     static constexpr uint16_t AIC_SYNC_AIV_FLAG = 6;
@@ -210,8 +204,6 @@ private:
     uint64_t m_{1};
     uint64_t n_{1};
     uint64_t k_{1};
-    uint64_t kAlign_{1};
-    bool isBias_{false};
 };
 
 } // namespace Kernel

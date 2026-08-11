@@ -9,7 +9,7 @@
  */
 
 /*!
- * \file kernel_matmul_b_full_load.h
+ * \file kernel_matmul_bl1_full_load.h
  * \brief
  */
 
@@ -18,8 +18,9 @@
 #include "kernel_basic_intf.h"
 
 #include "blaze/epilogue/block/block_epilogue_empty.h"
+#include "blaze/epilogue/block/block_epilogue_fixpipe.h"
 #include "blaze/gemm/block/block_mmad.h"
-#include "blaze/gemm/block/block_mmad_matmul_b_fullLoad_fixpipe_opti.h"
+#include "blaze/gemm/block/block_mmad_matmul_bl1_full_load.h"
 #include "blaze/gemm/utils/common_utils.h"
 #include "kernel_universal.h"
 #include "tensor_api/tensor.h"
@@ -33,8 +34,26 @@ class GemmUniversal<ProblemShape_, BlockMmad_, BlockEpilogue_, BlockScheduler_,
                     AscendC::Std::enable_if_t<AscendC::Std::is_same_v<
                         KernelMmadMultiBlockBFullLoad, typename BlockMmad_::DispatchPolicy::ScheduleType>>> {
 public:
-    __aicore__ inline GemmUniversal() {}
-    __aicore__ inline ~GemmUniversal() {}
+    __aicore__ inline GemmUniversal()
+    {
+        if constexpr (BlockMmad::DispatchPolicy::L0C2OUT_MODEL != ON_THE_FLY) {
+            if ASCEND_IS_AIV {
+                AscendC::CrossCoreSetFlag<AIC_SYNC_AIV_MODE_4, PIPE_MTE3>(AIV_SYNC_AIC_FLAG);     // ping
+                AscendC::CrossCoreSetFlag<AIC_SYNC_AIV_MODE_4, PIPE_MTE3>(AIV_SYNC_AIC_FLAG + 1); // pong
+            }
+        }
+    }
+    __aicore__ inline ~GemmUniversal()
+    {
+        if constexpr (BlockMmad::DispatchPolicy::L0C2OUT_MODEL != ON_THE_FLY) {
+            if ASCEND_IS_AIC {
+                AscendC::CrossCoreWaitFlag<AIC_SYNC_AIV_MODE_4, PIPE_FIX>(AIV_SYNC_AIC_FLAG);                   // ping
+                AscendC::CrossCoreWaitFlag<AIC_SYNC_AIV_MODE_4, PIPE_FIX>(AIV_SYNC_AIC_FLAG + FLAG_ID_MAX);     // ping
+                AscendC::CrossCoreWaitFlag<AIC_SYNC_AIV_MODE_4, PIPE_FIX>(AIV_SYNC_AIC_FLAG + 1);               // pong
+                AscendC::CrossCoreWaitFlag<AIC_SYNC_AIV_MODE_4, PIPE_FIX>(AIV_SYNC_AIC_FLAG + 1 + FLAG_ID_MAX); // pong
+            }
+        }
+    }
 
     using BlockMmad = BlockMmad_;
     using ProblemShape = ProblemShape_;
@@ -74,58 +93,69 @@ public:
 
     __aicore__ inline void operator()(Params const& params)
     {
-        if ASCEND_IS_AIV {
-            return;
+        BlockEpilogue epilogueOp;
+        BlockMmad blockMmad;
+        int64_t curBlockIdx = AscendC::GetBlockIdx();
+        if constexpr (BlockMmad::DispatchPolicy::L0C2OUT_MODEL == ON_THE_FLY) {
+            if ASCEND_IS_AIV {
+                return;
+            }
+        } else {
+            if ASCEND_IS_AIV {
+                if (!params.mmadParams.splitM && AscendC::GetSubBlockIdx() > 0) {
+                    return;
+                }
+                curBlockIdx /= AscendC::GetTaskRation();
+            }
         }
         Init(params);
 
         // 初始化blockScheduler
         BlockScheduler bs(params.problemShape, params.schParams);
-        int64_t curBlockIdx = AscendC::GetBlockIdx();
-
         int64_t realCoreNums = bs.GetCoreNums();
         if (curBlockIdx >= realCoreNums) {
             return;
         }
         Blaze::Gemm::SetHF32(params.schParams.isHf32);
 
-        BlockMmad blockMmad;
-        blockMmad.Init(params.mmadParams);
-        MatmulProcess(params, blockMmad, bs, curBlockIdx, AscendC::GetBlockNum(), bs.GetBlockNums());
+        if constexpr (BlockMmad::DispatchPolicy::L0C2OUT_MODEL == ON_THE_FLY) {
+            blockMmad.Init(params.mmadParams);
+            MatmulProcessOnTheFly(params, blockMmad, bs, curBlockIdx, AscendC::GetBlockNum(), bs.GetBlockNums());
+        } else {
+            epilogueOp.Init(params.epilogueParams, problemShape_);
+            if ASCEND_IS_AIC {
+                blockMmad.Init(params.mmadParams);
+            }
+            MatmulProcessFixpipe(params, epilogueOp, blockMmad, bs, curBlockIdx, AscendC::GetBlockNum(),
+                                 bs.GetBlockNums());
+        }
         Blaze::Gemm::UnsetHF32(params.schParams.isHf32);
     }
 
 private:
-    __aicore__ inline void MatmulProcess(Params const& params, BlockMmad& blockMmad, BlockScheduler& bs,
-                                         int64_t curBlockIdx, int64_t coreNums, int64_t totalBlockNums)
+    __aicore__ inline void MatmulProcessOnTheFly(Params const& params, BlockMmad& blockMmad, BlockScheduler& bs,
+                                                 int64_t curBlockIdx, int64_t coreNums, int64_t totalBlockNums)
     {
-        // 默认ND Format
-        auto layoutA = MakeLayoutA{}(m_, k_);       // ND layout for A
-        auto layoutB = MakeLayoutB{}(k_, n_);       // ND layout for B
-        auto layoutC = MakeLayoutC{}(m_, n_);       // ND layout for C
-        auto layoutBias = MakeLayoutBias{}(1L, n_); // ND layout for Bias
-        // A,B,C Gm Tensor
+        auto layoutA = MakeLayoutA{}(m_, k_);
+        auto layoutB = MakeLayoutB{}(k_, n_);
+        auto layoutC = MakeLayoutC{}(m_, n_);
+        auto layoutBias = MakeLayoutBias{}(1L, n_);
         auto gmA = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(aGmAddr_), layoutA);
         auto gmB = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(bGmAddr_), layoutB);
         auto gmC = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(cGmAddr_), layoutC);
         auto gmBias = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(biasGmAddr_),
                                               layoutBias);
 
-        // 使能双页表
         SetL2Cache(gmA, gmB, params.schParams.l2CacheMode);
 
         uint64_t preBatchIdx = 0;
-        // Process tiles in ping-pong mode
         for (int64_t blockIdx = curBlockIdx; blockIdx < totalBlockNums; blockIdx += coreNums) {
             auto tileShape = bs.template GetBlockShape<TRANS_B, BType>(blockIdx);
             auto tileCoord = bs.GetBlockCoord(blockIdx);
             auto coordM = AscendC::Te::Get<MNK_M>(tileCoord);
-            // auto coordN = AscendC::Te::Get<MNK_N>(tileCoord);
             auto shapeM = AscendC::Te::Get<MNK_M>(tileShape);
-            auto shapeN = AscendC::Te::Get<MNK_N>(tileShape);
             auto shapeK = AscendC::Te::Get<MNK_K>(tileShape);
             curBatchIdx_ = static_cast<uint64_t>(AscendC::Te::Get<MNK_B>(tileCoord));
-            // Block offset
             if (preBatchIdx != curBatchIdx_) {
                 UpdateBatchOffset(params);
                 gmA = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(aGmAddr_), layoutA);
@@ -133,14 +163,67 @@ private:
                 preBatchIdx = curBatchIdx_;
                 SetL2Cache(gmA, gmB, params.schParams.l2CacheMode);
             }
-            // Block offset
             auto gmBlockA = gmA.Slice(AscendC::MakeCoord(coordM, 0L), AscendC::MakeShape(shapeM, shapeK));
             auto gmBlockC = gmC.Slice(AscendC::MakeCoord(coordM, 0), AscendC::MakeShape(shapeM, n_));
             blockMmad(gmBlockA, gmB, gmBias, gmBlockC, tileShape);
         }
     }
+
+    __aicore__ inline void MatmulProcessFixpipe(Params const& params, BlockEpilogue& epilogueOp, BlockMmad& blockMmad,
+                                                BlockScheduler& bs, int64_t curBlockIdx, int64_t coreNums,
+                                                int64_t totalBlockNums)
+    {
+        auto layoutA = MakeLayoutA{}(m_, k_);
+        auto layoutB = MakeLayoutB{}(k_, n_);
+        auto layoutC = MakeLayoutC{}(m_, n_);
+        auto layoutBias = MakeLayoutBias{}(1L, n_);
+        auto gmA = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(aGmAddr_), layoutA);
+        auto gmB = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(bGmAddr_), layoutB);
+        auto gmC = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(cGmAddr_), layoutC);
+        auto gmBias = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(biasGmAddr_),
+                                              layoutBias);
+
+        SetL2Cache(gmA, gmB, params.schParams.l2CacheMode);
+
+        uint64_t preBatchIdx = 0;
+        for (int64_t blockIdx = curBlockIdx; blockIdx < totalBlockNums; blockIdx += coreNums) {
+            auto tileShape = bs.template GetBlockShape<TRANS_B, BType>(blockIdx);
+            auto tileCoord = bs.GetBlockCoord(blockIdx);
+            auto coordM = AscendC::Te::Get<MNK_M>(tileCoord);
+            auto coordN = AscendC::Te::Get<MNK_N>(tileCoord);
+            auto shapeM = AscendC::Te::Get<MNK_M>(tileShape);
+            auto shapeN = AscendC::Te::Get<MNK_N>(tileShape);
+            auto shapeK = AscendC::Te::Get<MNK_K>(tileShape);
+            curBatchIdx_ = static_cast<uint64_t>(AscendC::Te::Get<MNK_B>(tileCoord));
+            if (preBatchIdx != curBatchIdx_) {
+                UpdateBatchOffset(params);
+                gmA = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(aGmAddr_), layoutA);
+                gmC = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(cGmAddr_), layoutC);
+                preBatchIdx = curBatchIdx_;
+                SetL2Cache(gmA, gmB, params.schParams.l2CacheMode);
+            }
+            int64_t offsetC = coordM * n_ + coordN;
+            shapeN = AscendC::Std::min(shapeN, static_cast<int64_t>(n_) - coordN);
+            TupleShape validBlockShape{shapeM, shapeN, shapeK, AscendC::Te::Get<MNK_B>(tileShape)};
+            auto layoutUB = MakeLayoutC{}(shapeM, shapeN);
+            auto ubLocal = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB, CType>(0),
+                                                   layoutUB);
+            auto gmBlockA = gmA.Slice(AscendC::MakeCoord(coordM, 0L), AscendC::MakeShape(shapeM, shapeK));
+            if ASCEND_IS_AIC {
+                blockMmad(gmBlockA, gmB, gmBias, ubLocal, validBlockShape);
+            }
+            if ASCEND_IS_AIV {
+                epilogueOp(validBlockShape, offsetC, params.mmadParams.splitM, params.schParams.baseM,
+                           params.schParams.baseN, params.mmadParams.ubDB);
+            }
+        }
+    }
+
     __aicore__ inline void Init(Params const& params)
     {
+        if constexpr (BlockMmad::DispatchPolicy::L0C2OUT_MODEL != ON_THE_FLY) {
+            problemShape_ = params.problemShape;
+        }
         auto blockMmadParams = params.mmadParams;
         m_ = static_cast<uint64_t>(AscendC::Te::Get<MNK_M>(params.problemShape));
         n_ = static_cast<uint64_t>(AscendC::Te::Get<MNK_N>(params.problemShape));
@@ -175,10 +258,16 @@ private:
     static constexpr int64_t C0_SIZE = IS_FP32 ? C0_SIZE_fp32 : C0_SIZE_fp16;
     static constexpr bool TRANS_A = BlockMmad::TRANS_A;
     static constexpr bool WEIGHTNZ_FORMAT = BlockMmad::WEIGHTNZ_FORMAT;
+
+    static constexpr uint64_t AIC_SYNC_AIV_MODE_4 = 4;
+    static constexpr uint16_t AIV_SYNC_AIC_FLAG = 4;
+    static constexpr uint16_t AIC_SYNC_AIV_FLAG = 6;
+    static constexpr uint16_t FLAG_ID_MAX = 16;
     __gm__ AType* aGmAddr_;
     __gm__ BType* bGmAddr_;
     __gm__ CType* cGmAddr_;
-    __gm__ BiasType* biasGmAddr_ = nullptr; // 可选输入，直接初始化
+    __gm__ BiasType* biasGmAddr_ = nullptr;
+    TupleShape problemShape_{};
 
     uint64_t curBatchIdx_ = {0};
     uint64_t m_{1};

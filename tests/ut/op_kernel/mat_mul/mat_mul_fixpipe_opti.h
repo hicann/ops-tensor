@@ -20,8 +20,8 @@
 #include "tensor_api/tensor.h"
 
 #include "blaze/gemm/kernel/kernel_universal.h"
-#include "blaze/gemm/kernel/kernel_matmul_fixpipe_opti.h"
-#include "blaze/gemm/block/block_mmad_matmul_b_fullLoad_fixpipe_opti.h"
+#include "blaze/gemm/kernel/kernel_matmul_bl1_full_load.h"
+#include "blaze/gemm/block/block_mmad_matmul_bl1_full_load.h"
 #include "blaze/gemm/block/block_scheduler_matmul_basic.h"
 #include "blaze/epilogue/block/block_epilogue_fixpipe.h"
 #include "blaze/gemm/policy/dispatch_policy.h"
@@ -30,9 +30,8 @@
 namespace MatMulV3UT {
 
 template <typename A_TYPE, typename B_TYPE, typename C_TYPE, typename BIAS_TYPE>
-__aicore__ inline void MatMulFixpipeOptWrapper(
-    GM_ADDR aGM, GM_ADDR bGM, GM_ADDR biasGM, GM_ADDR cGM, GM_ADDR workspaceGM,
-    const MatMulV3BasicTilingData& tilingData)
+__aicore__ inline void MatMulFixpipeOptWrapper(GM_ADDR aGM, GM_ADDR bGM, GM_ADDR biasGM, GM_ADDR cGM,
+                                               GM_ADDR workspaceGM, const MatMulV3BasicTilingData& tilingData)
 {
     using AType = A_TYPE;
     using BType = B_TYPE;
@@ -46,14 +45,12 @@ __aicore__ inline void MatMulFixpipeOptWrapper(
 
     using ProblemShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
 
-    using DispatchPolicy = Blaze::Gemm::MatmulMultiBlockFullLoadOrFixpipe<
-        Blaze::Gemm::ND_ALIG_1V2_FIXPIPE, Blaze::Gemm::B_FULL_LOAD_MODE, 0,
-        Blaze::Gemm::KernelMmadMultiBlockFixpipeOpti>;
+    using DispatchPolicy = Blaze::Gemm::MatmulMultiBlockBFullLoad<Blaze::Gemm::ND_ALIG_1V2_FIXPIPE, 0>;
 
     using BlockScheduler = Blaze::Gemm::Block::BlockSchedulerMatmulBasic<ProblemShape, Blaze::Gemm::B_FULL_LOAD_MODE>;
 
-    using BlockMmad = Blaze::Gemm::Block::BlockMmad<
-        DispatchPolicy, AType, LayoutA, BType, LayoutB, OutType, LayoutC, BiasType, LayoutBias>;
+    using BlockMmad = Blaze::Gemm::Block::BlockMmad<DispatchPolicy, AType, LayoutA, BType, LayoutB, OutType, LayoutC,
+                                                    BiasType, LayoutBias>;
 
     using BlockEpilogue = Blaze::Epilogue::Block::BlockEpilogueFixpipe<OutType, OutType, DispatchPolicy>;
 
@@ -62,9 +59,9 @@ __aicore__ inline void MatMulFixpipeOptWrapper(
     using Params = typename MatmulKernel::Params;
     Params params = {
         {static_cast<int64_t>(tilingData.m), static_cast<int64_t>(tilingData.n), static_cast<int64_t>(tilingData.k), 0},
-        {aGM, bGM, cGM, biasGM, nullptr, workspaceGM, tilingData.k, tilingData.mL1, tilingData.nL1,
-         tilingData.kL1, tilingData.baseM, tilingData.baseN, tilingData.baseK, tilingData.l1BufferNum,
-         tilingData.l0cDB, 0, tilingData.ubDB},
+        {aGM, bGM, cGM, biasGM, nullptr, workspaceGM, tilingData.k, tilingData.mL1, tilingData.nL1, tilingData.kL1,
+         tilingData.baseM, tilingData.baseN, tilingData.baseK, tilingData.l1BufferNum, tilingData.l0cDB, 0,
+         tilingData.ubDB},
         {cGM},
         {static_cast<uint32_t>(tilingData.mL1), static_cast<uint32_t>(tilingData.nL1),
          static_cast<uint32_t>(tilingData.kL1), static_cast<uint32_t>(tilingData.baseM),
@@ -73,8 +70,8 @@ __aicore__ inline void MatMulFixpipeOptWrapper(
          static_cast<uint32_t>(tilingData.mBaseTailSplitCnt), static_cast<uint32_t>(tilingData.nBaseTailSplitCnt),
          static_cast<uint32_t>(tilingData.mTailMain), static_cast<uint32_t>(tilingData.nTailMain),
          static_cast<uint8_t>(tilingData.isHf32), static_cast<uint32_t>(tilingData.l2CacheDisable),
-         static_cast<uint32_t>(tilingData.sliceM),
-         static_cast<uint32_t>(tilingData.srcNdStride), static_cast<uint32_t>(tilingData.innerBatch)}};
+         static_cast<uint32_t>(tilingData.sliceM), static_cast<uint32_t>(tilingData.srcNdStride),
+         static_cast<uint32_t>(tilingData.innerBatch)}};
 
     MatmulKernel kernel;
     kernel(params);

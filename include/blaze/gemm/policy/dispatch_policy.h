@@ -41,6 +41,7 @@ struct KernelMmadMultiBlockTBMM {};               // tbmm schedule
 struct KernelMixWithWeightPrologue {};            // Mix matmul with AIV weight preprocessing
 struct KernelGmmSwiGluMixMx {};                   // MIX AIC+AIV schedule for GroupedMatmul + SwiGLU + MX quant
 struct KernelMatmulEmuSplitWeight {};             // Double bf16 matmul to simulate fp32 (AIC+AIV)
+
 enum class MatMulL0C2Out : std::uint8_t { ON_THE_FLY = 0, ND_FIXPIPE_1_1 = 1, ND_FIXPIPE_1_2 = 2 };
 
 /**
@@ -216,17 +217,33 @@ struct MatmulMultiBlockAFullLoad {
 };
 
 /**
- * @struct MatmulMultiBlockFullLoad
- * @brief Matrix multiplication multi-block structure, no quant, implemented based on Layout
- * @param [in] L0C2OutModel_: mode of L0C out mode, default is ON_THE_FLY(not set out mode)
- * @param [in] FullLoadMode_: mode of full load, default is B_FULL_LOAD_MODE(B full load)
- * @param [in] FusedOpType: execute fusion after mmad , default is 0
+ * @struct MatmulMultiBlockBFullLoad
+ * @brief Matrix multiplication B full-load structure, with optional fixpipe output mode
+ * @param [in] L0C2OutModel_: mode of L0C out mode, default is ON_THE_FLY(L0C2GM)
+ * @param [in] FusedOpType_: execute fusion after mmad, default is 0
+ * @param [in] KernelSchedule_: mmad dispatch policy
  */
-template <uint64_t L0C2OutModel_ = ON_THE_FLY, uint64_t FullLoadMode_ = B_FULL_LOAD_MODE, uint64_t FusedOpType_ = 0,
+
+template <uint64_t L0C2OutModel_ = ON_THE_FLY, uint64_t FusedOpType_ = 0,
           class KernelSchedule_ = KernelMmadMultiBlockBFullLoad>
-struct MatmulMultiBlockFullLoadOrFixpipe {
+struct MatmulMultiBlockBFullLoad {
     using ScheduleType = KernelSchedule_;
-    static constexpr uint64_t FULL_LOAD_MODE = FullLoadMode_;
+    static constexpr uint64_t FULL_LOAD_MODE = B_FULL_LOAD_MODE;
+    static constexpr uint64_t L0C2OUT_MODEL = L0C2OutModel_;
+    static constexpr uint64_t FUSED_OP_TYPE = FusedOpType_;
+};
+
+/**
+ * @struct MatmulMultiBlockFixpipeOpti
+ * @brief Matrix multiplication fixpipe optimization without B full-load
+ * @param [in] FusedOpType_: execute fusion after mmad, default is 0
+ * @param [in] KernelSchedule_: mmad dispatch policy
+ */
+template <uint64_t L0C2OutModel_ = ON_THE_FLY, uint64_t FusedOpType_ = 0,
+          class KernelSchedule_ = KernelMmadMultiBlockFixpipeOpti>
+struct MatmulMultiBlockFixpipeOpti {
+    using ScheduleType = KernelSchedule_;
+    static constexpr uint64_t FULL_LOAD_MODE = NONE_FULL_LOAD_MODE;
     static constexpr uint64_t L0C2OUT_MODEL = L0C2OutModel_;
     static constexpr uint64_t FUSED_OP_TYPE = FusedOpType_;
 };

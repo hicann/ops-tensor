@@ -104,7 +104,7 @@ private:
         auto layoutB = MakeLayoutB{}(batch_, k_, n_);
         auto layoutC = MakeNDBatchLayout<CType>(batch_, m_, n_, n_, batch_ * n_);
 
-        uint64_t innerBatch = batch_ / batchSplitFactor_;
+        uint64_t innerBatch = Blaze::Gemm::CeilDiv(batch_, batchSplitFactor_);
         auto splitBatchLayoutC = AscendC::Te::MakePatternLayout<
             AscendC::Te::NDLayoutPtn,
             AscendC::Te::LayoutTrait<CType, AscendC::Std::Int<AscendC::Te::C0_ELEMENT<CType>>>>(
