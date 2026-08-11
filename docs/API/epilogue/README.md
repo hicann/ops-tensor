@@ -8,6 +8,7 @@
 | [block_epilogue_streamk](./block/block_epilogue_matmul_streamk.md) | StreamK 后处理组件，支持 workspace 汇聚、类型转换、ReLU |
 | [block_epilogue_dequant](./block/block_epilogue_dequant.md) | MIX 模板 dequant 向量后处理，AIV 侧 int32→fp32 × scale + bias → bf16/fp16/fp32 |
 | [block_epilogue_qbmm_pertensor_streamk](./block/block_epilogue_qbmm_pertensor_streamk.md) | QBMM per-tensor StreamK 专用后处理，归约 raw partial 后应用 scale/bias |
+| [block_epilogue_per_token_scale](./block/block_epilogue_per_token_scale.md) | 应用 per-token scale 和可选 row-sum offset 修正 |
 
 ## 公共框架
 

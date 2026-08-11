@@ -15,10 +15,21 @@ Fixpipe 量化矩阵乘 Block，基于 Tensor API 实现，仅支持 AIC 计算�
 - `MatmulWithScaleFixpipeQuant<0, true>`（Atomic Add 非全载模式）
 - `MatmulWithScaleFixpipeQuant<A_FULL_LOAD_MODE, true>`（Atomic Add A 矩阵全载模式）
 - `MatmulWithScaleFixpipeQuant<0, false, KernelQbmmPertensorMultiBlockStreamK>`（QBMM per-tensor StreamK，DP/SK 混合输出）
+- `MatmulWithScaleFixpipeQuant<0, false, KernelGroupedMmadWithScaleFixpipeQuant>`（GMM Fixpipe per-channel/per-group）
 
 `MatmulWithScaleFixpipeQuant` 默认使用 `KernelMmadWithScaleFixpipeQuant`，不编译 workspace 输出分支；传入 `KernelQbmmPertensorMultiBlockStreamK` 后，Block 通过 `ScheduleType` 编译期判断开启 raw workspace 输出能力。Atomic Add 标志由 Kernel 层读取并配置，Block 内部不直接设置 atomic 状态。
 
 不支持 `MatmulWithScaleMx`、`GroupedMatmulWithScaleMx` 或 `MatmulMultiBlockBasic`。
+
+### Grouped Matmul 扩展
+
+当 `ScheduleType` 为 `KernelGroupedMmadWithScaleFixpipeQuant` 时，本 Block 新增 GMM Fixpipe 能力：
+
+- per-channel：完成完整 K 轴 Mmad 后，使用当前 N 分片的 scale 执行一次 Fixpipe 反量化。
+- per-group：`ProcessPerGroup()` 按 `quantGroupSize` 切分 K 轴；每个 K-group 使用独立 scale 完成 Mmad 和 Fixpipe，首个 group 初始化输出，后续 group 累加到同一结果。
+- per-group 循环结束后恢复完整 K 轴循环状态，保证同一 BlockMmad 实例可以继续处理后续基本块。
+
+该扩展只处理算子侧已经准备好的 Cube 输入，不包含 INT4 到 INT8 的展开逻辑。
 
 ### 量化数据类型支持
 | 数据类型 | 说明 | C0_SIZE |
@@ -38,6 +49,7 @@ Fixpipe 量化矩阵乘 Block，基于 Tensor API 实现，仅支持 AIC 计算�
 Fixpipe 反量化使用 X2 scale，支持两类输入方式：
 - **Scalar scale**：`operator()` 的 `scaleGlobal` 为 `uint64_t`，Fixpipe 搬出时使用标量 scale。
 - **Per-channel scale**：`scaleGlobal` 为 Tensor，Block 将当前 N 分片的 scale 搬入 L1，并在 Fixpipe 搬出时使用 L1 scale Tensor。
+- **Per-group scale**：仅用于 GMM 调度；`scaleGlobal` 为 `[quantGroupNum, N]` 视图，每个 K-group 选择对应的一行 scale。
 
 当 `CType` 为 `int32_t` 时，结果直接以累加值搬出，不使用 scale 反量化。
 

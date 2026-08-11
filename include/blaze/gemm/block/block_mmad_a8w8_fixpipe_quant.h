@@ -62,6 +62,8 @@ public:
                                          IsSameType<X2ScaleType, int64_t>::value;
     static constexpr bool
         IS_PERTENSOR_STREAMK = AscendC::Std::is_same_v<ScheduleType_, KernelQbmmPertensorMultiBlockStreamK>;
+    static constexpr bool
+        IS_GROUPED_FIXPIPE = AscendC::Std::is_same_v<ScheduleType_, KernelGroupedMmadWithScaleFixpipeQuant>;
     static constexpr bool STREAMK_BIAS_IN_MMAD = IsSameType<BiasType, int32_t>::value ||
                                                  (!IsSameType<AType, int8_t>::value && IS_INT_SCALE &&
                                                   IsSameType<BiasType, float>::value);
@@ -111,34 +113,31 @@ public:
                                 bool dbL0C)
     {
         k_ = AscendC::Te::Get<IDX_K_IDX>(problemShape);
-        uint64_t baseM = AscendC::Te::Get<IDX_M_IDX>(l0TileShape);
+        baseM_ = AscendC::Te::Get<IDX_M_IDX>(l0TileShape);
         baseN_ = AscendC::Te::Get<IDX_N_IDX>(l0TileShape);
         baseK_ = AscendC::Te::Get<IDX_K_IDX>(l0TileShape);
         isBias_ = isBias;
         l1BufNum_ = l1BufferNum;
         enableL0cPingPong_ = dbL0C;
         uint64_t x2ScaleL1OneBuffer = 0UL;
-        if (quantMode == QuantMode::PERCHANNEL_MODE) {
+        if constexpr (IS_GROUPED_FIXPIPE) {
+            if (quantMode == QuantMode::PERCHANNEL_MODE || quantMode == QuantMode::PERGROUP_MODE) {
+                x2ScaleL1OneBuffer = GetScaleL1Bytes(baseN_);
+            }
+        } else if (quantMode == QuantMode::PERCHANNEL_MODE) {
             x2ScaleL1OneBuffer = baseN_ * sizeof(uint64_t);
         }
-        uint64_t biasL1OneBuffer = isBias_ ? baseN_ * sizeof(BiasType) : 0UL;
-        uint64_t aL1OneBuffer = 0UL;
-        uint64_t bL1OneBuffer = 0UL;
+        uint64_t biasL1OneBuffer = IS_GROUPED_FIXPIPE ? GetBiasL1Bytes(baseN_, isBias_) :
+                                                        (isBias_ ? baseN_ * sizeof(BiasType) : 0UL);
         if constexpr (DispatchPolicy::FULL_LOAD_MODE == A_FULL_LOAD_MODE) {
             kBL1_ = kBL1;
             kAL1_ = kBL1_;
             kL1_ = kBL1;
-            uint64_t baseMAligned = CeilAlign(baseM, TRANS_A ? C0_SIZE : BLOCK_CUBE);
-            uint64_t kAlign = CeilAlign(k_, TRANS_A ? BLOCK_CUBE : C0_SIZE);
-            aL1OneBuffer = baseMAligned * kAlign;
-            bL1OneBuffer = baseN_ * kL1_;
             kL1Iter_ = CeilDiv(k_, kL1_);
         } else {
             if (l1BufferNum == DOUBLE_BUFFER_COUNT) {
                 kAL1_ = kAL1;
                 kBL1_ = kBL1;
-                aL1OneBuffer = baseM * kAL1_;
-                bL1OneBuffer = baseN_ * kBL1_;
                 kAL1Iter_ = CeilDiv(k_, kAL1_);
                 kBL1Iter_ = CeilDiv(k_, kBL1_);
                 if (kAL1 == kBL1) {
@@ -147,13 +146,13 @@ public:
                 }
             } else {
                 kL1_ = Min(kAL1, kBL1);
-                aL1OneBuffer = baseM * kL1_;
-                bL1OneBuffer = baseN_ * kL1_;
                 kL1Iter_ = CeilDiv(k_, kL1_);
                 kAL1_ = kL1_;
                 kBL1_ = kL1_;
             }
         }
+        const uint64_t aL1OneBuffer = GetAL1BufferSize();
+        const uint64_t bL1OneBuffer = GetBL1BufferSize();
         GetL1BufferOffset(aL1OneBuffer, bL1OneBuffer, x2ScaleL1OneBuffer, biasL1OneBuffer);
     }
 
@@ -286,12 +285,63 @@ private:
         }
     }
 
+public:
+    template <typename TensorA, typename TensorB, typename TScale, typename TensorBias, typename TensorC>
+    __aicore__ inline void operator()(TensorA gmA, TensorB gmB, TScale scaleGlobal, TensorBias gmBias, TensorC gmC,
+                                      BlockShape singleShape, uint32_t quantGroupSize, uint32_t quantGroupNum)
+    {
+        ProcessPerGroup(gmA, gmB, scaleGlobal, gmBias, gmC, singleShape, quantGroupSize, quantGroupNum);
+    }
+
+private:
+    // Per-group dequantization requires each K-group partial result to be
+    // converted by its own scale before the partials are accumulated.
+    template <typename TensorA, typename TensorB, typename TScale, typename TensorBias, typename TensorC>
+    __aicore__ inline void ProcessPerGroup(TensorA gmA, TensorB gmB, TScale scaleGlobal, TensorBias gmBias, TensorC gmC,
+                                           BlockShape singleShape, uint32_t quantGroupSize, uint32_t quantGroupNum)
+    {
+        static_assert(IS_GROUPED_FIXPIPE, "ProcessPerGroup is only available for grouped fixpipe kernels.");
+        const uint64_t fullK = static_cast<uint64_t>(AscendC::Te::Get<IDX_K_IDX>(singleShape));
+        const uint64_t curM = static_cast<uint64_t>(AscendC::Te::Get<IDX_M_TILEIDX>(singleShape));
+        const uint64_t curN = static_cast<uint64_t>(AscendC::Te::Get<IDX_N_TILEIDX>(singleShape));
+
+        for (uint32_t groupIdx = 0; groupIdx < quantGroupNum; ++groupIdx) {
+            const uint64_t kOffset = static_cast<uint64_t>(groupIdx) * quantGroupSize;
+            const uint64_t curK = Min(fullK - kOffset, static_cast<uint64_t>(quantGroupSize));
+            auto gmGroupA = gmA.Slice(AscendC::Te::MakeCoord(0UL, kOffset), AscendC::Te::MakeShape(curM, curK));
+            auto gmGroupB = gmB.Slice(AscendC::Te::MakeCoord(kOffset, 0UL), AscendC::Te::MakeShape(curK, curN));
+            auto gmGroupScale = scaleGlobal.Slice(AscendC::Te::MakeCoord(static_cast<uint64_t>(groupIdx), 0UL),
+                                                  AscendC::Te::MakeShape(1UL, curN));
+            const BlockShape groupShape{static_cast<int64_t>(curM), static_cast<int64_t>(curN),
+                                        static_cast<int64_t>(curK), 0};
+
+            UpdateKLoop(curK);
+            if (groupIdx == 1U) {
+                // Group 0 initializes C with a normal FixPipe write. Keep
+                // atomic-add enabled for all remaining groups and restore the
+                // state only after the final group has completed.
+                AscendC::PipeBarrier<PIPE_FIX>();
+                AscendC::SetAtomicAdd<CType>();
+            }
+            operator()(gmGroupA, gmGroupB, gmGroupScale, gmBias, gmC, groupShape);
+        }
+        if (quantGroupNum > 1U) {
+            AscendC::PipeBarrier<PIPE_FIX>();
+            AscendC::SetAtomicNone();
+        }
+        UpdateKLoop(fullK);
+    }
+
 private:
     __aicore__ inline void UpdateKLoop(uint64_t curK)
     {
         k_ = curK;
         if constexpr (DispatchPolicy::FULL_LOAD_MODE == A_FULL_LOAD_MODE) {
             kL1Iter_ = CeilDiv(k_, kL1_);
+            if constexpr (IS_GROUPED_FIXPIPE) {
+                // A full-load caching cannot span different per-group A slices.
+                abL1LoopCnt_ = 0;
+            }
         } else if (l1BufNum_ == DOUBLE_BUFFER_COUNT) {
             kAL1Iter_ = CeilDiv(k_, kAL1_);
             kBL1Iter_ = CeilDiv(k_, kBL1_);
@@ -358,6 +408,53 @@ private:
         return tensorBt;
     }
 
+    __aicore__ inline static uint64_t GetAL1Bytes(uint64_t baseM, uint64_t kAL1)
+    {
+        return (TRANS_A ? CeilAlign(baseM, C0_SIZE) * CeilAlign(kAL1, BLOCK_CUBE) :
+                          CeilAlign(baseM, BLOCK_CUBE) * CeilAlign(kAL1, C0_SIZE)) *
+               sizeof(AType);
+    }
+
+    __aicore__ inline static uint64_t GetBL1Bytes(uint64_t baseN, uint64_t kBL1)
+    {
+        return (TRANS_B ? CeilAlign(kBL1, C0_SIZE) * CeilAlign(baseN, BLOCK_CUBE) :
+                          CeilAlign(kBL1, BLOCK_CUBE) * CeilAlign(baseN, C0_SIZE)) *
+               sizeof(BType);
+    }
+
+    __aicore__ inline uint64_t GetAL1BufferSize() const
+    {
+        const uint64_t bufferK = DispatchPolicy::FULL_LOAD_MODE == A_FULL_LOAD_MODE ? k_ : kAL1_;
+        if constexpr (IS_GROUPED_FIXPIPE) {
+            return GetAL1Bytes(baseM_, bufferK);
+        } else if constexpr (DispatchPolicy::FULL_LOAD_MODE == A_FULL_LOAD_MODE) {
+            const uint64_t alignedM = CeilAlign(baseM_, TRANS_A ? C0_SIZE : BLOCK_CUBE);
+            const uint64_t alignedK = CeilAlign(bufferK, TRANS_A ? BLOCK_CUBE : C0_SIZE);
+            return alignedM * alignedK;
+        } else {
+            return baseM_ * bufferK;
+        }
+    }
+
+    __aicore__ inline uint64_t GetBL1BufferSize() const
+    {
+        if constexpr (IS_GROUPED_FIXPIPE) {
+            return GetBL1Bytes(baseN_, kBL1_);
+        } else {
+            return baseN_ * kBL1_;
+        }
+    }
+
+    __aicore__ inline static uint64_t GetScaleL1Bytes(uint64_t baseN)
+    {
+        return CeilAlign(baseN * sizeof(uint64_t), BLOCK_BYTE_SIZE);
+    }
+
+    __aicore__ inline static uint64_t GetBiasL1Bytes(uint64_t baseN, bool hasBias)
+    {
+        return hasBias ? CeilAlign(baseN * sizeof(BiasType), BLOCK_BYTE_SIZE) : 0UL;
+    }
+
     template <typename C1Tensor, typename TensorAL0, typename TensorBL0, typename TensorBt>
     __aicore__ inline void ExecuteMmad(AscendC::Te::MmadParams& params, C1Tensor& c1Local, TensorAL0 l0aLocal,
                                        TensorBL0 l0bLocal, TensorBt tensorBt, bool needBias)
@@ -379,6 +476,19 @@ private:
         constexpr uint64_t halfL1Size = AscendC::TOTAL_L1_SIZE >> 1;
         uint64_t l1HalfBufNum = l1BufNum_ >> 1;
         if constexpr (DispatchPolicy::FULL_LOAD_MODE == NONE_FULL_LOAD_MODE) {
+            if constexpr (IS_GROUPED_FIXPIPE) {
+                if (l1BufNum_ == DOUBLE_BUFFER_COUNT) {
+                    // Each fixed GMM stage occupies one complete half of L1.
+                    for (uint16_t bufferId = 0; bufferId < DOUBLE_BUFFER_COUNT; ++bufferId) {
+                        const uint64_t stageBase = halfL1Size * bufferId;
+                        l1BufferAOffset_[bufferId] = stageBase;
+                        l1BufferBOffset_[bufferId] = stageBase + aL1OneBuffer;
+                        l1BufferX2ScaleOffset_[bufferId] = l1BufferBOffset_[bufferId] + bL1OneBuffer;
+                        l1BufferBiasOffset_[bufferId] = l1BufferX2ScaleOffset_[bufferId] + x2ScaleL1OneBuffer;
+                    }
+                    return;
+                }
+            }
             for (uint16_t bufferId = 0; bufferId < l1BufNum_; bufferId++) {
                 uint64_t l1Offset = halfL1Size * (bufferId & 1);
                 l1BufferAOffset_[bufferId] = l1Offset + aL1OneBuffer * (bufferId >> 1);
@@ -621,6 +731,7 @@ private:
     uint64_t kL1_{1};
     uint64_t kAL1_{1};
     uint64_t kBL1_{1};
+    uint64_t baseM_{16};
     uint64_t baseN_{16};
     uint64_t baseK_{16};
     uint16_t aPingPongId_{0};
