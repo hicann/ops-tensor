@@ -41,6 +41,7 @@ struct KernelMmadMultiBlockTBMM {};               // tbmm schedule
 struct KernelMixWithWeightPrologue {};            // Mix matmul with AIV weight preprocessing
 struct KernelGmmSwiGluMixMx {};                   // MIX AIC+AIV schedule for GroupedMatmul + SwiGLU + MX quant
 struct KernelMatmulEmuSplitWeight {};             // Double bf16 matmul to simulate fp32 (AIC+AIV)
+struct KernelMmadWithScaleMxMix {};               // Multi-block with Mx scale, epilogue after block mmad
 
 enum class MatMulL0C2Out : std::uint8_t { ON_THE_FLY = 0, ND_FIXPIPE_1_1 = 1, ND_FIXPIPE_1_2 = 2 };
 
