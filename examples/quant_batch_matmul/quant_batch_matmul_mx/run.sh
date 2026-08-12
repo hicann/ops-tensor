@@ -238,7 +238,7 @@ do_gen_data() {
     [[ "$TA_RESOLVED" == "true" ]] && trans_a_flag="--trans-a"
     [[ "$TB_RESOLVED" == "true" ]] && trans_b_flag="--trans-b"
 
-    (cd "${OP_SCRIPTS_DIR}" && python3 gen_data.py \
+    (cd "${OP_SCRIPTS_DIR}" && python3 gen_data_mx.py \
         --m "${M_RESOLVED}" --k "${K_RESOLVED}" --n "${N_RESOLVED}" \
         --bias "${BIAS_RESOLVED}" \
         --a-dtype "${ADTYPE_RESOLVED}" --b-dtype "${BDTYPE_RESOLVED}" \
@@ -279,7 +279,7 @@ do_run() {
 do_verify() {
     log_info "Verifying results for ${EXAMPLE} ..."
 
-    if ! (cd "${OP_SCRIPTS_DIR}" && python3 verify_result.py \
+    if ! (cd "${OP_SCRIPTS_DIR}" && python3 verify_result_mx.py \
         ./input/golden_c.bin ./output/npu_out.bin \
         --dtype "${CDTYPE_RESOLVED}"); then
         log_error "Verification FAILED for ${EXAMPLE}"

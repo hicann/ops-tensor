@@ -72,7 +72,7 @@ qbmm_mx_10240_1024_2624_FF_fp8e4m3_fp8e4m3_bfloat16_NZ,10240,1024,2624,0,fp8_e4m
 
 ### 输入数据
 
-由 `../scripts/gen_data.py` 生成：
+由 `../scripts/gen_data_mx.py` 生成：
 
 - `input/input_a.bin`: A 矩阵（FP8 或打包 FP4）
 - `input/input_b.bin`: B 矩阵（FP8 或打包 FP4，ND 或 NZ 格式）
@@ -87,7 +87,7 @@ qbmm_mx_10240_1024_2624_FF_fp8e4m3_fp8e4m3_bfloat16_NZ,10240,1024,2624,0,fp8_e4m
 
 ### 验证标准
 
-由 `../scripts/verify_result.py` 执行，支持 float16/bfloat16/float32 三种输出 dtype 的精度比对。
+由 `../scripts/verify_result_mx.py` 执行，支持 float16/bfloat16/float32 三种输出 dtype 的精度比对。
 
 ## 覆盖的场景
 
@@ -112,8 +112,10 @@ qbmm_mx_10240_1024_2624_FF_fp8e4m3_fp8e4m3_bfloat16_NZ,10240,1024,2624,0,fp8_e4m
 quant_batch_matmul/
 ├── CMakeLists.txt                  # 构建配置
 ├── scripts/
-│   ├── gen_data.py                 # 数据生成（full_mx 路径）
-│   └── verify_result.py            # 精度校验（float16/bfloat16/float32）
+│   ├── gen_data_cube.py            # Cube 数据生成（HiFloat8/Int8）
+│   ├── gen_data_mx.py              # MX 数据生成（full_mx 路径）
+│   ├── verify_result_cube.py       # Cube 精度校验（BF16/Int32）
+│   └── verify_result_mx.py         # MX 精度校验（FP16/BF16/FP32）
 └── quant_batch_matmul_mx/
     ├── CMakeLists.txt              # 构建配置
     ├── quant_batch_matmul_mx.cpp   # 统一 kernel 实现

@@ -14,7 +14,8 @@ set -euo pipefail
 # ── Key Variables ──────────────────────────────────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCENARIO_NAME="$(basename "${SCRIPT_DIR}")"
-EXAMPLES_DIR="$(dirname "${SCRIPT_DIR}")"
+OP_DIR="$(dirname "${SCRIPT_DIR}")"
+EXAMPLES_DIR="$(dirname "${OP_DIR}")"
 EXAMPLES_COMMON_DIR="${EXAMPLES_DIR}/common"
 REPO_ROOT="$(dirname "${EXAMPLES_DIR}")"
 BUILD_DIR="${SCRIPT_DIR}/build"
@@ -152,7 +153,7 @@ do_build() {
 # ── Run CSV Cases ────────────────────────────────────────────────────────────
 run_csv_cases() {
     local csv_file="$1"
-    local executable="${BUILD_DIR}/quant_batch_matmul_cube/${TARGET}"
+    local executable="${BUILD_DIR}/quant_batch_matmul/${SCENARIO_NAME}/${TARGET}"
     local result_file="${csv_file%.csv}_result.csv"
 
     if [[ ! -f "${csv_file}" ]]; then
@@ -174,10 +175,18 @@ run_csv_cases() {
     return 1
 }
 
+# ── Cleanup ──────────────────────────────────────────────────────────────────
+cleanup_data() {
+    log_info "Cleaning up generated data ..."
+    rm -rf "${SCRIPT_DIR}/data"
+    log_success "Cleanup completed"
+}
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 main() {
     echo "=========================================="
-    echo "  quant_batch_matmul_cube Runner"
+    echo "  quant_batch_matmul_cube One-Click Runner"
+    echo "  Scenario: ${SCENARIO_NAME}"
     echo "=========================================="
 
     preflight
@@ -193,7 +202,10 @@ main() {
         return 0
     fi
 
-    run_csv_cases "${CASE_FILE}"
+    local csv_result=0
+    run_csv_cases "${CASE_FILE}" || csv_result=$?
+    cleanup_data
+    return "${csv_result}"
 }
 
 main "$@"

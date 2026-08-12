@@ -13,9 +13,9 @@
 """Parse CSV test cases and execute all cases sequentially.
 
 Workflow per case:
-    1. gen_data.py   – generate input/golden data
+    1. gen_data_mx.py – generate input/golden data
     2. kernel binary – run NPU kernel
-    3. verify_result.py – compare NPU output vs CPU golden
+    3. verify_result_mx.py – compare NPU output vs CPU golden
 
 Results are written to <csv>_result.csv in the same directory.
 """
@@ -103,10 +103,10 @@ def parse_csv(csv_path):
 
 
 def _build_gen_cmd(case):
-    """Build the gen_data.py command for one case."""
+    """Build the gen_data_mx.py command for one case."""
     cmd = [
         "python3",
-        os.path.join(SCRIPTS_DIR, "gen_data.py"),
+        os.path.join(SCRIPTS_DIR, "gen_data_mx.py"),
         "--m",
         str(case["m"]),
         "--k",
@@ -170,10 +170,10 @@ def _build_run_cmd(case):
 
 
 def _build_verify_cmd(case):
-    """Build the verify_result.py command for one case."""
+    """Build the verify_result_mx.py command for one case."""
     return [
         "python3",
-        os.path.join(SCRIPTS_DIR, "verify_result.py"),
+        os.path.join(SCRIPTS_DIR, "verify_result_mx.py"),
         os.path.join(SCRIPTS_DIR, "input", "golden_c.bin"),
         os.path.join(SCRIPTS_DIR, "output", "npu_out.bin"),
         "--dtype",

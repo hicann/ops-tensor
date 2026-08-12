@@ -11,9 +11,9 @@
   Fixpipe 使用的 `uint64_t[N]`；
 - 也支持 `x1quantmode=default`、`x2quantmode=pertensor`。
 
-`gen_data.py` 支持生成 HiFloat8/BF16 和 Int8/Int32 数据。HiFloat8 Golden 按 Fixpipe 精度清除 scale
-的低 13 位并保存为 BF16；Int8 Matmul 使用 Int32 累加和 Int32 Golden。`verify_result.py` 对 BF16
-使用参考样例的误差标准，对 Int32 进行逐元素精确比较。
+`../scripts/gen_data_cube.py` 支持生成 HiFloat8/BF16 和 Int8/Int32 数据。HiFloat8 Golden 按 Fixpipe
+精度清除 scale 的低 13 位并保存为 BF16；Int8 Matmul 使用 Int32 累加和 Int32 Golden。公共的
+`../scripts/verify_result_cube.py` 对 BF16 使用参考样例的误差标准，对 Int32 进行逐元素精确比较。
 
 Kernel 的 `AType/BType/CType/BiasType/X2ScaleType` 均为模板参数；Host 根据 CSV dtype 选择对应的
 预编译实例，buffer 大小也按实例类型计算。
@@ -44,6 +44,15 @@ TT/TC，以及 Int8 的普通 ND、transA+transB 和 transB+batch 场景。
 
 ## 在 NPU 上编译运行
 
+从仓库根目录通过统一入口编译并运行：
+
+```bash
+source /path/to/cann/set_env.sh
+bash build.sh --examples --ops=quant_batch_matmul --target=quant_batch_matmul_cube
+```
+
+也可以进入本场景目录直接运行：
+
 ```bash
 source /path/to/cann/set_env.sh
 bash run.sh
@@ -64,7 +73,7 @@ bash run.sh --case quant_batch_matmul_cube.csv --skip-build
 单独生成默认 TC Batch 用例对应的输入：
 
 ```bash
-python3 gen_data.py \
+python3 ../scripts/gen_data_cube.py \
   --batch 2 --m 128 --k 256 --n 128 --bias 0 \
   --a-type hifloat8_t --b-type hifloat8_t --c-type bfloat16_t --bias-type float \
   --trans-a false --trans-b false \
@@ -76,7 +85,7 @@ python3 gen_data.py \
 对应的可执行文件调用为：
 
 ```bash
-./build/quant_batch_matmul_cube/quant_batch_matmul_cube \
+./build/quant_batch_matmul/quant_batch_matmul_cube/quant_batch_matmul_cube \
   2 128 256 128 hifloat8_t hifloat8_t bfloat16_t 0 float \
   false false default perchannel uint64_t \
   256 256 128 128 data/tc_nd_batch
