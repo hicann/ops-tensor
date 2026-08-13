@@ -72,7 +72,7 @@ public:
     using LayoutC = typename BlockMmad::LayoutC;
     using LayoutBias = typename BlockMmad::LayoutBias;
     using TupleShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
-    using MakeLayoutA = AscendC::Te::FrameLayoutFormat<LayoutA>;
+    using MakeLayoutA = AscendC::Te::FrameLayoutFormat<LayoutA, AscendC::Std::Int<AscendC::Te::C0_ELEMENT<AType>>>;
     using MakeLayoutB = AscendC::Te::FrameLayoutFormat<LayoutB, AscendC::Std::Int<AscendC::Te::C0_ELEMENT<BType>>>;
     using MakeLayoutC = AscendC::Te::FrameLayoutFormat<LayoutC, AscendC::Std::Int<AscendC::Te::C0_ELEMENT<CType>>>;
     using MakeLayoutBias = AscendC::Te::FrameLayoutFormat<LayoutBias,
@@ -133,25 +133,10 @@ public:
     }
 
 private:
-    __aicore__ inline auto MakeLayoutA2D(Params const& params)
-    {
-        auto layoutA = MakeLayoutA{}(m_, k_);
-        if constexpr (!TRANS_A) {
-            // 连续场景下rowStride表示k或1, 非连续场景下表示m轴的stride
-            uint64_t rowStride = params.mmadParams.rowStride;
-            layoutA = AscendC::Te::MakePatternLayout<LayoutA, AscendC::Te::LayoutTraitDefault<>>(
-                AscendC::Te::MakeShape(AscendC::Te::MakeShape(AscendC::Te::_1{}, m_),
-                                       AscendC::Te::MakeShape(AscendC::Te::_1{}, k_)),
-                AscendC::Te::MakeStride(AscendC::Te::MakeStride(AscendC::Te::_0{}, rowStride),
-                                        AscendC::Te::MakeStride(AscendC::Te::_0{}, AscendC::Te::_1{})));
-        }
-        return layoutA;
-    }
-
     __aicore__ inline void MatmulProcessOnTheFly(Params const& params, BlockMmad& blockMmad, BlockScheduler& bs,
                                                  int64_t curBlockIdx, int64_t coreNums, int64_t totalBlockNums)
     {
-        auto layoutA = MakeLayoutA2D(params);
+        auto layoutA = MakeLayoutA{}(m_, k_);
         auto layoutB = MakeLayoutB{}(k_, n_);
         auto layoutC = MakeLayoutC{}(m_, n_);
         auto layoutBias = MakeLayoutBias{}(1L, n_);
@@ -188,7 +173,7 @@ private:
                                                 BlockScheduler& bs, int64_t curBlockIdx, int64_t coreNums,
                                                 int64_t totalBlockNums)
     {
-        auto layoutA = MakeLayoutA2D(params);
+        auto layoutA = MakeLayoutA{}(m_, k_);
         auto layoutB = MakeLayoutB{}(k_, n_);
         auto layoutC = MakeLayoutC{}(m_, n_);
         auto layoutBias = MakeLayoutBias{}(1L, n_);

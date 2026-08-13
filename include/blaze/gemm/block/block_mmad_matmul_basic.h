@@ -77,7 +77,6 @@ public:
         uint32_t l1Stages{1};
         uint16_t l0cStages{1};
         GM_ADDR scaleGmAddr{nullptr};
-        uint64_t rowStride{0};
     };
 
 public:
