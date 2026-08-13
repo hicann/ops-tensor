@@ -14,7 +14,7 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 OP_DIR=$(dirname "${SCRIPT_DIR}")
 EXAMPLES_DIR=$(dirname "${OP_DIR}")
 BUILD_DIR="${SCRIPT_DIR}/build"
-TARGET=qgmm_mx
+TARGET=quant_grouped_mat_mul_mx
 CASE_FILE=""
 SKIP_BUILD=false
 BUILD_ONLY=false
@@ -51,16 +51,16 @@ if [[ "${BUILD_ONLY}" == true ]]; then
     exit 0
 fi
 
-EXECUTABLE="${BUILD_DIR}/gmm/qgmm_mx/qgmm_mx"
+EXECUTABLE="${BUILD_DIR}/grouped_mat_mul/quant_grouped_mat_mul_mx/quant_grouped_mat_mul_mx"
 if [[ ! -x "${EXECUTABLE}" ]]; then
     log_error "Executable not found: ${EXECUTABLE}"
     exit 1
 fi
 
 if [[ -z "${CASE_FILE}" ]]; then
-    CASE_FILE="${SCRIPT_DIR}/qgmm_mx.csv"
+    CASE_FILE="${SCRIPT_DIR}/quant_grouped_mat_mul_mx.csv"
 fi
-RESULT_FILE="${SCRIPT_DIR}/qgmm_mx_result.csv"
+RESULT_FILE="${SCRIPT_DIR}/quant_grouped_mat_mul_mx_result.csv"
 python3 "${SCRIPT_DIR}/parse_csv.py" "${EXECUTABLE}" "${CASE_FILE}" "${RESULT_FILE}"
 
 log_success "QGMM MX example passed"

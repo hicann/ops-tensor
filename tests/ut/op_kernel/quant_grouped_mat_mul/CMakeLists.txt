@@ -7,4 +7,4 @@
 # See LICENSE in the root of the software repository for the full text of the License.
 # ============================================================================
 
-AddOpTestCase(qgmm "ascend950pr_9599" "")
+AddOpTestCase(quant_grouped_mat_mul "ascend950pr_9599" "")

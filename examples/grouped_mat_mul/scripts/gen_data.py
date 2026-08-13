@@ -61,12 +61,12 @@ def _encode(values, dtype):
     )
 
 
-def _format_weight(codes, weight_format, k, n, c0):
-    if weight_format == "nd":
+def _format_weight(codes, layout_b, k, n, c0):
+    if layout_b == "nd":
         return codes.reshape(-1)
-    if weight_format == "dn":
+    if layout_b == "dn":
         return codes.T.reshape(-1)
-    if weight_format == "nz":
+    if layout_b == "nz":
         padded = np.zeros((_align_up(k, 16), _align_up(n, c0)), np.uint8)
         padded[:k, :n] = codes
         return (
@@ -85,7 +85,7 @@ def _format_weight(codes, weight_format, k, n, c0):
 
 def _parse_group_list(text, group_num, total_size, list_type):
     values = np.asarray([int(value) for value in text.split(";")], np.int64)
-    if list_type == "sparse":
+    if list_type == 2:
         if values.size != group_num * 2:
             raise ValueError("sparse group-list must contain e index/length pairs")
         pairs = values.reshape(group_num, 2)
@@ -94,7 +94,7 @@ def _parse_group_list(text, group_num, total_size, list_type):
                 "sparse group-list indices must be a permutation of [0, e)"
             )
         lengths = pairs[:, 1]
-    elif list_type == "offset":
+    elif list_type == 0:
         if (
             values.size != group_num
             or np.any(values < 0)
@@ -113,8 +113,8 @@ def _parse_group_list(text, group_num, total_size, list_type):
     return values, lengths
 
 
-def _write_weights(output_dir, encoded, scales, multi_tensor):
-    if multi_tensor:
+def _write_weights(output_dir, encoded, scales, single_w):
+    if single_w == 0:
         for index, (weight, scale) in enumerate(zip(encoded, scales)):
             weight.tofile(os.path.join(output_dir, f"input_b_{index}.bin"))
             scale.tofile(os.path.join(output_dir, f"scale_b_{index}.bin"))
@@ -127,9 +127,10 @@ def generate(args):
     os.makedirs(args.output_dir, exist_ok=True)
     values, codes, c0 = TYPE_INFO[args.dtype]
     rng = np.random.default_rng(args.seed)
-    if args.trans_a:
+    k_grouped = args.group_type == 2
+    if k_grouped:
         group_list, k_lengths = _parse_group_list(
-            args.group_list, args.e, args.k, args.group_list_type
+            args.group_list, args.group_num, args.k, args.group_list_type
         )
         a_indices = [
             rng.integers(0, values.size, size=(args.m, int(group_k)))
@@ -146,7 +147,7 @@ def generate(args):
         encoded_b = [
             _encode(codes[index].reshape(-1), args.dtype) for index in b_indices
         ]
-        scale_slots = args.k // 64 + args.e
+        scale_slots = args.k // 64 + args.group_num
         scale_a = np.full((scale_slots, args.m, 2), MX_SCALE_ONE, np.uint8)
         scale_b_storage = np.full((scale_slots, args.n, 2), MX_SCALE_ONE, np.uint8)
         golden_groups = []
@@ -179,13 +180,16 @@ def generate(args):
         scale_b = [scale_b_storage.reshape(-1)]
     else:
         group_list, m_groups = _parse_group_list(
-            args.group_list, args.e, args.e * args.m, args.group_list_type
+            args.group_list,
+            args.group_num,
+            args.group_num * args.m,
+            args.group_list_type,
         )
         a_indices = [
             rng.integers(0, values.size, size=(int(group_m), args.k))
             for group_m in m_groups
         ]
-        b_indices = rng.integers(0, values.size, size=(args.e, args.k, args.n))
+        b_indices = rng.integers(0, values.size, size=(args.group_num, args.k, args.n))
         a_values = [values[index] for index in a_indices]
         b_values = values[b_indices]
         input_a = _encode(
@@ -193,51 +197,49 @@ def generate(args):
             args.dtype,
         )
         golden = np.concatenate(
-            [a_values[index] @ b_values[index] for index in range(args.e)], axis=0
+            [a_values[index] @ b_values[index] for index in range(args.group_num)],
+            axis=0,
         )
         encoded_b = [
             _encode(
                 _format_weight(
-                    codes[b_indices[index]], args.weight_format, args.k, args.n, c0
+                    codes[b_indices[index]], args.layout_b, args.k, args.n, c0
                 ),
                 args.dtype,
             )
-            for index in range(args.e)
+            for index in range(args.group_num)
         ]
         scale_k = _align_up(args.k, 64) // 32
-        scale_a = np.full(args.e * args.m * scale_k, MX_SCALE_ONE, np.uint8)
+        scale_a = np.full(args.group_num * args.m * scale_k, MX_SCALE_ONE, np.uint8)
         scale_b = [
-            np.full(args.n * scale_k, MX_SCALE_ONE, np.uint8) for _ in range(args.e)
+            np.full(args.n * scale_k, MX_SCALE_ONE, np.uint8)
+            for _ in range(args.group_num)
         ]
-    bias = np.full((args.e, args.n), 0.25 if args.with_bias else 0.0, np.float32)
-    if args.with_bias:
-        golden += bias[0] if args.trans_a else np.repeat(bias, m_groups, axis=0)
+    bias = np.full((args.group_num, args.n), 0.25 if args.is_bias else 0.0, np.float32)
+    if args.is_bias:
+        golden += bias[0] if k_grouped else np.repeat(bias, m_groups, axis=0)
 
     input_a.tofile(os.path.join(args.output_dir, "input_a.bin"))
     scale_a.tofile(os.path.join(args.output_dir, "scale_a.bin"))
     bias.tofile(os.path.join(args.output_dir, "bias.bin"))
     group_list.tofile(os.path.join(args.output_dir, "group_list.bin"))
-    _write_weights(args.output_dir, encoded_b, scale_b, args.multi_tensor)
+    _write_weights(args.output_dir, encoded_b, scale_b, args.single_w)
     golden.astype(np.float32).tofile(os.path.join(args.output_dir, "golden_c.bin"))
 
 
 def main():
     parser = argparse.ArgumentParser(description="Generate QGMM MX example data")
-    parser.add_argument("--e", type=int, required=True)
+    parser.add_argument("--group-num", type=int, required=True)
     parser.add_argument("--m", type=int, required=True)
     parser.add_argument("--n", type=int, required=True)
     parser.add_argument("--k", type=int, required=True)
     parser.add_argument("--dtype", choices=tuple(TYPE_INFO), required=True)
-    parser.add_argument(
-        "--weight-format", choices=("nd", "dn", "nz", "zn"), required=True
-    )
-    parser.add_argument(
-        "--group-list-type", choices=("length", "offset", "sparse"), required=True
-    )
+    parser.add_argument("--layout-b", choices=("nd", "dn", "nz", "zn"), required=True)
+    parser.add_argument("--group-list-type", type=int, choices=(0, 1, 2), required=True)
+    parser.add_argument("--group-type", type=int, choices=(0, 2), required=True)
+    parser.add_argument("--single-w", type=int, choices=(0, 1), required=True)
+    parser.add_argument("--is-bias", type=int, choices=(0, 1), required=True)
     parser.add_argument("--group-list", required=True)
-    parser.add_argument("--trans-a", action="store_true")
-    parser.add_argument("--multi-tensor", action="store_true")
-    parser.add_argument("--with-bias", action="store_true")
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--seed", type=int, default=42)
     generate(parser.parse_args())

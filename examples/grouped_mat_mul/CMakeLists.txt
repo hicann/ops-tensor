@@ -7,4 +7,4 @@
 # See LICENSE in the root of the software repository for the full text of the License.
 # ============================================================================
 
-add_subdirectory(qgmm_mx)
+add_subdirectory(quant_grouped_mat_mul_mx)

@@ -14,7 +14,7 @@
  */
 
 /**
- * \file qgmm_mx.h
+ * \file quant_grouped_mat_mul_mx.h
  * \brief QGMM MX kernel-UT wrapper.
  */
 #pragma once
@@ -27,7 +27,7 @@
 #include "kernel_operator.h"
 #include "tensor_api/tensor.h"
 
-#include "qgmm_cpu_debug_stub.h"
+#include "quant_grouped_mat_mul_cpu_debug_stub.h"
 
 #include "blaze/gemm/policy/dispatch_policy.h"
 #include "blaze/gemm/kernel/kernel_universal.h"

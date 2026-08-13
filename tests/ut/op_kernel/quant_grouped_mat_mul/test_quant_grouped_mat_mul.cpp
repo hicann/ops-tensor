@@ -14,7 +14,7 @@
  */
 
 /**
- * \file test_qgmm.cpp
+ * \file test_quant_grouped_mat_mul.cpp
  * \brief QGMM MX kernel smoke tests.
  */
 #include <algorithm>
@@ -26,7 +26,7 @@
 #include "gtest/gtest.h"
 #include "kernel_ut_runner.h"
 #include "tikicpulib.h"
-#include "qgmm_mx.h"
+#include "quant_grouped_mat_mul_mx.h"
 
 namespace {
 constexpr int64_t M0 = 16;
@@ -194,7 +194,7 @@ void RunQgmmCase(const std::string& dtypeA, const std::string& dtypeB, const std
     ASSERT_NE(groupList.Get(), nullptr);
     ASSERT_NE(tiling.Get(), nullptr);
 
-    const std::string dataDir = std::string(UT_KERNEL_SRC_DIR) + "/qgmm/qgmm_data";
+    const std::string dataDir = std::string(UT_KERNEL_SRC_DIR) + "/quant_grouped_mat_mul/quant_grouped_mat_mul_data";
     const std::string groupListName = groupListType == 0 ? "offset" : (groupListType == 2 ? "sparse" : "length");
     ASSERT_NO_FATAL_FAILURE(GenerateData(dataDir, dtypeA, dtypeB, weightFormat, MultiTensor, withBias, groupListName));
     ASSERT_NO_FATAL_FAILURE(
@@ -286,7 +286,8 @@ class QgmmMxKernelTest : public testing::Test {
 protected:
     static void TearDownTestCase()
     {
-        const std::string dataDir = std::string(UT_KERNEL_SRC_DIR) + "/qgmm/qgmm_data";
+        const std::string dataDir = std::string(UT_KERNEL_SRC_DIR) +
+                                    "/quant_grouped_mat_mul/quant_grouped_mat_mul_data";
         const std::string cleanCmd = "cd " + dataDir + " && rm -f *.bin";
         (void)system(cleanCmd.c_str());
     }

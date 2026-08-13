@@ -36,6 +36,8 @@ constexpr uint32_t BASE_K = 128U;
 constexpr uint32_t QUANT_GROUP_SIZE = 256U;
 constexpr uint32_t BLOCK_NUM = 2U;
 constexpr uint64_t FIXPIPE_SCALE_ONE = 0x000040003F800000ULL;
+constexpr uint16_t FP16_ZERO = 0x0000U;
+constexpr uint16_t FP16_NEGATIVE_ONE = 0xBC00U;
 
 constexpr size_t AlignUp(size_t value, size_t alignment) { return (value + alignment - 1U) / alignment * alignment; }
 
@@ -108,8 +110,8 @@ void RunKernelSmoke(bool perGroup, bool withOffset)
     Fill<float>(perTokenScale.Get(), static_cast<size_t>(TOTAL_M), 0.25F);
     Fill<float>(offset.Get(), static_cast<size_t>(GROUP_NUM * N), 0.5F);
     Fill<float>(rowSum.Get(), static_cast<size_t>(TOTAL_M), static_cast<float>(K));
-    Fill<half>(workspace.Get(), workspaceElements, half(0.0F));
-    Fill<half>(out.Get(), outputElements, half(-1.0F));
+    Fill<uint16_t>(workspace.Get(), workspaceElements, FP16_ZERO);
+    Fill<uint16_t>(out.Get(), outputElements, FP16_NEGATIVE_ONE);
     auto* groupListData = reinterpret_cast<int64_t*>(groupList.Get());
     groupListData[0] = GROUP0_M;
     groupListData[1] = TOTAL_M - GROUP0_M;

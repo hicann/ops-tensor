@@ -9,7 +9,7 @@
  */
 
 /**
- * \file qgmm_cpu_debug_stub.h
+ * \file quant_grouped_mat_mul_cpu_debug_stub.h
  * \brief CPU-debug compatibility for QGMM MX padding.
  */
 
