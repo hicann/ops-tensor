@@ -1,6 +1,6 @@
 # Blaze
 
-**Blaze**（**B**asic **L**inear **A**lgebra **O**ptimized **E**ngine）是一套面向昇腾 NPU 的高性能线性代数加速引擎，为矩阵乘类算子的 Kernel 端实现提供分层、可组合的计算组件，**header-only** 即可接入使用。
+**Blaze**（**B**asic **L**inear **A**lgebra **O**ptimized **E**ngine）基础线性代数加速引擎，构建 NPU 高性能 CUBE 底座, 为算子开发提供 CUBE 公共能力。
 
 ## 定位与边界
 
@@ -29,7 +29,7 @@ blaze/
     ├── block/      # Block 层：Block 级矩阵乘抽象与调度
     ├── tile/       # Tile 层：细粒度搬运与计算原语
     ├── policy/     # Dispatch Policy：派发策略定义
-    └── utils/      # 通用工具与常量                      
+    └── utils/      # 通用工具与常量
 ```
 
 各层职责（自上而下）：
@@ -45,4 +45,4 @@ blaze/
 |
 
 ## API 接口文档
-详细接口文档参考 [blaze接口文档](../../docs/API/README.md) 
+详细接口文档参考 [blaze接口文档](../../docs/API/README.md)

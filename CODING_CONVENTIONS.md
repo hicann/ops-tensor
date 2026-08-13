@@ -2,7 +2,43 @@
 
 ## 一、命名约定
 
-### 1.1 类模板参数
+### 1.1 文件命名
+
+文件名格式：`层级_算子_任务类型_策略`，各字段含义如下：
+
+| 字段 | 说明 | 取值示例 |
+|------|------|----------|
+| 层级 | 代码所属层级 | `kernel` / `block_mmad` |
+| 算子 | 算子类型/功能 | `matmul` / `batchmatmul` / `qbmm` / `wqmm` / `qgmm` / `tbmm` |
+| 任务类型 | 算子任务类型或量化类型，留空表示非量化 | `cube` / `mix` / `mx` / `pretensor`（留空 = 非量化） |
+| 策略 | 模板策略或应用场景，默认不填表示 basic；可由多个 `_` 连接的子策略组成 | `streamk` / `al1_full_load` / `basic_split_k`（留空 = basic） |
+
+
+```cpp
+block_mmad.h                       // 基类文件
+
+// 非量化 + 策略（任务类型字段留空）—— 仓库已有合规文件
+block_mmad_matmul_basic.h
+kernel_matmul_streamk.h
+
+// 任务类型（cube/mix）+ basic 策略（策略字段留空）—— 仓库已有合规文件
+kernel_qbmm_cube.h
+kernel_qbmm_mix.h
+
+// 量化类型 + basic 策略（策略字段留空）—— 仓库已有合规文件
+kernel_qbmm_mx.h
+block_mmad_qbmm_mx.h
+block_mmad_qgmm_mx.h
+
+// 量化类型 + 策略 —— 仓库已有合规文件
+kernel_qbmm_pertensor_streamk.h    // pertensor + streamk
+
+// 多子策略 —— 仓库已有合规文件
+block_mmad_matmul_basic_split_k.h  // 非量化 + basic_split_k
+block_mmad_matmul_streamk_split_k.h // 非量化 + streamk_split_k
+```
+
+### 1.2 类模板参数
 
 带下划线后缀的大驼峰（UpperCamelCase + 后缀 `_`）。
 
@@ -16,7 +52,7 @@ template <class a_type, class layout_a, uint64_t full_load_mode>
 class MyClass {};
 ```
 
-### 1.2 类型名称
+### 1.3 类型名称
 
 命名空间、类（class）、结构体（struct）、联合体（union）、枚举类型（enum）、`typedef` / `using` 定义的类型别名，均使用大驼峰（UpperCamelCase）。
 
@@ -35,7 +71,7 @@ class block_mmad {};
 struct PARAMS {};
 ```
 
-### 1.3 函数名称
+### 1.4 函数名称
 
 全局函数、作用域内函数、成员函数均使用大驼峰（UpperCamelCase）。
 
@@ -49,7 +85,7 @@ void compute_result();
 void initParams();
 ```
 
-### 1.4 常量、枚举值、宏
+### 1.5 常量、枚举值、宏
 
 全大写，下划线分割（UPPER_SNAKE_CASE）。
 
@@ -65,7 +101,7 @@ static constexpr bool transA = true;
 static constexpr uint64_t max_size = 256;
 ```
 
-### 1.5 类成员变量
+### 1.6 类成员变量
 
 带下划线后缀的小驼峰（lowerCamelCase + 后缀 `_`）。
 
@@ -85,7 +121,7 @@ private:
 };
 ```
 
-### 1.6 全局变量
+### 1.7 全局变量
 
 带 `g_` 前缀的小驼峰。
 
@@ -99,7 +135,7 @@ int32_t gMaxCount;
 GM_ADDR global_addr;
 ```
 
-### 1.7 局部变量、函数参数、宏参数、结构体/联合体成员变量
+### 1.8 局部变量、函数参数、宏参数、结构体/联合体成员变量
 
 小驼峰（lowerCamelCase）。
 
@@ -119,10 +155,11 @@ void MyFunction(int32_t input_size, GM_ADDR src_addr) {
 }
 ```
 
-### 1.8 命名约定汇总
+### 1.9 命名约定汇总
 
 | 类别 | 命名风格 | 示例 |
 |------|----------|------|
+| 文件名 | `层级_算子_任务类型_策略` | `kernel_matmul_basic.h`, `block_mmad_qbmm_mx.h`, `block_mmad_matmul_basic_split_k.h` |
 | 类模板参数 | 大驼峰 + `_` 后缀 | `AType_`, `FullLoadMode_` |
 | 类型名（类/结构体/联合体/枚举/typedef/别名/命名空间） | 大驼峰 | `BlockMmad`, `ErrorCode` |
 | 函数名（全局/成员/作用域内） | 大驼峰 | `ComputeResult()` |
