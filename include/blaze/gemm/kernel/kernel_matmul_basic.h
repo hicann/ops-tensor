@@ -55,7 +55,7 @@ public:
     using LayoutC = typename BlockMmad::LayoutC;
     using LayoutBias = typename BlockMmad::LayoutBias;
     using BlockShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
-    using MakeLayoutA = AscendC::Te::FrameLayoutFormat<LayoutA, AscendC::Std::Int<AscendC::Te::C0_ELEMENT<AType>>>;
+    using MakeLayoutA = AscendC::Te::FrameLayoutFormat<LayoutA>;
     using MakeLayoutB = AscendC::Te::FrameLayoutFormat<LayoutB, AscendC::Std::Int<AscendC::Te::C0_ELEMENT<BType>>>;
     using MakeLayoutC = AscendC::Te::FrameLayoutFormat<LayoutC, AscendC::Std::Int<AscendC::Te::C0_ELEMENT<CType>>>;
     using MakeLayoutBias = AscendC::Te::FrameLayoutFormat<LayoutBias,
@@ -103,11 +103,25 @@ public:
     }
 
 private:
+    __aicore__ inline auto MakeLayoutA2D(Params const& params)
+    {
+        auto layoutA = MakeLayoutA{}(m_, k_);
+        if constexpr (!TRANS_A) {
+            // 连续场景下rowStride表示k或1, 非连续场景下表示m轴的stride
+            uint64_t rowStride = params.mmadParams.rowStride;
+            layoutA = AscendC::Te::MakePatternLayout<LayoutA, AscendC::Te::LayoutTraitDefault<>>(
+                AscendC::Te::MakeShape(AscendC::Te::MakeShape(AscendC::Te::_1{}, m_),
+                                       AscendC::Te::MakeShape(AscendC::Te::_1{}, k_)),
+                AscendC::Te::MakeStride(AscendC::Te::MakeStride(AscendC::Te::_0{}, rowStride),
+                                        AscendC::Te::MakeStride(AscendC::Te::_0{}, AscendC::Te::_1{})));
+        }
+        return layoutA;
+    }
+
     __aicore__ inline void MatmulProcess(Params const& params, BlockMmad& blockMmad, BlockScheduler& bs,
                                          int64_t curBlockIdx, int64_t coreNums, int64_t totalBlockNums)
     {
-        // 默认ND Format
-        auto layoutA = MakeLayoutA{}(m_, k_);       // ND layout for A
+        auto layoutA = MakeLayoutA2D(params);
         auto layoutB = MakeLayoutB{}(k_, n_);       // ND layout for B
         auto layoutC = MakeLayoutC{}(m_, n_);       // ND layout for C
         auto layoutBias = MakeLayoutBias{}(1L, n_); // ND layout for Bias
@@ -150,17 +164,22 @@ private:
         }
     }
 
-    __aicore__ inline void MatmulSliceProcess(Params const& params, BlockMmad& blockMmad, BlockScheduler& bs,
-                                              int64_t curBlockIdx, int64_t coreNums, int64_t totalBlockNums)
+    __aicore__ inline auto MakeLayoutA3DForSlice(Params const& params)
     {
         int64_t sliceM = static_cast<int64_t>(params.schParams.sliceM);
         int64_t sliceBatch = static_cast<int64_t>(m_) / sliceM;
         int64_t srcNdStride = static_cast<int64_t>(params.schParams.srcNdStride);
 
-        auto layoutA = AscendC::Te::MakePatternLayout<
+        return AscendC::Te::MakePatternLayout<
             NDSliceLayoutPtn, AscendC::Te::LayoutTrait<AType, AscendC::Std::Int<AscendC::Te::C0_ELEMENT<AType>>>>(
             AscendC::Te::MakeShape(sliceBatch, AscendC::Te::MakeShape(sliceM, k_)),
             AscendC::Te::MakeStride(srcNdStride, AscendC::Te::MakeStride(k_, 1L)));
+    }
+
+    __aicore__ inline void MatmulSliceProcess(Params const& params, BlockMmad& blockMmad, BlockScheduler& bs,
+                                              int64_t curBlockIdx, int64_t coreNums, int64_t totalBlockNums)
+    {
+        auto layoutA = MakeLayoutA3DForSlice(params);
         auto layoutB = MakeLayoutB{}(k_, n_);
         auto layoutC = MakeLayoutC{}(m_, n_);
         auto layoutBias = MakeLayoutBias{}(1L, n_);
@@ -181,6 +200,7 @@ private:
             auto shapeN = AscendC::Te::Get<MNK_N>(blockShape);
             auto shapeK = AscendC::Te::Get<MNK_K>(blockShape);
 
+            int64_t sliceM = static_cast<int64_t>(params.schParams.sliceM);
             auto gmBlockA = gmA.Slice(AscendC::Te::MakeCoord(coordM / sliceM, AscendC::Te::MakeCoord(0L, 0L)),
                                       AscendC::Te::MakeShape(shapeM / sliceM, AscendC::Te::MakeShape(sliceM, shapeK)));
             auto gmBlockB = gmB.Slice(AscendC::Te::MakeCoord(0L, coordN), AscendC::Te::MakeShape(shapeK, shapeN));

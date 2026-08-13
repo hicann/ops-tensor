@@ -28,13 +28,11 @@ namespace Blaze {
 namespace Epilogue {
 namespace Block {
 
-template <
-    typename DataTypeOut_, typename DataTypeIn_, typename DispatchPolicy_,
-    typename FusionOp_ = Gemm::Block::DefaultFusion<DataTypeOut_, DataTypeIn_>>
+template <typename DataTypeOut_, typename DataTypeIn_, typename DispatchPolicy_,
+          typename FusionOp_ = Gemm::Block::DefaultFusion<DataTypeOut_, DataTypeIn_>>
 class BlockEpilogueFixpipe {
 public:
-    __aicore__ inline BlockEpilogueFixpipe()
-    {}
+    __aicore__ inline BlockEpilogueFixpipe() {}
 
     struct Params {
         GM_ADDR outGmAddr{nullptr};
@@ -75,29 +73,28 @@ public:
         static_assert(sizeof(DataTypeIn) >= sizeof(DataTypeOut), "DataTypeIn size must be >= DataTypeOut size");
     }
 
-    __aicore__ inline void Run(
-        BlockShape const& blockShape, int64_t dstOffset, bool splitM, int64_t baseM, int64_t baseN, uint64_t ubDB = 1)
+    __aicore__ inline void Run(BlockShape const& blockShape, int64_t dstOffset, bool splitM, int64_t baseM,
+                               int64_t baseN, uint64_t ubDB = 1)
     {
         cvPingPong_ = 0;
         int64_t mL1 = AscendC::Te::Get<Gemm::MNK_M>(blockShape);
         int64_t curM = mL1;
         if (baseM != 0) {
-            // mL0 = min(curM, baseM)
             curM = Blaze::Gemm::Min(curM, baseM);
         }
         int64_t halfBlockShapeM = Blaze::Gemm::CeilDiv(curM, AscendC::GetTaskRation());
         int64_t blockShapeM = curM;
         if (splitM) {
-            blockShapeM = (static_cast<uint64_t>(curM) & 1UL) > 0UL ?
-                              (halfBlockShapeM - AscendC::GetSubBlockIdx()) :
-                              halfBlockShapeM;
+            blockShapeM = (static_cast<uint64_t>(curM) & 1UL) > 0UL ? (halfBlockShapeM - AscendC::GetSubBlockIdx()) :
+                                                                      halfBlockShapeM;
         }
         int64_t nL1 = AscendC::Te::Get<Gemm::MNK_N>(blockShape);
         int64_t curBaseN = (baseN != 0) ? Blaze::Gemm::Min(nL1, baseN) : nL1;
         int64_t nL1Iter = Blaze::Gemm::CeilDiv(nL1, curBaseN);
         int64_t N = AscendC::Te::Get<Gemm::MNK_N>(problemShape_);
         constexpr int64_t c0Size = static_cast<int64_t>(AscendC::Te::C0_ELEMENT<DataTypeOut>);
-        constexpr int64_t ubHalfElems = static_cast<int64_t>(AscendC::TOTAL_UB_SIZE / sizeof(DataTypeIn) / Gemm::DOUBLE_BUFFER_COUNT);
+        constexpr int64_t ubHalfElems = static_cast<int64_t>(AscendC::TOTAL_UB_SIZE / sizeof(DataTypeIn) /
+                                                             Gemm::DOUBLE_BUFFER_COUNT);
         bool enablePp = (ubDB > 1) && (nL1Iter > 1);
 
         for (int64_t nIdx = 0; nIdx < nL1Iter; ++nIdx) {
@@ -112,20 +109,19 @@ public:
             } else {
                 AscendC::CrossCoreWaitFlag<AIC_SYNC_AIV_MODE_4, PIPE_MTE3>(AIC_SYNC_AIV_FLAG + slot);
             }
-            AscendC::LocalTensor<DataTypeIn> ubLocal_{AscendC::TPosition::VECIN, 0, AscendC::TOTAL_UB_SIZE / sizeof(DataTypeIn)};
+            AscendC::LocalTensor<DataTypeIn> ubLocal_{AscendC::TPosition::VECIN, 0,
+                                                      AscendC::TOTAL_UB_SIZE / sizeof(DataTypeIn)};
             // point UB source to this chunk's ping-pong slot
             ubLocalTmp_ = ubLocal_[slot * ubHalfElems];
 
             if (inputSize > 0) {
                 // copyOut dstOffset along N advances per chunk; subBlock M split preserved
-                int64_t offset = dstOffset + nIdx * curBaseN +
-                                 halfBlockShapeM * N * (AscendC::GetSubBlockIdx() & 0x1);
-                AscendC::DataCopyExtParams copyParams{
-                    static_cast<uint16_t>(blockShapeM), static_cast<uint32_t>(tileN * sizeof(DataTypeOut)), 0,
-                    static_cast<int64_t>((N - tileN) * sizeof(DataTypeOut)), 0};
-                if constexpr (
-                    DispatchPolicy::FUSED_OP_TYPE == Gemm::OP_TYPE_RELU &&
-                    !AscendC::IsSameType<DataTypeOut, bfloat16_t>::value) {
+                int64_t offset = dstOffset + nIdx * curBaseN + halfBlockShapeM * N * (AscendC::GetSubBlockIdx() & 0x1);
+                AscendC::DataCopyExtParams copyParams{static_cast<uint16_t>(blockShapeM),
+                                                      static_cast<uint32_t>(tileN * sizeof(DataTypeOut)), 0,
+                                                      static_cast<int64_t>((N - tileN) * sizeof(DataTypeOut)), 0};
+                if constexpr (DispatchPolicy::FUSED_OP_TYPE == Gemm::OP_TYPE_RELU &&
+                              !AscendC::IsSameType<DataTypeOut, bfloat16_t>::value) {
                     AscendC::Relu(ubLocalTmp_, ubLocalTmp_, blockShapeM * tileN);
                     AscendC::SetFlag<AscendC::HardEvent::V_MTE3>(0x0);
                     AscendC::WaitFlag<AscendC::HardEvent::V_MTE3>(0x0);
@@ -139,9 +135,8 @@ public:
         }
     }
 
-    __aicore__ inline void operator()(
-        BlockShape const& blockShape, int64_t dstOffset = 0, bool splitM = false, int64_t baseM = 0,
-        int64_t baseN = 0, uint64_t ubDB = 1)
+    __aicore__ inline void operator()(BlockShape const& blockShape, int64_t dstOffset = 0, bool splitM = false,
+                                      int64_t baseM = 0, int64_t baseN = 0, uint64_t ubDB = 1)
     {
         Run(blockShape, dstOffset, splitM, baseM, baseN, ubDB);
         return;
