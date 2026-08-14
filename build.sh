@@ -689,113 +689,16 @@ build_examples() {
         exit 1
     fi
 
-    # 2. Discover target examples
-    local examples=()
+    # 2. Delegate to common/run.sh (handles discovery, build, run, and summary)
+    local common_run="${SCRIPT_DIR}/examples/common/run.sh"
+    local run_args=()
+    if [ -n "$BUILD_OPERATORS" ] && [ "$BUILD_OPERATORS" != "all" ]; then
+        run_args+=("--ops=${BUILD_OPERATORS}")
+    fi
     if [ -n "$EXAMPLE_TARGET" ]; then
-        local op_dir="${examples_dir}/${BUILD_OPERATORS}"
-        local target_dir="${op_dir}/${EXAMPLE_TARGET}"
-        if [ ! -d "$target_dir" ]; then
-            log_error "Target example not found: $target_dir"
-            exit 1
-        fi
-        examples+=("${BUILD_OPERATORS}/${EXAMPLE_TARGET}")
-    elif [ "$BUILD_OPERATORS" = "all" ]; then
-        for op_dir in "${examples_dir}"/*/; do
-            [ -d "$op_dir" ] || continue
-            local op_name=$(basename "$op_dir")
-            [ "$op_name" = "common" ] && continue
-            for example_dir in "${op_dir}"/*/; do
-                [ -d "$example_dir" ] || continue
-                local example_name=$(basename "$example_dir")
-                [ "$example_name" = "scripts" ] && continue
-                [ "$example_name" = "common" ] && continue
-                examples+=("${op_name}/${example_name}")
-            done
-        done
-    else
-        local op_dir="${examples_dir}/${BUILD_OPERATORS}"
-        if [ ! -d "$op_dir" ]; then
-            log_error "Operator directory not found: $op_dir"
-            exit 1
-        fi
-        for example_dir in "${op_dir}"/*/; do
-            [ -d "$example_dir" ] || continue
-            local example_name=$(basename "$example_dir")
-            [ "$example_name" = "scripts" ] && continue
-            [ "$example_name" = "common" ] && continue
-            examples+=("${BUILD_OPERATORS}/${example_name}")
-        done
+        run_args+=("--target=${EXAMPLE_TARGET}")
     fi
-
-    if [ ${#examples[@]} -eq 0 ]; then
-        log_warning "No example examples found"
-        return 0
-    fi
-
-    log_info "Found ${#examples[@]} example example(s) to run"
-    echo ""
-
-    # 3. Run each example's run.sh
-    local total_pass=0
-    local total_fail=0
-    local total_skip=0
-
-    for example_path in "${examples[@]}"; do
-        local op_name=$(echo "$example_path" | cut -d'/' -f1)
-        local example_name=$(echo "$example_path" | cut -d'/' -f2)
-        local example_dir="${examples_dir}/${op_name}/${example_name}"
-        local run_sh="${example_dir}/run.sh"
-
-        echo ""
-        log_info "========== example: ${op_name}/${example_name} =========="
-
-        if [ ! -f "$run_sh" ]; then
-            log_warning "  run.sh not found in ${example_name}, skipping"
-            total_skip=$((total_skip + 1))
-            continue
-        fi
-
-        local csv_file="${example_dir}/${example_name}.csv"
-        local run_args=()
-        if [ -f "$csv_file" ]; then
-            log_info "  Found CSV: ${example_name}.csv, running in batch mode"
-            run_args+=(--case="${csv_file}")
-        else
-            log_info "  No CSV found, running with built-in defaults"
-        fi
-
-        set +e
-        bash "$run_sh" "${run_args[@]}"
-        local run_result=$?
-        set -e
-
-        if [ $run_result -eq 0 ]; then
-            total_pass=$((total_pass + 1))
-            log_success "  [PASS] ${example_name}"
-        else
-            total_fail=$((total_fail + 1))
-            log_error "  [FAIL] ${example_name} (exit code: $run_result)"
-        fi
-    done
-
-    # 4. Summarize results
-    echo ""
-    log_info "========== Examples Summary =========="
-    log_success "  PASS: ${total_pass}"
-    if [ $total_fail -gt 0 ]; then
-        log_error "  FAIL: ${total_fail}"
-    else
-        log_info "  FAIL: ${total_fail}"
-    fi
-    if [ $total_skip -gt 0 ]; then
-        log_warning "  SKIP: ${total_skip}"
-    fi
-    echo "========================================="
-
-    if [ $total_fail -gt 0 ]; then
-        log_error "Some examples failed"
-        exit 1
-    fi
+    bash "$common_run" "${run_args[@]}"
 }
 
 # 解析命令行参数

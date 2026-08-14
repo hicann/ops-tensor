@@ -3,9 +3,9 @@
 # This program is free software, you can redistribute it and/or modify it under the terms and conditions of
 # CANN Open Software License Agreement Version 2.0 (the "License").
 # Please refer to the License for details. You may not use this file except in compliance with the License.
-# THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+# THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
 # INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
-# See LICENSE in the software repository for the full text of the License.
+# See LICENSE in the root of the software repository for the full text of the License.
 # ----------------------------------------------------------------------------
 
 ##############################################################################
@@ -96,12 +96,11 @@ endmacro()
 
 ##############################################################################
 # 7. Load Operator Subdirectories
-#
-# Add new operators here: add_subdirectory(new_op)
 ##############################################################################
 
 add_subdirectory(mat_mul)
+add_subdirectory(batch_mat_mul)
 add_subdirectory(transpose_batch_mat_mul)
-add_subdirectory(weight_quant_batch_matmul_mx)
-add_subdirectory(grouped_mat_mul)
 add_subdirectory(quant_batch_matmul)
+add_subdirectory(weight_quant_batch_matmul_mx)
+add_subdirectory(grouped_matmul)

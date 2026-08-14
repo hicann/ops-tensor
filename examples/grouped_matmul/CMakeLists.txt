@@ -1,0 +1,1 @@
+ops_example_add_executable(quant_grouped_matmul_mx quant_grouped_matmul_mx/quant_grouped_matmul_mx.cpp)

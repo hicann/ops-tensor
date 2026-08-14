@@ -48,11 +48,10 @@
 /* Macros                                                                     */
 /* ========================================================================== */
 
-#define LAUNCH_KERNEL_IMPL()                                                                                         \
-    matmul_a_fullload_kernel<A_TYPE, B_TYPE, C_TYPE, BIAS_TYPE, LAYOUT_A, LAYOUT_B, LAYOUT_C>                        \
-        <<<p.blockNum, 0, p.stream>>>(p.dA, p.dB, p.dC, p.dBias, p.m, p.n, p.k, p.cfg->mL1, p.cfg->kL1,              \
-                                      p.cfg->baseM, p.cfg->baseN, p.cfg->baseK, p.tiling->mTailCnt,                  \
-                                      p.tiling->nTailCnt, p.isHf32)
+#define LAUNCH_KERNEL_IMPL()                                                                                          \
+    matmul_a_fullload_kernel<A_TYPE, B_TYPE, C_TYPE, BIAS_TYPE, LAYOUT_A, LAYOUT_B, LAYOUT_C>                         \
+        <<<p.blockNum, 0, p.stream>>>(p.dA, p.dB, p.dC, p.dBias, p.m, p.n, p.k, p.cfg->mL1, p.cfg->kL1, p.cfg->baseM, \
+                                      p.cfg->baseN, p.cfg->baseK, p.tiling->mTailCnt, p.tiling->nTailCnt, p.isHf32)
 
 #define DISPATCH(TYPE, BIAS_TYPE, TRANS_A, TRANS_B, IS_NZ, PARAMS)                          \
     do {                                                                                    \
@@ -99,7 +98,8 @@ struct TilingConfig {
     static constexpr int L0C_DB = 1;
 };
 
-static TilingConfig GetTilingConfig(const std::string &dtype) {
+static TilingConfig GetTilingConfig(const std::string& dtype)
+{
     if (dtype == "float32") {
         return {256, 128, 128, 256, 128, 32, 4};
     } else {
@@ -118,7 +118,8 @@ struct AFullLoadTiling {
 
 static constexpr int64_t BLOCK_16 = 16L;
 
-static AFullLoadTiling ComputeTiling(TilingConfig &cfg, int64_t m, int64_t k, int64_t n) {
+static AFullLoadTiling ComputeTiling(TilingConfig& cfg, int64_t m, int64_t k, int64_t n)
+{
     AFullLoadTiling tiling;
 
     cfg.baseM = CeilAlign(m, BLOCK_16);
@@ -142,13 +143,15 @@ static AFullLoadTiling ComputeTiling(TilingConfig &cfg, int64_t m, int64_t k, in
 /* NZ format utilities (for (ND,NZ) format)                                   */
 /* ========================================================================== */
 
-inline int64_t CalcNZSize(int64_t k, int64_t n) {
+inline int64_t CalcNZSize(int64_t k, int64_t n)
+{
     int64_t kCeil = (k + BLOCK_16 - 1) / BLOCK_16 * BLOCK_16;
     int64_t nCeil = (n + BLOCK_16 - 1) / BLOCK_16 * BLOCK_16;
     return kCeil * nCeil;
 }
 
-inline void ConvertToNZ(const half *rowMajor, half *nzBuffer, int64_t k, int64_t n, bool transB) {
+inline void ConvertToNZ(const half* rowMajor, half* nzBuffer, int64_t k, int64_t n, bool transB)
+{
     int64_t kCeil = CeilAlign(k, BLOCK_16);
     int64_t nCeil = CeilAlign(n, BLOCK_16);
     int64_t numKTiles = kCeil / BLOCK_16;
@@ -167,14 +170,17 @@ inline void ConvertToNZ(const half *rowMajor, half *nzBuffer, int64_t k, int64_t
 
     if (transB) {
         for (int64_t ki = 0; ki < numKTiles; ki++)
-            for (int64_t ni = 0; ni < numNTiles; ni++) writeTile(ki, ni, false);
+            for (int64_t ni = 0; ni < numNTiles; ni++)
+                writeTile(ki, ni, false);
     } else {
         for (int64_t ni = 0; ni < numNTiles; ni++)
-            for (int64_t ki = 0; ki < numKTiles; ki++) writeTile(ki, ni, true);
+            for (int64_t ki = 0; ki < numKTiles; ki++)
+                writeTile(ki, ni, true);
     }
 }
 
-inline void TransposeMatrix(const half *src, half *dst, int64_t rows, int64_t cols) {
+inline void TransposeMatrix(const half* src, half* dst, int64_t rows, int64_t cols)
+{
     for (int64_t i = 0; i < rows; i++) {
         for (int64_t j = 0; j < cols; j++) {
             dst[j * rows + i] = src[i * cols + j];
@@ -193,15 +199,17 @@ struct CliArgs {
     std::string dtype = "float16";
     bool isHf32 = false;
     int64_t bias = 0;
-    std::string format = "(ND,ND)";
+    std::string format = "ND";
 };
 
-static bool ParseBool(const char *s) {
+static bool ParseBool(const char* s)
+{
     std::string str(s);
     return str == "true" || str == "1" || str == "True";
 }
 
-static bool ParseCliArgs(int argc, const char **argv, CliArgs &args) {
+static bool ParseCliArgs(int argc, const char** argv, CliArgs& args)
+{
     if (argc < 4) {
         std::cerr << "Error: Missing required arguments.\n";
         std::cerr << "Usage: " << argv[0] << " <m> <k> <n> [transA] [transB] [dtype] [isHf32] [bias] [format]\n";
@@ -212,12 +220,18 @@ static bool ParseCliArgs(int argc, const char **argv, CliArgs &args) {
     args.k = std::atoll(argv[2]);
     args.n = std::atoll(argv[3]);
 
-    if (argc >= 5) args.transA = ParseBool(argv[4]);
-    if (argc >= 6) args.transB = ParseBool(argv[5]);
-    if (argc >= 7) args.dtype = argv[6];
-    if (argc >= 8) args.isHf32 = ParseBool(argv[7]);
-    if (argc >= 9) args.bias = std::atoll(argv[8]);
-    if (argc >= 10) args.format = argv[9];
+    if (argc >= 5)
+        args.transA = ParseBool(argv[4]);
+    if (argc >= 6)
+        args.transB = ParseBool(argv[5]);
+    if (argc >= 7)
+        args.dtype = argv[6];
+    if (argc >= 8)
+        args.isHf32 = ParseBool(argv[7]);
+    if (argc >= 9)
+        args.bias = std::atoll(argv[8]);
+    if (argc >= 10)
+        args.format = argv[9];
 
     if (args.m <= 0 || args.k <= 0 || args.n <= 0) {
         std::cerr << "Error: M, K, N must be positive integers.\n";
@@ -231,7 +245,7 @@ static bool ParseCliArgs(int argc, const char **argv, CliArgs &args) {
         std::cerr << "Error: isHf32 only valid with float32\n";
         return false;
     }
-    if (args.format == "(ND,NZ)" && args.dtype != "float16" && args.dtype != "bfloat16") {
+    if (args.format == "NZ" && args.dtype != "float16" && args.dtype != "bfloat16") {
         std::cerr << "Error: (ND,NZ) format only valid with float16/bfloat16\n";
         return false;
     }
@@ -239,7 +253,7 @@ static bool ParseCliArgs(int argc, const char **argv, CliArgs &args) {
         std::cerr << "Error: dtype must be float16, bfloat16, or float32 (got '" << args.dtype << "')\n";
         return false;
     }
-    if (args.format != "(ND,ND)" && args.format != "(ND,NZ)") {
+    if (args.format != "ND" && args.format != "NZ") {
         std::cerr << "Error: format must be (ND,ND) or (ND,NZ) (got '" << args.format << "')\n";
         return false;
     }
@@ -258,7 +272,8 @@ template <class A_TYPE, class B_TYPE, class C_TYPE, class BIAS_TYPE, class LAYOU
 __global__ __aicore__ void matmul_a_fullload_kernel(GM_ADDR aGM, GM_ADDR bGM, GM_ADDR cGM, GM_ADDR biasGM, int64_t m,
                                                     int64_t n, int64_t k, int64_t mL1, int64_t kL1, int64_t baseM,
                                                     int64_t baseN, int64_t baseK, uint32_t mTailCnt, uint32_t nTailCnt,
-                                                    bool isHf32) {
+                                                    bool isHf32)
+{
     KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_AIC_ONLY);
     AscendC::InitSocState();
 
@@ -290,38 +305,40 @@ __global__ __aicore__ void matmul_a_fullload_kernel(GM_ADDR aGM, GM_ADDR bGM, GM
 namespace {
 
 struct LaunchParams {
-    uint8_t *dA;
-    uint8_t *dB;
-    uint8_t *dC;
-    uint8_t *dBias;
+    uint8_t* dA;
+    uint8_t* dB;
+    uint8_t* dC;
+    uint8_t* dBias;
     int64_t m, n, k;
     int64_t blockNum;
-    const AFullLoadTiling *tiling;
-    const TilingConfig *cfg;
+    const AFullLoadTiling* tiling;
+    const TilingConfig* cfg;
     aclrtStream stream;
     bool transA, transB, isHf32;
 };
 
 template <class A_TYPE, class B_TYPE, class C_TYPE, class BIAS_TYPE, bool TransA, bool TransB, bool IsNzFormat>
-void LaunchKernel(const LaunchParams &p) {
+void LaunchKernel(const LaunchParams& p)
+{
     using LAYOUT_A = std::conditional_t<TransA, AscendC::Te::DNExtLayoutPtn, AscendC::Te::NDExtLayoutPtn>;
 
-    using LAYOUT_B =
-        std::conditional_t<IsNzFormat, std::conditional_t<TransB, AscendC::Te::ZNLayoutPtn, AscendC::Te::NZLayoutPtn>,
-                           std::conditional_t<TransB, AscendC::Te::DNExtLayoutPtn, AscendC::Te::NDExtLayoutPtn>>;
+    using LAYOUT_B = std::conditional_t<
+        IsNzFormat, std::conditional_t<TransB, AscendC::Te::ZNLayoutPtn, AscendC::Te::NZLayoutPtn>,
+        std::conditional_t<TransB, AscendC::Te::DNExtLayoutPtn, AscendC::Te::NDExtLayoutPtn>>;
 
     using LAYOUT_C = AscendC::Te::NDExtLayoutPtn;
 
     LAUNCH_KERNEL_IMPL();
 }
 
-}  // namespace
+} // namespace
 
 /* ========================================================================== */
 /* Host-side runner                                                           */
 /* ========================================================================== */
 
-static void Run(const CliArgs &args) {
+static void Run(const CliArgs& args)
+{
     aclrtStream stream{nullptr};
 
     TilingConfig tilingCfg = GetTilingConfig(args.dtype);
@@ -368,7 +385,7 @@ static void Run(const CliArgs &args) {
     }
 
     std::vector<uint8_t> hostBNz;
-    if (args.format == "(ND,NZ)") {
+    if (args.format == "NZ") {
         int64_t bRows = args.transB ? args.n : args.k;
         int64_t bCols = args.transB ? args.k : args.n;
         int64_t lenBND = bRows * bCols;
@@ -383,10 +400,10 @@ static void Run(const CliArgs &args) {
 
         if (args.transB) {
             std::vector<half> hostBForNZ(args.k * args.n);
-            TransposeMatrix(reinterpret_cast<half *>(hostBND.data()), hostBForNZ.data(), bRows, bCols);
-            ConvertToNZ(hostBForNZ.data(), reinterpret_cast<half *>(hostBNz.data()), args.k, args.n, args.transB);
+            TransposeMatrix(reinterpret_cast<half*>(hostBND.data()), hostBForNZ.data(), bRows, bCols);
+            ConvertToNZ(hostBForNZ.data(), reinterpret_cast<half*>(hostBNz.data()), args.k, args.n, args.transB);
         } else {
-            ConvertToNZ(reinterpret_cast<half *>(hostBND.data()), reinterpret_cast<half *>(hostBNz.data()), args.k,
+            ConvertToNZ(reinterpret_cast<half*>(hostBND.data()), reinterpret_cast<half*>(hostBNz.data()), args.k,
                         args.n, args.transB);
         }
 
@@ -394,7 +411,7 @@ static void Run(const CliArgs &args) {
     }
 
     std::vector<uint8_t> hostBias(sizeBias, 0);
-    uint8_t *deviceBias = nullptr;
+    uint8_t* deviceBias = nullptr;
 
     if (args.bias > 0) {
         std::string biasPath = inputDir + "/bias.bin";
@@ -407,28 +424,28 @@ static void Run(const CliArgs &args) {
         } else {
             std::cout << "[INFO] Bias file not found, using zero-initialized bias" << std::endl;
         }
-        ACL_CHECK(aclrtMalloc(reinterpret_cast<void **>(&deviceBias), sizeBias, ACL_MEM_MALLOC_HUGE_FIRST));
+        ACL_CHECK(aclrtMalloc(reinterpret_cast<void**>(&deviceBias), sizeBias, ACL_MEM_MALLOC_HUGE_FIRST));
         ACL_CHECK(aclrtMemcpy(deviceBias, sizeBias, hostBias.data(), sizeBias, ACL_MEMCPY_HOST_TO_DEVICE));
         std::cout << "[INFO] Loaded bias: " << args.bias << " elements" << std::endl;
     }
 
-    uint8_t *deviceA{nullptr};
-    uint8_t *deviceB{nullptr};
-    uint8_t *deviceC{nullptr};
+    uint8_t* deviceA{nullptr};
+    uint8_t* deviceB{nullptr};
+    uint8_t* deviceC{nullptr};
 
-    ACL_CHECK(aclrtMalloc(reinterpret_cast<void **>(&deviceA), sizeA, ACL_MEM_MALLOC_HUGE_FIRST));
-    ACL_CHECK(aclrtMalloc(reinterpret_cast<void **>(&deviceB), sizeB, ACL_MEM_MALLOC_HUGE_FIRST));
-    ACL_CHECK(aclrtMalloc(reinterpret_cast<void **>(&deviceC), sizeC, ACL_MEM_MALLOC_HUGE_FIRST));
+    ACL_CHECK(aclrtMalloc(reinterpret_cast<void**>(&deviceA), sizeA, ACL_MEM_MALLOC_HUGE_FIRST));
+    ACL_CHECK(aclrtMalloc(reinterpret_cast<void**>(&deviceB), sizeB, ACL_MEM_MALLOC_HUGE_FIRST));
+    ACL_CHECK(aclrtMalloc(reinterpret_cast<void**>(&deviceC), sizeC, ACL_MEM_MALLOC_HUGE_FIRST));
 
     ACL_CHECK(aclrtMemcpy(deviceA, sizeA, hostA.data(), sizeA, ACL_MEMCPY_HOST_TO_DEVICE));
-    if (args.format == "(ND,NZ)") {
+    if (args.format == "NZ") {
         ACL_CHECK(aclrtMemcpy(deviceB, sizeB, hostBNz.data(), sizeB, ACL_MEMCPY_HOST_TO_DEVICE));
     } else {
         ACL_CHECK(aclrtMemcpy(deviceB, sizeB, hostB.data(), sizeB, ACL_MEMCPY_HOST_TO_DEVICE));
     }
 
     std::string layoutA = args.transA ? "DN" : "ND";
-    std::string layoutB = (args.format == "(ND,NZ)") ? (args.transB ? "ZN" : "NZ") : (args.transB ? "DN" : "ND");
+    std::string layoutB = (args.format == "NZ") ? (args.transB ? "ZN" : "NZ") : (args.transB ? "DN" : "ND");
 
     std::cout << "============================================================" << std::endl;
     std::cout << "  MatMul AFullLoad — Execution Summary" << std::endl;
@@ -451,11 +468,10 @@ static void Run(const CliArgs &args) {
 
     std::cout << "[INFO] Launching kernel..." << std::endl;
 
-    LaunchParams launchParams = {deviceA,    deviceB, deviceC,     deviceBias,  args.m,
-                                 args.n,     args.k,  blockNum,    &tiling,     &tilingCfg,
-                                 stream,     args.transA, args.transB, args.isHf32};
+    LaunchParams launchParams = {deviceA,  deviceB, deviceC,    deviceBias, args.m,      args.n,      args.k,
+                                 blockNum, &tiling, &tilingCfg, stream,     args.transA, args.transB, args.isHf32};
 
-    bool isNzFormat = (args.format == "(ND,NZ)");
+    bool isNzFormat = (args.format == "NZ");
 
     if (args.dtype == "float32") {
         DISPATCH(float, float, args.transA, args.transB, isNzFormat, launchParams);
@@ -489,7 +505,8 @@ static void Run(const CliArgs &args) {
 /* Entry point                                                                */
 /* ========================================================================== */
 
-int main(int argc, const char **argv) {
+int main(int argc, const char** argv)
+{
     CliArgs args;
     if (!ParseCliArgs(argc, argv, args)) {
         return 1;

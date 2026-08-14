@@ -52,20 +52,27 @@ def generate_bias(n, dtype):
     bias = np.random.uniform(lo, hi, n).astype(np.float32)
     bias_tensor = torch.from_numpy(bias).to(dtype)
     vt = VIEW_TYPE_MAP[dtype]
-    input_dir = os.path.join(os.getcwd(), 'input')
+    input_dir = os.path.join(os.getcwd(), "input")
     os.makedirs(input_dir, exist_ok=True)
-    bias_tensor.view(vt).numpy().tofile(os.path.join(input_dir, 'bias.bin'))
+    bias_tensor.view(vt).numpy().tofile(os.path.join(input_dir, "bias.bin"))
     print(f"[INFO] Generated bias: {n} elements, dtype={dtype}")
     return bias_tensor
 
 
-def gen_golden_data(m, k, n, transpose_a, transpose_b, dtype, bias_size=0, bias_tensor=None):
-
+def gen_golden_data(
+    m, k, n, transpose_a, transpose_b, dtype, bias_size=0, bias_tensor=None
+):
     lo, hi = (-1.0, 1.0) if dtype in (torch.float16, torch.bfloat16) else (0.0, 1.0)
-    a_ori = (np.random.uniform(lo, hi, (k, m)).astype(np.float32) if transpose_a
-             else np.random.uniform(lo, hi, (m, k)).astype(np.float32))
-    b_ori = (np.random.uniform(lo, hi, (n, k)).astype(np.float32) if transpose_b
-             else np.random.uniform(lo, hi, (k, n)).astype(np.float32))
+    a_ori = (
+        np.random.uniform(lo, hi, (k, m)).astype(np.float32)
+        if transpose_a
+        else np.random.uniform(lo, hi, (m, k)).astype(np.float32)
+    )
+    b_ori = (
+        np.random.uniform(lo, hi, (n, k)).astype(np.float32)
+        if transpose_b
+        else np.random.uniform(lo, hi, (k, n)).astype(np.float32)
+    )
 
     a_cpu = torch.from_numpy(a_ori).to(dtype)
     b_cpu = torch.from_numpy(b_ori).to(dtype)
@@ -74,7 +81,9 @@ def gen_golden_data(m, k, n, transpose_a, transpose_b, dtype, bias_size=0, bias_
     b_cpu_t = b_cpu.t() if transpose_b else b_cpu
 
     if bias_size > 0 and bias_tensor is not None:
-        out = torch.addmm(bias_tensor.float(), a_cpu_t.float(), b_cpu_t.float()).to(dtype)
+        out = torch.addmm(bias_tensor.float(), a_cpu_t.float(), b_cpu_t.float()).to(
+            dtype
+        )
     else:
         out = torch.matmul(a_cpu_t.float(), b_cpu_t.float()).to(dtype)
 
@@ -82,7 +91,9 @@ def gen_golden_data(m, k, n, transpose_a, transpose_b, dtype, bias_size=0, bias_
     write_artifacts(current_dir, a_cpu, b_cpu, out, dtype)
 
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    if os.path.normcase(os.path.abspath(script_dir)) != os.path.normcase(os.path.abspath(current_dir)):
+    if os.path.normcase(os.path.abspath(script_dir)) != os.path.normcase(
+        os.path.abspath(current_dir)
+    ):
         write_artifacts(script_dir, a_cpu, b_cpu, out, dtype)
 
     print("Data generated successfully!")
@@ -90,7 +101,9 @@ def gen_golden_data(m, k, n, transpose_a, transpose_b, dtype, bias_size=0, bias_
 
 if __name__ == "__main__":
     if len(sys.argv) not in (4, 6, 7, 8, 9):
-        print("Usage: python3 gen_data.py m k n [transA transB] [dtype] [bias] [format]")
+        print(
+            "Usage: python3 gen_data.py m k n [transA transB] [dtype] [bias] [layoutB]"
+        )
         sys.exit(1)
 
     m = int(sys.argv[1])
@@ -111,16 +124,15 @@ if __name__ == "__main__":
             DATA_TYPE = torch.float16
 
     bias = 0
-    fmt = "(ND,ND)"
     if len(sys.argv) >= 8:
         bias = int(sys.argv[7])
         if bias != 0 and bias != n:
             print(f"Error: bias ({bias}) must equal n ({n}) or 0")
             sys.exit(1)
     if len(sys.argv) >= 9:
-        fmt = sys.argv[8]
-        if fmt not in ("(ND,ND)", "(ND,NZ)"):
-            print(f"Error: format must be '(ND,ND)' or '(ND,NZ)', got '{fmt}'")
+        layout_b = sys.argv[8]
+        if layout_b not in ("ND", "NZ"):
+            print(f"Error: layoutB must be 'ND' or 'NZ', got '{layout_b}'")
             sys.exit(1)
 
     bias_tensor = None

@@ -14,6 +14,9 @@
 """Compare BF16 with the HiFloat8 policy or compare Int32 exactly."""
 
 import argparse
+import os
+
+os.environ["TORCH_DEVICE_BACKEND_AUTOLOAD"] = "0"
 
 import numpy as np
 import torch

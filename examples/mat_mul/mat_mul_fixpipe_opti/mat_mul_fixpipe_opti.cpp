@@ -201,7 +201,7 @@ struct CliArgs {
     std::string dtype = "float16";
     bool isHf32 = false;
     int64_t bias = 0;
-    std::string format = "(ND,ND)";
+    std::string format = "ND";
 };
 
 static bool ParseBool(const char* s)
@@ -247,7 +247,7 @@ static bool ParseCliArgs(int argc, const char** argv, CliArgs& args)
         std::cerr << "Error: isHf32 only valid with float32\n";
         return false;
     }
-    if (args.format == "(ND,NZ)" && args.dtype != "float16" && args.dtype != "bfloat16") {
+    if (args.format == "NZ" && args.dtype != "float16" && args.dtype != "bfloat16") {
         std::cerr << "Error: (ND,NZ) format only valid with float16/bfloat16\n";
         return false;
     }
@@ -255,7 +255,7 @@ static bool ParseCliArgs(int argc, const char** argv, CliArgs& args)
         std::cerr << "Error: dtype must be float16, bfloat16, or float32 (got '" << args.dtype << "')\n";
         return false;
     }
-    if (args.format != "(ND,ND)" && args.format != "(ND,NZ)") {
+    if (args.format != "ND" && args.format != "NZ") {
         std::cerr << "Error: format must be (ND,ND) or (ND,NZ) (got '" << args.format << "')\n";
         return false;
     }
@@ -388,7 +388,7 @@ static void Run(const CliArgs& args)
     }
 
     std::vector<uint8_t> hostBNz;
-    if (args.format == "(ND,NZ)") {
+    if (args.format == "NZ") {
         int64_t bRows = args.transB ? args.n : args.k;
         int64_t bCols = args.transB ? args.k : args.n;
         int64_t lenBND = bRows * bCols;
@@ -441,14 +441,14 @@ static void Run(const CliArgs& args)
     ACL_CHECK(aclrtMalloc(reinterpret_cast<void**>(&deviceC), sizeC, ACL_MEM_MALLOC_HUGE_FIRST));
 
     ACL_CHECK(aclrtMemcpy(deviceA, sizeA, hostA.data(), sizeA, ACL_MEMCPY_HOST_TO_DEVICE));
-    if (args.format == "(ND,NZ)") {
+    if (args.format == "NZ") {
         ACL_CHECK(aclrtMemcpy(deviceB, sizeB, hostBNz.data(), sizeB, ACL_MEMCPY_HOST_TO_DEVICE));
     } else {
         ACL_CHECK(aclrtMemcpy(deviceB, sizeB, hostB.data(), sizeB, ACL_MEMCPY_HOST_TO_DEVICE));
     }
 
     std::string layoutA = args.transA ? "DN" : "ND";
-    std::string layoutB = (args.format == "(ND,NZ)") ? (args.transB ? "ZN" : "NZ") : (args.transB ? "DN" : "ND");
+    std::string layoutB = (args.format == "NZ") ? (args.transB ? "ZN" : "NZ") : (args.transB ? "DN" : "ND");
 
     std::cout << "============================================================" << std::endl;
     std::cout << "  MatMul FixpipeOpti — Execution Summary" << std::endl;
@@ -473,7 +473,7 @@ static void Run(const CliArgs& args)
     LaunchParams launchParams = {deviceA,  deviceB, deviceC,    deviceBias, args.m,      args.n,      args.k,
                                  blockNum, &tiling, &tilingCfg, stream,     args.transA, args.transB, args.isHf32};
 
-    bool isNzFormat = (args.format == "(ND,NZ)");
+    bool isNzFormat = (args.format == "NZ");
 
     if (args.dtype == "float32") {
         DISPATCH(float, float, args.transA, args.transB, isNzFormat, launchParams);

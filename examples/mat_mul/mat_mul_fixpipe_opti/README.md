@@ -27,10 +27,10 @@
 
 ### 执行方式
 
-通过 `run.sh --case=<csv>` 驱动，自动完成编译、数据生成、kernel 执行和精度验证：
+通过统一入口驱动，自动完成编译、数据生成、kernel 执行和精度验证：
 
 ```bash
-bash run.sh --case=mat_mul_fixpipe_opti.csv
+bash examples/common/run.sh --ops=mat_mul --target=mat_mul_fixpipe_opti
 ```
 
 ### 测试用例定义
@@ -38,9 +38,12 @@ bash run.sh --case=mat_mul_fixpipe_opti.csv
 测试用例定义在 `mat_mul_fixpipe_opti.csv` 中，格式如下：
 
 ```csv
-casename,m,k,n,dtype
-mat_mul_fixpipe_opti_fp16,512,512,512,float16
-mat_mul_fixpipe_opti_fp32,256,256,256,float32
+casename,m,k,n,bias,dtype,transA,transB,hf32,layoutA,layoutB
+mat_mul_fixpipe_fp16,512,256,64,64,float16,false,false,false,ND,ND
+mat_mul_fixpipe_bf16,512,256,64,64,bfloat16,false,false,false,ND,ND
+mat_mul_fixpipe_fp32,256,128,32,32,float32,false,false,false,ND,ND
+mat_mul_fixpipe_hf32,256,128,32,32,float32,false,false,true,ND,ND
+mat_mul_fixpipe_weightNz,512,256,64,0,float16,false,false,false,ND,NZ
 ```
 
 **列说明**：
@@ -84,13 +87,13 @@ mat_mul_fixpipe_opti_fp32,256,256,256,float32
 
 ```
 mat_mul_fixpipe_opti/
-├── CMakeLists.txt                  # 构建配置
-├── mat_mul_fixpipe_opti.cpp        # 统一 kernel 实现
+├── mat_mul_fixpipe_opti.cpp        # kernel 实现
+├── mat_mul_fixpipe_opti.conf       # 参数路由配置
 ├── mat_mul_fixpipe_opti.csv        # CSV 测试用例
-├── parse_csv.py                    # CSV 解析与批量执行
-├── run.sh                          # 运行脚本
 └── README.md                       # 本文档
 ```
+
+构建配置在 op 层 `examples/mat_mul/CMakeLists.txt` 中统一管理；运行通过 `examples/common/run.sh` 统一调度，数据生成和精度校验由 `examples/mat_mul/scripts/` 下的 `gen_data.py` 和 `verify_result.py` 执行。
 
 ## Blaze 组件
 

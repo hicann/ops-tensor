@@ -5,7 +5,7 @@
 examples 目录提供基于 Blaze header-only GEMM 框架的算子样例程序，用于：
 
 - 验证算子在 NPU 上的编译、执行和精度正确性
-- 演示如何使用 Blaze 框架编写 StreamK、WeightNz 等高级 GEMM kernel
+- 演示如何使用 Blaze 框架编写 StreamK、WeightNz 等 kernel
 - 提供端到端的测试数据生成、执行、精度验证工作流
 - 支持多种数据类型（float16/bfloat16/float32）的测试和验证
 
@@ -13,7 +13,7 @@ examples 目录提供基于 Blaze header-only GEMM 框架的算子样例程序�
 
 ## 2. 环境依赖
 
-examples 的完整编译与运行涉及三类依赖：**系统工具链**、**CANN / 昇腾环境**、**Python 依赖**。`run.sh` 的 `preflight()` 函数会在执行前自动检查关键依赖（`ASCEND_HOME_PATH`、`bisheng`、`g++`、`python3`、`cmake`），缺失时报错退出。
+examples 的完整编译与运行涉及三类依赖：**系统工具链**、**CANN / 昇腾环境**、**Python 依赖**。`common/run.sh` 的 `preflight()` 函数会在执行前自动检查关键依赖（`ASCEND_HOME_PATH`、`bisheng`、`g++`、`python3`、`cmake`），缺失时报错退出。
 
 ### 2.1 系统工具链
 
@@ -32,19 +32,18 @@ examples 的完整编译与运行涉及三类依赖：**系统工具链**、**CA
 | 依赖 | 要求 | 说明 |
 |------|------|------|
 | CANN Toolkit | ≥ 9.1.0 | 提供 ACL 运行时、bisheng 编译器、头文件 |
-| NPU 硬件 | Ascend950 | 当前 examples 仅支持 Ascend950芯片 |
+| NPU 硬件 | Ascend950 | 当前 examples 仅支持 Ascend950 芯片 |
 
 ### 2.3 Python 依赖
 
-数据生成（`gen_data.py`）和精度验证（`verify_result.py`）脚本依赖以下 Python 包：
+数据生成和精度验证脚本依赖以下 Python 包：
 
 | 包 | 用途 | 安装命令 |
 |----|------|---------|
 | numpy | 二进制数据读写、数组操作 | `pip install numpy` |
 | ml_dtypes | `float8_e4m3fn` golden 计算 | `pip install ml_dtypes` |
+| en_dtypes | `hifloat8` golden 计算（quant_batch_matmul_cube 样例） | `pip install en-dtypes` |
 | torch | CPU golden 参考计算（`torch.matmul`/`torch.addmm`）、dtype 映射 | `pip install torch` |
-
-> **注意**：仓库根目录的 `requirements.txt` 列出了主项目依赖（pyyaml、sympy 等），但 examples 的 Python 脚本额外需要 `numpy`、`ml_dtypes` 和 `torch`，需单独安装。
 
 ### 2.4 依赖检查清单
 
@@ -68,157 +67,251 @@ python3 -c "import torch; print('torch', torch.__version__)"
 npu-smi info | head -20
 ```
 
-> `run.sh` 执行时会自动运行 preflight 检查，缺失关键依赖会报错退出并给出修复提示。
+> `common/run.sh` 执行时会自动运行 preflight 检查，缺失关键依赖会报错退出并给出修复提示。
 
-## 3. 目录结构与层级说明
+## 3. 目录结构
 
 ```
 examples/
-├── CMakeLists.txt              # L1: 全局 CMake 配置（编译器、链接库、宏定义）
+├── CMakeLists.txt              # 全局 CMake 配置（编译器、链接库、宏定义、add_subdirectory）
 ├── README.md                   # 本文件
-├── common/                     # 公共头文件
+├── common/                     # 公共基础设施
+│   ├── run.sh                  #   统一执行入口（编译 + 运行 + 验证）
+│   ├── run_case.py             #   通用批跑引擎（CSV 解析 → gen_data → kernel → verify）
+│   ├── CONF_FORMAT.md          #   .conf 文件格式规范
+│   ├── submodule_utils.sh      #   子模块管理工具
 │   └── data_utils.h            #   ACL_CHECK 宏、文件读写工具
 │
-└── {op}/                       # 算子级目录（L2），如 mat_mul
-    ├── CMakeLists.txt          #   L2: 加载子场景目录
+└── {op}/                       # 算子级目录，如 mat_mul、batch_mat_mul、grouped_matmul
+    ├── CMakeLists.txt          #   注册本算子下所有样例可执行文件
     ├── scripts/                #   算子级脚本（数据生成 + 精度验证）
     │   ├── gen_data.py         #     输入数据生成 + CPU golden 计算
     │   └── verify_result.py    #     NPU 输出 vs CPU golden 精度比对
     │
-    └── {example}/             # 场景级目录（L3），如 mat_mul_streamk
-        ├── CMakeLists.txt      #   L3: 注册可执行样例
-        ├── run.sh              #   执行脚本（编译 + 运行 + 验证 + 清理）
-        ├── {example}.cpp      #   样例源码，如 mat_mul_streamk.cpp
-        ├── {example}.csv      #   CSV 测试用例表
-        ├── parse_csv.py        #   CSV 解析与批量执行
-        ├── README.md           #   场景说明文档
-        └── build/              #   编译产物（自动生成）
+    └── {example}/              # 样例级目录，如 mat_mul_basic
+        ├── {example}.cpp       #   样例源码
+        ├── {example}.conf      #   执行参数配置（INI 格式）
+        ├── {example}.csv       #   CSV 测试用例表
+        └── README.md           #   样例说明文档
 ```
 
 **层级关系**：
 
 | 层级 | 目录 | CMakeLists.txt 职责 |
 |------|------|---------------------|
-| L1 | `examples/` | 编译器发现、链接库配置、`ops_example_add_executable` 宏定义 |
-| L2 | `examples/{op}/` | `add_subdirectory()` 加载子场景 |
-| L3 | `examples/{op}/{example}/` | `ops_example_add_executable()` 注册可执行样例 |
+| L1 | `examples/` | 编译器发现、链接库配置、`ops_example_add_executable` 宏定义、`add_subdirectory({op})` 加载各算子 |
+| L2 | `examples/{op}/` | 通过 `ops_example_add_executable(name subdir/source.cpp)` 直接注册本算子下所有样例可执行文件 |
+
+**当前算子目录**：
+
+| 算子目录 | 样例 | 说明 |
+|----------|------|------|
+| `mat_mul/` | mat_mul_basic, mat_mul_streamk, mat_mul_a_fullload, mat_mul_b_fullload, mat_mul_fixpipe_opti | 矩阵乘法样例 |
+| `batch_mat_mul/` | mat_mul_bmm_broadcast, mat_mul_iterbatch_broadcast | 批量矩阵乘法样例（bmm/iterbatch 广播） |
+| `transpose_batch_mat_mul/` | transpose_batch_mat_mul_basic | 转置批量矩阵乘法样例 |
+| `quant_batch_matmul/` | quant_batch_matmul_cube, quant_batch_matmul_mx | 量化批量矩阵乘法样例（cube/mx 两种算法） |
+| `weight_quant_batch_matmul_mx/` | weight_quant_batch_matmul_mx_swat | 权重量化批量矩阵乘法样例 |
+| `grouped_matmul/` | quant_grouped_matmul_mx | Grouped MatMul 样例 |
 
 ## 4. 执行方法
 
-### 4.1 通过 build.sh 执行（推荐）
+### 4.1 通过 build.sh 执行
 
-从仓库根目录执行，`build.sh --examples` 会自动发现样例目录下的同名 CSV 文件（`{example}.csv`），以 CSV 批量模式驱动 `run.sh` 完成编译、数据生成、kernel 执行和精度验证：
-
-```bash
-# 运行指定算子下的所有场景（自动读取各场景的 {example}.csv）
-bash build.sh --examples --ops=mat_mul
-
-# 运行指定场景
-bash build.sh --examples --ops=mat_mul --target=mat_mul_streamk
-
-# 运行所有算子的所有场景
-bash build.sh --examples
-```
-
-`build.sh` 对每个场景的调用流程：
-
-```
-build.sh --examples --ops=mat_mul --target=mat_mul_streamk
-    │
-    └─→ 自动发现 mat_mul_streamk.csv
-    │
-    └─→ bash run.sh --case=mat_mul_streamk.csv
-            │
-            ├─→ cmake + make                                    # 编译
-            ├─→ parse_csv.py 读取 CSV，逐条执行:
-            │       ├─ gen_data.py m k n transA transB dtype bias format  # 数据生成
-            │       ├─ ./mat_mul_streamk m k n ...               # kernel 执行
-            │       └─ verify_result.py m n dtype [--hf32]       # 精度验证
-            └─→ 结果写入 {example}_result.csv
-```
-
-### 4.2 通过 run.sh 执行
-
-进入场景目录，通过 `--case` 参数指定 CSV 测试用例表：
+从仓库根目录执行，`build.sh --examples` 内部调用 `common/run.sh`：
 
 ```bash
-cd examples/mat_mul/mat_mul_streamk
-bash run.sh --case=mat_mul_streamk.csv
+# 运行所有算子的所有样例
+./build.sh --examples
+
+# 运行指定算子下的所有样例
+./build.sh --examples --ops=mat_mul
+
+# 运行指定样例
+./build.sh --examples --ops=mat_mul --target=mat_mul_basic
+
+# 运行多个算子
+./build.sh --examples --ops=mat_mul,grouped_matmul
+
+# 运行算子下多个样例
+./build.sh --examples --ops=mat_mul --target=mat_mul_basic,mat_mul_streamk
 ```
 
-`run.sh` 会自动完成编译、CSV 解析、逐条执行（数据生成 → kernel → 验证）和结果汇总。
+### 4.2 通过 common/run.sh 执行
+
+`common/run.sh` 是统一执行入口：
+
+```bash
+bash examples/common/run.sh --ops=<names> [--target=<names>] [--case=<path>] [--ti=<N|N-M>] [--skip-build] [--build-only]
+```
+
+**参数说明**：
+
+| 参数 | 说明 |
+|------|------|
+| `--ops=<names>` | 算子目录名，支持逗号分隔多个（如 `mat_mul` 或 `mat_mul,grouped_matmul`） |
+| `--target=<names>` | 样例名，支持逗号分隔多个（如 `mat_mul_basic` 或 `mat_mul_basic,mat_mul_streamk`）。多值时 `--ops` 必须为单个 |
+| `--case=<path>` | CSV 测试用例文件路径。仅支持 `--ops` 和 `--target` 均为单个值时使用 |
+| `--ti=<N>` | 仅运行第 N 条用例（0-based 索引）。仅支持 `--ops` 和 `--target` 均为单个值时使用 |
+| `--ti=<N-M>` | 运行第 N 到第 M 条用例（含两端）。仅支持 `--ops` 和 `--target` 均为单个值时使用 |
+| `--skip-build` | 跳过 CMake 编译阶段 |
+| `--build-only` | 仅编译，不运行和验证 |
+
+**多值约束**：
+
+| 场景 | --ops | --target | --case | --ti |
+|------|-------|----------|--------|------|
+| 单算子单样例 | 单个 | 单个 | 允许 | 允许 |
+| 单算子多样例 | 单个 | 多个 | 禁止 | 禁止 |
+| 多算子 | 多个 | 禁止 | 禁止 | 禁止 |
+| 全部样例 | 不传 | 不传 | 禁止 | 禁止 |
+
+**用法示例**：
+
+```bash
+# 运行 mat_mul 下所有样例
+bash examples/common/run.sh --ops=mat_mul
+
+# 运行单个样例
+bash examples/common/run.sh --ops=mat_mul --target=mat_mul_basic
+
+# 运行多个算子的所有样例
+bash examples/common/run.sh --ops=mat_mul,grouped_matmul
+
+# 运行单算子下多个样例
+bash examples/common/run.sh --ops=mat_mul --target=mat_mul_basic,mat_mul_streamk
+
+# 指定 CSV 文件（需单 ops + 单 target）
+bash examples/common/run.sh --ops=mat_mul --target=mat_mul_basic --case=path/to/cases.csv
+
+# 仅运行第 3 条用例（需单 ops + 单 target）
+bash examples/common/run.sh --ops=mat_mul --target=mat_mul_basic --ti=3
+
+# 运行第 0 到第 5 条用例（需单 ops + 单 target）
+bash examples/common/run.sh --ops=mat_mul --target=mat_mul_basic --ti=0-5
+
+# 仅编译不运行
+bash examples/common/run.sh --ops=mat_mul --target=mat_mul_basic --build-only
+
+# 跳过编译直接运行
+bash examples/common/run.sh --ops=mat_mul --target=mat_mul_basic --skip-build
+```
+
+**执行流程**：
+
+```
+bash examples/common/run.sh --ops=mat_mul --target=mat_mul_basic
+    │
+    ├─→ preflight（检查 ASCEND_HOME_PATH / bisheng / g++ / python3 / cmake）
+    ├─→ cmake + cmake --build             # 编译
+    ├─→ 读取 mat_mul_basic.csv，逐条执行:
+    │       ├─ gen_data.py（按 .conf [gen_data] 参数生成数据）
+    │       ├─ ./mat_mul_basic（按 .conf [kernel] 参数执行 kernel）
+    │       └─ verify_result.py（按 .conf [verify] 参数验证精度）
+    └─→ 结果汇总
+```
 
 ### 4.3 CSV 测试用例格式
 
-每个场景目录下有一个与场景同名的 CSV 文件（如 `mat_mul_streamk.csv`），定义所有测试用例：
+每个样例目录下有一个与样例同名的 CSV 文件（如 `mat_mul_basic.csv`），定义所有测试用例：
 
 ```csv
-casename,m,k,n,bias,dtype,transA,transB,hf32,format
-mat_mul_streamk_fp16,100,8192,100,100,float16,false,false,false,"(ND,ND)"
-mat_mul_streamk_bf16,100,8192,100,100,bfloat16,false,false,false,"(ND,ND)"
-mat_mul_streamk_fp32,100,8192,100,100,float32,false,false,false,"(ND,ND)"
-mat_mul_streamk_hf32,100,8192,100,100,float32,false,false,true,"(ND,ND)"
-mat_mul_streamk_weightNz,100,8192,100,0,float16,false,false,false,"(ND,NZ)"
+casename,m,k,n,bias,dtype,transA,transB,hf32,layoutA,layoutB
+mat_mul_basic_fp16,128,512,128,128,float16,false,false,false,ND,ND
+mat_mul_basic_bf16,128,512,128,128,bfloat16,false,false,false,ND,ND
+mat_mul_basic_fp32,128,512,128,128,float32,false,false,false,ND,ND
+mat_mul_basic_hf32,128,512,128,128,float32,false,false,true,ND,ND
+mat_mul_basic_weightNz,128,512,128,0,float16,false,false,false,ND,NZ
 ```
 
-| 列 | 说明 |
-|----|------|
-| casename | 用例名称 |
-| m, k, n | 矩阵维度 |
-| bias | bias 向量大小，必须等于 n 或 0（无 bias） |
-| dtype | 数据类型：float16 / bfloat16 / float32 |
-| transA | A 矩阵是否转置 |
-| transB | B 矩阵是否转置 |
-| hf32 | 是否启用 HF32 模式（仅 float32 有效） |
-| format | 输入格式：(ND,ND) 或 (ND,NZ) |
+> 具体列定义参见各样例的 CSV 文件和 README。
 
-### 4.4 两种方式的关联
+### 4.4 .conf 配置文件格式
 
-- `build.sh --examples` 是顶层入口，自动发现场景目录下的 `{example}.csv`，以 `--case` 参数委托给 `run.sh`
-- `run.sh --case=<csv>` 是场景级执行器，负责完整的编译 → CSV 解析 → 逐条执行 → 结果汇总流程
-- 两种方式均通过 CSV 驱动，不涉及手动传参
+每个样例目录下有一个 `{example}.conf` 文件（INI 格式），定义数据生成、kernel 执行和精度验证的参数路由。详细格式参见 [`examples/common/CONF_FORMAT.md`](common/CONF_FORMAT.md)。
 
-## 5. 新增 Examples
+基本结构：
 
-### 5.1 新增算子级（如 `new_op`）
+```ini
+[scripts]
+gen_data=gen_data.py           # 可选，默认 gen_data.py
+verify=verify_result.py        # 可选，默认 verify_result.py
+
+[gen_data]
+params=...                     # 逗号分隔的参数条目
+bool_flags=...                 # 可选，布尔 flag
+
+[kernel]
+params=...
+bool_flags=...                 # 可选
+
+[verify]
+params=...
+bool_flags=...                 # 可选
+```
+
+| Section | 用途 |
+|---------|------|
+| `[scripts]` | 指定 gen_data 和 verify 脚本文件名（可选，默认 `gen_data.py` / `verify_result.py`） |
+| `[gen_data]` | 传递给数据生成脚本的参数 |
+| `[kernel]` | 传递给 kernel 执行的参数 |
+| `[verify]` | 传递给精度验证脚本的参数 |
+
+### 4.5 两种执行方式的关联
+
+- `build.sh --examples` 是顶层入口，内部调用 `common/run.sh`
+- `common/run.sh` 是统一执行器，负责完整的 preflight → 编译 → CSV 解析 → 逐条执行 → 结果汇总流程
+
+## 5. 新增样例
+
+### 5.1 新增算子
 
 ```bash
 # 1. 创建算子目录
 mkdir -p examples/new_op/scripts
 
-# 2. 创建算子级 CMakeLists.txt
-cat > examples/new_op/CMakeLists.txt << 'EOF'
-add_subdirectory(new_op_basic)
-EOF
-
-# 3. 创建数据生成和验证脚本
+# 2. 创建数据生成和验证脚本
 # examples/new_op/scripts/gen_data.py
 # examples/new_op/scripts/verify_result.py
+
+# 3. 创建算子级 CMakeLists.txt，注册样例
+cat > examples/new_op/CMakeLists.txt << 'EOF'
+ops_example_add_executable(new_op_basic new_op_basic/new_op_basic.cpp)
+EOF
 
 # 4. 在 examples/CMakeLists.txt 中注册算子
 # 末尾追加: add_subdirectory(new_op)
 ```
 
-### 5.2 新增场景级（如 `new_op/new_op_basic`）
+### 5.2 新增样例（已有算子下）
 
 ```bash
-# 1. 创建场景目录
+# 1. 创建样例目录
 mkdir -p examples/new_op/new_op_basic
 
-# 2. 创建场景级 CMakeLists.txt，注册样例
-cat > examples/new_op/new_op_basic/CMakeLists.txt << 'EOF'
-ops_example_add_executable(new_op_basic new_op_basic.cpp)
+# 2. 创建样例源码 new_op_basic.cpp
+
+# 3. 创建 .conf 配置文件（参考 common/CONF_FORMAT.md）
+cat > examples/new_op/new_op_basic/new_op_basic.conf << 'EOF'
+[gen_data]
+params=...
+[kernel]
+params=...
+[verify]
+params=...
 EOF
 
-# 3. 创建样例源码 new_op_basic.cpp
 # 4. 创建 CSV 测试用例表 new_op_basic.csv
-# 5. 创建 run.sh（可参考 mat_mul_streamk/run.sh）
-# 6. 创建 parse_csv.py（可参考 mat_mul_streamk/parse_csv.py）
-# 7. 在 examples/new_op/CMakeLists.txt 中添加 add_subdirectory(new_op_basic)
+
+# 5. 在算子级 CMakeLists.txt 中注册
+# 追加: ops_example_add_executable(new_op_basic new_op_basic/new_op_basic.cpp)
 ```
 
 注册后即可通过以下方式运行：
 
 ```bash
-bash build.sh --examples --ops=new_op --target=new_op_basic
+# 通过 build.sh
+./build.sh --examples --ops=new_op --target=new_op_basic
+
+# 通过 common/run.sh
+bash examples/common/run.sh --ops=new_op --target=new_op_basic
 ```

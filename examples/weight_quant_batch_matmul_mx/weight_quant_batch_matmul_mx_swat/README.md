@@ -46,20 +46,18 @@ Scale A 按 M 行存储；Scale B 的原始字节按 N 优先存储，对应 ker
 
 ### 执行方式
 
-安装 Python 依赖并初始化 CANN 环境后，通过 `run.sh --case=<csv>` 驱动，自动完成编译、数据生成、
-kernel 执行和精度验证：
+安装 Python 依赖并初始化 CANN 环境后，通过统一入口驱动，自动完成编译、数据生成、kernel 执行和精度验证：
 
 ```bash
-python3 -m pip install numpy ml_dtypes
 source /path/to/cann/set_env.sh
-bash run.sh --case=weight_quant_batch_matmul_mx_swat.csv
+bash examples/common/run.sh --ops=weight_quant_batch_matmul_mx --target=weight_quant_batch_matmul_mx_swat
 ```
 
 仅编译或复用已有构建结果：
 
 ```bash
-bash run.sh --build-only
-bash run.sh --case=weight_quant_batch_matmul_mx_swat.csv --skip-build
+bash examples/common/run.sh --ops=weight_quant_batch_matmul_mx --target=weight_quant_batch_matmul_mx_swat --build-only
+bash examples/common/run.sh --ops=weight_quant_batch_matmul_mx --target=weight_quant_batch_matmul_mx_swat --skip-build
 ```
 
 ### 测试用例定义
@@ -95,7 +93,7 @@ NZ_multik_tail_n_bias,32,128,40,40,NZ,32,32,64,64,64,64,32,2,1
 
 ### 输入数据
 
-由 `../scripts/gen_data.py` 在 `data/<casename>/` 下生成：
+由 `examples/weight_quant_batch_matmul_mx/scripts/gen_data.py` 在 `data/<casename>/` 下生成：
 
 - `input_a.bin`: FP8 E4M3 激活矩阵
 - `input_b.bin`: 打包的 FP4 E2M1 权重矩阵
@@ -111,7 +109,7 @@ NZ_multik_tail_n_bias,32,128,40,40,NZ,32,32,64,64,64,64,32,2,1
 
 ### 验证标准
 
-由 `../scripts/verify_result.py` 执行校验。FP16 逐点绝对误差超过 `ratio_tol` 时记为误差点，误差点占比
+由 `examples/weight_quant_batch_matmul_mx/scripts/verify_result.py` 执行校验。FP16 逐点绝对误差超过 `ratio_tol` 时记为误差点，误差点占比
 不超过 `ratio_tol` 时校验通过：
 
 | dtype | ratio_tol |
@@ -122,13 +120,13 @@ NZ_multik_tail_n_bias,32,128,40,40,NZ,32,32,64,64,64,64,32,2,1
 
 ```text
 weight_quant_batch_matmul_mx_swat/
-├── CMakeLists.txt                              # 构建配置
 ├── weight_quant_batch_matmul_mx_swat.cpp      # Kernel 和 Host 侧执行代码
+├── weight_quant_batch_matmul_mx_swat.conf     # 参数路由配置
 ├── weight_quant_batch_matmul_mx_swat.csv      # CSV 测试用例
-├── parse_csv.py                                # CSV 解析与批量执行
-├── run.sh                                      # 编译、运行、验证和清理脚本
 └── README.md                                   # 本文档
 ```
+
+构建配置在 op 层 `examples/weight_quant_batch_matmul_mx/CMakeLists.txt` 中统一管理；运行通过 `examples/common/run.sh` 统一调度，数据生成和精度校验由 `examples/weight_quant_batch_matmul_mx/scripts/` 下的 `gen_data.py` 和 `verify_result.py` 执行。
 
 ## Blaze 组件
 

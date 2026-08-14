@@ -29,10 +29,10 @@
 
 ### 执行方式
 
-通过 `run.sh --case=<csv>` 驱动，自动完成编译、数据生成、kernel 执行和精度验证：
+通过统一入口驱动，自动完成编译、数据生成、kernel 执行和精度验证：
 
 ```bash
-bash run.sh --case=quant_batch_matmul_mx.csv
+bash examples/common/run.sh --ops=quant_batch_matmul --target=quant_batch_matmul_mx
 ```
 
 ### 测试用例定义
@@ -72,7 +72,7 @@ qbmm_mx_10240_1024_2624_FF_fp8e4m3_fp8e4m3_bfloat16_NZ,10240,1024,2624,0,fp8_e4m
 
 ### 输入数据
 
-由 `../scripts/gen_data_mx.py` 生成：
+由 `examples/quant_batch_matmul/scripts/gen_data_mx.py` 生成：
 
 - `input/input_a.bin`: A 矩阵（FP8 或打包 FP4）
 - `input/input_b.bin`: B 矩阵（FP8 或打包 FP4，ND 或 NZ 格式）
@@ -87,7 +87,7 @@ qbmm_mx_10240_1024_2624_FF_fp8e4m3_fp8e4m3_bfloat16_NZ,10240,1024,2624,0,fp8_e4m
 
 ### 验证标准
 
-由 `../scripts/verify_result_mx.py` 执行，支持 float16/bfloat16/float32 三种输出 dtype 的精度比对。
+由 `examples/quant_batch_matmul/scripts/verify_result_mx.py` 执行，支持 float16/bfloat16/float32 三种输出 dtype 的精度比对。
 
 ## 覆盖的场景
 
@@ -109,21 +109,14 @@ qbmm_mx_10240_1024_2624_FF_fp8e4m3_fp8e4m3_bfloat16_NZ,10240,1024,2624,0,fp8_e4m
 ## 代码结构
 
 ```
-quant_batch_matmul/
-├── CMakeLists.txt                  # 构建配置
-├── scripts/
-│   ├── gen_data_cube.py            # Cube 数据生成（HiFloat8/Int8）
-│   ├── gen_data_mx.py              # MX 数据生成（full_mx 路径）
-│   ├── verify_result_cube.py       # Cube 精度校验（BF16/Int32）
-│   └── verify_result_mx.py         # MX 精度校验（FP16/BF16/FP32）
-└── quant_batch_matmul_mx/
-    ├── CMakeLists.txt              # 构建配置
-    ├── quant_batch_matmul_mx.cpp   # 统一 kernel 实现
-    ├── quant_batch_matmul_mx.csv   # CSV 测试用例
-    ├── parse_csv.py                # CSV 解析与批量执行
-    ├── run.sh                      # 运行脚本
-    └── README.md                   # 本文档
+quant_batch_matmul_mx/
+├── quant_batch_matmul_mx.cpp       # kernel 实现
+├── quant_batch_matmul_mx.conf      # 参数路由配置
+├── quant_batch_matmul_mx.csv       # CSV 测试用例
+└── README.md                       # 本文档
 ```
+
+构建配置在 op 层 `examples/quant_batch_matmul/CMakeLists.txt` 中统一管理；运行通过 `examples/common/run.sh` 统一调度。数据生成和精度校验由 `examples/quant_batch_matmul/scripts/` 下的 `gen_data_mx.py` 和 `verify_result_mx.py` 执行。
 
 ## Blaze 组件
 

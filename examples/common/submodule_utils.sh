@@ -47,7 +47,6 @@ ensure_tensor_api_submodule() {
     fi
 
     # --init / --recursive: 初始化 submodule 并递归处理嵌套 submodule
-    # 不使用 --remote：checkout superproject 记录的 commit，不从配置分支拉取最新
     if ! git submodule update --init --recursive include/tensor_api; then
         log_error "Failed to initialize tensor_api submodule"
         log_error "Manual recovery:"

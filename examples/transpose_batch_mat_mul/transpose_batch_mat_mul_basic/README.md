@@ -50,10 +50,10 @@ C[m, b, n] = Σ_k A_logical[b, m, k] × B[b, k, n]
 
 ### 执行方式
 
-通过 `run.sh --case=<csv>` 驱动，自动完成编译、数据生成、kernel 执行和精度验证：
+通过统一入口驱动，自动完成编译、数据生成、kernel 执行和精度验证：
 
 ```bash
-bash run.sh --case=transpose_batch_mat_mul_basic.csv
+bash examples/common/run.sh --ops=transpose_batch_mat_mul --target=transpose_batch_mat_mul_basic
 ```
 
 ### 测试用例定义
@@ -118,13 +118,13 @@ tbmm_basic_fp32_hf32,128,128,128,2,0,float32,false,true
 
 ```
 transpose_batch_mat_mul_basic/
-├── CMakeLists.txt                              # 构建配置
-├── transpose_batch_mat_mul_basic.cpp           # 统一 kernel 实现
+├── transpose_batch_mat_mul_basic.cpp           # kernel 实现
+├── transpose_batch_mat_mul_basic.conf          # 参数路由配置
 ├── transpose_batch_mat_mul_basic.csv           # CSV 测试用例
-├── parse_csv.py                                # CSV 解析与批量执行
-├── run.sh                                      # 运行脚本
 └── README.md                                   # 本文档
 ```
+
+构建配置在 op 层 `examples/transpose_batch_mat_mul/CMakeLists.txt` 中统一管理；运行通过 `examples/common/run.sh` 统一调度，数据生成和精度校验由 `examples/transpose_batch_mat_mul/scripts/` 下的 `gen_data.py` 和 `verify_result.py` 执行。
 
 ## Blaze 组件
 

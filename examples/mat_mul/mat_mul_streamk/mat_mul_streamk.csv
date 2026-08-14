@@ -1,6 +1,6 @@
-casename,m,k,n,bias,dtype,transA,transB,hf32,format
-mat_mul_streamk_fp16,100,8192,100,100,float16,false,false,false,"(ND,ND)"
-mat_mul_streamk_bf16,100,8192,100,100,bfloat16,false,false,false,"(ND,ND)"
-mat_mul_streamk_fp32,100,8192,100,100,float32,false,false,false,"(ND,ND)"
-mat_mul_streamk_hf32,100,8192,100,100,float32,false,false,true,"(ND,ND)"
-mat_mul_streamk_weightNz,100,8192,100,0,float16,false,false,false,"(ND,NZ)"
+casename,m,k,n,bias,dtype,transA,transB,hf32,layoutA,layoutB
+mat_mul_streamk_fp16,100,8192,100,100,float16,false,false,false,ND,ND
+mat_mul_streamk_bf16,100,8192,100,100,bfloat16,false,false,false,ND,ND
+mat_mul_streamk_fp32,100,8192,100,100,float32,false,false,false,ND,ND
+mat_mul_streamk_hf32,100,8192,100,100,float32,false,false,true,ND,ND
+mat_mul_streamk_weightNz,100,8192,100,0,float16,false,false,false,ND,NZ

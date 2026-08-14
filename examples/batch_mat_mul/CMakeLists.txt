@@ -1,0 +1,2 @@
+ops_example_add_executable(mat_mul_bmm_broadcast mat_mul_bmm_broadcast/mat_mul_bmm_broadcast.cpp)
+ops_example_add_executable(mat_mul_iterbatch_broadcast mat_mul_iterbatch_broadcast/mat_mul_iterbatch_broadcast.cpp)

@@ -28,31 +28,31 @@
 ### 执行方式
 
 ```bash
-bash run.sh --case=mat_mul_basic.csv
+bash examples/common/run.sh --ops=mat_mul --target=mat_mul_basic
 ```
 
 ### 测试用例定义
 
 ```csv
-casename,m,k,n,bias,dtype,transA,transB,hf32,format
-mat_mul_basic_fp16,128,512,128,128,float16,false,false,false,"(ND,ND)"
-mat_mul_basic_bf16,128,512,128,128,bfloat16,false,false,false,"(ND,ND)"
-mat_mul_basic_fp32,128,512,128,128,float32,false,false,false,"(ND,ND)"
-mat_mul_basic_hf32,128,512,128,128,float32,false,false,true,"(ND,ND)"
-mat_mul_basic_weightNz,128,512,128,0,float16,false,false,false,"(ND,NZ)"
+casename,m,k,n,bias,dtype,transA,transB,hf32,layoutA,layoutB
+mat_mul_basic_fp16,128,512,128,128,float16,false,false,false,ND,ND
+mat_mul_basic_bf16,128,512,128,128,bfloat16,false,false,false,ND,ND
+mat_mul_basic_fp32,128,512,128,128,float32,false,false,false,ND,ND
+mat_mul_basic_hf32,128,512,128,128,float32,false,false,true,ND,ND
+mat_mul_basic_weightNz,128,512,128,0,float16,false,false,false,ND,NZ
 ```
 
 ## 代码结构
 
 ```
 mat_mul_basic/
-├── CMakeLists.txt                  # 构建配置
-├── mat_mul_basic.cpp               # 统一 kernel 实现
+├── mat_mul_basic.cpp               # kernel 实现
+├── mat_mul_basic.conf              # 参数路由配置
 ├── mat_mul_basic.csv               # CSV 测试用例
-├── parse_csv.py                    # CSV 解析与批量执行
-├── run.sh                          # 运行脚本
 └── README.md                       # 本文档
 ```
+
+构建配置在 op 层 `examples/mat_mul/CMakeLists.txt` 中统一管理；运行通过 `examples/common/run.sh` 统一调度，数据生成和精度校验由 `examples/mat_mul/scripts/` 下的 `gen_data.py` 和 `verify_result.py` 执行。
 
 ## Blaze 组件
 

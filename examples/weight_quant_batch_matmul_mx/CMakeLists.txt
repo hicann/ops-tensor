@@ -1,5 +1,1 @@
-# ops-tensor Examples — weight_quant_batch_matmul_mx Operator (L2)
-#
-# Scenario aggregation: add_subdirectory each scenario.
-
-add_subdirectory(weight_quant_batch_matmul_mx_swat)
+ops_example_add_executable(weight_quant_batch_matmul_mx_swat weight_quant_batch_matmul_mx_swat/weight_quant_batch_matmul_mx_swat.cpp)

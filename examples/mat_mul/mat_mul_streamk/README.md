@@ -27,10 +27,10 @@
 
 ### 执行方式
 
-通过 `run.sh --case=<csv>` 驱动，自动完成编译、数据生成、kernel 执行和精度验证：
+通过统一入口驱动，自动完成编译、数据生成、kernel 执行和精度验证：
 
 ```bash
-bash run.sh --case=mat_mul_streamk.csv
+bash examples/common/run.sh --ops=mat_mul --target=mat_mul_streamk
 ```
 
 ### 测试用例定义
@@ -38,12 +38,12 @@ bash run.sh --case=mat_mul_streamk.csv
 测试用例定义在 `mat_mul_streamk.csv` 中，格式如下：
 
 ```csv
-casename,m,k,n,bias,dtype,transA,transB,hf32,format
-mat_mul_streamk_fp16,100,8192,100,100,float16,false,false,false,"(ND,ND)"
-mat_mul_streamk_bf16,100,8192,100,100,bfloat16,false,false,false,"(ND,ND)"
-mat_mul_streamk_fp32,100,8192,100,100,float32,false,false,false,"(ND,ND)"
-mat_mul_streamk_hf32,100,8192,100,100,float32,false,false,true,"(ND,ND)"
-mat_mul_streamk_weightNz,100,8192,100,0,float16,false,false,false,"(ND,NZ)"
+casename,m,k,n,bias,dtype,transA,transB,hf32,layoutA,layoutB
+mat_mul_streamk_fp16,100,8192,100,100,float16,false,false,false,ND,ND
+mat_mul_streamk_bf16,100,8192,100,100,bfloat16,false,false,false,ND,ND
+mat_mul_streamk_fp32,100,8192,100,100,float32,false,false,false,ND,ND
+mat_mul_streamk_hf32,100,8192,100,100,float32,false,false,true,ND,ND
+mat_mul_streamk_weightNz,100,8192,100,0,float16,false,false,false,ND,NZ
 ```
 
 **列说明**：
@@ -57,12 +57,12 @@ mat_mul_streamk_weightNz,100,8192,100,0,float16,false,false,false,"(ND,NZ)"
 | transA | A 矩阵是否转置 |
 | transB | B 矩阵是否转置 |
 | hf32 | 是否启用 HF32 模式（仅 float32 有效） |
-| format | 输入格式：(ND,ND) 或 (ND,NZ) |
+| layoutA, layoutB | 输入格式：`ND,ND` 或 `ND,NZ` |
 
-### format 说明
+### layout 说明
 
-- `(ND,ND)`：标准 matmul，A 和 B 均为 ND 格式
-- `(ND,NZ)`：weightNz 场景，A 为 ND 格式，B 为 NZ 格式（由 C++ 端自动转换）
+- `layoutA=ND, layoutB=ND`：标准 matmul，A 和 B 均为 ND 格式
+- `layoutA=ND, layoutB=NZ`：weightNz 场景，A 为 ND 格式，B 为 NZ 格式（由 C++ 端自动转换）
 
 ### 结果输出
 
@@ -133,20 +133,20 @@ weightNz 场景表示 weight 矩阵（B 矩阵）使用 NZ 格式存储，优化
 3. Kernel 根据 transB 选择对应的 NZ Layout（ZNLayoutPtn 或 NZLayoutPtn）
 
 **约束**：
-- format 必须为 `(ND,NZ)`
+- layoutB 必须为 `NZ`
 - 仅支持 float16/bfloat16
 
 ## 代码结构
 
 ```
 mat_mul_streamk/
-├── CMakeLists.txt                  # 构建配置
-├── mat_mul_streamk.cpp             # 统一 kernel 实现
-├── mat_mul_streamk.csv             # CSV 测试用例
-├── parse_csv.py                    # CSV 解析与批量执行
-├── run.sh                          # 运行脚本
-└── README.md                       # 本文档
+├── mat_mul_streamk.cpp              # kernel 实现
+├── mat_mul_streamk.conf             # 参数路由配置
+├── mat_mul_streamk.csv              # CSV 测试用例
+└── README.md                        # 本文档
 ```
+
+构建配置在 op 层 `examples/mat_mul/CMakeLists.txt` 中统一管理；运行通过 `examples/common/run.sh` 统一调度，数据生成和精度校验由 `examples/mat_mul/scripts/` 下的 `gen_data.py` 和 `verify_result.py` 执行。
 
 ## Blaze 组件
 

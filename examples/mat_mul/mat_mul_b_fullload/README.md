@@ -28,31 +28,31 @@
 ### 执行方式
 
 ```bash
-bash run.sh --case=mat_mul_b_fullload.csv
+bash examples/common/run.sh --ops=mat_mul --target=mat_mul_b_fullload
 ```
 
 ### 测试用例定义
 
 ```csv
-casename,m,k,n,bias,dtype,transA,transB,hf32,format
-mat_mul_b_fullload_fp16,256,512,32,32,float16,false,false,false,"(ND,ND)"
-mat_mul_b_fullload_bf16,256,512,32,32,bfloat16,false,false,false,"(ND,ND)"
-mat_mul_b_fullload_fp32,256,512,32,32,float32,false,false,false,"(ND,ND)"
-mat_mul_b_fullload_hf32,256,512,32,32,float32,false,false,true,"(ND,ND)"
-mat_mul_b_fullload_weightNz,256,512,32,0,float16,false,false,false,"(ND,NZ)"
+casename,m,k,n,bias,dtype,transA,transB,hf32,layoutA,layoutB
+mat_mul_b_fullload_fp16,256,512,32,32,float16,false,false,false,ND,ND
+mat_mul_b_fullload_bf16,256,512,32,32,bfloat16,false,false,false,ND,ND
+mat_mul_b_fullload_fp32,256,512,32,32,float32,false,false,false,ND,ND
+mat_mul_b_fullload_hf32,256,512,32,32,float32,false,false,true,ND,ND
+mat_mul_b_fullload_weightNz,256,512,32,0,float16,false,false,false,ND,NZ
 ```
 
 ## 代码结构
 
 ```
 mat_mul_b_fullload/
-├── CMakeLists.txt                  # 构建配置
-├── mat_mul_b_fullload.cpp          # 统一 kernel 实现
+├── mat_mul_b_fullload.cpp          # kernel 实现
+├── mat_mul_b_fullload.conf         # 参数路由配置
 ├── mat_mul_b_fullload.csv          # CSV 测试用例
-├── parse_csv.py                    # CSV 解析与批量执行
-├── run.sh                          # 运行脚本
 └── README.md                       # 本文档
 ```
+
+构建配置在 op 层 `examples/mat_mul/CMakeLists.txt` 中统一管理；运行通过 `examples/common/run.sh` 统一调度，数据生成和精度校验由 `examples/mat_mul/scripts/` 下的 `gen_data.py` 和 `verify_result.py` 执行。
 
 ## Blaze 组件
 
