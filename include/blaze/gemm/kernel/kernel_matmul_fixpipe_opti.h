@@ -78,6 +78,20 @@ public:
         TRANS_B, AscendC::Te::FrameLayoutFormat<AscendC::Te::ZNLayoutPtn, AscendC::Te::LayoutTraitDefault<BType>>,
         AscendC::Te::FrameLayoutFormat<AscendC::Te::NZLayoutPtn, AscendC::Te::LayoutTraitDefault<BType>>>;
 
+    static_assert(
+        AscendC::Std::is_one_of_v<
+            AscendC::Std::tuple<AType, BType, CType, BiasType>, AscendC::Std::tuple<half, half, half, half>,
+            AscendC::Std::tuple<half, half, half, float>, AscendC::Std::tuple<half, half, float, half>,
+            AscendC::Std::tuple<half, half, float, float>,
+            AscendC::Std::tuple<bfloat16_t, bfloat16_t, bfloat16_t, bfloat16_t>,
+            AscendC::Std::tuple<bfloat16_t, bfloat16_t, bfloat16_t, float>,
+            AscendC::Std::tuple<bfloat16_t, bfloat16_t, float, bfloat16_t>,
+            AscendC::Std::tuple<bfloat16_t, bfloat16_t, float, float>, AscendC::Std::tuple<float, float, float, float>>,
+        "Unsupported (AType, BType, CType, BiasType) combination");
+    static_assert(!AscendC::Std::is_one_of_v<LayoutA, AscendC::Te::NZLayoutPtn, AscendC::Te::ZNLayoutPtn> &&
+                      !AscendC::Std::is_one_of_v<LayoutC, AscendC::Te::NZLayoutPtn, AscendC::Te::ZNLayoutPtn>,
+                  "LayoutA and LayoutC cannot be NZLayoutPtn or ZNLayoutPtn");
+
     struct Params {
         ProblemShape problemShape;
         BlockMmadParams mmadParams;
