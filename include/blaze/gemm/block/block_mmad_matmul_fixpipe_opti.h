@@ -83,6 +83,7 @@ public:
         uint16_t l0cStages{1};
         uint64_t splitM{0};
         uint8_t ubDB{1};
+        uint64_t rowStride{0};
     };
 
 public:

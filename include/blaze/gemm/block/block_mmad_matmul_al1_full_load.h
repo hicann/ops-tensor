@@ -69,6 +69,7 @@ public:
         uint32_t kL0{0};
         uint32_t l1Stages{1};
         uint16_t l0cStages{1};
+        uint64_t rowStride{0};
     };
 
 public:

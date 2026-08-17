@@ -68,7 +68,7 @@ public:
     using LayoutC = typename BlockMmad::LayoutC;
     using LayoutBias = typename BlockMmad::LayoutBias;
     using TupleShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
-    using MakeLayoutA = AscendC::Te::FrameLayoutFormat<LayoutA, AscendC::Std::Int<AscendC::Te::C0_ELEMENT<AType>>>;
+    using MakeLayoutA = AscendC::Te::FrameLayoutFormat<LayoutA>;
     using MakeLayoutB = AscendC::Te::FrameLayoutFormat<LayoutB, AscendC::Std::Int<AscendC::Te::C0_ELEMENT<BType>>>;
     using MakeLayoutC = AscendC::Te::FrameLayoutFormat<LayoutC, AscendC::Std::Int<AscendC::Te::C0_ELEMENT<CType>>>;
     using MakeLayoutBias = AscendC::Te::FrameLayoutFormat<LayoutBias,
@@ -129,12 +129,26 @@ public:
     }
 
 private:
+    __aicore__ inline auto MakeLayoutA2D(Params const& params)
+    {
+        auto layoutA = MakeLayoutA{}(m_, k_);
+        if constexpr (!TRANS_A) {
+            // 连续场景下rowStride表示k或1, 非连续场景下表示m轴的stride
+            uint64_t rowStride = params.mmadParams.rowStride == 0 ? k_ : params.mmadParams.rowStride;
+            layoutA = AscendC::Te::MakePatternLayout<LayoutA, AscendC::Te::LayoutTraitDefault<>>(
+                AscendC::Te::MakeShape(AscendC::Te::MakeShape(AscendC::Te::_1{}, m_),
+                                       AscendC::Te::MakeShape(AscendC::Te::_1{}, k_)),
+                AscendC::Te::MakeStride(AscendC::Te::MakeStride(AscendC::Te::_0{}, rowStride),
+                                        AscendC::Te::MakeStride(AscendC::Te::_0{}, AscendC::Te::_1{})));
+        }
+        return layoutA;
+    }
+
     __aicore__ inline void MatmulProcess(Params const& params, BlockEpilogue& epilogueOp, BlockMmad& blockMmad,
                                          BlockScheduler& bs, int64_t curBlockIdx, int64_t coreNums,
                                          int64_t totalBlockNums)
     {
-        // 默认ND Format
-        auto layoutA = MakeLayoutA{}(m_, k_);       // ND layout for A
+        auto layoutA = MakeLayoutA2D(params);
         auto layoutB = MakeLayoutB{}(k_, n_);       // ND layout for B
         auto layoutC = MakeLayoutC{}(m_, n_);       // ND layout for C
         auto layoutBias = MakeLayoutBias{}(1L, n_); // ND layout for Bias
@@ -204,6 +218,7 @@ private:
     }
 
 private:
+    static constexpr bool TRANS_A = BlockMmad::TRANS_A;
     static constexpr uint64_t AIC_SYNC_AIV_MODE_4 = 4;
     static constexpr uint16_t AIV_SYNC_AIC_FLAG = 4;
     static constexpr uint16_t AIC_SYNC_AIV_FLAG = 6;

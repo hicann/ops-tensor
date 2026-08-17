@@ -80,7 +80,6 @@ public:
         int64_t mL1 = AscendC::Te::Get<Gemm::MNK_M>(blockShape);
         int64_t curM = mL1;
         if (baseM != 0) {
-            // mL0 = min(curM, baseM)
             curM = Blaze::Gemm::Min(curM, baseM);
         }
         int64_t halfBlockShapeM = Blaze::Gemm::CeilDiv(curM, AscendC::GetTaskRation());
