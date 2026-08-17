@@ -373,7 +373,7 @@ TEST_F(TbmmTest, Test_INT8_Batch2)
 
     std::vector<uint64_t> scaleVec(BATCH * N, 0x3F80000000000000ULL);
 
-    std::copy(scaleVec.begin(), scaleVec.end(), scaleGM);
+    std::copy(scaleVec.begin(), scaleVec.end(), reinterpret_cast<uint64_t*>(scaleGM));
 
     TbmmBasicTilingData* tilingData = reinterpret_cast<TbmmBasicTilingData*>(tilingGM);
     tilingData->usedCoreNum = blockNum;
@@ -461,7 +461,7 @@ TEST_F(TbmmTest, Test_INT8_Batch4_MultiCore)
 
     std::vector<uint64_t> scaleVec(BATCH * N, 0x3F80000000000000ULL);
 
-    std::copy(scaleVec.begin(), scaleVec.end(), scaleGM);
+    std::copy(scaleVec.begin(), scaleVec.end(), reinterpret_cast<uint64_t*>(scaleGM));
 
     TbmmBasicTilingData* tilingData = reinterpret_cast<TbmmBasicTilingData*>(tilingGM);
     tilingData->usedCoreNum = blockNum;
