@@ -167,13 +167,13 @@ private:
 GMM_FIXPIPE_TEMPLATE_DEF
 __aicore__ inline void GemmUniversal<GMM_FIXPIPE_TEM_PARAMS>::Run(const Params& params)
 {
-    if ASCEND_IS_AIC {
-        AscendC::SetMMLayoutTransform(true);
-    }
-
     Init(params);
     if (groupNum_ == 0) {
         return;
+    }
+
+    if ASCEND_IS_AIC {
+        AscendC::SetMMLayoutTransform(true);
     }
 
     const auto& tiling = params.gmmParams;
@@ -206,6 +206,7 @@ __aicore__ inline void GemmUniversal<GMM_FIXPIPE_TEM_PARAMS>::Run(const Params& 
         if (!isFirstBlock_) {
             WaitForVector();
         }
+        AscendC::SetMMLayoutTransform(false);
     }
 }
 
