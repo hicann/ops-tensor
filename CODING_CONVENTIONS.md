@@ -4,34 +4,46 @@
 
 ### 1.1 文件命名
 
-文件名格式：`层级_算子_任务类型_策略`，各字段含义如下：
+文件名格式：`层级_算子_类型_策略`，各字段含义如下：
 
 | 字段 | 说明 | 取值示例 |
 |------|------|----------|
 | 层级 | 代码所属层级 | `kernel` / `block_mmad` |
-| 算子 | 算子类型/功能 | `matmul` / `batchmatmul` / `qbmm` / `wqmm` / `qgmm` / `tbmm` |
-| 任务类型 | 算子任务类型或量化类型，留空表示非量化 | `cube` / `mix` / `mx` / `pretensor`（留空 = 非量化） |
-| 策略 | 模板策略或应用场景，默认不填表示 basic；可由多个 `_` 连接的子策略组成 | `streamk` / `al1_full_load` / `basic_split_k`（留空 = basic） |
+| 算子 | 算子功能 | `matmul` / `batchmatmul` / `qbmm` / `wqmm` / `qgmm` / `wqgmm` / `tbmm` |
+| 类型(可选) | 任务类型，默认不填表示 cube | `mx`（mx量化的纯cube模板） / `mx_mix`（mx量化的mix模板） / `mix`(非mx量化的mix模板) |
+| 策略 | 模板策略或应用场景（策略中如果要包括数据类型，数据类型放最前面），默认不填表示 basic；可由多个 `_` 连接的子策略组成 | `streamk` / `al1_full_load` / `basic_split_k` / `broadcast` / `iterbatch_broadcast` / `fixpipe_quant` / `fixpipe_opti` / `activation_quant` / `without_batch` / `l0c_pingpong` / ... |
 
 
 ```cpp
 block_mmad.h                       // 基类文件
 
-// 非量化 + 策略（任务类型字段留空）—— 仓库已有合规文件
+// 非量化 + 策略 —— 仓库已有合规文件
 block_mmad_matmul_basic.h
 kernel_matmul_streamk.h
 
-// 任务类型（cube/mix）+ basic 策略（策略字段留空）—— 仓库已有合规文件
+// 类型（非mx量化的cube/mix模式）+ basic 策略 —— 仓库已有合规文件
 kernel_qbmm_cube.h
 kernel_qbmm_mix.h
 
-// 量化类型 + basic 策略（策略字段留空）—— 仓库已有合规文件
+// 类型（mx量化的纯cube模板）+ basic 策略 —— 仓库已有合规文件
 kernel_qbmm_mx.h
 block_mmad_qbmm_mx.h
 block_mmad_qgmm_mx.h
 
-// 量化类型 + 策略 —— 仓库已有合规文件
+// 类型（mx_mix = MX 量化 + Mix 模板）+ basic 策略 —— 仓库已有合规文件
+kernel_qbmm_mx_mix.h
+kernel_wqmm_mx_mix.h
+block_mmad_wqmm_mx_mix.h
+kernel_qgmm_mx_mix.h
+
+// 类型 + 策略 —— 仓库已有合规文件
 kernel_qbmm_pertensor_streamk.h    // pertensor + streamk
+kernel_qbmm_mx_streamk.h           // mx + streamk
+kernel_qgmm_mix_fixpipe_quant.h    // mix + fixpipe_quant
+
+// 非量化 + 策略 —— 仓库已有合规文件
+kernel_batchmatmul_broadcast.h             // broadcast
+kernel_batchmatmul_iterbatch_broadcast.h   // iterbatch_broadcast
 
 // 多子策略 —— 仓库已有合规文件
 block_mmad_matmul_basic_split_k.h  // 非量化 + basic_split_k
@@ -159,7 +171,7 @@ void MyFunction(int32_t input_size, GM_ADDR src_addr) {
 
 | 类别 | 命名风格 | 示例 |
 |------|----------|------|
-| 文件名 | `层级_算子_任务类型_策略` | `kernel_matmul_basic.h`, `block_mmad_qbmm_mx.h`, `block_mmad_matmul_basic_split_k.h` |
+| 文件名 | `层级_算子_类型_策略` | `kernel_matmul_basic.h`, `block_mmad_qbmm_mx.h`, `kernel_qbmm_mx_mix.h`, `block_mmad_matmul_basic_split_k.h` |
 | 类模板参数 | 大驼峰 + `_` 后缀 | `AType_`, `FullLoadMode_` |
 | 类型名（类/结构体/联合体/枚举/typedef/别名/命名空间） | 大驼峰 | `BlockMmad`, `ErrorCode` |
 | 函数名（全局/成员/作用域内） | 大驼峰 | `ComputeResult()` |
