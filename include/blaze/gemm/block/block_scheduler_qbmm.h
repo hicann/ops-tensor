@@ -51,6 +51,8 @@ public:
         mBlockNums_ = Blaze::Gemm::CeilDiv(m, baseM_);
         nBlockNums_ = Blaze::Gemm::CeilDiv(n, baseN_);
         blockNums_ = mBlockNums_ * nBlockNums_;
+        blockIdx_ = AscendC::GetBlockIdx() / AscendC::GetTaskRation();
+        coreNums_ = AscendC::GetBlockNum();
         if (coreNums_ <= 0) {
             return;
         }
@@ -100,15 +102,9 @@ public:
         endBlockIdx_ = newEndBlockIdx;
     }
 
-    __aicore__ inline int64_t GetTotalCnt()
-    {
-        return blockNums_;
-    }
+    __aicore__ inline int64_t GetTotalCnt() { return blockNums_; }
 
-    __aicore__ inline int64_t GetEndBlockIdx()
-    {
-        return endBlockIdx_;
-    }
+    __aicore__ inline int64_t GetEndBlockIdx() { return endBlockIdx_; }
 
     template <QuantMode AQuantMode_, QuantMode BQuantMode_, bool WeightNz_ = false>
     __aicore__ inline BlockShape GetBlockShape(BlockCoord blockCoord)
@@ -129,8 +125,7 @@ public:
         if constexpr (IsFp4<AType>() && !TRANS_B) {
             singleCoreNSplit = (singleCoreNSplit + 1) & ~1;
         }
-        if constexpr ((AQuantMode_ == QuantMode::PERGROUP_MODE || AQuantMode_ == QuantMode::PERBLOCK_MODE) &&
-                      TRANS_A) {
+        if constexpr ((AQuantMode_ == QuantMode::PERGROUP_MODE || AQuantMode_ == QuantMode::PERBLOCK_MODE) && TRANS_A) {
             singleCoreMSplit = PER_BLOCK_SIZE << (singleCoreMSplit > PER_BLOCK_SIZE);
         } else if constexpr (AQuantMode_ == QuantMode::PERBLOCK_MODE) {
             singleCoreMSplit = CeilPowerOfTwo(singleCoreMSplit);
@@ -201,8 +196,7 @@ public:
         if constexpr (FullLoadMode_ == A_FULL_LOAD_MODE) {
             blockCoordM = blockIdx_ % mBlockNums_;
             int64_t curNTailTile = (roundIdx_ == roundNums_ - 1) ? nTailTile_ : 1;
-            blockCoordN = roundIdx_ * coreNums_ / mBlockNums_ % nBlockNums_ +
-                          blockIdx_ / mBlockNums_ / curNTailTile;
+            blockCoordN = roundIdx_ * coreNums_ / mBlockNums_ % nBlockNums_ + blockIdx_ / mBlockNums_ / curNTailTile;
             roundIdx_++;
             blockCoord = BlockCoord{blockCoordM, blockCoordN, 0, 0};
             return true;
@@ -275,8 +269,7 @@ private:
         return inputValue;
     }
 
-    __aicore__ inline void CalSingleCoreShapeByCoord(
-        int64_t& singleCoreM, int64_t& singleCoreN, BlockCoord blockCoord)
+    __aicore__ inline void CalSingleCoreShapeByCoord(int64_t& singleCoreM, int64_t& singleCoreN, BlockCoord blockCoord)
     {
         const int64_t mIdx = AscendC::Te::Get<MNK_M>(blockCoord);
         const int64_t nIdx = AscendC::Te::Get<MNK_N>(blockCoord);
@@ -316,8 +309,8 @@ private:
     int64_t nBaseTailLast_{0};
     int64_t mainWindow_{0};
     int64_t tailWindow_{0};
-    int64_t blockIdx_{AscendC::GetBlockIdx() / AscendC::GetTaskRation()};
-    int64_t coreNums_{AscendC::GetBlockNum()};
+    int64_t blockIdx_{0};
+    int64_t coreNums_{0};
     int64_t startBlockIdx_{0};
     int64_t endBlockIdx_{0};
     int64_t roundIdx_{0};
