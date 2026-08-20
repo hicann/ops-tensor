@@ -10,17 +10,103 @@ matmul@ops-tensor:
   src:
     release:
       style:
-        - ops/ops-tensor/include/blaze/
-        - ops/ops-tensor/docs/
+        - ops/ops-tensor/include/blaze/epilogue/block/block_epilogue_empty.h
+        - ops/ops-tensor/include/blaze/epilogue/block/block_epilogue_fixpipe.h
+        - ops/ops-tensor/include/blaze/epilogue/block/block_epilogue_matmul_streamk.h
+        - ops/ops-tensor/include/blaze/epilogue/block/block_epilogue_muls_add.h
+        - ops/ops-tensor/include/blaze/epilogue/fusion/default_fusion_op.h
+        - ops/ops-tensor/include/blaze/gemm/block/block_mmad.h
+        - ops/ops-tensor/include/blaze/gemm/block/block_mmad_iterbatch_broadcast.h
+        - ops/ops-tensor/include/blaze/gemm/block/block_mmad_matmul_al1_full_load.h
+        - ops/ops-tensor/include/blaze/gemm/block/block_mmad_matmul_basic.h
+        - ops/ops-tensor/include/blaze/gemm/block/block_mmad_matmul_basic_split_k.h
+        - ops/ops-tensor/include/blaze/gemm/block/block_mmad_matmul_bl1_full_load.h
+        - ops/ops-tensor/include/blaze/gemm/block/block_mmad_matmul_emu_split_weight.h
+        - ops/ops-tensor/include/blaze/gemm/block/block_mmad_matmul_fixpipe_opti.h
+        - ops/ops-tensor/include/blaze/gemm/block/block_mmad_matmul_streamk.h
+        - ops/ops-tensor/include/blaze/gemm/block/block_mmad_matmul_streamk_split_k.h
+        - ops/ops-tensor/include/blaze/gemm/block/block_scheduler_iterbatch_broadcast.h
+        - ops/ops-tensor/include/blaze/gemm/block/block_scheduler_matmul_basic.h
+        - ops/ops-tensor/include/blaze/gemm/block/block_scheduler_matmul_streamk.h
+        - ops/ops-tensor/include/blaze/gemm/kernel/kernel_batch_matmul_broadcast.h
+        - ops/ops-tensor/include/blaze/gemm/kernel/kernel_batch_matmul_iterbatch_broadcast.h
+        - ops/ops-tensor/include/blaze/gemm/kernel/kernel_matmul_al1_full_load.h
+        - ops/ops-tensor/include/blaze/gemm/kernel/kernel_matmul_basic.h
+        - ops/ops-tensor/include/blaze/gemm/kernel/kernel_matmul_bl1_full_load.h
+        - ops/ops-tensor/include/blaze/gemm/kernel/kernel_matmul_emu_split_weight.h
+        - ops/ops-tensor/include/blaze/gemm/kernel/kernel_matmul_fixpipe_opti.h
+        - ops/ops-tensor/include/blaze/gemm/kernel/kernel_matmul_streamk.h
+        - ops/ops-tensor/include/blaze/gemm/kernel/kernel_tbmm_basic.h
+        - ops/ops-tensor/include/blaze/gemm/kernel/kernel_universal.h
+        - ops/ops-tensor/include/blaze/gemm/policy/
+        - ops/ops-tensor/include/blaze/gemm/tile/
+        - ops/ops-tensor/include/blaze/gemm/utils/
       opensource_style: null
       kernel_style: null
     unrelease:
       test_code:
-        - ops/ops-tensor/include/tensor_api
-        - ops/ops-tensor/lib
-        - ops/ops-tensor/src
-        - ops/ops-tensor/scripts
-        - ops/ops-tensor/tests
-        - ops/ops-tensor/classify_rule.yaml
+        - ops/ops-tensor/examples/
+        - ops/ops-tensor/tests/
+        - ops/ops-tensor/docs/
+      non_delivery: null
+      open_source: null
+
+matmul-quant@ops-tensor:
+  src:
+    release:
+      style:
+        - ops/ops-tensor/include/blaze/epilogue/block/block_epilogue_gelu_mx_quant.h
+        - ops/ops-tensor/include/blaze/epilogue/block/block_epilogue_dequant.h
+        - ops/ops-tensor/include/blaze/gemm/block/block_mmad_a8w8_fixpipe_quant.h
+        - ops/ops-tensor/include/blaze/gemm/block/block_mmad_a8w8_mix.h
+        - ops/ops-tensor/include/blaze/epilogue/block/block_epilogue_qbmm_pertensor_streamk.h
+        - ops/ops-tensor/include/blaze/gemm/block/block_mmad_qbmm_mx.h
+        - ops/ops-tensor/include/blaze/gemm/block/block_mmad_qbmm_mx_l0c_pingpong.h
+        - ops/ops-tensor/include/blaze/gemm/block/block_scheduler_qbmm.h
+        - ops/ops-tensor/include/blaze/gemm/kernel/kernel_qbmm_cube.h
+        - ops/ops-tensor/include/blaze/gemm/kernel/kernel_qbmm_mix.h
+        - ops/ops-tensor/include/blaze/gemm/kernel/kernel_qbmm_mix_without_batch.h
+        - ops/ops-tensor/include/blaze/gemm/kernel/kernel_qbmm_mx.h
+        - ops/ops-tensor/include/blaze/gemm/kernel/kernel_qbmm_mx_activation_quant.h
+        - ops/ops-tensor/include/blaze/gemm/kernel/kernel_qbmm_mx_mix.h
+        - ops/ops-tensor/include/blaze/gemm/kernel/kernel_qbmm_mx_without_batch.h
+        - ops/ops-tensor/include/blaze/gemm/kernel/kernel_qbmm_pertensor_streamk.h
+        - ops/ops-tensor/include/blaze/gemm/kernel/kernel_qbmm_streamk.h
+      opensource_style: null
+      kernel_style: null
+    unrelease:
+      test_code:
+      non_delivery: null
+      open_source: null
+
+matmul-weight-quant@ops-tensor:
+  src:
+    release:
+      style:
+        - ops/ops-tensor/include/blaze/gemm/block/block_mmad_weight_prologue_mx.h
+        - ops/ops-tensor/include/blaze/gemm/block/block_scheduler_matmul_swat_with_tail_split.h
+        - ops/ops-tensor/include/blaze/gemm/kernel/kernel_matmul_mix_weight_prologue.h
+      opensource_style: null
+      kernel_style: null
+    unrelease:
+      test_code:
+      non_delivery: null
+      open_source: null
+
+gmm@ops-tensor:
+  src:
+    release:
+      style:
+        - ops/ops-tensor/include/blaze/epilogue/block/block_epilogue_per_token_scale.h
+        - ops/ops-tensor/include/blaze/gemm/block/block_scheduler_gmm_swat_with_tail_split.h
+        - ops/ops-tensor/include/blaze/gemm/block/block_mmad_qgmm_mx.h
+        - ops/ops-tensor/include/blaze/epilogue/block/block_epilogue_swiglu_mx_quant.h
+        - ops/ops-tensor/include/blaze/gemm/kernel/kernel_gmm_fixpipe_quant.h
+        - ops/ops-tensor/include/blaze/gemm/kernel/kernel_qgmm_mx.h
+        - ops/ops-tensor/include/blaze/gemm/kernel/kernel_qgmm_swiglu_mx.h
+      opensource_style: null
+      kernel_style: null
+    unrelease:
+      test_code:
       non_delivery: null
       open_source: null
