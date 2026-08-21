@@ -234,9 +234,9 @@ private:
                                         const TileShape& l1Shape, uint64_t l1BufId, uint64_t kIdx, int64_t kCntIndex,
                                         uint64_t splitSingleCoreKIdx)
     {
-        uint64_t curM = AscendC::Te::Get<0>(l1Shape);
-        uint64_t curN = AscendC::Te::Get<1>(l1Shape);
-        uint64_t curKL1 = AscendC::Te::Get<2>(l1Shape);
+        uint64_t curM = AscendC::Te::Get<MNK_M>(l1Shape);
+        uint64_t curN = AscendC::Te::Get<MNK_N>(l1Shape);
+        uint64_t curKL1 = AscendC::Te::Get<MNK_K>(l1Shape);
 
         auto copyGM2L1 = AscendC::Te::MakeCopy(AscendC::Te::CopyGM2L1{});
 
@@ -268,9 +268,9 @@ private:
                                         uint64_t kIdx, bool needBias, uint64_t biasBufId, uint64_t iter1,
                                         int64_t kCntIndex)
     {
-        uint64_t curM = AscendC::Te::Get<0>(l0Shape);
-        uint64_t curN = AscendC::Te::Get<1>(l0Shape);
-        uint64_t curK0 = AscendC::Te::Get<2>(l0Shape);
+        uint64_t curM = AscendC::Te::Get<MNK_M>(l0Shape);
+        uint64_t curN = AscendC::Te::Get<MNK_N>(l0Shape);
+        uint64_t curK0 = AscendC::Te::Get<MNK_K>(l0Shape);
 
         auto copyL12L0A = AscendC::Te::MakeCopy(AscendC::Te::CopyL12L0A{});
         auto layoutAL0 = AscendC::Te::MakeFrameLayout<AscendC::Te::NZLayoutPtn, AscendC::Te::LayoutTraitDefault<AType>>(
@@ -311,9 +311,9 @@ private:
                                    bool initCmatrix)
     {
         constexpr auto mmadAtom = AscendC::Te::MakeMmad(AscendC::Te::MmadOperation{}, AscendC::Te::MmadTraitDefault{});
-        auto curM = AscendC::Te::Get<0>(l0Shape);
-        auto curN = AscendC::Te::Get<1>(l0Shape);
-        auto curK0 = AscendC::Te::Get<2>(l0Shape);
+        auto curM = AscendC::Te::Get<MNK_M>(l0Shape);
+        auto curN = AscendC::Te::Get<MNK_N>(l0Shape);
+        auto curK0 = AscendC::Te::Get<MNK_K>(l0Shape);
 
         AscendC::Te::MmadParams mmadParams{static_cast<uint16_t>(curM), static_cast<uint16_t>(curN),
                                            static_cast<uint16_t>(curK0), unitFlag, initCmatrix};

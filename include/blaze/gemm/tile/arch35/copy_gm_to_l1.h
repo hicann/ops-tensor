@@ -34,8 +34,8 @@ struct CopySliceGM2L1 {
         auto layoutGm = src.Layout(); // shape: [ndNum, [sliceM, curK]], stride: [oriM * k, [k, 1]]
         auto layoutL1 = dst.Layout(); // l1 shape: [mL1, kL1] ==> NZ: ((m0, m1), (k0, k1))
 
-        auto m0 = AscendC::Te::Get<0>(AscendC::Te::Get<0>(layoutL1.Shape()));
-        auto m1 = AscendC::Te::Get<1>(AscendC::Te::Get<0>(layoutL1.Shape()));
+        auto m0 = AscendC::Te::Get<0>(AscendC::Te::Get<MNK_M>(layoutL1.Shape()));
+        auto m1 = AscendC::Te::Get<1>(AscendC::Te::Get<MNK_M>(layoutL1.Shape()));
         uint32_t mL1 = m1 * m0; // curML1
         uint16_t ndNum = static_cast<uint16_t>(AscendC::Te::Get<0>(layoutGm.Shape()));
         uint16_t nValue = static_cast<uint16_t>(AscendC::Te::Get<0>(AscendC::Te::Get<1>(layoutGm.Shape())));

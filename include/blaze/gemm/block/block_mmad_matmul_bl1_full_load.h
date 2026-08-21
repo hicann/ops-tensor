@@ -248,8 +248,8 @@ private:
     __aicore__ inline auto CopyL1FromGM(const TensorA& tensorA, const BufferSlot& aL1Slot, const TileShape& l1Shape,
                                         uint64_t kIdx)
     {
-        uint64_t curM = AscendC::Te::Get<0>(l1Shape);
-        uint64_t curKL1 = AscendC::Te::Get<2>(l1Shape);
+        uint64_t curM = AscendC::Te::Get<MNK_M>(l1Shape);
+        uint64_t curKL1 = AscendC::Te::Get<MNK_K>(l1Shape);
 
         auto layoutAL1 = MakeLayoutAL1{}(curM, curKL1);
         auto copyGM2L1 = AscendC::Te::MakeCopy(AscendC::Te::CopyGM2L1{});
@@ -270,9 +270,9 @@ private:
                                         uint64_t aL1KOffset, uint64_t bL1KOffset, uint64_t bL1NOffset, bool needBias,
                                         const BufferSlot& btSlot)
     {
-        auto curM = AscendC::Te::Get<0>(l0Shape);
-        auto curN = AscendC::Te::Get<1>(l0Shape);
-        auto curK0 = AscendC::Te::Get<2>(l0Shape);
+        auto curM = AscendC::Te::Get<MNK_M>(l0Shape);
+        auto curN = AscendC::Te::Get<MNK_N>(l0Shape);
+        auto curK0 = AscendC::Te::Get<MNK_K>(l0Shape);
 
         auto copyL12L0A = AscendC::Te::MakeCopy(AscendC::Te::CopyL12L0A{});
         auto layoutAL0 = AscendC::Te::MakeFrameLayout<AscendC::Te::NZLayoutPtn, AscendC::Te::LayoutTraitDefault<AType>>(
@@ -367,9 +367,9 @@ private:
                                    bool initCmatrix)
     {
         constexpr auto mmadAtom = AscendC::Te::MakeMmad(AscendC::Te::MmadOperation{}, AscendC::Te::MmadTraitDefault{});
-        auto curM = AscendC::Te::Get<0>(l0Shape);
-        auto curN = AscendC::Te::Get<1>(l0Shape);
-        auto curK0 = AscendC::Te::Get<2>(l0Shape);
+        auto curM = AscendC::Te::Get<MNK_M>(l0Shape);
+        auto curN = AscendC::Te::Get<MNK_N>(l0Shape);
+        auto curK0 = AscendC::Te::Get<MNK_K>(l0Shape);
         AscendC::Te::MmadParams mmadParams{static_cast<uint16_t>(curM), static_cast<uint16_t>(curN),
                                            static_cast<uint16_t>(curK0), unitFlag, initCmatrix};
         if (needBias) {

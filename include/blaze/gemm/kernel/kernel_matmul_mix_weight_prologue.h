@@ -59,10 +59,7 @@ public:
         bool hasBias{false};
     };
 
-    __aicore__ inline explicit KernelMatmulMixWeightPrologue(const Params& params)
-    {
-        Init(params);
-    }
+    __aicore__ inline explicit KernelMatmulMixWeightPrologue(const Params& params) { Init(params); }
 
     __aicore__ inline ~KernelMatmulMixWeightPrologue()
     {
@@ -72,26 +69,18 @@ public:
     }
 
     template <typename GMWeightTensor, typename GMBiasTensor, typename ActualBlockShape>
-    __aicore__ inline void operator()(
-        const GMWeightTensor& gmWeightTensor, const GMBiasTensor& gmBiasTensor,
-        const ActualBlockShape& actualBlockShape)
+    __aicore__ inline void operator()(const GMWeightTensor& gmWeightTensor, const GMBiasTensor& gmBiasTensor,
+                                      const ActualBlockShape& actualBlockShape)
     {
-        BlockContext block{
-            static_cast<int64_t>(AscendC::Te::Get<2>(actualBlockShape)),
-            static_cast<int64_t>(AscendC::Te::Get<1>(actualBlockShape)),
-            Align16(static_cast<uint64_t>(AscendC::Te::Get<1>(actualBlockShape)))};
+        BlockContext block{static_cast<int64_t>(AscendC::Te::Get<MNK_K>(actualBlockShape)),
+                           static_cast<int64_t>(AscendC::Te::Get<MNK_N>(actualBlockShape)),
+                           Align16(static_cast<uint64_t>(AscendC::Te::Get<MNK_N>(actualBlockShape)))};
         const int64_t kL1Size = static_cast<int64_t>(kL1Size_);
         const uint64_t kTileCount = CeilDiv(static_cast<uint64_t>(block.kLength), kL1Size_);
         for (uint64_t kLoopIdx = 0; kLoopIdx < kTileCount; ++kLoopIdx) {
             const int64_t kOffset = static_cast<int64_t>(kLoopIdx) * kL1Size;
             const int64_t kLength = Min(block.kLength - kOffset, kL1Size);
-            SliceContext slice{
-                kOffset,
-                0,
-                0,
-                block.nLength,
-                kLength,
-                kLength};
+            SliceContext slice{kOffset, 0, 0, block.nLength, kLength, kLength};
             if (UpdateUbSliceForCurrentSubBlock(slice, block)) {
                 ConvertCurrentWeightSlice(gmWeightTensor, gmBiasTensor, block, slice, kLoopIdx == 0U);
             } else {
@@ -124,8 +113,8 @@ private:
 
     class UbStorage {
     public:
-        __aicore__ inline void Init(
-            uint64_t baseN, uint64_t nUbSize, uint64_t kUbSize, uint64_t bufferNum, bool hasBias)
+        __aicore__ inline void Init(uint64_t baseN, uint64_t nUbSize, uint64_t kUbSize, uint64_t bufferNum,
+                                    bool hasBias)
         {
             bufferNum_ = bufferNum;
             uint64_t nUbSizeAligned = Align16(nUbSize);
@@ -150,14 +139,12 @@ private:
             }
 
             for (uint64_t index = 0; index < bufferNum_; ++index) {
-                inputSlots_[index] = {
-                    weightInBase_ + index * singleWeightInSize_, static_cast<uint8_t>(index)};
+                inputSlots_[index] = {weightInBase_ + index * singleWeightInSize_, static_cast<uint8_t>(index)};
                 uint64_t outputOffset = index * singleWeightOutSize_;
                 if constexpr (WEIGHT_NZ) {
                     outputOffset = index * static_cast<uint64_t>(AscendC::VECTOR_REG_WIDTH) / sizeof(OutType);
                 }
-                outputSlots_[index] = {
-                    outputOffset, static_cast<uint8_t>(OUTPUT_SYNC_ID_BASE + index)};
+                outputSlots_[index] = {outputOffset, static_cast<uint8_t>(OUTPUT_SYNC_ID_BASE + index)};
             }
         }
 
@@ -167,16 +154,15 @@ private:
             if constexpr (WEIGHT_NZ) {
                 return AscendC::Te::MakeTensor(
                     AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB, InType>(offset),
-                    AscendC::Te::MakeFrameLayout<
-                        AscendC::Te::ZNLayoutPtn, AscendC::Std::Int<AscendC::Te::C0_ELEMENT<OutType>>>(kSize, nSize));
+                    AscendC::Te::MakeFrameLayout<AscendC::Te::ZNLayoutPtn,
+                                                 AscendC::Std::Int<AscendC::Te::C0_ELEMENT<OutType>>>(kSize, nSize));
             } else {
                 int64_t kStride = static_cast<int64_t>(Align64(static_cast<uint64_t>(kSize)));
                 auto fullTensor = AscendC::Te::MakeTensor(
                     AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB, InType>(offset),
                     AscendC::Te::MakeFrameLayout<AscendC::Te::DNExtLayoutPtn>(kStride, nSize));
-                return fullTensor.Slice(
-                    AscendC::Te::MakeCoord(static_cast<int64_t>(0), static_cast<int64_t>(0)),
-                    AscendC::Te::MakeShape(kSize, nSize));
+                return fullTensor.Slice(AscendC::Te::MakeCoord(static_cast<int64_t>(0), static_cast<int64_t>(0)),
+                                        AscendC::Te::MakeShape(kSize, nSize));
             }
         }
 
@@ -206,32 +192,23 @@ private:
             return MakeBias(biasOutBase_, bufferId, nSize);
         }
 
-        __aicore__ inline const BufferSlot& GetInputSlot(uint64_t bufferId) const
-        {
-            return inputSlots_[bufferId];
-        }
+        __aicore__ inline const BufferSlot& GetInputSlot(uint64_t bufferId) const { return inputSlots_[bufferId]; }
 
-        __aicore__ inline const BufferSlot& GetOutputSlot(uint64_t bufferId) const
-        {
-            return outputSlots_[bufferId];
-        }
+        __aicore__ inline const BufferSlot& GetOutputSlot(uint64_t bufferId) const { return outputSlots_[bufferId]; }
 
     private:
         static constexpr uint16_t FP4_PACK_SHIFT = 1U;
         static constexpr uint64_t OUTPUT_SYNC_ID_BASE = QUADRUPLE_BUFFER_COUNT;
 
-        __aicore__ inline static uint64_t PhysicalNStride(uint64_t nSize)
-        {
-            return Align16(nSize) + 1UL;
-        }
+        __aicore__ inline static uint64_t PhysicalNStride(uint64_t nSize) { return Align16(nSize) + 1UL; }
 
         __aicore__ inline auto MakeBias(uint64_t baseOffset, uint64_t bufferId, int64_t nSize) const
         {
             uint64_t offset = baseOffset + bufferId * singleBiasSize_;
             auto layout = AscendC::Te::MakeFrameLayout<AscendC::Te::NDExtLayoutPtn>(
                 static_cast<int64_t>(1), static_cast<int64_t>(Align16(static_cast<uint64_t>(nSize))));
-            return AscendC::Te::MakeTensor(
-                AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB, BiasType>(offset), layout);
+            return AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB, BiasType>(offset),
+                                           layout);
         }
 
         uint64_t weightOutSize_{0};
@@ -303,9 +280,9 @@ private:
     }
 
     template <typename GMWeightTensor, typename GMBiasTensor>
-    __aicore__ inline void ConvertCurrentWeightSlice(
-        const GMWeightTensor& gmWeightTensor, const GMBiasTensor& gmBiasTensor, const BlockContext& block,
-        const SliceContext& slice, bool firstKTile)
+    __aicore__ inline void ConvertCurrentWeightSlice(const GMWeightTensor& gmWeightTensor,
+                                                     const GMBiasTensor& gmBiasTensor, const BlockContext& block,
+                                                     const SliceContext& slice, bool firstKTile)
     {
         WaitWeightFlag<SyncProtocol::AIC_FREE_FLAG>();
         bool processBias = ShouldProcessBias(firstKTile);
@@ -334,9 +311,9 @@ private:
     }
 
     template <typename GMWeightTensor, typename GMBiasTensor>
-    __aicore__ inline void CopyConvertStoreWeight(
-        const GMWeightTensor& gmWeightTensor, const GMBiasTensor& gmBiasTensor, const BlockContext& block,
-        const SliceContext& slice, bool processBias)
+    __aicore__ inline void CopyConvertStoreWeight(const GMWeightTensor& gmWeightTensor,
+                                                  const GMBiasTensor& gmBiasTensor, const BlockContext& block,
+                                                  const SliceContext& slice, bool processBias)
     {
         idx_ += 1;
         uint64_t ubBufIdx = static_cast<uint64_t>(idx_) & l1BufferMask_;
@@ -364,8 +341,8 @@ private:
                 Blaze::Gemm::Tile::ScaleMxBias<BiasType>(biasInUbTensor, biasOutUbTensor);
             }
         }
-        auto l1Tensor = l1Storage_.MakeWeightTensor(
-            l1BufIdx_, slice.nOffset, slice.kOffset, block.nStride, slice.nLength, slice.kLength);
+        auto l1Tensor = l1Storage_.MakeWeightTensor(l1BufIdx_, slice.nOffset, slice.kOffset, block.nStride,
+                                                    slice.nLength, slice.kLength);
         {
             auto mte3Lock = outputSlot.LockMte3();
             auto copyUB2L1 = AscendC::Te::MakeCopy(Blaze::Gemm::Tile::CopyUB2L1Weight8Bit{});
@@ -382,14 +359,13 @@ private:
     template <typename GMWeightTensor>
     __aicore__ inline auto MakeGmWeightSlice(const GMWeightTensor& gmWeightTensor, const SliceContext& slice)
     {
-        return gmWeightTensor.Slice(
-            AscendC::Te::MakeCoord(slice.kGmOffset + slice.kOffset, slice.nOffset),
-            AscendC::Te::MakeShape(slice.kLength, slice.nLength));
+        return gmWeightTensor.Slice(AscendC::Te::MakeCoord(slice.kGmOffset + slice.kOffset, slice.nOffset),
+                                    AscendC::Te::MakeShape(slice.kLength, slice.nLength));
     }
 
     template <typename GMWeightSlice, typename Weight4BitTensor>
-    __aicore__ inline void CopyPackedWeightGmToUb(
-        const GMWeightSlice& gmSlice, const Weight4BitTensor& weight4BitTensor, const SliceContext& slice)
+    __aicore__ inline void CopyPackedWeightGmToUb(const GMWeightSlice& gmSlice,
+                                                  const Weight4BitTensor& weight4BitTensor, const SliceContext& slice)
     {
         if (slice.kLength <= 0 || slice.nLength <= 0) {
             return;
@@ -457,16 +433,11 @@ public:
         BlockSchedulerParams schedulerParams;
     };
 
-    __aicore__ inline GemmUniversal()
-    {}
+    __aicore__ inline GemmUniversal() {}
 
-    __aicore__ inline ~GemmUniversal()
-    {}
+    __aicore__ inline ~GemmUniversal() {}
 
-    __aicore__ inline void operator()(const Params& params)
-    {
-        Execute(params);
-    }
+    __aicore__ inline void operator()(const Params& params) { Execute(params); }
 
 private:
     static constexpr bool WEIGHT_NZ = IsWeightNz<LayoutB>::value;
@@ -484,17 +455,19 @@ private:
 
     __aicore__ inline static void RunAiv(const Params& params, const BlockScheduler& scheduler)
     {
-        int64_t k = AscendC::Te::Get<2>(params.problemShape);
-        int64_t n = AscendC::Te::Get<1>(params.problemShape);
+        int64_t k = AscendC::Te::Get<MNK_K>(params.problemShape);
+        int64_t n = AscendC::Te::Get<MNK_N>(params.problemShape);
         uint64_t tileNum = scheduler.GetTileCount();
         uint64_t curBlockIdx = AscendC::GetBlockIdx() / AscendC::GetTaskRation();
         if (curBlockIdx >= tileNum) {
             return;
         }
         typename BlockPrologue::Params prologueParams{
-            static_cast<uint64_t>(AscendC::Te::Get<1>(params.mmadParams.l1TileShape)),
-            static_cast<uint64_t>(AscendC::Te::Get<2>(params.mmadParams.l1TileShape)),
-            params.prologueParams.kBubSize, params.prologueParams.nBubSize, params.mmadParams.l1BufferNum,
+            static_cast<uint64_t>(AscendC::Te::Get<MNK_N>(params.mmadParams.l1TileShape)),
+            static_cast<uint64_t>(AscendC::Te::Get<MNK_K>(params.mmadParams.l1TileShape)),
+            params.prologueParams.kBubSize,
+            params.prologueParams.nBubSize,
+            params.mmadParams.l1BufferNum,
             params.mmadParams.hasBias};
         BlockPrologue blockPrologue(prologueParams);
         auto gmBias = MakeGmBiasTensor(params, n);
@@ -525,27 +498,26 @@ private:
 
     __aicore__ inline static auto MakeGmNdWeightTensor(const Params& params, int64_t k, int64_t n)
     {
-        return AscendC::Te::MakeTensor(
-            AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(
-                reinterpret_cast<__gm__ BType*>(params.prologueParams.bGmAddr)),
-            AscendC::Te::FrameLayoutFormat<LayoutB>{}(k, n));
+        return AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(
+                                           reinterpret_cast<__gm__ BType*>(params.prologueParams.bGmAddr)),
+                                       AscendC::Te::FrameLayoutFormat<LayoutB>{}(k, n));
     }
 
     template <typename GMWeightTensor, typename GMBiasTensor>
-    __aicore__ inline static void ProcessAivTiles(
-        const GMWeightTensor& gmWeight, const GMBiasTensor& gmBias, BlockPrologue& blockPrologue,
-        const BlockScheduler& scheduler, uint64_t curBlockIdx, uint64_t tileNum)
+    __aicore__ inline static void ProcessAivTiles(const GMWeightTensor& gmWeight, const GMBiasTensor& gmBias,
+                                                  BlockPrologue& blockPrologue, const BlockScheduler& scheduler,
+                                                  uint64_t curBlockIdx, uint64_t tileNum)
     {
         for (uint64_t loopIdx = curBlockIdx; loopIdx < tileNum; loopIdx += AscendC::GetBlockNum()) {
             auto blockCoord = scheduler.GetBlockCoord(loopIdx);
             auto blockShape = scheduler.GetBlockShape(blockCoord);
-            int64_t nOffset = AscendC::Te::Get<1>(blockCoord);
-            int64_t kSize = AscendC::Te::Get<2>(blockShape);
-            int64_t nL1Size = AscendC::Te::Get<1>(blockShape);
-            auto gmBlockWeight =
-                gmWeight.Slice(AscendC::Te::MakeCoord(0, nOffset), AscendC::Te::MakeShape(kSize, nL1Size));
-            auto gmBlockBias = gmBias.Slice(
-                AscendC::Te::MakeCoord(0, nOffset), AscendC::Te::MakeShape(static_cast<int64_t>(1), nL1Size));
+            int64_t nOffset = AscendC::Te::Get<MNK_N>(blockCoord);
+            int64_t kSize = AscendC::Te::Get<MNK_K>(blockShape);
+            int64_t nL1Size = AscendC::Te::Get<MNK_N>(blockShape);
+            auto gmBlockWeight = gmWeight.Slice(AscendC::Te::MakeCoord(0, nOffset),
+                                                AscendC::Te::MakeShape(kSize, nL1Size));
+            auto gmBlockBias = gmBias.Slice(AscendC::Te::MakeCoord(0, nOffset),
+                                            AscendC::Te::MakeShape(static_cast<int64_t>(1), nL1Size));
             blockPrologue(gmBlockWeight, gmBlockBias, blockShape);
         }
     }
@@ -557,15 +529,13 @@ private:
         if (curBlockIdx >= tileNum) {
             return;
         }
-        int64_t m = AscendC::Te::Get<0>(params.problemShape);
-        int64_t n = AscendC::Te::Get<1>(params.problemShape);
-        int64_t k = AscendC::Te::Get<2>(params.problemShape);
-        int64_t scaleKSize = static_cast<int64_t>(
-            CeilDiv(Align64(static_cast<uint64_t>(k)), BlockMmad::MX_GROUP_SIZE));
-        auto gmA = AscendC::Te::MakeTensor(
-            AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(
-                reinterpret_cast<__gm__ AType*>(params.mmadParams.aGmAddr)),
-            MakeLayoutA{}(m, k));
+        int64_t m = AscendC::Te::Get<MNK_M>(params.problemShape);
+        int64_t n = AscendC::Te::Get<MNK_N>(params.problemShape);
+        int64_t k = AscendC::Te::Get<MNK_K>(params.problemShape);
+        int64_t scaleKSize = static_cast<int64_t>(CeilDiv(Align64(static_cast<uint64_t>(k)), BlockMmad::MX_GROUP_SIZE));
+        auto gmA = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(
+                                               reinterpret_cast<__gm__ AType*>(params.mmadParams.aGmAddr)),
+                                           MakeLayoutA{}(m, k));
         auto gmScaleA = AscendC::Te::MakeTensor(
             AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(
                 reinterpret_cast<__gm__ ScaleAType*>(params.mmadParams.scaleAGmAddr)),
@@ -574,32 +544,29 @@ private:
             AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(
                 reinterpret_cast<__gm__ ScaleBType*>(params.mmadParams.scaleBGmAddr)),
             MakeLayoutScaleB{}(scaleKSize, n));
-        auto gmC = AscendC::Te::MakeTensor(
-            AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(
-                reinterpret_cast<__gm__ CType*>(params.mmadParams.cGmAddr)),
-            MakeLayoutC{}(m, n));
+        auto gmC = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(
+                                               reinterpret_cast<__gm__ CType*>(params.mmadParams.cGmAddr)),
+                                           MakeLayoutC{}(m, n));
         BlockMmad blockMmad(params.mmadParams);
         for (uint64_t loopIdx = curBlockIdx; loopIdx < tileNum; loopIdx += AscendC::GetBlockNum()) {
             auto blockCoord = scheduler.GetBlockCoord(loopIdx);
             auto blockShape = scheduler.GetBlockShape(blockCoord);
-            int64_t mOffset = AscendC::Te::Get<0>(blockCoord);
-            int64_t nOffset = AscendC::Te::Get<1>(blockCoord);
-            int64_t mL1Size = AscendC::Te::Get<0>(blockShape);
-            int64_t nL1Size = AscendC::Te::Get<1>(blockShape);
-            int64_t kSize = AscendC::Te::Get<2>(blockShape);
+            int64_t mOffset = AscendC::Te::Get<MNK_M>(blockCoord);
+            int64_t nOffset = AscendC::Te::Get<MNK_N>(blockCoord);
+            int64_t mL1Size = AscendC::Te::Get<MNK_M>(blockShape);
+            int64_t nL1Size = AscendC::Te::Get<MNK_N>(blockShape);
+            int64_t kSize = AscendC::Te::Get<MNK_K>(blockShape);
 
-            auto gmBlockA = gmA.Slice(
-                AscendC::Te::MakeCoord(mOffset, 0), AscendC::Te::MakeShape(mL1Size, kSize));
-            auto gmBlockScaleA = gmScaleA.Slice(
-                AscendC::Te::MakeCoord(mOffset, 0), AscendC::Te::MakeShape(mL1Size, scaleKSize));
-            auto gmBlockScaleB = gmScaleB.Slice(
-                AscendC::Te::MakeCoord(0, nOffset), AscendC::Te::MakeShape(scaleKSize, nL1Size));
-            auto gmBlockC = gmC.Slice(
-                AscendC::Te::MakeCoord(mOffset, nOffset), AscendC::Te::MakeShape(mL1Size, nL1Size));
+            auto gmBlockA = gmA.Slice(AscendC::Te::MakeCoord(mOffset, 0), AscendC::Te::MakeShape(mL1Size, kSize));
+            auto gmBlockScaleA = gmScaleA.Slice(AscendC::Te::MakeCoord(mOffset, 0),
+                                                AscendC::Te::MakeShape(mL1Size, scaleKSize));
+            auto gmBlockScaleB = gmScaleB.Slice(AscendC::Te::MakeCoord(0, nOffset),
+                                                AscendC::Te::MakeShape(scaleKSize, nL1Size));
+            auto gmBlockC = gmC.Slice(AscendC::Te::MakeCoord(mOffset, nOffset),
+                                      AscendC::Te::MakeShape(mL1Size, nL1Size));
             blockMmad(gmBlockA, gmBlockScaleA, gmBlockScaleB, gmBlockC);
         }
     }
-
 };
 
 } // namespace Kernel

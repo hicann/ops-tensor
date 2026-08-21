@@ -41,9 +41,9 @@ public:
 
     __aicore__ inline BlockSchedulerMatmulSwatWithTailSplit(const ProblemShape& problemShape, const Params& params)
     {
-        mSize_ = static_cast<uint64_t>(AscendC::Te::Get<0>(problemShape));
-        nSize_ = static_cast<uint64_t>(AscendC::Te::Get<1>(problemShape));
-        kSize_ = static_cast<uint64_t>(AscendC::Te::Get<2>(problemShape));
+        mSize_ = static_cast<uint64_t>(AscendC::Te::Get<MNK_M>(problemShape));
+        nSize_ = static_cast<uint64_t>(AscendC::Te::Get<MNK_N>(problemShape));
+        kSize_ = static_cast<uint64_t>(AscendC::Te::Get<MNK_K>(problemShape));
         baseM_ = params.baseM;
         baseN_ = params.baseN;
         if (baseM_ == 0U || baseN_ == 0U) {
@@ -60,10 +60,7 @@ public:
         InitTailParams(params);
     }
 
-    __aicore__ inline uint64_t GetTileCount() const
-    {
-        return totalTileNum_;
-    }
+    __aicore__ inline uint64_t GetTileCount() const { return totalTileNum_; }
 
     __aicore__ inline BlockCoord GetBlockCoord(uint64_t tileIdx) const
     {
@@ -89,9 +86,8 @@ public:
             mOffset += mSplitIdx * singleCoreMSplit;
             nOffset += nSplitIdx * singleCoreNSplit;
         }
-        return AscendC::Te::MakeCoord(
-            static_cast<int64_t>(mOffset), static_cast<int64_t>(nOffset), static_cast<int64_t>(logicalTileIdx),
-            splitIdx);
+        return AscendC::Te::MakeCoord(static_cast<int64_t>(mOffset), static_cast<int64_t>(nOffset),
+                                      static_cast<int64_t>(logicalTileIdx), splitIdx);
     }
 
     __aicore__ inline BlockShape GetBlockShape(const BlockCoord& blockCoord) const
@@ -114,8 +110,8 @@ public:
             singleCoreM = Min(singleCoreM - mSplitOffset, singleCoreMSplit);
             singleCoreN = Min(singleCoreN - nSplitOffset, singleCoreNSplit);
         }
-        return AscendC::Te::MakeShape(
-            static_cast<int64_t>(singleCoreM), static_cast<int64_t>(singleCoreN), static_cast<int64_t>(kSize_), 1L);
+        return AscendC::Te::MakeShape(static_cast<int64_t>(singleCoreM), static_cast<int64_t>(singleCoreN),
+                                      static_cast<int64_t>(kSize_), 1L);
     }
 
 private:
@@ -147,8 +143,8 @@ private:
         totalTileNum_ = baseRoundTileNum_ + compactTailTileNum_;
     }
 
-    __aicore__ inline void ResolveCompactTailTile(
-        uint64_t tailTileIdx, uint64_t& logicalTileIdx, int64_t& splitIdx) const
+    __aicore__ inline void ResolveCompactTailTile(uint64_t tailTileIdx, uint64_t& logicalTileIdx,
+                                                  int64_t& splitIdx) const
     {
         uint64_t remain = tailTileIdx;
         for (uint64_t tailIdx = 0; tailIdx < tailBlockCnt_; ++tailIdx) {
@@ -189,8 +185,8 @@ private:
         return tileNum;
     }
 
-    __aicore__ inline static void CalcValidSplit(
-        uint64_t singleCoreM, uint64_t singleCoreN, uint64_t mTile, uint64_t nTile, uint64_t& validM, uint64_t& validN)
+    __aicore__ inline static void CalcValidSplit(uint64_t singleCoreM, uint64_t singleCoreN, uint64_t mTile,
+                                                 uint64_t nTile, uint64_t& validM, uint64_t& validN)
     {
         uint64_t singleCoreMSplit = Align16(CeilDiv(singleCoreM, mTile));
         uint64_t singleCoreNSplit = Align16(CeilDiv(singleCoreN, nTile));

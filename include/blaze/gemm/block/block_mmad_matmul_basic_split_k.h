@@ -246,9 +246,9 @@ private:
                                         const TileShape& l1Shape, uint64_t l1BufId, uint64_t kIdx,
                                         uint64_t splitSingleCoreKIdx)
     {
-        uint64_t curM = AscendC::Te::Get<0>(l1Shape);
-        uint64_t curN = AscendC::Te::Get<1>(l1Shape);
-        uint64_t curKL1 = AscendC::Te::Get<2>(l1Shape);
+        uint64_t curM = AscendC::Te::Get<MNK_M>(l1Shape);
+        uint64_t curN = AscendC::Te::Get<MNK_N>(l1Shape);
+        uint64_t curKL1 = AscendC::Te::Get<MNK_K>(l1Shape);
 
         // A GM->L1
         auto layoutAL1 = MakeLayoutAL1{}(curM, curKL1);
@@ -281,9 +281,9 @@ private:
                                         const TensorBias& tensorBiasL1, const TileShape& l0Shape, uint64_t l0Offset,
                                         uint64_t kIdx, bool needBias, uint64_t btBufId)
     {
-        auto curM = AscendC::Te::Get<0>(l0Shape);
-        auto curN = AscendC::Te::Get<1>(l0Shape);
-        auto curK0 = AscendC::Te::Get<2>(l0Shape);
+        auto curM = AscendC::Te::Get<MNK_M>(l0Shape);
+        auto curN = AscendC::Te::Get<MNK_N>(l0Shape);
+        auto curK0 = AscendC::Te::Get<MNK_K>(l0Shape);
 
         // A L1->L0A
         auto copyL12L0A = AscendC::Te::MakeCopy(AscendC::Te::CopyL12L0A{});
@@ -323,9 +323,9 @@ private:
                                    bool initCmatrix)
     {
         constexpr auto mmadAtom = AscendC::Te::MakeMmad(AscendC::Te::MmadOperation{}, AscendC::Te::MmadTraitDefault{});
-        auto curM = AscendC::Te::Get<0>(l0Shape);
-        auto curN = AscendC::Te::Get<1>(l0Shape);
-        auto curK0 = AscendC::Te::Get<2>(l0Shape);
+        auto curM = AscendC::Te::Get<MNK_M>(l0Shape);
+        auto curN = AscendC::Te::Get<MNK_N>(l0Shape);
+        auto curK0 = AscendC::Te::Get<MNK_K>(l0Shape);
         // Mmad参数
         AscendC::Te::MmadParams mmadParams{static_cast<uint16_t>(curM), static_cast<uint16_t>(curN),
                                            static_cast<uint16_t>(curK0), unitFlag, initCmatrix};

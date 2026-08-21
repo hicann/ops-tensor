@@ -42,25 +42,25 @@ public:
         uint32_t nBaseTailSplitCnt = 1;
         uint32_t mTailMain = 1;
         uint32_t nTailMain = 1;
-        uint8_t isHf32 = 0;                                        // HF32开启标志
+        uint8_t isHf32 = 0; // HF32开启标志
         uint32_t l2CacheMode = L2_CACHE_DEFAULT;
-        uint32_t sliceM = 0;                                        // 非连续场景m轴
-        uint32_t srcNdStride = 1;                                   // 非连续场景m轴stride
-        uint32_t innerBatch = 1;                                    // 非连续transpose场景内轴batch值
+        uint32_t sliceM = 0;      // 非连续场景m轴
+        uint32_t srcNdStride = 1; // 非连续场景m轴stride
+        uint32_t innerBatch = 1;  // 非连续transpose场景内轴batch值
     };
 
 public:
     __aicore__ inline BlockSchedulerMatmulBasic(const ProblemShape& shape, const Params& params)
     {
-        k_ = AscendC::Te::Get<2>(shape);
-        batch_ = AscendC::Std::max(AscendC::Te::Get<3>(shape), 1L);
+        k_ = AscendC::Te::Get<MNK_K>(shape);
+        batch_ = AscendC::Std::max(AscendC::Te::Get<MNK_B>(shape), 1L);
         innerBatch_ = params.innerBatch;
         mL1_ = params.mL1;
         nL1_ = params.nL1;
         kL1_ = params.kL1;
         isHf32_ = params.isHf32;
-        int64_t m = AscendC::Te::Get<0>(shape);
-        int64_t n = AscendC::Te::Get<1>(shape);
+        int64_t m = AscendC::Te::Get<MNK_M>(shape);
+        int64_t n = AscendC::Te::Get<MNK_N>(shape);
         mBlockNums_ = CeilDiv(static_cast<uint32_t>(m), params.mL1);
         nBlockNums_ = CeilDiv(static_cast<uint32_t>(n), params.nL1);
         blockNum_ = AscendC::GetBlockNum();
@@ -103,10 +103,7 @@ public:
     /**
        获取总的分块数
     */
-    __aicore__ inline int64_t GetBlockNums()
-    {
-        return blockNums_ * batch_;
-    }
+    __aicore__ inline int64_t GetBlockNums() { return blockNums_ * batch_; }
 
     /**
        获取需要的核数

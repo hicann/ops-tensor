@@ -216,9 +216,9 @@ private:
     __aicore__ inline auto CopyL1FromGM(const TensorA& tensorA, const TensorB& tensorB, const TensorBias& tensorBias,
                                         const TripleShape& l1Shape, const SlotsTuple& slotsTuple, uint64_t kIdx)
     {
-        uint64_t curML1 = AscendC::Te::Get<0>(l1Shape);
-        uint64_t curNL1 = AscendC::Te::Get<1>(l1Shape);
-        uint64_t curKL1 = AscendC::Te::Get<2>(l1Shape);
+        uint64_t curML1 = AscendC::Te::Get<MNK_M>(l1Shape);
+        uint64_t curNL1 = AscendC::Te::Get<MNK_N>(l1Shape);
+        uint64_t curKL1 = AscendC::Te::Get<MNK_K>(l1Shape);
         const auto& aL1Slot = AscendC::Te::Get<0>(slotsTuple);
         const auto& bL1Slot = AscendC::Te::Get<1>(slotsTuple);
         const auto& biasL1Slot = AscendC::Te::Get<2>(slotsTuple);
@@ -287,9 +287,9 @@ private:
                                         const BufferSlot& l0Slot, uint64_t kIdx, bool needBias,
                                         const SlotsTuple& slotsTuple, const BufferSlot& btSlot)
     {
-        auto curM0 = AscendC::Te::Get<0>(l0Shape);
-        auto curN0 = AscendC::Te::Get<1>(l0Shape);
-        auto curK0 = AscendC::Te::Get<2>(l0Shape);
+        auto curM0 = AscendC::Te::Get<MNK_M>(l0Shape);
+        auto curN0 = AscendC::Te::Get<MNK_N>(l0Shape);
+        auto curK0 = AscendC::Te::Get<MNK_K>(l0Shape);
         const auto& aL1Slot = AscendC::Te::Get<0>(slotsTuple);
         const auto& bL1Slot = AscendC::Te::Get<1>(slotsTuple);
         const auto& biasL1Slot = AscendC::Te::Get<2>(slotsTuple);
@@ -357,9 +357,9 @@ private:
                                    bool initCmatrix)
     {
         constexpr auto mmadAtom = AscendC::Te::MakeMmad(AscendC::Te::MmadOperation{}, AscendC::Te::MmadTraitDefault{});
-        auto curM0 = AscendC::Te::Get<0>(l0Shape);
-        auto curN0 = AscendC::Te::Get<1>(l0Shape);
-        auto curK0 = AscendC::Te::Get<2>(l0Shape);
+        auto curM0 = AscendC::Te::Get<MNK_M>(l0Shape);
+        auto curN0 = AscendC::Te::Get<MNK_N>(l0Shape);
+        auto curK0 = AscendC::Te::Get<MNK_K>(l0Shape);
         // Mmad参数
         AscendC::Te::MmadParams mmadParams{static_cast<uint16_t>(curM0), static_cast<uint16_t>(curN0),
                                            static_cast<uint16_t>(curK0), unitFlag, initCmatrix};
@@ -389,6 +389,7 @@ private:
     uint64_t curNOut_{0};
     __gm__ uint64_t* gmScalePtr_{nullptr};
 
+    // 全流水线Buffer管理器, <MaxL1ASlots = 4, MaxL1BSlots = 4, MaxL0Slots = 2>
     BufferManager<4, 4, 2> bufMgr_;
 };
 } // namespace Block

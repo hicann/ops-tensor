@@ -234,8 +234,8 @@ private:
     __aicore__ inline auto CopyL1FromGM(const TensorB& tensorB, const TensorBias& tensorBias,
                                         const TripleShape& l1Shape, uint64_t l1BufId, uint64_t kIdx)
     {
-        uint64_t curN = AscendC::Te::Get<1>(l1Shape);
-        uint64_t curKL1 = AscendC::Te::Get<2>(l1Shape);
+        uint64_t curN = AscendC::Te::Get<MNK_N>(l1Shape);
+        uint64_t curKL1 = AscendC::Te::Get<MNK_K>(l1Shape);
 
         auto copyGM2L1 = AscendC::Te::MakeCopy(AscendC::Te::CopyGM2L1{});
         // B GM->L1
@@ -262,9 +262,9 @@ private:
                                         bool needBias, uint64_t btBufId, uint64_t aL1MOffset, uint64_t aL1KOffset,
                                         uint64_t bL1KOffset, uint64_t bL1NOffset)
     {
-        auto curM = AscendC::Te::Get<0>(l0Shape);
-        auto curN = AscendC::Te::Get<1>(l0Shape);
-        auto curK0 = AscendC::Te::Get<2>(l0Shape);
+        auto curM = AscendC::Te::Get<MNK_M>(l0Shape);
+        auto curN = AscendC::Te::Get<MNK_N>(l0Shape);
+        auto curK0 = AscendC::Te::Get<MNK_K>(l0Shape);
 
         // A L1->L0A
         auto copyL12L0A = AscendC::Te::MakeCopy(AscendC::Te::CopyL12L0A{});
@@ -306,9 +306,9 @@ private:
                                    bool initCmatrix)
     {
         constexpr auto mmadAtom = AscendC::Te::MakeMmad(AscendC::Te::MmadOperation{}, AscendC::Te::MmadTraitDefault{});
-        auto curM = AscendC::Te::Get<0>(l0Shape);
-        auto curN = AscendC::Te::Get<1>(l0Shape);
-        auto curK0 = AscendC::Te::Get<2>(l0Shape);
+        auto curM = AscendC::Te::Get<MNK_M>(l0Shape);
+        auto curN = AscendC::Te::Get<MNK_N>(l0Shape);
+        auto curK0 = AscendC::Te::Get<MNK_K>(l0Shape);
         // Mmad参数
         AscendC::Te::MmadParams mmadParams{static_cast<uint16_t>(curM), static_cast<uint16_t>(curN),
                                            static_cast<uint16_t>(curK0), unitFlag, initCmatrix};

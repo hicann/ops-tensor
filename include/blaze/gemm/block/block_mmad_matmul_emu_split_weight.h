@@ -110,8 +110,8 @@ public:
 
         const auto& l0cSlot1 = bufMgr_.GetL0CSlot(0);
         const auto& l0cSlot2 = bufMgr_.GetL0CSlot(1);
-        auto curM = AscendC::Te::Get<0>(singleShape);
-        auto curN = AscendC::Te::Get<1>(singleShape);
+        auto curM = AscendC::Te::Get<MNK_M>(singleShape);
+        auto curN = AscendC::Te::Get<MNK_N>(singleShape);
         auto layoutL0C = AscendC::Te::FrameLayoutFormat<AscendC::Te::NZLayoutPtn, AscendC::Std::Int<C0_SIZE_L0C>>{}(
             curM, curN);
         auto tensorL0C1 = AscendC::Te::MakeTensor(
@@ -165,6 +165,7 @@ private:
     uint64_t l0PingPong_{0UL};
     uint64_t l1LoopCnt_{0UL};
 
+    // Weight(B)切分成wHigh和wLow两部分, L1ASlots = L1_STAGES, L1BSlots = L1_STAGES * 2
     Blaze::Gemm::BufferManager<L1_STAGES, L1_STAGES * 2, DOUBLE_BUFFER_COUNT> bufMgr_;
 
     template <typename GmTensors, typename SlotsTuple>
@@ -175,9 +176,9 @@ private:
         const auto& gmBHigh = AscendC::Te::Get<1>(gmTensors);
         const auto& gmBLow = AscendC::Te::Get<2>(gmTensors);
 
-        auto curM = AscendC::Te::Get<0>(blockShape);
-        auto curN = AscendC::Te::Get<1>(blockShape);
-        auto curKL1 = AscendC::Te::Get<2>(blockShape);
+        auto curM = AscendC::Te::Get<MNK_M>(blockShape);
+        auto curN = AscendC::Te::Get<MNK_N>(blockShape);
+        auto curKL1 = AscendC::Te::Get<MNK_K>(blockShape);
         auto kIdx = static_cast<uint64_t>(AscendC::Te::Get<3>(blockShape));
 
         const auto& aL1Slot = AscendC::Te::Get<0>(slotsTuple);
@@ -223,9 +224,9 @@ private:
         const auto& tensorBLowL1 = AscendC::Te::Get<1>(l1Tensors);
         const auto& tensorBHighL1 = AscendC::Te::Get<2>(l1Tensors);
 
-        auto curM = AscendC::Te::Get<0>(blockShape);
-        auto curN = AscendC::Te::Get<1>(blockShape);
-        auto curKL0 = AscendC::Te::Get<2>(blockShape);
+        auto curM = AscendC::Te::Get<MNK_M>(blockShape);
+        auto curN = AscendC::Te::Get<MNK_N>(blockShape);
+        auto curKL0 = AscendC::Te::Get<MNK_K>(blockShape);
         auto kL0Offset = static_cast<uint64_t>(AscendC::Te::Get<3>(blockShape));
 
         const auto& aL1Slot = AscendC::Te::Get<0>(slotsTuple);
@@ -287,9 +288,9 @@ private:
         const auto& tensorBL01 = AscendC::Te::Get<1>(l0Tensors);
         const auto& tensorBL02 = AscendC::Te::Get<2>(l0Tensors);
 
-        auto curM = AscendC::Te::Get<0>(blockShape);
-        auto curN = AscendC::Te::Get<1>(blockShape);
-        auto curKL0 = AscendC::Te::Get<2>(blockShape);
+        auto curM = AscendC::Te::Get<MNK_M>(blockShape);
+        auto curN = AscendC::Te::Get<MNK_N>(blockShape);
+        auto curKL0 = AscendC::Te::Get<MNK_K>(blockShape);
 
         constexpr auto mmadAtom = AscendC::Te::MakeMmad(AscendC::Te::MmadOperation{}, AscendC::Te::MmadTraitDefault{});
         uint8_t mmadUnitFlag = isLastKBeat ? Blaze::Gemm::FINAL_ACCUMULATION : Blaze::Gemm::NON_FINAL_ACCUMULATION;

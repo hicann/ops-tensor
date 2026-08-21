@@ -98,7 +98,6 @@ private:
     {
         BlockMmad blockMmad;
         int64_t curBlockIdx = AscendC::GetBlockIdx();
-
         if (curBlockIdx >= bs.GetCoreNums()) {
             AscendC::CrossCoreSetFlag<AIC_SYNC_AIV_MODE_4, PIPE_FIX>(AIC_SYNC_AIV_FLAG);
             AscendC::CrossCoreSetFlag<AIC_SYNC_AIV_MODE_4, PIPE_FIX>(AIC_SYNC_AIV_FLAG + FLAG_ID_MAX);
