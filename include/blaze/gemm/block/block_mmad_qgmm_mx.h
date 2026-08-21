@@ -150,10 +150,11 @@ public:
 
 private:
     template <typename TensorAL1, typename TensorScaleAL1, typename CopyL12L0A, typename CopyL12L0ScaleA>
-    __aicore__ inline auto CopyNoBiasAToL0(TensorAL1 tensorAL1, TensorScaleAL1 tensorBlockScaleAL1,
-                                           CopyL12L0A copyL12L0A, CopyL12L0ScaleA copyL12L0ScaleA, uint64_t curM,
-                                           uint64_t curKL0, uint64_t curKL0ScaleSpan, uint64_t scaleOffsetA,
-                                           uint64_t kaL1Offset, uint64_t kL0Offset, uint64_t l0Offset)
+    __aicore__ inline auto CopyNoBiasAToL0(const TensorAL1& tensorAL1, const TensorScaleAL1& tensorBlockScaleAL1,
+                                           const CopyL12L0A& copyL12L0A, const CopyL12L0ScaleA& copyL12L0ScaleA,
+                                           uint64_t curM, uint64_t curKL0, uint64_t curKL0ScaleSpan,
+                                           uint64_t scaleOffsetA, uint64_t kaL1Offset, uint64_t kL0Offset,
+                                           uint64_t l0Offset)
     {
         auto tensorAL0 = AscendC::Te::MakeTensor(
             AscendC::Te::MakeMemPtr<AscendC::Te::Location::L0A, AType>(l0Offset),
@@ -172,10 +173,11 @@ private:
     }
 
     template <typename TensorBL1, typename TensorScaleBL1, typename CopyL12L0B, typename CopyL12L0ScaleB>
-    __aicore__ inline auto CopyNoBiasBToL0(TensorBL1 tensorBL1, TensorScaleBL1 tensorBlockScaleBL1,
-                                           CopyL12L0B copyL12L0B, CopyL12L0ScaleB copyL12L0ScaleB, uint64_t curN,
-                                           uint64_t curKL0, uint64_t curKL0ScaleSpan, uint64_t scaleOffsetB,
-                                           uint64_t kbL1Offset, uint64_t kL0Offset, uint64_t l0Offset)
+    __aicore__ inline auto CopyNoBiasBToL0(const TensorBL1& tensorBL1, const TensorScaleBL1& tensorBlockScaleBL1,
+                                           const CopyL12L0B& copyL12L0B, const CopyL12L0ScaleB& copyL12L0ScaleB,
+                                           uint64_t curN, uint64_t curKL0, uint64_t curKL0ScaleSpan,
+                                           uint64_t scaleOffsetB, uint64_t kbL1Offset, uint64_t kL0Offset,
+                                           uint64_t l0Offset)
     {
         auto tensorBL0 = AscendC::Te::MakeTensor(
             AscendC::Te::MakeMemPtr<AscendC::Te::Location::L0B, BType>(l0Offset),
@@ -296,15 +298,6 @@ private:
     static constexpr uint8_t L1_OPERAND_NUM = 2;
     static constexpr uint8_t MTE1_MTE2_EVENT_ID_NUM = TRIPLE_BUFFER_COUNT * L1_OPERAND_NUM + SCALE_BUFFER_NUM;
 
-    template <typename ElementType>
-    __aicore__ inline uint64_t PackFp4Size(uint64_t value) const
-    {
-        if constexpr (IsFp4<ElementType>()) {
-            return value >> 1;
-        }
-        return value;
-    }
-
     using MakeLayoutAL1 = AscendC::Std::conditional_t<
         TRANS_A, AscendC::Te::FrameLayoutFormat<AscendC::Te::ZNLayoutPtn, AscendC::Std::Int<C0_SIZE>>,
         AscendC::Te::FrameLayoutFormat<AscendC::Te::NZLayoutPtn, AscendC::Std::Int<C0_SIZE>>>;
@@ -347,66 +340,6 @@ private:
     }
 
     __aicore__ inline bool NeedBias(uint64_t absKOffset) const { return isBias_ && absKOffset == 0; }
-
-    template <typename ElementType, typename TensorL1, typename TensorGm>
-    __aicore__ inline void CopyConcatBByStride(TensorL1 tensorL1, TensorGm gmLeftBlock, uint64_t singleN,
-                                               uint64_t curGmBKL1, uint64_t l1K)
-    {
-        using CopyType = AscendC::Std::conditional_t<(sizeof(ElementType) == 1), int8_t, ElementType>;
-        constexpr uint16_t loop2DstStride = 1;
-        const uint64_t halfN = n_ >> 1;
-        const uint64_t srcDValue = PackFp4Size<ElementType>(TRANS_B ? k_ : n_);
-        const uint64_t srcMatrixStride = PackFp4Size<ElementType>(TRANS_B ? (halfN * k_) : halfN);
-        const uint16_t nValue = static_cast<uint16_t>(TRANS_B ? singleN : curGmBKL1);
-        const uint32_t dValue = static_cast<uint32_t>(PackFp4Size<ElementType>(TRANS_B ? curGmBKL1 : singleN));
-        const uint16_t loop3DstStride = static_cast<uint16_t>(
-            TRANS_B ? (CeilAlign(singleN, C0_SIZE) * CONCAT_N_FACTOR) : l1K);
-        const uint16_t loop4DstStride = static_cast<uint16_t>(TRANS_B ? CeilAlign(singleN, C0_SIZE) :
-                                                                        (l1K * CeilAlign(singleN, C0_SIZE) / C0_SIZE));
-        const uint64_t loop1SrcStride = srcDValue * sizeof(ElementType);
-        const uint64_t loop4SrcStride = srcMatrixStride * sizeof(ElementType);
-        const uint8_t cacheMode = gmLeftBlock.Engine().GetCacheMode();
-
-        Blaze::Gemm::Tile::CopySliceGM2L1::CopyGmToCbufMultiNd2nz(
-            reinterpret_cast<__cbuf__ CopyType*>(tensorL1.Data().Get()),
-            reinterpret_cast<__gm__ CopyType*>(gmLeftBlock.Data().Get()), CONCAT_MATRIX_NUM, loop2DstStride,
-            loop3DstStride, loop4DstStride, loop1SrcStride, cacheMode, nValue, dValue, loop4SrcStride, false);
-    }
-
-    template <typename TensorScaleBL1, typename TensorScaleB>
-    __aicore__ inline void CopyConcatScaleBByStride(TensorScaleBL1 tensorScaleBL1, TensorScaleB gmScaleBLeft,
-                                                    uint64_t singleN, uint64_t scaleKBlockSpan, uint64_t scaleL1BufId)
-    {
-        (void)tensorScaleBL1;
-        (void)scaleL1BufId;
-        const uint64_t fullScaleKBlock = CeilDiv(k_, MXFP_DIVISOR_SIZE);
-        const uint64_t scaleKL1Block = CeilDiv(scaleKL1_, MXFP_DIVISOR_SIZE);
-        const uint64_t halfN = n_ >> 1;
-        const uint64_t concatScaleBOffset = l1BufferBOffset_[scaleL1BufId] + concatBL1OneBuffer_ + scaleAL1OneBuffer_;
-
-        if constexpr (TRANS_B) {
-            Blaze::Gemm::Tile::CopySliceGM2L1::CopyGmToCbufMultiDn2nz(
-                concatScaleBOffset, reinterpret_cast<__gm__ half*>(gmScaleBLeft.Data().Get()), CONCAT_MATRIX_NUM,
-                static_cast<uint32_t>(singleN), static_cast<uint16_t>(scaleKBlockSpan), halfN * fullScaleKBlock,
-                fullScaleKBlock, static_cast<uint16_t>(scaleKL1Block), 1,
-                static_cast<uint32_t>(Align16(singleN) * scaleKL1Block));
-        } else {
-            constexpr uint16_t loop2DstStride = 1;
-            constexpr uint64_t halfC0Element = AscendC::ONE_BLK_SIZE / sizeof(half);
-            const uint16_t nValue = static_cast<uint16_t>(scaleKBlockSpan);
-            const uint32_t dValue = static_cast<uint32_t>(singleN);
-            const uint16_t loop3DstStride = static_cast<uint16_t>(scaleKL1Block);
-            const uint16_t loop4DstStride = static_cast<uint16_t>(CeilAlign(singleN, BLOCK_CUBE) * scaleKL1Block /
-                                                                  halfC0Element);
-            const uint64_t loop1SrcStride = n_ * sizeof(half);
-            const uint64_t loop4SrcStride = halfN * sizeof(half);
-            const uint8_t cacheMode = gmScaleBLeft.Engine().GetCacheMode();
-            Blaze::Gemm::Tile::CopySliceGM2L1::CopyGmToCbufMultiNd2nz(
-                reinterpret_cast<__cbuf__ half*>(tensorScaleBL1.Data().Get()),
-                reinterpret_cast<__gm__ half*>(gmScaleBLeft.Data().Get()), CONCAT_MATRIX_NUM, loop2DstStride,
-                loop3DstStride, loop4DstStride, loop1SrcStride, cacheMode, nValue, dValue, loop4SrcStride, false);
-        }
-    }
 
     template <typename TensorScaleA, typename TensorScaleB>
     __aicore__ inline auto CopyScalesInL1(const TensorScaleA& gmScaleA, const TensorScaleB& gmScaleB, uint64_t curM,
@@ -474,8 +407,9 @@ private:
 
             auto gmBlockScaleBLeft = gmScaleBLeft.Slice(AscendC::Te::MakeCoord(scaleOffset, 0),
                                                         AscendC::Te::MakeShape(scaleSpan, curN));
-            CopyConcatScaleBByStride(tensorScaleBL1, gmBlockScaleBLeft, curN, CeilDiv(curScaleKL1, MXFP_DIVISOR_SIZE),
-                                     scaleL1BufId);
+            auto copyConcatGM2L1 = AscendC::Te::MakeCopy(Blaze::Gemm::Tile::CopyConcatGM2L1{});
+            AscendC::Te::Copy(copyConcatGM2L1.with(Blaze::Gemm::Tile::CopyConcatGM2L1Params{n_, k_}), tensorScaleBL1,
+                              gmBlockScaleBLeft);
         }
         return ScalePair<decltype(tensorScaleAL1), decltype(tensorScaleBL1)>{tensorScaleAL1, tensorScaleBL1};
     }
@@ -537,7 +471,9 @@ private:
         if constexpr (NEED_B_SET_L1_K_ZERO) {
             Blaze::Gemm::Tile::PadMxKBL1::PadZero(tensorBL1, gmBlockBLeft);
         }
-        CopyConcatBByStride<BType>(tensorBL1, gmBlockBLeft, curN, curGmBKL1, l1K);
+        auto copyConcatGM2L1 = AscendC::Te::MakeCopy(Blaze::Gemm::Tile::CopyConcatGM2L1{});
+        AscendC::Te::Copy(copyConcatGM2L1.with(Blaze::Gemm::Tile::CopyConcatGM2L1Params{n_, k_}), tensorBL1,
+                          gmBlockBLeft);
         return tensorBL1;
     }
 

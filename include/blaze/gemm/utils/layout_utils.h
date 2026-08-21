@@ -33,10 +33,12 @@ struct Weight8BitDnToZnUbLayoutPtn {};
 template <typename LayoutPattern>
 constexpr bool GetTransValue()
 {
-    constexpr bool isNonTrans =
-        AscendC::Std::is_one_of_v<LayoutPattern, AscendC::Te::NDExtLayoutPtn, AscendC::Te::NZLayoutPtn>;
-    constexpr bool isTrans =
-        AscendC::Std::is_one_of_v<LayoutPattern, AscendC::Te::DNExtLayoutPtn, AscendC::Te::ZNLayoutPtn>;
+    constexpr bool isNonTrans = AscendC::Std::is_one_of_v<
+        LayoutPattern, AscendC::Te::NDLayoutPtn, AscendC::Te::NDExtLayoutPtn, AscendC::Te::NZLayoutPtn,
+        AscendC::Te::ScaleANDLayoutPtn, AscendC::Te::ScaleBNDLayoutPtn>;
+    constexpr bool isTrans = AscendC::Std::is_one_of_v<LayoutPattern, AscendC::Te::DNLayoutPtn,
+                                                       AscendC::Te::DNExtLayoutPtn, AscendC::Te::ZNLayoutPtn,
+                                                       AscendC::Te::ScaleADNLayoutPtn, AscendC::Te::ScaleBDNLayoutPtn>;
 
     constexpr bool isKnown = isNonTrans || isTrans;
     static_assert(isKnown, "IsTrans is not implemented for this layout pattern");
@@ -53,10 +55,10 @@ struct IsTrans {
 template <typename LayoutPattern>
 constexpr bool GetWeightNzValue()
 {
-    constexpr bool isNonWeightNz =
-        AscendC::Std::is_one_of_v<LayoutPattern, AscendC::Te::NDExtLayoutPtn, AscendC::Te::DNExtLayoutPtn>;
-    constexpr bool isWeightNz =
-        AscendC::Std::is_one_of_v<LayoutPattern, AscendC::Te::NZLayoutPtn, AscendC::Te::ZNLayoutPtn>;
+    constexpr bool isNonWeightNz = AscendC::Std::is_one_of_v<LayoutPattern, AscendC::Te::NDExtLayoutPtn,
+                                                             AscendC::Te::DNExtLayoutPtn>;
+    constexpr bool
+        isWeightNz = AscendC::Std::is_one_of_v<LayoutPattern, AscendC::Te::NZLayoutPtn, AscendC::Te::ZNLayoutPtn>;
 
     constexpr bool isKnown = isNonWeightNz || isWeightNz;
     static_assert(isKnown, "IsWeightNz is not implemented for this layout");
