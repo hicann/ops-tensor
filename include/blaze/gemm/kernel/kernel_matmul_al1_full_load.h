@@ -109,9 +109,9 @@ private:
                                          int64_t curBlockIdx, int64_t coreNums, int64_t totalBlockNums)
     {
         auto layoutA = MakeLayoutA2D(params);
-        auto layoutB = MakeLayoutB{}(k_, n_);       // ND layout for B
-        auto layoutC = MakeLayoutC{}(m_, n_);       // ND layout for C
-        auto layoutBias = MakeLayoutBias{}(1L, n_); // ND layout for Bias
+        auto layoutB = MakeLayoutB{}(batch_, k_, n_); // ND layout for B
+        auto layoutC = MakeLayoutC{}(batch_, m_, n_); // ND layout for C
+        auto layoutBias = MakeLayoutBias{}(1L, n_);   // ND layout for Bias
         // A,B,C Gm Tensor
         auto gmA = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(aGmAddr_), layoutA);
         auto gmB = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(bGmAddr_), layoutB);
@@ -122,7 +122,6 @@ private:
         // 使能双页表
         SetL2Cache(gmA, gmB, params.schParams.l2CacheMode);
 
-        uint64_t preBatchIdx = 0;
         // Process tiles in ping-pong mode
         for (int64_t blockIdx = curBlockIdx; blockIdx < totalBlockNums; blockIdx += coreNums) {
             auto blockShape = bs.template GetBlockShape<TRANS_B, BType>(blockIdx);
@@ -132,18 +131,13 @@ private:
             auto coordN = AscendC::Te::Get<MNK_N>(blockCoord);
             curBatchIdx_ = static_cast<uint64_t>(AscendC::Te::Get<MNK_B>(blockCoord));
             // Block offset
-            if (preBatchIdx != curBatchIdx_) {
-                UpdateBatchOffset(params);
-                gmB = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(bGmAddr_), layoutB);
-                gmC = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(cGmAddr_), layoutC);
-                preBatchIdx = curBatchIdx_;
-                // 重复MakeTensor后需再次SetL2Cache
-                SetL2Cache(gmA, gmB, params.schParams.l2CacheMode);
-            }
-            // Block offset
-            auto gmBlockB = gmB.Slice(AscendC::MakeCoord(0L, coordN), AscendC::MakeShape(shapeK, shapeN));
+            auto subTensorB = gmB.Slice(AscendC::MakeCoord(curBatchIdx_, AscendC::MakeCoord(0L, coordN)),
+                                        AscendC::MakeShape(1L, AscendC::MakeShape(shapeK, shapeN)));
+            auto gmBlockB = AscendC::Te::Squeeze<0>(subTensorB);
             auto gmBlockBias = gmBias.Slice(AscendC::MakeCoord(0L, coordN), AscendC::MakeShape(1L, shapeN));
-            auto gmBlockC = gmC.Slice(AscendC::MakeCoord(0, coordN), AscendC::MakeShape(m_, shapeN));
+            auto subTensorC = gmC.Slice(AscendC::MakeCoord(curBatchIdx_, AscendC::MakeCoord(0L, coordN)),
+                                        AscendC::MakeShape(1L, AscendC::MakeShape(m_, shapeN)));
+            auto gmBlockC = AscendC::Te::Squeeze<0>(subTensorC);
             blockMmad(gmA, gmBlockB, gmBlockBias, gmBlockC, blockShape);
         }
     }
@@ -154,21 +148,11 @@ private:
         m_ = static_cast<uint64_t>(AscendC::Te::Get<MNK_M>(params.problemShape));
         n_ = static_cast<uint64_t>(AscendC::Te::Get<MNK_N>(params.problemShape));
         k_ = static_cast<uint64_t>(AscendC::Te::Get<MNK_K>(params.problemShape));
+        batch_ = static_cast<uint64_t>(AscendC::Std::max(AscendC::Te::Get<MNK_B>(params.problemShape), 1L));
         aGmAddr_ = reinterpret_cast<__gm__ AType*>(blockMmadParams.aGmAddr);
         bGmAddr_ = reinterpret_cast<__gm__ BType*>(blockMmadParams.bGmAddr);
         cGmAddr_ = reinterpret_cast<__gm__ CType*>(blockMmadParams.cGmAddr);
         biasGmAddr_ = reinterpret_cast<__gm__ BiasType*>(blockMmadParams.biasGmAddr);
-    }
-
-    __aicore__ inline void UpdateBatchOffset(Params const& params)
-    {
-        if (!WEIGHT_NZ_FORMAT) {
-            bGmAddr_ = reinterpret_cast<__gm__ BType*>(params.mmadParams.bGmAddr) + curBatchIdx_ * k_ * n_;
-        } else {
-            bGmAddr_ = reinterpret_cast<__gm__ BType*>(params.mmadParams.bGmAddr) +
-                       Blaze::Gemm::CalWeightNZGmAddrOffset(TRANS_B, curBatchIdx_, n_, k_, C0_SIZE);
-        }
-        cGmAddr_ = reinterpret_cast<__gm__ CType*>(params.mmadParams.cGmAddr) + curBatchIdx_ * m_ * n_;
     }
 
     template <typename TensorA, typename TensorB>
@@ -183,11 +167,8 @@ private:
     }
 
 private:
-    static constexpr bool IS_FP32 = (AscendC::Std::is_same_v<BType, float>);
-    static constexpr int64_t C0_SIZE = IS_FP32 ? C0_SIZE_fp32 : C0_SIZE_fp16;
     static constexpr bool TRANS_A = BlockMmad::TRANS_A;
     static constexpr bool TRANS_B = BlockMmad::TRANS_B;
-    static constexpr bool WEIGHT_NZ_FORMAT = BlockMmad::WEIGHT_NZ_FORMAT;
     __gm__ AType* aGmAddr_;
     __gm__ BType* bGmAddr_;
     __gm__ CType* cGmAddr_;
@@ -197,6 +178,7 @@ private:
     uint64_t m_{1};
     uint64_t n_{1};
     uint64_t k_{1};
+    uint64_t batch_{1};
 };
 
 } // namespace Kernel

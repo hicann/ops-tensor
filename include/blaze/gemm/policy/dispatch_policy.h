@@ -206,16 +206,18 @@ struct MatmulMultiBlockBasicSplitK {
 /**
  * @struct MatmulMultiBlockAFullLoad
  * @brief Matrix multiplication multi-block structure, no quant, implemented based on Layout
- * @param [in] FullLoadMode_: mode of full load, default is 0(no full load)
+ * @param [in] FullLoadMode_: mode of full load, default is 0(A_FULL_LOAD_MODE)
  * @param [in] FusedOpType_: execute fusion after mmad , default is 0
  * @param [in] KernelSchedule_: mmad dispatch policy
  */
 template <uint64_t FullLoadMode_ = A_FULL_LOAD_MODE, uint64_t FusedOpType_ = 0,
-          class KernelSchedule_ = KernelMmadMultiBlockAFullLoad>
+          class KernelSchedule_ = KernelMmadMultiBlockAFullLoad, uint64_t NonContiguousType_ = 0>
+
 struct MatmulMultiBlockAFullLoad {
     using ScheduleType = KernelSchedule_;
     static constexpr uint64_t FULL_LOAD_MODE = FullLoadMode_;
     static constexpr uint64_t FUSED_OP_TYPE = FusedOpType_;
+    static constexpr uint64_t NON_CONTIGUOUS_TYPE = NonContiguousType_;
 };
 
 /**

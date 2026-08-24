@@ -20,6 +20,7 @@
 #include "blaze/epilogue/block/block_epilogue_empty.h"
 #include "blaze/gemm/block/block_mmad.h"
 #include "blaze/gemm/block/block_mmad_matmul_basic.h"
+#include "blaze/gemm/block/block_mmad_matmul_al1_full_load.h"
 #include "blaze/gemm/utils/common_utils.h"
 #include "blaze/gemm/utils/layout_utils.h"
 #include "kernel_universal.h"
@@ -103,28 +104,32 @@ public:
     }
 
 private:
-    __aicore__ inline auto MakeLayoutA2D(Params const& params)
+    __aicore__ inline auto MakeLayoutAGm(Params const& params)
     {
-        auto layoutA = MakeLayoutA{}(m_, k_);
+        uint64_t aBatch = IS_A_FULL_LOAD ? 1UL : batch_;
         if constexpr (!TRANS_A) {
             // 连续场景下rowStride表示k或1, 非连续场景下表示m轴的stride
             uint64_t rowStride = params.mmadParams.rowStride == 0 ? k_ : params.mmadParams.rowStride;
-            layoutA = AscendC::Te::MakePatternLayout<LayoutA, AscendC::Te::LayoutTraitDefault<>>(
-                AscendC::Te::MakeShape(AscendC::Te::MakeShape(AscendC::Te::_1{}, m_),
-                                       AscendC::Te::MakeShape(AscendC::Te::_1{}, k_)),
-                AscendC::Te::MakeStride(AscendC::Te::MakeStride(AscendC::Te::_0{}, rowStride),
-                                        AscendC::Te::MakeStride(AscendC::Te::_0{}, AscendC::Te::_1{})));
+            uint64_t batchStride = m_ * rowStride;
+            return AscendC::Te::MakePatternLayout<LayoutA, AscendC::Te::LayoutTraitDefault<>>(
+                AscendC::Te::MakeShape(aBatch, AscendC::Te::MakeShape(AscendC::Te::MakeShape(AscendC::Te::_1{}, m_),
+                                                                      AscendC::Te::MakeShape(AscendC::Te::_1{}, k_))),
+                AscendC::Te::MakeStride(
+                    batchStride,
+                    AscendC::Te::MakeStride(AscendC::Te::MakeStride(AscendC::Te::_0{}, rowStride),
+                                            AscendC::Te::MakeStride(AscendC::Te::_0{}, AscendC::Te::_1{}))));
+        } else {
+            return MakeLayoutA{}(aBatch, m_, k_);
         }
-        return layoutA;
     }
 
     __aicore__ inline void MatmulProcess(Params const& params, BlockMmad& blockMmad, BlockScheduler& bs,
                                          int64_t curBlockIdx, int64_t coreNums, int64_t totalBlockNums)
     {
-        auto layoutA = MakeLayoutA2D(params);
-        auto layoutB = MakeLayoutB{}(k_, n_);       // ND layout for B
-        auto layoutC = MakeLayoutC{}(m_, n_);       // ND layout for C
-        auto layoutBias = MakeLayoutBias{}(1L, n_); // ND layout for Bias
+        auto layoutA = MakeLayoutAGm(params);
+        auto layoutB = MakeLayoutB{}(batch_, k_, n_); // ND layout for B
+        auto layoutC = MakeLayoutC{}(batch_, m_, n_); // ND layout for C
+        auto layoutBias = MakeLayoutBias{}(1L, n_);   // ND layout for Bias
         // A,B,C Gm Tensor
         auto gmA = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(aGmAddr_), layoutA);
         auto gmB = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(bGmAddr_), layoutB);
@@ -135,7 +140,6 @@ private:
         // 使能双页表
         SetL2Cache(gmA, gmB, params.schParams.l2CacheMode);
 
-        uint64_t preBatchIdx = 0;
         // Process tiles in ping-pong mode
         for (int64_t blockIdx = curBlockIdx; blockIdx < totalBlockNums; blockIdx += coreNums) {
             auto blockShape = bs.template GetBlockShape<TRANS_B, BType>(blockIdx); // (m, n, k, b)
@@ -146,19 +150,21 @@ private:
             auto shapeN = AscendC::Te::Get<MNK_N>(blockShape);
             auto shapeK = AscendC::Te::Get<MNK_K>(blockShape);
             curBatchIdx_ = static_cast<uint64_t>(AscendC::Te::Get<MNK_B>(blockCoord));
-            if (preBatchIdx != curBatchIdx_) {
-                UpdateBatchOffset(params);
-                gmA = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(aGmAddr_), layoutA);
-                gmB = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(bGmAddr_), layoutB);
-                gmC = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(cGmAddr_), layoutC);
-                preBatchIdx = curBatchIdx_;
-                // 重复MakeTensor后需再次SetL2Cache
-                SetL2Cache(gmA, gmB, params.schParams.l2CacheMode);
-            }
+
             // Block offset
-            auto gmBlockA = gmA.Slice(AscendC::MakeCoord(coordM, 0L), AscendC::MakeShape(shapeM, shapeK));
-            auto gmBlockB = gmB.Slice(AscendC::MakeCoord(0L, coordN), AscendC::MakeShape(shapeK, shapeN));
-            auto gmBlockC = gmC.Slice(AscendC::MakeCoord(coordM, coordN), AscendC::MakeShape(shapeM, shapeN));
+            // A full-load shares one complete A matrix across batches; other modes select the current A tile.
+            auto batchIdxA = IS_A_FULL_LOAD ? 0L : curBatchIdx_;
+            auto coordMA = IS_A_FULL_LOAD ? 0L : coordM;
+            auto shapeMA = IS_A_FULL_LOAD ? m_ : shapeM;
+            auto subTensorA = gmA.Slice(AscendC::MakeCoord(batchIdxA, AscendC::MakeCoord(coordMA, 0L)),
+                                        AscendC::MakeShape(1L, AscendC::MakeShape(shapeMA, shapeK)));
+            auto gmBlockA = AscendC::Te::Squeeze<0>(subTensorA);
+            auto subTensorB = gmB.Slice(AscendC::MakeCoord(curBatchIdx_, AscendC::MakeCoord(0L, coordN)),
+                                        AscendC::MakeShape(1L, AscendC::MakeShape(shapeK, shapeN)));
+            auto gmBlockB = AscendC::Te::Squeeze<0>(subTensorB);
+            auto subTensorC = gmC.Slice(AscendC::MakeCoord(curBatchIdx_, AscendC::MakeCoord(coordM, coordN)),
+                                        AscendC::MakeShape(1L, AscendC::MakeShape(shapeM, shapeN)));
+            auto gmBlockC = AscendC::Te::Squeeze<0>(subTensorC);
             auto gmBlockBias = gmBias.Slice(AscendC::MakeCoord(0L, coordN), AscendC::MakeShape(1L, shapeN));
             blockMmad(gmBlockA, gmBlockB, gmBlockBias, gmBlockC, blockShape);
         }
@@ -216,22 +222,11 @@ private:
         m_ = static_cast<uint64_t>(AscendC::Te::Get<MNK_M>(params.problemShape));
         n_ = static_cast<uint64_t>(AscendC::Te::Get<MNK_N>(params.problemShape));
         k_ = static_cast<uint64_t>(AscendC::Te::Get<MNK_K>(params.problemShape));
+        batch_ = static_cast<uint64_t>(AscendC::Std::max(AscendC::Te::Get<MNK_B>(params.problemShape), 1L));
         aGmAddr_ = reinterpret_cast<__gm__ AType*>(blockMmadParams.aGmAddr);
         bGmAddr_ = reinterpret_cast<__gm__ BType*>(blockMmadParams.bGmAddr);
         cGmAddr_ = reinterpret_cast<__gm__ CType*>(blockMmadParams.cGmAddr);
         biasGmAddr_ = reinterpret_cast<__gm__ BiasType*>(blockMmadParams.biasGmAddr);
-    }
-
-    __aicore__ inline void UpdateBatchOffset(Params const& params)
-    {
-        aGmAddr_ = reinterpret_cast<__gm__ AType*>(params.mmadParams.aGmAddr) + curBatchIdx_ * m_ * k_;
-        if (!WEIGHT_NZ_FORMAT) {
-            bGmAddr_ = reinterpret_cast<__gm__ BType*>(params.mmadParams.bGmAddr) + curBatchIdx_ * k_ * n_;
-        } else {
-            bGmAddr_ = reinterpret_cast<__gm__ BType*>(params.mmadParams.bGmAddr) +
-                       Blaze::Gemm::CalWeightNZGmAddrOffset(TRANS_B, curBatchIdx_, n_, k_, C0_SIZE);
-        }
-        cGmAddr_ = reinterpret_cast<__gm__ CType*>(params.mmadParams.cGmAddr) + curBatchIdx_ * m_ * n_;
     }
 
     template <typename TensorA, typename TensorB>
@@ -246,12 +241,10 @@ private:
     }
 
 private:
-    static constexpr bool IS_FP32 = (AscendC::Std::is_same_v<BType, float>);
-    static constexpr int64_t C0_SIZE = IS_FP32 ? C0_SIZE_fp32 : C0_SIZE_fp16;
     static constexpr bool TRANS_A = BlockMmad::TRANS_A;
     static constexpr bool TRANS_B = BlockMmad::TRANS_B;
-    static constexpr bool WEIGHT_NZ_FORMAT = BlockMmad::WEIGHT_NZ_FORMAT;
     static constexpr uint64_t NON_CONTIGUOUS_TYPE = BlockMmad::NON_CONTIGUOUS_TYPE;
+    static constexpr bool IS_A_FULL_LOAD = BlockMmad::DispatchPolicy::FULL_LOAD_MODE == A_FULL_LOAD_MODE;
     __gm__ AType* aGmAddr_;
     __gm__ BType* bGmAddr_;
     __gm__ CType* cGmAddr_;
@@ -261,6 +254,7 @@ private:
     uint64_t m_{1};
     uint64_t n_{1};
     uint64_t k_{1};
+    uint64_t batch_{1};
 };
 
 } // namespace Kernel
