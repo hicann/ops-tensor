@@ -28,33 +28,36 @@
 # examples/CMakeLists.txt 的 include 路径只指向 submodule，不会回退到 CANN 环境
 ensure_tensor_api_submodule() {
     local repo_root="${1:-.}"
+    local _submod_dir="${repo_root}/include/tensor_api"
+    local _repo_url="https://gitcode.com/cann/asc-devkit.git"
+    local _repo_branch="feature/tensor_api_from_9.0.0"
 
-    log_info "Initializing tensor_api submodule (at pinned commit)..."
+    if [ -d "$_submod_dir" ] && [ -n "$(ls -A "$_submod_dir" 2>/dev/null)" ]; then
+        log_info "tensor_api already exists, skip init"
+        return 0
+    fi
 
+    log_info "Initializing tensor_api submodule..."
+
+    local _fail_msg=""
     if ! command -v git &> /dev/null; then
-        log_error "git is not installed, cannot initialize tensor_api submodule"
+        _fail_msg="git is not installed"
+    elif ! (cd "${repo_root}" && git rev-parse --is-inside-work-tree &> /dev/null); then
+        _fail_msg="not a git repository: ${repo_root}"
+    else
+        if ! (cd "${repo_root}" && git submodule update --init --recursive include/tensor_api 2>&1); then
+            _fail_msg="git submodule update failed"
+        elif [ -z "$(ls -A "${_submod_dir}" 2>/dev/null)" ]; then
+            _fail_msg="tensor_api directory is empty after init"
+        fi
+    fi
+
+    if [ -n "$_fail_msg" ]; then
+        log_error "${_fail_msg}"
+        log_error "Manually download and place at: ${_submod_dir}"
+        log_error "Repo: ${_repo_url} (branch: ${_repo_branch})"
         return 1
     fi
 
-    local _orig_dir="$(pwd)"
-    cd "${repo_root}"
-
-    if ! git rev-parse --is-inside-work-tree &> /dev/null; then
-        log_error "Not a git repository: ${repo_root}"
-        log_error "Cannot initialize tensor_api submodule. Please ensure ops-tensor is a git clone."
-        cd "${_orig_dir}"
-        return 1
-    fi
-
-    # --init / --recursive: 初始化 submodule 并递归处理嵌套 submodule
-    if ! git submodule update --init --recursive include/tensor_api; then
-        log_error "Failed to initialize tensor_api submodule"
-        log_error "Manual recovery:"
-        log_error "  cd ${repo_root} && git submodule update --init --recursive include/tensor_api"
-        cd "${_orig_dir}"
-        return 1
-    fi
-
-    cd "${_orig_dir}"
-    log_success "tensor_api submodule initialized successfully"
+    log_success "tensor_api submodule initialized"
 }

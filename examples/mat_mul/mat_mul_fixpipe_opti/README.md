@@ -11,16 +11,16 @@
 
 ## 支持架构
 
-| 架构 | SoC | 支持状态 |
-|------|-----|----------|
-| dav-3510 | Ascend950 | ✅ |
+| 架构     | SoC       | 支持状态 |
+| -------- | --------- | -------- |
+| dav-3510 | Ascend950 | ✅       |
 
 ## 使用约束
 
 - 输入 A shape: `[M, K]`
 - 输入 B shape: `[K, N]`
 - 输出 C shape: `[M, N]`
-- 数据类型: float16, float32
+- 数据类型: float16, bfloat16, float32
 - A 和 B 均通过 l1Stages 流水线缓冲加载
 
 ## CSV 驱动测试
@@ -48,11 +48,11 @@ mat_mul_fixpipe_weightNz,512,256,64,0,float16,false,false,false,ND,NZ
 
 **列说明**：
 
-| 列 | 说明 |
-|----|------|
-| casename | 用例名称 |
-| m, k, n | 矩阵维度 |
-| dtype | 数据类型：float16 / float32 |
+| 列       | 说明                                 |
+| -------- | ------------------------------------ |
+| casename | 用例名称                             |
+| m, k, n  | 矩阵维度                             |
+| dtype    | 数据类型：float16/ bfloat16/ float32 |
 
 ### 结果输出
 
@@ -76,10 +76,10 @@ mat_mul_fixpipe_weightNz,512,256,64,0,float16,false,false,false,ND,NZ
 
 由 `../scripts/verify_result.py` 执行:
 
-| dtype | ratio_tol | error_ratio_tol |
-|-------|-----------|-----------------|
-| float16 | 5e-3 | 5e-3 |
-| float32 | 1e-4 | 1e-4 |
+| dtype   | ratio_tol | error_ratio_tol |
+| ------- | --------- | --------------- |
+| float16 | 5e-3      | 5e-3            |
+| float32 | 1e-4      | 1e-4            |
 
 - 超差比例 < error_ratio_tol
 
@@ -99,17 +99,18 @@ mat_mul_fixpipe_opti/
 
 本场景使用以下 Blaze 组件:
 
-| 组件 | 头文件 | 职责 |
-|------|--------|------|
-| Kernel | `blaze/gemm/kernel/kernel_matmul_fixpipe_opti.h` | 完整 kernel 入口 |
-| Block MMAD | `blaze/gemm/block/block_mmad_matmul_fixpipe_opti.h` | Block 级矩阵乘（fixpipe） |
-| Block Scheduler | `blaze/gemm/block/block_scheduler_matmul_basic.h` | 基础调度器 |
-| Epilogue | `blaze/epilogue/block/block_epilogue_fixpipe.h` | Fixpipe 后处理 |
-| Dispatch Policy | `blaze/gemm/policy/dispatch_policy.h` | 派发策略 |
+| 组件            | 头文件                                                | 职责                      |
+| --------------- | ----------------------------------------------------- | ------------------------- |
+| Kernel          | `blaze/gemm/kernel/kernel_matmul_fixpipe_opti.h`    | 完整 kernel 入口          |
+| Block MMAD      | `blaze/gemm/block/block_mmad_matmul_fixpipe_opti.h` | Block 级矩阵乘（fixpipe） |
+| Block Scheduler | `blaze/gemm/block/block_scheduler_matmul_basic.h`   | 基础调度器                |
+| Epilogue        | `blaze/epilogue/block/block_epilogue_fixpipe.h`     | Fixpipe 后处理            |
+| Dispatch Policy | `blaze/gemm/policy/dispatch_policy.h`               | 派发策略                  |
 
 ## Fixpipe 算法说明
 
 Fixpipe 优化模式将 L0C 计算结果通过 fixpipe 路径搬出：
+
 - A 和 B 均通过 l1Stages 流水线从 GM 加载到 L1
 - L0C 结果通过 `CopyL0C2UB` 搬移到 UB
 - UB 数据由 AIV 核通过 fixpipe 搬出到 GM

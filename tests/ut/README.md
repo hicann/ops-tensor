@@ -10,13 +10,13 @@ Kernel UT 基于 Google Test 框架，用于验证算子 Kernel 实现的编译�
 
 ## 2. 环境依赖
 
-| 依赖 | 最低版本 | 用途 |
-|------|---------|------|
-| cmake | 3.16 | 构建系统 |
-| g++ | 默认 ≥ C++17 | Host 侧 C++ 编译器 |
-| bisheng | — | ASC 语言编译器（随 CANN Toolkit 安装） |
-| CANN Toolkit | ≥ 9.1.0 | 提供 tikicpulib、ACL 运行时、头文件 |
-| gtest | — | 由 cmake 通过 `fetch_cann_cmake` 自动获取 |
+| 依赖         | 最低版本      | 用途                                       |
+| ------------ | ------------- | ------------------------------------------ |
+| cmake        | 3.16          | 构建系统                                   |
+| g++          | 默认 ≥ C++17 | Host 侧 C++ 编译器                         |
+| bisheng      | —            | ASC 语言编译器（随 CANN Toolkit 安装）     |
+| CANN Toolkit | ≥ 9.1.0      | 提供 tikicpulib、ACL 运行时、头文件        |
+| gtest        | —            | 由 cmake 通过`fetch_cann_cmake` 自动获取 |
 
 > `build.sh --opkernel -u` 会在编译前自动执行 `git submodule update --init include/tensor_api`，确保 Blaze 编译依赖就绪。
 
@@ -46,19 +46,19 @@ tests/
 
 **层级关系**：
 
-| 层级 | 文件 | 职责 |
-|------|------|------|
-| `tests/CMakeLists.txt` | L1 | 收集 `ut/*.cpp`，构建 `all_ops_test`（普通 gtest 可执行文件） |
-| `tests/ut/op_kernel/CMakeLists.txt` | L2 | 按算子 → SoC 维度构建 `ops_tensor_kernel_ut_{soc}`（Kernel UT 可执行文件） |
-| `tests/ut/op_kernel/{op}/CMakeLists.txt` | L3 | 调用 `AddOpTestCase` 注册算子及其支持的 SoC 版本 |
+| 层级                                       | 文件 | 职责                                                                         |
+| ------------------------------------------ | ---- | ---------------------------------------------------------------------------- |
+| `tests/CMakeLists.txt`                   | L1   | 收集`ut/*.cpp`，构建 `all_ops_test`（普通 gtest 可执行文件）             |
+| `tests/ut/op_kernel/CMakeLists.txt`      | L2   | 按算子 → SoC 维度构建`ops_tensor_kernel_ut_{soc}`（Kernel UT 可执行文件） |
+| `tests/ut/op_kernel/{op}/CMakeLists.txt` | L3   | 调用`AddOpTestCase` 注册算子及其支持的 SoC 版本                            |
 
 **关键组件说明**：
 
-| 文件 | 说明 |
-|------|------|
-| `kernel_ut_runner.h` | 提供 `KERNEL_RUN_KF(func, numBlocks, args...)` 宏，通过 stdout 重定向 + 文本解析检测子进程崩溃（IPC 信号无法传递时仍然可靠） |
-| `blaze_kernel_stub.h` | CPU 模拟环境下 `__aicore__` kernel stub，提供 `AscendC::GmAlloc/GmFree`、`AscendC::GetBlockIdx()` 等 CPU 侧模拟 API |
-| `mat_mul.cpp` | 所有 MatMul 变体的统一入口，基于 `if constexpr` 按 `OP_TYPE` 分发到对应 wrapper |
+| 文件                    | 说明                                                                                                                          |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `kernel_ut_runner.h`  | 提供`KERNEL_RUN_KF(func, numBlocks, args...)` 宏，通过 stdout 重定向 + 文本解析检测子进程崩溃（IPC 信号无法传递时仍然可靠） |
+| `blaze_kernel_stub.h` | CPU 模拟环境下`__aicore__` kernel stub，提供 `AscendC::GmAlloc/GmFree`、`AscendC::GetBlockIdx()` 等 CPU 侧模拟 API      |
+| `mat_mul.cpp`         | 所有 MatMul 变体的统一入口，基于`if constexpr` 按 `OP_TYPE` 分发到对应 wrapper                                            |
 
 ## 4. 执行方法
 
@@ -97,9 +97,9 @@ cd build/kernel_ut
 
 ### 4.3 构建产物
 
-| 产物 | 路径 |
-|------|------|
-| 构建目录 | `build/kernel_ut/` |
+| 产物       | 路径                                               |
+| ---------- | -------------------------------------------------- |
+| 构建目录   | `build/kernel_ut/`                               |
 | 可执行文件 | `build/kernel_ut/ops_tensor_kernel_ut_ascend950` |
 
 ## 5. 新增算子 UT
@@ -118,11 +118,11 @@ AddOpTestCase(my_op "ascend950pr_9599" "")
 
 `AddOpTestCase` 的三个参数：
 
-| 参数 | 说明 | 示例 |
-|------|------|------|
-| `opName` | 算子名称（子目录名） | `mat_mul` |
-| `supportedSocVersions` | 支持的 SoC 版本字符串 | `"ascend950pr_9599"` |
-| `extraCompileOptions` | 额外编译选项（如数据类型宏） | `"-DDTYPE_A=half"` |
+| 参数                     | 说明                         | 示例                   |
+| ------------------------ | ---------------------------- | ---------------------- |
+| `opName`               | 算子名称（子目录名）         | `mat_mul`            |
+| `supportedSocVersions` | 支持的 SoC 版本字符串        | `"ascend950pr_9599"` |
+| `extraCompileOptions`  | 额外编译选项（如数据类型宏） | `"-DDTYPE_A=half"`   |
 
 ```cpp
 // 3. tests/ut/op_kernel/my_op/test_my_op.cpp
@@ -165,21 +165,21 @@ flowchart LR
     A --> B --> C --> D
 ```
 
-| OP_TYPE | kernel_entry | Wrapper | Kernel 特化 |
-|---------|-------------|---------|-------------|
+| OP_TYPE                 | kernel_entry   | Wrapper                               | Kernel 特化                         |
+| ----------------------- | -------------- | ------------------------------------- | ----------------------------------- |
 | `STREAMK` / `BASIC` | `mat_mul_v3` | `StreamKWrapper` / `BasicWrapper` | `KernelStreamK` / `KernelBasic` |
-| `AFULLLOAD` | `mat_mul_v4` | `AFullLoadWrapper` | `KernelAFullLoad` |
-| `BFULLLOAD` | `mat_mul_v4` | `BFullLoadWrapper` | `KernelBFullLoad` |
-| `FIXPIPE_OPT` | `mat_mul_v4` | `FixpipeOptWrapper` | `KernelFixpipeOpti` |
-| `BMM_BROADCAST` | `mat_mul_v4` | `BmmBroadCastWrapper` | `KernelBmmBroadcast` |
-| `ITERBATCH` | `mat_mul_v4` | `IterBatchWrapper` | `KernelIterBatch` |
+| `AFULLLOAD`           | `mat_mul_v4` | `AFullLoadWrapper`                  | `KernelAFullLoad`                 |
+| `BFULLLOAD`           | `mat_mul_v4` | `BFullLoadWrapper`                  | `KernelBFullLoad`                 |
+| `FIXPIPE_OPT`         | `mat_mul_v4` | `FixpipeOptWrapper`                 | `KernelFixpipeOpti`               |
+| `BMM_BROADCAST`       | `mat_mul_v4` | `BmmBroadCastWrapper`               | `KernelBmmBroadcast`              |
+| `ITERBATCH`           | `mat_mul_v4` | `IterBatchWrapper`                  | `KernelIterBatch`                 |
 
 ### 6.2 if constexpr 路由
 
 ```mermaid
 %%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#e8eaf6', 'primaryTextColor': '#283593', 'primaryBorderColor': '#3949ab', 'lineColor': '#78909c'}}}%%
 flowchart TD
-    E["mat_mul_v4_kernel_entry<br/><small>&lt;OP_TYPE, DTYPE_X1, DTYPE_X2, DTYPE_Y, DTYPE_BIAS, …&gt;</small>"]
+    E["mat_mul_v4_kernel_entry<br/><small><OP_TYPE, DTYPE_X1, DTYPE_X2, DTYPE_Y, DTYPE_BIAS, …></small>"]
 
     E --> C1{"AFULLLOAD?"}
     C1 -->|✅| W1["AFullLoadWrapper"]
@@ -239,12 +239,10 @@ sequenceDiagram
 
 **Flag 分配表：**
 
-| 名称 | Flag ID | 方向 | 说明 |
-|------|---------|------|------|
-| `ping` | 4 | AIV → AIC | AIV 完成 copy-out，AIC 可开始下一 tile |
-| `pong` | 5 | AIV → AIC | 乒乓交替 |
-| `done` | 6 | AIC → AIV | AIC 完成 MMAD，AIV 可开始 copy-out |
-| `ping+16` | 20 | AIV → AIC | splitM 场景 M 轴信号 |
-| `pong+16` | 21 | AIV → AIC | splitM 场景 M 轴信号 |
-
-
+| 名称        | Flag ID | 方向       | 说明                                   |
+| ----------- | ------- | ---------- | -------------------------------------- |
+| `ping`    | 4       | AIV → AIC | AIV 完成 copy-out，AIC 可开始下一 tile |
+| `pong`    | 5       | AIV → AIC | 乒乓交替                               |
+| `done`    | 6       | AIC → AIV | AIC 完成 MMAD，AIV 可开始 copy-out     |
+| `ping+16` | 20      | AIV → AIC | splitM 场景 M 轴信号                   |
+| `pong+16` | 21      | AIV → AIC | splitM 场景 M 轴信号                   |

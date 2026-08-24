@@ -20,6 +20,7 @@ ops-tensor/
 ├── CMakeLists.txt                        # 编译配置文件
 ├── docs/                                 # 项目文档介绍
 │   └ API/                                # API文档
+├── examples/						  	  # Samples 测试
 ├── include/                              # 项目公共头文件
 │   ├── blaze/                            # Blaze 高性能线性代数引擎
 │   └ tensor_api/                         # Tensor 抽象（Layout/Shape/Coord）
@@ -33,12 +34,12 @@ ops-tensor/
 
 ## 🔧支持的算子
 
-| 算子名称 | 描述 | 状态 |
-|---------|------|------|
-| MatMul | 矩阵乘运算 | ✅ 已实现 |
-| BatchMatMul | 批量矩阵乘运算 | ✅ 已实现 |
+| 算子名称         | 描述               | 状态      |
+| ---------------- | ------------------ | --------- |
+| MatMul           | 矩阵乘运算         | ✅ 已实现 |
+| BatchMatMul      | 批量矩阵乘运算     | ✅ 已实现 |
 | QuantBatchMatMul | 量化批量矩阵乘运算 | ✅ 已实现 |
-| GroupedMatmul | 分组矩阵乘运算 | ✅ 已实现 |
+| GroupedMatmul    | 分组矩阵乘运算     | ✅ 已实现 |
 
 ## 💻SoC 支持
 
@@ -56,12 +57,12 @@ Ascend 950PR / Ascend 950DT
 
 ## 📖文档介绍
 
-| 文档 | 说明 |
-|------|------|
-|[快速入门](./QUICKSTART.md)|快速体验项目的简易教程。|
-|[算子开发指南](./QUICK_OP_INVOCATION.md)|使用 ops-tensor 实现算子开发的教程。|
-|[Blaze 模块](./include/blaze/README.md)|Blaze 高性能线性代数引擎介绍。|
-|[API 文档](./docs/API/README.md)|API 详细说明。|
+| 文档                                    | 说明                                 |
+| --------------------------------------- | ------------------------------------ |
+| [快速入门](./QUICKSTART.md)              | 快速体验项目的简易教程。             |
+| [算子开发指南](./QUICK_OP_INVOCATION.md) | 使用 ops-tensor 实现算子开发的教程。 |
+| [Blaze 模块](./include/blaze/README.md)  | Blaze 高性能线性代数引擎介绍。       |
+| [API 文档](./docs/API/README.md)         | API 详细说明。                       |
 
 ## 📝相关信息
 

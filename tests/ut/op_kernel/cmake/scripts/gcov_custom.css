@@ -1,0 +1,311 @@
+/* ============================================================================
+ * ops-tensor Kernel UT 自定义覆盖率报告样式
+ *
+ * 基于 lcov 2.0 默认 gcov.css，增强未覆盖行的高亮效果：
+ *   - 未覆盖行整行醒目红色背景
+ *   - 已覆盖行浅绿色背景
+ *   - 未覆盖行左侧红色边框标记
+ * ==========================================================================*/
+
+/* ---- 基础样式（沿用默认） ---- */
+body
+{
+  color: #000000;
+  background-color: #ffffff;
+}
+
+a:link     { color: #284fa8; text-decoration: underline; }
+a:visited  { color: #00cb40; text-decoration: underline; }
+a:active   { color: #ff0040; text-decoration: underline; }
+
+td.title
+{
+  text-align: center;
+  padding-bottom: 10px;
+  font-family: sans-serif;
+  font-size: 20pt;
+  font-style: italic;
+  font-weight: bold;
+}
+
+td.subTableHeader
+{
+  text-align: center;
+  padding-bottom: 6px;
+  font-family: sans-serif;
+  font-weight: bold;
+  vertical-align: center;
+}
+
+td.headerItem
+{
+  text-align: right;
+  padding-right: 6px;
+  font-family: sans-serif;
+  font-weight: bold;
+  vertical-align: top;
+  white-space: nowrap;
+}
+
+td.headerValue
+{
+  text-align: left;
+  color: #284fa8;
+  font-family: sans-serif;
+  font-weight: bold;
+  white-space: nowrap;
+}
+
+td.headerCovTableHead
+{
+  text-align: center;
+  padding-right: 6px;
+  padding-left: 6px;
+  padding-bottom: 0px;
+  font-family: sans-serif;
+  white-space: nowrap;
+}
+
+td.headerCovTableEntry
+{
+  text-align: right;
+  color: #284fa8;
+  font-family: sans-serif;
+  font-weight: bold;
+  white-space: nowrap;
+  padding-left: 12px;
+  padding-right: 4px;
+  background-color: #dae7fe;
+}
+
+td.headerCovTableEntryHi
+{
+  text-align: right;
+  color: #000000;
+  font-family: sans-serif;
+  font-weight: bold;
+  white-space: nowrap;
+  padding-left: 12px;
+  padding-right: 4px;
+  background-color: #a7fc9d;
+}
+
+td.headerCovTableEntryMed
+{
+  text-align: right;
+  color: #000000;
+  font-family: sans-serif;
+  font-weight: bold;
+  white-space: nowrap;
+  padding-left: 12px;
+  padding-right: 4px;
+  background-color: #ffea20;
+}
+
+td.headerCovTableEntryLo
+{
+  text-align: right;
+  color: #000000;
+  font-family: sans-serif;
+  font-weight: bold;
+  white-space: nowrap;
+  padding-left: 12px;
+  padding-right: 4px;
+  background-color: #ff0000;
+}
+
+td.headerValueLeg    { text-align: left; color: #000000; font-family: sans-serif; font-size: 80%; white-space: nowrap; padding-top: 4px; }
+td.ruler             { background-color: #6688d4; }
+td.versionInfo       { text-align: center; padding-top: 2px; font-family: sans-serif; font-style: italic; }
+
+td.tableHead
+{
+  text-align: center;
+  color: #ffffff;
+  background-color: #6688d4;
+  font-family: sans-serif;
+  font-size: 120%;
+  font-weight: bold;
+  white-space: nowrap;
+  padding-left: 4px;
+  padding-right: 4px;
+}
+
+span.tableHeadSort   { padding-right: 4px; }
+
+td.coverFile         { text-align: left; padding-left: 10px; padding-right: 20px; color: #284fa8; background-color: #dae7fe; font-family: monospace; }
+td.overallOwner      { text-align: center; font-weight: bold; font-family: sans-serif; background-color: #dae7fe; padding-right: 10px; padding-left: 10px; }
+td.ownerName         { text-align: right; font-style: italic; font-family: sans-serif; background-color: #E5DBDB; padding-right: 10px; padding-left: 20px; }
+td.coverBar          { padding-left: 10px; padding-right: 10px; background-color: #dae7fe; }
+td.owner_coverBar    { padding-left: 10px; padding-right: 10px; background-color: #E5DBDB; }
+td.coverBarOutline   { background-color: #000000; }
+
+td.coverPerHi        { text-align: right; padding-left: 10px; padding-right: 10px; background-color: #a7fc9d; font-weight: bold; font-family: sans-serif; }
+td.owner_coverPerHi  { text-align: right; padding-left: 10px; padding-right: 10px; background-color: #82E0AA; font-weight: bold; font-family: sans-serif; }
+td.coverNumDflt      { text-align: right; padding-left: 10px; padding-right: 10px; background-color: #dae7fe; white-space: nowrap; font-family: sans-serif; }
+td.ownerTla          { text-align: right; padding-left: 10px; padding-right: 10px; background-color: #E5DBDB; white-space: nowrap; font-family: sans-serif; font-style: italic; }
+td.coverNumHi        { text-align: right; padding-left: 10px; padding-right: 10px; background-color: #a7fc9d; white-space: nowrap; font-family: sans-serif; }
+td.owner_coverNumHi  { text-align: right; padding-left: 10px; padding-right: 10px; background-color: #82E0AA; white-space: nowrap; font-family: sans-serif; }
+td.coverPerMed       { text-align: right; padding-left: 10px; padding-right: 10px; background-color: #ffea20; font-weight: bold; font-family: sans-serif; }
+td.owner_coverPerMed { text-align: right; padding-left: 10px; padding-right: 10px; background-color: #F9E79F; font-weight: bold; font-family: sans-serif; }
+td.coverNumMed       { text-align: right; padding-left: 10px; padding-right: 10px; background-color: #ffea20; white-space: nowrap; font-family: sans-serif; }
+td.owner_coverNumMed { text-align: right; padding-left: 10px; padding-right: 10px; background-color: #F9E79F; white-space: nowrap; font-family: sans-serif; }
+td.coverPerLo        { text-align: right; padding-left: 10px; padding-right: 10px; background-color: #ff0000; font-weight: bold; font-family: sans-serif; }
+td.owner_coverPerLo  { text-align: right; padding-left: 10px; padding-right: 10px; background-color: #EC7063; font-weight: bold; font-family: sans-serif; }
+td.coverNumLo        { text-align: right; padding-left: 10px; padding-right: 10px; background-color: #ff0000; white-space: nowrap; font-family: sans-serif; }
+td.owner_coverNumLo  { text-align: right; padding-left: 10px; padding-right: 10px; background-color: #EC7063; white-space: nowrap; font-family: sans-serif; }
+
+a.detail:link        { color: #b8d0ff; font-size:80%; }
+a.detail:visited     { color: #b8d0ff; font-size:80%; }
+a.detail:active      { color: #ffffff; font-size:80%; }
+
+td.testName          { text-align: right; padding-right: 10px; background-color: #dae7fe; font-family: sans-serif; }
+td.testPer           { text-align: right; padding-left: 10px; padding-right: 10px; background-color: #dae7fe; font-family: sans-serif; }
+td.testNum           { text-align: right; padding-left: 10px; padding-right: 10px; background-color: #dae7fe; font-family: sans-serif; }
+
+dt                   { font-family: sans-serif; font-weight: bold; }
+td.testDescription   { padding-top: 10px; padding-left: 30px; padding-bottom: 10px; padding-right: 30px; background-color: #dae7fe; }
+
+td.coverFn           { text-align: left; padding-left: 10px; padding-right: 20px; color: #284fa8; background-color: #dae7fe; font-family: monospace; }
+td.coverFnLo         { text-align: right; padding-left: 10px; padding-right: 10px; background-color: #ff0000; font-weight: bold; font-family: sans-serif; }
+td.coverFnHi         { text-align: right; padding-left: 10px; padding-right: 10px; background-color: #dae7fe; font-weight: bold; font-family: sans-serif; }
+td.coverFnAlias      { text-align: right; padding-left: 10px; padding-right: 20px; color: #284fa8; background-color: #E5DBDB; font-family: monospace; }
+td.coverFnAliasLo    { text-align: right; padding-left: 10px; padding-right: 10px; background-color: #EC7063; font-family: sans-serif; }
+td.coverFnAliasHi    { text-align: right; padding-left: 10px; padding-right: 10px; background-color: #dae7fe; font-weight: bold; font-family: sans-serif; }
+
+pre.source           { font-family: monospace; white-space: pre; margin-top: 2px; }
+span.lineNum         { background-color: #efe383; }
+
+span.coverLegendCov    { padding-left: 10px; padding-right: 10px; padding-bottom: 2px; background-color: #cad7fe; }
+span.coverLegendNoCov  { padding-left: 10px; padding-right: 10px; padding-bottom: 2px; background-color: #ff6230; }
+
+pre.sourceHeading    { white-space: pre; font-family: monospace; font-weight: bold; margin: 0px; }
+
+td.headerValueLegL   { font-family: sans-serif; text-align: center; white-space: nowrap; padding-left: 4px; padding-right: 2px; background-color: #ff0000; font-size: 80%; }
+td.headerValueLegM   { font-family: sans-serif; text-align: center; white-space: nowrap; padding-left: 2px; padding-right: 2px; background-color: #ffea20; font-size: 80%; }
+td.headerValueLegH   { font-family: sans-serif; text-align: center; white-space: nowrap; padding-left: 2px; padding-right: 4px; background-color: #a7fc9d; font-size: 80%; }
+
+span.coverLegendCovLo  { padding-left: 10px; padding-right: 10px; padding-top: 2px; background-color: #ff0000; }
+span.coverLegendCovMed { padding-left: 10px; padding-right: 10px; padding-top: 2px; background-color: #ffea20; }
+span.coverLegendCovHi  { padding-left: 10px; padding-right: 10px; padding-top: 2px; background-color: #a7fc9d; }
+
+a.branchTla:link      { color: #000000; }
+a.branchTla:visited   { color: #000000; }
+
+/* ---- TLA 原始 class 定义（保留兼容性） ---- */
+
+/* 未覆盖行：count=0 */
+td.tlaUNC, td.tlaBgUNC          { background-color: #FF6230; }
+span.tlaUNC, span.tlaBgUNC      { background-color: #FF6230; }
+a.tlaBgUNC                      { background-color: #FF6230; color: #000000; }
+td.headerCovTableHeadUNC        { text-align: center; padding-right: 6px; padding-left: 6px; padding-bottom: 0px; font-family: sans-serif; white-space: nowrap; background-color: #FF6230; }
+
+/* 丢失覆盖 */
+td.tlaLBC, td.tlaBgLBC          { background-color: #FF6230; }
+span.tlaLBC, span.tlaBgLBC      { background-color: #FF6230; }
+a.tlaBgLBC                      { background-color: #FF6230; color: #000000; }
+td.headerCovTableHeadLBC        { text-align: center; padding-right: 6px; padding-left: 6px; padding-bottom: 0px; font-family: sans-serif; white-space: nowrap; background-color: #FF6230; }
+
+/* 未覆盖（此前未被使用） */
+td.tlaUIC, td.tlaBgUIC          { background-color: #FF6230; }
+span.tlaUIC, span.tlaBgUIC      { background-color: #FF6230; }
+a.tlaBgUIC                      { background-color: #FF6230; color: #000000; }
+td.headerCovTableHeadUIC        { text-align: center; padding-right: 6px; padding-left: 6px; padding-bottom: 0px; font-family: sans-serif; white-space: nowrap; background-color: #FF6230; }
+
+/* 未覆盖基线 */
+td.tlaUBC, td.tlaBgUBC          { background-color: #FF6230; }
+span.tlaUBC, span.tlaBgUBC      { background-color: #FF6230; }
+a.tlaBgUBC                      { background-color: #FF6230; color: #000000; }
+td.headerCovTableHeadUBC        { text-align: center; padding-right: 6px; padding-left: 6px; padding-bottom: 0px; font-family: sans-serif; white-space: nowrap; background-color: #FF6230; }
+
+/* 已覆盖行 */
+td.tlaGBC, td.tlaBgGBC          { background-color: #CAD7FE; }
+span.tlaGBC, span.tlaBgGBC      { background-color: #CAD7FE; }
+a.tlaBgGBC                      { background-color: #CAD7FE; color: #000000; }
+td.headerCovTableHeadGBC        { text-align: center; padding-right: 6px; padding-left: 6px; padding-bottom: 0px; font-family: sans-serif; white-space: nowrap; background-color: #CAD7FE; }
+
+td.tlaGIC, td.tlaBgGIC          { background-color: #CAD7FE; }
+span.tlaGIC, span.tlaBgGIC      { background-color: #CAD7FE; }
+a.tlaBgGIC                      { background-color: #CAD7FE; color: #000000; }
+td.headerCovTableHeadGIC        { text-align: center; padding-right: 6px; padding-left: 6px; padding-bottom: 0px; font-family: sans-serif; white-space: nowrap; background-color: #CAD7FE; }
+
+td.tlaGNC, td.tlaBgGNC          { background-color: #CAD7FE; }
+span.tlaGNC, span.tlaBgGNC      { background-color: #CAD7FE; }
+a.tlaBgGNC                      { background-color: #CAD7FE; color: #000000; }
+td.headerCovTableHeadGNC        { text-align: center; padding-right: 6px; padding-left: 6px; padding-bottom: 0px; font-family: sans-serif; white-space: nowrap; background-color: #CAD7FE; }
+
+td.tlaCBC, td.tlaBgCBC          { background-color: #CAD7FE; }
+span.tlaCBC, span.tlaBgCBC      { background-color: #CAD7FE; }
+a.tlaBgCBC                      { background-color: #CAD7FE; color: #000000; }
+td.headerCovTableHeadCBC        { text-align: center; padding-right: 6px; padding-left: 6px; padding-bottom: 0px; font-family: sans-serif; white-space: nowrap; background-color: #CAD7FE; }
+
+/* 排除/删除行 */
+td.tlaEUB, td.tlaBgEUB          { background-color: #FFFFFF; }
+span.tlaEUB, span.tlaBgEUB      { background-color: #FFFFFF; }
+a.tlaBgEUB                      { background-color: #FFFFFF; color: #000000; }
+td.headerCovTableHeadEUB        { text-align: center; padding-right: 6px; padding-left: 6px; padding-bottom: 0px; font-family: sans-serif; white-space: nowrap; background-color: #FFFFFF; }
+
+td.tlaECB, td.tlaBgECB          { background-color: #FFFFFF; }
+span.tlaECB, span.tlaBgECB      { background-color: #FFFFFF; }
+a.tlaBgECB                      { background-color: #FFFFFF; color: #000000; }
+td.headerCovTableHeadECB        { text-align: center; padding-right: 6px; padding-left: 6px; padding-bottom: 0px; font-family: sans-serif; white-space: nowrap; background-color: #FFFFFF; }
+
+td.tlaDUB, td.tlaBgDUB          { background-color: #FFFFFF; }
+span.tlaDUB, span.tlaBgDUB      { background-color: #FFFFFF; }
+a.tlaBgDUB                      { background-color: #FFFFFF; color: #000000; }
+td.headerCovTableHeadDUB        { text-align: center; padding-right: 6px; padding-left: 6px; padding-bottom: 0px; font-family: sans-serif; white-space: nowrap; background-color: #FFFFFF; }
+
+td.tlaDCB, td.tlaBgDCB          { background-color: #FFFFFF; }
+span.tlaDCB, span.tlaBgDCB      { background-color: #FFFFFF; }
+a.tlaBgDCB                      { background-color: #FFFFFF; color: #000000; }
+td.headerCovTableHeadDCB        { text-align: center; padding-right: 6px; padding-left: 6px; padding-bottom: 0px; font-family: sans-serif; white-space: nowrap; background-color: #FFFFFF; }
+
+span.missBins                   { background-color: #ff0000; }
+
+/* ============================================================================
+ * 增强高亮：未覆盖行整行醒目标记
+ *
+ * HTML 结构：
+ *   <span id="L43">
+ *     <span class="lineNum">43</span>
+ *     <span class="tlaUNC">0 : source code</span>
+ *   </span>
+ *
+ * lcov 2.0 的 TLA 机制下，tlaUNC/tlaUIC/tlaUBC/tlaLBC 只加在内层 span 上，
+ * 整行外层 span[id] 没有任何 class。用 :has() 选中含未覆盖 class 的整行。
+ * ==========================================================================*/
+
+/* 未覆盖行的整行高亮（所有未覆盖变体） */
+span[id]:has(> span.tlaUNC),
+span[id]:has(> span.tlaUIC),
+span[id]:has(> span.tlaUBC),
+span[id]:has(> span.tlaLBC)
+{
+    background-color: #ffcccc;
+    border-left: 4px solid #ff0000;
+    padding-left: 2px;
+    display: inline-block;
+    width: 100%;
+}
+
+/* 未覆盖行内的 count 数字和源代码：加粗 + 深红文字 */
+span.tlaUNC,
+span.tlaUIC,
+span.tlaUBC,
+span.tlaLBC
+{
+    background-color: #ffcccc !important;
+    color: #cc0000;
+    font-weight: bold;
+}
+
+/* 未覆盖行号也标记为红色背景 */
+span[id]:has(> span.tlaUNC) > span.lineNum,
+span[id]:has(> span.tlaUIC) > span.lineNum,
+span[id]:has(> span.tlaUBC) > span.lineNum,
+span[id]:has(> span.tlaLBC) > span.lineNum
+{
+    background-color: #ff9999;
+    color: #cc0000;
+    font-weight: bold;
+}

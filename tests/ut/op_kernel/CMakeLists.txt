@@ -19,6 +19,9 @@ include(${OPS_TENSOR_ROOT}/cmake/third_party/fetch_cann_cmake.cmake)
 
 project(ops_tensor_kernel_ut LANGUAGES CXX)
 
+# 代码覆盖率选项
+option(ENABLE_GCOV "Enable code coverage for kernel UT" OFF)
+
 set(ALL_SUPPORTED_SOCS "ascend950")
 
 if(NOT KERNEL_UT_SOC)
@@ -64,6 +67,19 @@ list(APPEND CMAKE_PREFIX_PATH
 )
 
 find_package(tikicpulib REQUIRED)
+
+# gcov 覆盖率 INTERFACE 库
+if(ENABLE_GCOV)
+    add_library(kernel_ut_gcov INTERFACE)
+    target_compile_options(kernel_ut_gcov INTERFACE
+        -fprofile-arcs -ftest-coverage
+    )
+    target_link_options(kernel_ut_gcov INTERFACE
+        -fprofile-arcs -ftest-coverage
+    )
+    target_link_libraries(kernel_ut_gcov INTERFACE -lgcov)
+    message(STATUS "Kernel UT code coverage: ENABLED")
+endif()
 
 include_directories(${GTEST_INCLUDE})
 set(KERNEL_UT_GTEST_DEP third_party_gtest)
@@ -150,6 +166,12 @@ foreach(_soc_short ${KERNEL_UT_SOC_LIST})
             ${_op_flags}
         )
 
+        if(ENABLE_GCOV)
+            target_link_libraries(${_tgt} PRIVATE tikicpulib::${_soc_long} kernel_ut_gcov)
+        else()
+            target_link_libraries(${_tgt} PRIVATE tikicpulib::${_soc_long})
+        endif()
+
         target_include_directories(${_tgt} PRIVATE
             ${OPS_TENSOR_ROOT}/include
             ${OPS_TENSOR_ROOT}/include/tensor_api/include
@@ -188,12 +210,22 @@ foreach(_soc_short ${KERNEL_UT_SOC_LIST})
 
     target_compile_options(${_exe} PRIVATE -D_GLIBCXX_USE_CXX11_ABI=0)
 
-    target_link_libraries(${_exe} PRIVATE
-        GTest::gtest
-        GTest::gtest_main
-        tikicpulib::${_soc_long}
-        pthread
-    )
+    if(ENABLE_GCOV)
+        target_link_libraries(${_exe} PRIVATE
+            GTest::gtest
+            GTest::gtest_main
+            tikicpulib::${_soc_long}
+            pthread
+            kernel_ut_gcov
+        )
+    else()
+        target_link_libraries(${_exe} PRIVATE
+            GTest::gtest
+            GTest::gtest_main
+            tikicpulib::${_soc_long}
+            pthread
+        )
+    endif()
 
     target_include_directories(${_exe} PRIVATE
         ${OPS_TENSOR_ROOT}/include
@@ -219,3 +251,26 @@ endif()
 
 message(STATUS "ops_tensor Kernel UT configured: SoCs=[${BUILT_SOC_LIST}]")
 message(STATUS "ops_tensor Kernel UT configuration completed")
+
+# ============================================================================
+# 代码覆盖率收集 target
+# ============================================================================
+if(ENABLE_GCOV)
+    set(_cov_report ${CMAKE_BINARY_DIR}/cov_report)
+    set(_cov_data ${_cov_report}/coverage.info)
+    set(_gen_cov_script ${CMAKE_CURRENT_SOURCE_DIR}/cmake/scripts/generate_cpp_cov.sh)
+
+    # 收集所有可执行文件 target 名作为依赖
+    set(_ut_exe_targets "")
+    foreach(_soc ${BUILT_SOC_LIST})
+        list(APPEND _ut_exe_targets "${UT_EXE_NAME}_${_soc}")
+    endforeach()
+
+    add_custom_target(collect_coverage_data
+        COMMAND bash ${_gen_cov_script}
+                ${CMAKE_BINARY_DIR} ${_cov_data} ${_cov_report} ${ASCEND_HOME_PATH}
+        DEPENDS ${_ut_exe_targets}
+        COMMENT "Collect coverage data with lcov and generate HTML report"
+    )
+    message(STATUS "collect_coverage_data target added (depends: ${_ut_exe_targets})")
+endif()

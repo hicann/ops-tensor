@@ -81,6 +81,7 @@ CANN_3RD_LIB_PATH="${SCRIPT_DIR}/third_party"
 OP_KERNEL_MODE=false
 EXAMPLES_MODE=false
 EXAMPLE_TARGET=""
+COV=false  # 代码覆盖率（仅 Kernel UT 模式支持）
 
 # 设置 _ASCEND_INSTALL_PATH（优先级：ASCEND_INSTALL_PATH > ASCEND_HOME_PATH > 默认值）
 if [ -n "$ASCEND_INSTALL_PATH" ]; then
@@ -242,6 +243,7 @@ Kernel UT:
   --opkernel -u --ops=OP Build and run kernel UT for specified operators
                          Operators are subdirectories under tests/ut/op_kernel/
                          Examples: mat_mul, quant_batch_matmul
+  --cov                Enable code coverage for kernel UT (must be used with --opkernel -u)
 
 Kernel UT Examples:
   $(basename "$0") --opkernel -u --ops=mat_mul
@@ -518,8 +520,59 @@ run_tests() {
     fi
 }
 
+collect_coverage() {
+    log_info "Collecting code coverage data..."
+
+    local _build_dir="${SCRIPT_DIR}/build/kernel_ut"
+    local _gcov_data="${_build_dir}/gcov_data"
+    local _cov_report="${_build_dir}/cov_report"
+    local _cov_info="${_cov_report}/coverage.info"
+    local _gen_script="${SCRIPT_DIR}/tests/ut/op_kernel/cmake/scripts/generate_cpp_cov.sh"
+
+    if [ ! -f "$_gen_script" ]; then
+        log_error "Coverage script not found: $_gen_script"
+        exit 1
+    fi
+
+    # GCOV_PREFIX 导致 .gcda 写到 gcov_data 目录，而 .gcno 在 build 目录原位置
+    # lcov 需要 .gcda 和 .gcno 在同目录，配对复制
+    log_info "Pairing .gcno files with .gcda..."
+    local _paired=0
+    for gcda in $(find "$_gcov_data" -name "*.gcda"); do
+        local orig_path="${gcda#$_gcov_data}"
+        local gcno_src="${orig_path%.gcda}.gcno"
+        local gcno_dst="${gcda%.gcda}.gcno"
+        if [ -f "$gcno_src" ]; then
+            cp "$gcno_src" "$gcno_dst"
+            _paired=$((_paired + 1))
+        fi
+    done
+    log_info "Paired ${_paired} .gcno files"
+
+    bash "$_gen_script" "$_build_dir" "$_cov_info" "$_cov_report" "$ASCEND_HOME_PATH" "$(dirname "$SCRIPT_DIR")"
+    if [ $? -ne 0 ]; then
+        log_error "Coverage report generation failed"
+        exit 1
+    fi
+
+    log_success "Coverage report: ${_cov_report}/index.html"
+
+    local _pkg="${SCRIPT_DIR}/build/kernel_ut/coverage.tar.gz"
+    tar -czf "$_pkg" -C "$(dirname "$_cov_report")" cov_report
+    log_success "Coverage package: ${_pkg}"
+}
+
 run_kernel_ut() {
     log_info "Running Kernel UT tests (timeout: ${TEST_TIMEOUT}s)..."
+
+    # 设置 GCOV_PREFIX 让 .gcda 写到独立目录，避免 fork 子进程并发写冲突
+    if [ "$COV" = true ]; then
+        local _gcov_dir="${SCRIPT_DIR}/build/kernel_ut/gcov_data"
+        rm -rf "$_gcov_dir"
+        mkdir -p "$_gcov_dir"
+        export GCOV_PREFIX="$_gcov_dir"
+        log_info "GCOV_PREFIX set to: $_gcov_dir"
+    fi
 
     local executables=($(ls ops_tensor_kernel_ut_* 2>/dev/null | grep -v '\.' || true))
     if [ ${#executables[@]} -eq 0 ]; then
@@ -554,57 +607,51 @@ run_kernel_ut() {
     else
         log_success "Kernel UT all SoC tests passed"
     fi
+
+    if [ "$COV" = true ]; then
+        collect_coverage
+    fi
 }
 
 # 初始化 tensor_api submodule（Kernel UT / Examples 编译依赖）
 # 使用 superproject 记录的 pinned commit，不更新到分支最新
 update_tensor_api_submodule() {
-    log_info "Initializing tensor_api submodule (at pinned commit)..."
+    local _submod_dir="${SCRIPT_DIR}/include/tensor_api"
+    local _repo_url="https://gitcode.com/cann/asc-devkit.git"
+    local _repo_branch="feature/tensor_api_from_9.0.0"
 
+    if [ -d "$_submod_dir" ] && [ -n "$(ls -A "$_submod_dir" 2>/dev/null)" ]; then
+        log_info "tensor_api already exists, skip init"
+        return 0
+    fi
+
+    log_info "Initializing tensor_api submodule..."
+
+    local _fail_msg=""
     if ! command -v git &> /dev/null; then
-        log_error "git is not installed, cannot initialize tensor_api submodule"
+        _fail_msg="git is not installed"
+    elif ! (cd "${SCRIPT_DIR}" && git rev-parse --is-inside-work-tree &> /dev/null); then
+        _fail_msg="not a git repository: ${SCRIPT_DIR}"
+    else
+        set +e
+        (cd "${SCRIPT_DIR}" && git submodule update --init --recursive include/tensor_api 2>&1)
+        local _rc=$?
+        set -e
+        if [ ${_rc} -ne 0 ]; then
+            _fail_msg="git submodule update failed (exit code: ${_rc})"
+        elif [ -z "$(ls -A "${_submod_dir}" 2>/dev/null)" ]; then
+            _fail_msg="tensor_api directory is empty after init"
+        fi
+    fi
+
+    if [ -n "$_fail_msg" ]; then
+        log_error "${_fail_msg}"
+        log_error "Manually download and place at: ${_submod_dir}"
+        log_error "Repo: ${_repo_url} (branch: ${_repo_branch})"
         exit 1
     fi
 
-    # submodule 命令必须在仓库根目录执行
-    local _orig_dir="$(pwd)"
-    cd "${SCRIPT_DIR}"
-
-    if ! git rev-parse --is-inside-work-tree &> /dev/null; then
-        log_error "Not a git repository: ${SCRIPT_DIR}"
-        log_error "Cannot initialize tensor_api submodule. Please ensure ops-tensor is a git clone."
-        cd "${_orig_dir}"
-        exit 1
-    fi
-
-    # --init / --recursive: 初始化 submodule 并递归处理嵌套 submodule
-    # 不使用 --remote：checkout superproject 记录的 commit，不从配置分支拉取最新
-    set +e
-    git submodule update --init --recursive include/tensor_api 2>&1
-    local _rc=$?
-    set -e
-
-    cd "${_orig_dir}"
-
-    if [ ${_rc} -ne 0 ]; then
-        log_error "Failed to initialize tensor_api submodule (exit code: ${_rc})"
-        log_error "Possible causes:"
-        log_error "  1. Network issue - check connectivity to gitcode.com"
-        log_error "  2. Authentication issue - configure git credentials for gitcode.com"
-        log_error "  3. Pinned commit no longer exists in remote (run 'git fetch' in submodule)"
-        log_error ""
-        log_error "Manual recovery:"
-        log_error "  cd ${SCRIPT_DIR} && git submodule update --init --recursive include/tensor_api"
-        exit 1
-    fi
-
-    if [ -z "$(ls -A ${SCRIPT_DIR}/include/tensor_api/ 2>/dev/null)" ]; then
-        log_error "tensor_api submodule directory is empty after init"
-        log_error "This should not happen - please verify submodule configuration in .gitmodules"
-        exit 1
-    fi
-
-    log_success "tensor_api submodule initialized successfully"
+    log_success "tensor_api submodule initialized"
 }
 
 build_kernel_ut() {
@@ -643,6 +690,11 @@ build_kernel_ut() {
     fi
 
     cmake_args+=(-DCANN_3RD_LIB_PATH="${CANN_3RD_LIB_PATH}")
+
+    if [ "$COV" = true ]; then
+        cmake_args+=(-DENABLE_GCOV=true)
+        log_info "Code coverage: ENABLED"
+    fi
 
     log_info "Configuring Kernel UT CMake..."
     cmake "${cmake_args[@]}" "$KERNEL_UT_SRC"
@@ -768,6 +820,10 @@ parse_arguments() {
                 ;;
             --cann_3rd_lib_path=*)
                 CANN_3RD_LIB_PATH="$(realpath ${1#*=})"
+                shift
+                ;;
+            --cov)
+                COV=true
                 shift
                 ;;
             --opkernel)
