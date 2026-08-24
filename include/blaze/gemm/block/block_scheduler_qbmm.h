@@ -106,7 +106,7 @@ public:
 
     __aicore__ inline int64_t GetEndBlockIdx() { return endBlockIdx_; }
 
-    template <QuantMode AQuantMode_, QuantMode BQuantMode_, bool WeightNz_ = false>
+    template <QuantMode AQuantMode_, QuantMode BQuantMode_, bool WeightNz_ = false, uint64_t NAlignValue_ = 1>
     __aicore__ inline BlockShape GetBlockShape(BlockCoord blockCoord)
     {
         int64_t singleCoreM = baseM_;
@@ -148,6 +148,10 @@ public:
             } else {
                 singleCoreNSplit = Align16(singleCoreNSplit);
             }
+        }
+        if constexpr (NAlignValue_ > 1) {
+            singleCoreNSplit = static_cast<int64_t>((static_cast<uint64_t>(singleCoreNSplit) + NAlignValue_ - 1) &
+                                                    ~(NAlignValue_ - 1));
         }
 
         const int64_t tailSplitIdx = blockIdx_ % totalTailTile_;

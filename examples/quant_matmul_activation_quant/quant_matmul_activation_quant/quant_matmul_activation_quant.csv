@@ -1,0 +1,15 @@
+casename,m,k,n,bias,a_dtype,b_dtype,transA,transB,base_m,base_n,base_k,tile_k_l1,scale_k_l1,l1_buffers,db_l0c,a_full_load
+nz_basic_fp8e4m3,64,128,128,0,fp8_e4m3,fp8_e4m3,false,false,64,128,64,64,64,2,1,false
+nz_bias_fp8e4m3,64,128,128,128,fp8_e4m3,fp8_e4m3,false,false,64,128,64,64,64,2,1,false
+nz_fp8e5m2_fp8_e4m3,64,128,128,0,fp8_e5m2,fp8_e4m3,false,false,64,128,64,64,64,2,1,false
+nz_fp8e4m3_fp8_e4m3,64,128,128,0,fp8_e4m3,fp8_e4m3,false,false,64,128,64,64,64,2,1,false
+nz_fp8e5m2_fp8e4m3_bias,64,128,128,128,fp8_e5m2,fp8_e4m3,false,false,64,128,64,64,64,2,1,false
+nz_fp8e4m3_afl,64,128,128,0,fp8_e4m3,fp8_e4m3,false,false,64,128,64,64,64,2,2,true
+nz_fp8e5m2_afl_bias,64,128,128,128,fp8_e5m2,fp8_e4m3,false,false,64,128,64,64,64,2,2,true
+nz_fp8e4m3_dbl0c2,128,256,256,0,fp8_e4m3,fp8_e4m3,false,false,128,128,128,128,128,2,2,false
+nz_fp8e4m3_transB,64,128,128,0,fp8_e4m3,fp8_e4m3,false,true,64,128,64,64,64,2,1,false
+nz_fp8e4m3_transA,64,128,128,0,fp8_e4m3,fp8_e4m3,true,false,64,128,64,64,64,2,1,false
+nz_fp8e4m3_transA_transB_bias,64,128,128,128,fp8_e4m3,fp8_e4m3,true,true,64,128,64,64,64,2,1,false
+nz_fp8e5m2_dbl0c2_afl,128,256,256,256,fp8_e5m2,fp8_e4m3,false,false,128,128,128,128,128,2,2,true
+nz_large_fp8e4m3,256,512,256,0,fp8_e4m3,fp8_e4m3,false,false,128,128,128,256,256,2,1,false
+nz_fp8e4m3_fp8_e4m3_transB_bias,128,256,256,256,fp8_e4m3,fp8_e4m3,false,true,128,128,128,128,128,2,1,false
