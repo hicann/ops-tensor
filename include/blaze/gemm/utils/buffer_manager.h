@@ -101,9 +101,25 @@ struct BufferIdLayout {
 template <pipe_t Pipe>
 class ScopedSyncLock {
 public:
-    __aicore__ inline ScopedSyncLock(uint8_t bufferId) : bufferId_(bufferId) { asc_lock(Pipe, bufferId_); }
+    __aicore__ inline ScopedSyncLock(uint8_t bufferId) : bufferId_(bufferId)
+    {
+        if ASCEND_IS_AIV {
+            if constexpr (Pipe == pipe_t::PIPE_M || Pipe == pipe_t::PIPE_FIX || Pipe == pipe_t::PIPE_MTE1) {
+                return;
+            }
+        }
+        asc_lock(Pipe, bufferId_);
+    }
 
-    __aicore__ inline ~ScopedSyncLock() { asc_unlock(Pipe, bufferId_); }
+    __aicore__ inline ~ScopedSyncLock()
+    {
+        if ASCEND_IS_AIV {
+            if constexpr (Pipe == pipe_t::PIPE_M || Pipe == pipe_t::PIPE_FIX || Pipe == pipe_t::PIPE_MTE1) {
+                return;
+            }
+        }
+        asc_unlock(Pipe, bufferId_);
+    }
 
     ScopedSyncLock(const ScopedSyncLock&) = delete;
     ScopedSyncLock& operator=(const ScopedSyncLock&) = delete;
