@@ -24,9 +24,17 @@ import torch
 FULL_TENSOR_PRINT_MAX_ELEMENTS = 128
 
 DTYPE_CONFIG = {
-    "float32":  {"np_dtype": np.float32, "torch_dtype": torch.float32, "ratio_tol": 1e-4},
-    "bfloat16": {"np_dtype": np.uint16,  "torch_dtype": torch.bfloat16, "ratio_tol": 5e-3},
-    "float16":  {"np_dtype": np.uint16,  "torch_dtype": torch.float16, "ratio_tol": 5e-3},
+    "float32": {
+        "np_dtype": np.float32,
+        "torch_dtype": torch.float32,
+        "ratio_tol": 1e-4,
+    },
+    "bfloat16": {
+        "np_dtype": np.uint16,
+        "torch_dtype": torch.bfloat16,
+        "ratio_tol": 5e-3,
+    },
+    "float16": {"np_dtype": np.uint16, "torch_dtype": torch.float16, "ratio_tol": 5e-3},
 }
 
 
@@ -39,13 +47,19 @@ class VerifySummaryCfg:
     ratio_tol: float
 
 
-def _compute_ratio_error_mask(golden_f32, npu_f32, abs_diff, non_finite_mask, dtype_str, ratio_tol):
+def _compute_ratio_error_mask(
+    golden_f32, npu_f32, abs_diff, non_finite_mask, dtype_str, ratio_tol
+):
     if dtype_str == "float32":
         max_ab = torch.maximum(torch.abs(golden_f32), torch.abs(npu_f32))
         metric = torch.where(
             max_ab > 0,
             abs_diff / max_ab,
-            torch.where(abs_diff == 0, torch.zeros_like(abs_diff), torch.full_like(abs_diff, float("inf"))),
+            torch.where(
+                abs_diff == 0,
+                torch.zeros_like(abs_diff),
+                torch.full_like(abs_diff, float("inf")),
+            ),
         )
     else:
         metric = abs_diff
@@ -58,7 +72,9 @@ def _ratio_label(dtype_str, ratio_tol):
     return f">{ratio_tol:g}"
 
 
-def _print_large_tensor_summary(golden_tensor, npu_output_tensor, cfg: VerifySummaryCfg):
+def _print_large_tensor_summary(
+    golden_tensor, npu_output_tensor, cfg: VerifySummaryCfg
+):
     g = golden_tensor.float()
     p = npu_output_tensor.float()
     diff = p - g
@@ -68,12 +84,16 @@ def _print_large_tensor_summary(golden_tensor, npu_output_tensor, cfg: VerifySum
 
     numel = cfg.m * cfg.batch * cfg.n
     no_non_finite = torch.zeros_like(g, dtype=torch.bool)
-    ratio_mask = _compute_ratio_error_mask(g, p, abs_err, no_non_finite, cfg.dtype_str, cfg.ratio_tol)
+    ratio_mask = _compute_ratio_error_mask(
+        g, p, abs_err, no_non_finite, cfg.dtype_str, cfg.ratio_tol
+    )
     over_tol = ratio_mask.sum().item()
 
     print(f"\n[verify] shape=({cfg.m}, {cfg.batch}, {cfg.n}), elements={numel}")
     print(f"  rel_err: max={rel_err.max().item():.6e}")
-    print(f"  count({_ratio_label(cfg.dtype_str, cfg.ratio_tol)}): {over_tol} / {numel}")
+    print(
+        f"  count({_ratio_label(cfg.dtype_str, cfg.ratio_tol)}): {over_tol} / {numel}"
+    )
 
 
 def verify_result(m, batch, n, dtype_str, is_hf32=False):
@@ -97,21 +117,20 @@ def verify_result(m, batch, n, dtype_str, is_hf32=False):
         print("\ncpu golden:\n", golden_tensor)
         print("npu output:\n", npu_output_tensor)
     else:
-        summary_cfg = VerifySummaryCfg(m=m, batch=batch, n=n, dtype_str=dtype_str,
-        ratio_tol=ratio_tol)
+        summary_cfg = VerifySummaryCfg(
+            m=m, batch=batch, n=n, dtype_str=dtype_str, ratio_tol=ratio_tol
+        )
         _print_large_tensor_summary(golden_tensor, npu_output_tensor, summary_cfg)
 
     golden_f32 = golden_tensor.to(torch.float32)
     npu_f32 = npu_output_tensor.to(torch.float32)
     abs_diff = torch.abs(golden_f32 - npu_f32)
-    non_finite_mask = ~(torch.isfinite(golden_f32) & torch.isfinite(npu_f32) & torch.isfinite(abs_diff))
-    abs_golden = torch.abs(golden_f32)
-    rel_diff = torch.where(
-        abs_golden > 0,
-        abs_diff / abs_golden,
-        torch.where(abs_diff == 0, torch.zeros_like(abs_diff), torch.full_like(abs_diff, float("inf"))),
+    non_finite_mask = ~(
+        torch.isfinite(golden_f32) & torch.isfinite(npu_f32) & torch.isfinite(abs_diff)
     )
-    ratio_error_mask = _compute_ratio_error_mask(golden_f32, npu_f32, abs_diff, non_finite_mask, dtype_str, ratio_tol)
+    ratio_error_mask = _compute_ratio_error_mask(
+        golden_f32, npu_f32, abs_diff, non_finite_mask, dtype_str, ratio_tol
+    )
 
     error_count = int(ratio_error_mask.sum().item())
     error_ratio = error_count / numel if numel else 0.0
@@ -126,12 +145,15 @@ def verify_result(m, batch, n, dtype_str, is_hf32=False):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Verify NPU output against CPU golden.")
+    parser = argparse.ArgumentParser(
+        description="Verify NPU output against CPU golden."
+    )
     parser.add_argument("m", type=int, help="Matrix M dimension")
     parser.add_argument("batch", type=int, help="Batch dimension")
     parser.add_argument("n", type=int, help="Matrix N dimension")
-    parser.add_argument("dtype", nargs="?", default="float16", help="Data type (default: float16)")
-    parser.add_argument("--bias", type=int, default=0, help="Bias size (0 means no bias)")
+    parser.add_argument(
+        "dtype", nargs="?", default="float16", help="Data type (default: float16)"
+    )
     parser.add_argument("--hf32", action="store_true", help="Enable HF32")
     args = parser.parse_args()
 

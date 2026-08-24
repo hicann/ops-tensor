@@ -23,7 +23,7 @@
 - 输入 B shape: `[batch, k, n]`
 - 输出 C shape: `[m, batch, n]`（始终转置 batch）
 - 数据类型: float16, bfloat16, float32
-- bias: 1D 向量，大小等于 n 或 0（无 bias）
+- bias: 不支持（本算子使用空 Epilogue，不接收 bias 输入）
 
 ## 数据布局说明
 
@@ -61,15 +61,14 @@ bash examples/common/run.sh --ops=transpose_batch_mat_mul --target=transpose_bat
 测试用例定义在 `transpose_batch_mat_mul_basic.csv` 中，格式如下：
 
 ```csv
-casename,m,k,n,batch,bias,dtype,trans_batch_a,hf32
-tbmm_basic_fp16_batch2,128,128,128,2,0,float16,false,false
-tbmm_basic_bf16_batch4,128,128,128,4,0,bfloat16,false,false
-tbmm_basic_fp32_batch2,128,128,128,2,0,float32,false,false
-tbmm_basic_fp16_trans_batch_a,128,128,128,2,0,float16,true,false
-tbmm_basic_bf16_trans_batch_a,128,128,128,4,0,bfloat16,true,false
-tbmm_basic_fp32_trans_batch_a,128,128,128,2,0,float32,true,false
-tbmm_basic_fp16_bias,128,128,128,2,128,float16,false,false
-tbmm_basic_fp32_hf32,128,128,128,2,0,float32,false,true
+casename,m,k,n,batch,dtype,trans_batch_a,hf32
+tbmm_basic_fp16_batch2,128,128,128,2,float16,false,false
+tbmm_basic_bf16_batch4,128,128,128,4,bfloat16,false,false
+tbmm_basic_fp32_batch2,128,128,128,2,float32,false,false
+tbmm_basic_fp16_trans_batch_a,128,128,128,2,float16,true,false
+tbmm_basic_bf16_trans_batch_a,128,128,128,4,bfloat16,true,false
+tbmm_basic_fp32_trans_batch_a,128,128,128,2,float32,true,false
+tbmm_basic_fp32_hf32,128,128,128,2,float32,false,true
 ```
 
 **列说明**：
@@ -79,7 +78,6 @@ tbmm_basic_fp32_hf32,128,128,128,2,0,float32,false,true
 | casename | 用例名称 |
 | m, k, n | 矩阵维度 |
 | batch | batch 维度大小 |
-| bias | bias 向量大小，必须等于 n 或 0（无 bias） |
 | dtype | 数据类型：float16 / bfloat16 / float32 |
 | trans_batch_a | A 矩阵是否使用转置 batch 布局 |
 | hf32 | 是否启用 HF32 模式（仅 float32 有效） |
@@ -96,7 +94,6 @@ tbmm_basic_fp32_hf32,128,128,128,2,0,float32,false,true
 
 - `input/input_a.bin`: A 矩阵（布局取决于 transBatchA）
 - `input/input_b.bin`: B 矩阵 `[batch, k, n]`
-- `input/bias.bin`: bias 向量（bias>0 时生成）
 - `output/cpu_output.bin`: CPU 参考结果 `[m, batch, n]`
 
 ### 输出数据

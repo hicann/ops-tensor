@@ -14,7 +14,6 @@
 import os
 import sys
 from dataclasses import dataclass
-from typing import Optional
 
 os.environ["TORCH_DEVICE_BACKEND_AUTOLOAD"] = "0"
 
@@ -42,8 +41,6 @@ class GemmGenConfig:
     batch: int
     trans_batch_a: bool
     dtype: torch.dtype
-    bias_size: int = 0
-    bias_tensor: Optional[torch.Tensor] = None
 
 
 def write_artifacts(base_dir, a_data, b_data, out, dtype):
@@ -58,29 +55,17 @@ def write_artifacts(base_dir, a_data, b_data, out, dtype):
     out.view(vt).numpy().tofile(os.path.join(output_dir, "cpu_output.bin"))
 
 
-def generate_bias(n, dtype):
-    lo, hi = (-1, 1) if dtype in (torch.float16, torch.bfloat16) else (0.0, 1.0)
-    bias = np.random.uniform(lo, hi, n).astype(np.float32)
-    bias_tensor = torch.from_numpy(bias).to(dtype)
-    vt = VIEW_TYPE_MAP[dtype]
-    input_dir = os.path.join(os.getcwd(), 'input')
-    os.makedirs(input_dir, exist_ok=True)
-    bias_tensor.view(vt).numpy().tofile(os.path.join(input_dir, 'bias.bin'))
-    print(f"[INFO] Generated bias: {n} elements, dtype={dtype}")
-    return bias_tensor
-
-
 def gen_golden_data(cfg: GemmGenConfig):
     lo, hi = (-1.0, 1.0) if cfg.dtype in (torch.float16, torch.bfloat16) else (0.0, 1.0)
 
-    a_logical = torch.from_numpy(np.random.uniform(lo, hi, (cfg.batch, cfg.m, cfg.k)).astype(np.float32)).to(cfg.dtype)
-    b = torch.from_numpy(np.random.uniform(lo, hi, (cfg.batch, cfg.k, cfg.n)).astype(np.float32)).to(cfg.dtype)
+    a_logical = torch.from_numpy(
+        np.random.uniform(lo, hi, (cfg.batch, cfg.m, cfg.k)).astype(np.float32)
+    ).to(cfg.dtype)
+    b = torch.from_numpy(
+        np.random.uniform(lo, hi, (cfg.batch, cfg.k, cfg.n)).astype(np.float32)
+    ).to(cfg.dtype)
 
-    if cfg.bias_size > 0 and cfg.bias_tensor is not None:
-        out_logical = torch.baddbmm(cfg.bias_tensor.float().reshape(1, 1, cfg.n).expand(cfg.batch, 1, cfg.n),
-                                     a_logical.float(), b.float()).to(cfg.dtype)
-    else:
-        out_logical = torch.matmul(a_logical.float(), b.float()).to(cfg.dtype)
+    out_logical = torch.matmul(a_logical.float(), b.float()).to(cfg.dtype)
 
     # C is always stored in transposed-batch layout: [m, batch, n]
     out_stored = out_logical.transpose(0, 1).contiguous()
@@ -95,15 +80,17 @@ def gen_golden_data(cfg: GemmGenConfig):
     write_artifacts(current_dir, a_stored, b, out_stored, cfg.dtype)
 
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    if os.path.normcase(os.path.abspath(script_dir)) != os.path.normcase(os.path.abspath(current_dir)):
+    if os.path.normcase(os.path.abspath(script_dir)) != os.path.normcase(
+        os.path.abspath(current_dir)
+    ):
         write_artifacts(script_dir, a_stored, b, out_stored, cfg.dtype)
 
     print("Data generated successfully!")
 
 
 if __name__ == "__main__":
-    if len(sys.argv) not in (5, 7, 8, 9):
-        print("Usage: python3 gen_data.py m k n batch [trans_batch_a] [dtype] [bias]")
+    if len(sys.argv) not in (5, 6, 7):
+        print("Usage: python3 gen_data.py m k n batch [trans_batch_a] [dtype]")
         sys.exit(1)
 
     m = int(sys.argv[1])
@@ -125,21 +112,13 @@ if __name__ == "__main__":
     else:
         DATA_TYPE = torch.float16
 
-    bias = 0
-    if len(sys.argv) >= 8:
-        bias = int(sys.argv[7])
-        if bias != 0 and bias != n:
-            print(f"Error: bias ({bias}) must equal n ({n}) or 0")
-            sys.exit(1)
-
-    bias_tensor = None
-    if bias > 0:
-        bias_tensor = generate_bias(bias, DATA_TYPE)
-    
     cfg = GemmGenConfig(
-        m=m, k=k, n=n, batch=batch,
-        trans_batch_a=trans_batch_a, dtype=DATA_TYPE,
-        bias_size=bias, bias_tensor=bias_tensor,
+        m=m,
+        k=k,
+        n=n,
+        batch=batch,
+        trans_batch_a=trans_batch_a,
+        dtype=DATA_TYPE,
     )
 
     gen_golden_data(cfg)

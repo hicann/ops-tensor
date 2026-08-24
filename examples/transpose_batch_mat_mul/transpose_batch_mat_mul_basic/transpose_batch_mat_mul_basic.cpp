@@ -59,10 +59,11 @@ struct TilingConfig {
     static constexpr int L0C_DB = 1;
 };
 
-static TilingConfig GetTilingConfig(const std::string &dtype) {
+static TilingConfig GetTilingConfig(const std::string& dtype)
+{
     if (dtype == "float32") {
         return {128, 128, 128, 128, 128, 64, 4};
-    } else {  // float16, bfloat16
+    } else { // float16, bfloat16
         return {128, 128, 128, 128, 128, 64, 2};
     }
 }
@@ -79,19 +80,19 @@ struct CliArgs {
     bool transBatchA = false;
     std::string dtype = "float16";
     bool isHf32 = false;
-    int64_t bias = 0;
 };
 
-static bool ParseBool(const char *s) {
+static bool ParseBool(const char* s)
+{
     std::string str(s);
     return str == "true" || str == "1" || str == "True";
 }
 
-static bool ParseCliArgs(int argc, const char **argv, CliArgs &args) {
+static bool ParseCliArgs(int argc, const char** argv, CliArgs& args)
+{
     if (argc < 5) {
         std::cerr << "Error: Missing required arguments.\n";
-        std::cerr << "Usage: " << argv[0]
-                  << " <m> <k> <n> <batch> [transBatchA] [dtype] [isHf32] [bias]\n";
+        std::cerr << "Usage: " << argv[0] << " <m> <k> <n> <batch> [transBatchA] [dtype] [isHf32]\n";
         return false;
     }
 
@@ -109,17 +110,9 @@ static bool ParseCliArgs(int argc, const char **argv, CliArgs &args) {
     if (argc >= 8) {
         args.isHf32 = ParseBool(argv[7]);
     }
-    if (argc >= 9) {
-        args.bias = std::atoll(argv[8]);
-    }
 
     if (args.m <= 0 || args.k <= 0 || args.n <= 0 || args.batch <= 0) {
         std::cerr << "Error: M, K, N, batch must be positive integers.\n";
-        return false;
-    }
-
-    if (args.bias != 0 && args.bias != args.n) {
-        std::cerr << "Error: bias (" << args.bias << ") must equal n (" << args.n << ") or be 0\n";
         return false;
     }
 
@@ -144,11 +137,10 @@ using ProblemShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t, int6
 using BlockScheduler = Blaze::Gemm::Block::BlockSchedulerMatmulBasic<ProblemShape>;
 
 template <class A_TYPE, class B_TYPE, class C_TYPE, class BIAS_TYPE, uint64_t NON_CONTIGUOUS_TYPE>
-__global__ __aicore__ void tbmm_basic_kernel(
-    GM_ADDR aGM, GM_ADDR bGM, GM_ADDR cGM, GM_ADDR biasGM, GM_ADDR workspaceGM,
-    int64_t m, int64_t n, int64_t k, int64_t batch, int64_t batchSplitFactor,
-    int64_t mL1, int64_t nL1, int64_t kL1, int64_t baseM, int64_t baseN, int64_t baseK,
-    bool isHf32)
+__global__ __aicore__ void tbmm_basic_kernel(GM_ADDR aGM, GM_ADDR bGM, GM_ADDR cGM, GM_ADDR biasGM, GM_ADDR workspaceGM,
+                                             int64_t m, int64_t n, int64_t k, int64_t batch, int64_t batchSplitFactor,
+                                             int64_t mL1, int64_t nL1, int64_t kL1, int64_t baseM, int64_t baseN,
+                                             int64_t baseK, bool isHf32)
 {
     KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_MIX_AIC_1_2);
     AscendC::InitSocState();
@@ -158,10 +150,10 @@ __global__ __aicore__ void tbmm_basic_kernel(
     using LayoutC = AscendC::Te::NDExtLayoutPtn;
     using LayoutBias = AscendC::Te::NDExtLayoutPtn;
 
-    using DispatchPolicy = Blaze::Gemm::MatmulMultiBlockBasic<
-        0, 0, Blaze::Gemm::KernelMmadMultiBlockTBMM, NON_CONTIGUOUS_TYPE>;
-    using BlockMmad = Blaze::Gemm::Block::BlockMmad<
-        DispatchPolicy, A_TYPE, LayoutA, B_TYPE, LayoutB, C_TYPE, LayoutC, BIAS_TYPE, LayoutBias>;
+    using DispatchPolicy = Blaze::Gemm::MatmulMultiBlockBasic<0, 0, Blaze::Gemm::KernelMmadMultiBlockTBMM,
+                                                              NON_CONTIGUOUS_TYPE>;
+    using BlockMmad = Blaze::Gemm::Block::BlockMmad<DispatchPolicy, A_TYPE, LayoutA, B_TYPE, LayoutB, C_TYPE, LayoutC,
+                                                    BIAS_TYPE, LayoutBias>;
     using BlockEpilogue = Blaze::Gemm::Block::BlockEpilogueEmpty;
     using MatmulKernel = Blaze::Gemm::Kernel::GemmUniversal<ProblemShape, BlockMmad, BlockEpilogue, BlockScheduler>;
 
@@ -173,9 +165,8 @@ __global__ __aicore__ void tbmm_basic_kernel(
          static_cast<uint32_t>(baseK), TilingConfig::L1_BUFFER_NUM, TilingConfig::L0C_DB},
         {},
         {static_cast<uint32_t>(mL1), static_cast<uint32_t>(nL1), static_cast<uint32_t>(kL1),
-         static_cast<uint32_t>(baseM), static_cast<uint32_t>(baseN), static_cast<uint32_t>(baseK),
-         0, 0, 1, 1, 1, 1, static_cast<uint8_t>(isHf32 ? 1 : 0), Blaze::Gemm::L2_CACHE_DEFAULT,
-         1, 1, 1}};
+         static_cast<uint32_t>(baseM), static_cast<uint32_t>(baseN), static_cast<uint32_t>(baseK), 0, 0, 1, 1, 1, 1,
+         static_cast<uint8_t>(isHf32 ? 1 : 0), Blaze::Gemm::L2_CACHE_DEFAULT, 1, 1, 1}};
 
     MatmulKernel kernel;
     kernel(params);
@@ -188,28 +179,27 @@ __global__ __aicore__ void tbmm_basic_kernel(
 namespace {
 
 template <class A_TYPE, class B_TYPE, class C_TYPE, class BIAS_TYPE, bool TransBatchA>
-void LaunchKernel(int64_t m, int64_t n, int64_t k, int64_t batch,
-                  uint8_t *dA, uint8_t *dB, uint8_t *dC, uint8_t *dBias, uint8_t *dWorkSpace,
-                  const TilingConfig &cfg, int64_t blockNum, aclrtStream stream, bool isHf32)
+void LaunchKernel(int64_t m, int64_t n, int64_t k, int64_t batch, uint8_t* dA, uint8_t* dB, uint8_t* dC, uint8_t* dBias,
+                  uint8_t* dWorkSpace, const TilingConfig& cfg, int64_t blockNum, aclrtStream stream, bool isHf32)
 {
-    constexpr uint64_t NON_CONTIGUOUS_TYPE = TransBatchA
-        ? static_cast<uint64_t>(Blaze::Gemm::NoContiguousType::NON_CONTIGUOUS_TYPE_PERM_X1)
-        : 0ULL;
+    constexpr uint64_t NON_CONTIGUOUS_TYPE = TransBatchA ?
+                                                 static_cast<uint64_t>(
+                                                     Blaze::Gemm::NoContiguousType::NON_CONTIGUOUS_TYPE_PERM_X1) :
+                                                 0ULL;
 
     tbmm_basic_kernel<A_TYPE, B_TYPE, C_TYPE, BIAS_TYPE, NON_CONTIGUOUS_TYPE>
-        <<<blockNum, 0, stream>>>(
-            dA, dB, dC, dBias, dWorkSpace,
-            m, n, k, batch, 1,
-            cfg.mL1, cfg.nL1, cfg.kL1, cfg.baseM, cfg.baseN, cfg.baseK, isHf32);
+        <<<blockNum, 0, stream>>>(dA, dB, dC, dBias, dWorkSpace, m, n, k, batch, 1, cfg.mL1, cfg.nL1, cfg.kL1,
+                                  cfg.baseM, cfg.baseN, cfg.baseK, isHf32);
 }
 
-}  // namespace
+} // namespace
 
 /* ========================================================================== */
 /* Host-side runner                                                            */
 /* ========================================================================== */
 
-static void Run(const CliArgs &args) {
+static void Run(const CliArgs& args)
+{
     aclrtStream stream{nullptr};
 
     ACL_CHECK(aclInit(nullptr));
@@ -230,7 +220,6 @@ static void Run(const CliArgs &args) {
     size_t sizeB = static_cast<size_t>(args.batch) * args.k * args.n * dtypeSize;
     // C is stored as [m, batch, n]
     size_t sizeC = static_cast<size_t>(args.m) * args.batch * args.n * dtypeSize;
-    size_t sizeBias = (args.bias > 0) ? static_cast<size_t>(args.bias) * dtypeSize : 0;
 
     size_t workspaceSize = blockNum * tilingCfg.baseM * tilingCfg.baseN * sizeof(float) + RPC_WORKSPACE_PADDING;
 
@@ -261,35 +250,19 @@ static void Run(const CliArgs &args) {
         return;
     }
 
-    // Bias
-    std::vector<uint8_t> hostBias(sizeBias, 0);
-    uint8_t *deviceBias = nullptr;
-
-    if (args.bias > 0) {
-        std::string biasPath = inputDir + "/bias.bin";
-        if (stat(biasPath.c_str(), &st) == 0) {
-            std::cout << "[INFO] Reading " << biasPath << " (" << sizeBias << " bytes)..." << std::endl;
-            if (!ReadFile(biasPath, hostBias.data(), sizeBias)) {
-                std::cerr << "Failed to read bias from " << biasPath << std::endl;
-                return;
-            }
-        } else {
-            std::cout << "[INFO] Bias file not found, using zero-initialized bias" << std::endl;
-        }
-        ACL_CHECK(aclrtMalloc(reinterpret_cast<void **>(&deviceBias), sizeBias, ACL_MEM_MALLOC_HUGE_FIRST));
-        ACL_CHECK(aclrtMemcpy(deviceBias, sizeBias, hostBias.data(), sizeBias, ACL_MEMCPY_HOST_TO_DEVICE));
-    }
+    // Bias is not supported (BlockEpilogueEmpty — bias is never applied)
+    uint8_t* deviceBias = nullptr;
 
     // Allocate device buffers
-    uint8_t *deviceA{nullptr};
-    uint8_t *deviceB{nullptr};
-    uint8_t *deviceC{nullptr};
-    uint8_t *deviceWorkspace{nullptr};
+    uint8_t* deviceA{nullptr};
+    uint8_t* deviceB{nullptr};
+    uint8_t* deviceC{nullptr};
+    uint8_t* deviceWorkspace{nullptr};
 
-    ACL_CHECK(aclrtMalloc(reinterpret_cast<void **>(&deviceA), sizeA, ACL_MEM_MALLOC_HUGE_FIRST));
-    ACL_CHECK(aclrtMalloc(reinterpret_cast<void **>(&deviceB), sizeB, ACL_MEM_MALLOC_HUGE_FIRST));
-    ACL_CHECK(aclrtMalloc(reinterpret_cast<void **>(&deviceC), sizeC, ACL_MEM_MALLOC_HUGE_FIRST));
-    ACL_CHECK(aclrtMalloc(reinterpret_cast<void **>(&deviceWorkspace), workspaceSize, ACL_MEM_MALLOC_HUGE_FIRST));
+    ACL_CHECK(aclrtMalloc(reinterpret_cast<void**>(&deviceA), sizeA, ACL_MEM_MALLOC_HUGE_FIRST));
+    ACL_CHECK(aclrtMalloc(reinterpret_cast<void**>(&deviceB), sizeB, ACL_MEM_MALLOC_HUGE_FIRST));
+    ACL_CHECK(aclrtMalloc(reinterpret_cast<void**>(&deviceC), sizeC, ACL_MEM_MALLOC_HUGE_FIRST));
+    ACL_CHECK(aclrtMalloc(reinterpret_cast<void**>(&deviceWorkspace), workspaceSize, ACL_MEM_MALLOC_HUGE_FIRST));
 
     // Copy H2D
     ACL_CHECK(aclrtMemcpy(deviceA, sizeA, hostA.data(), sizeA, ACL_MEMCPY_HOST_TO_DEVICE));
@@ -299,12 +272,11 @@ static void Run(const CliArgs &args) {
     std::cout << "============================================================" << std::endl;
     std::cout << "  TransposeBatchMatMul Basic — Execution Summary" << std::endl;
     std::cout << "============================================================" << std::endl;
-    std::cout << "  Shape      : M=" << args.m << ", K=" << args.k << ", N=" << args.n
-              << ", Batch=" << args.batch << std::endl;
+    std::cout << "  Shape      : M=" << args.m << ", K=" << args.k << ", N=" << args.n << ", Batch=" << args.batch
+              << std::endl;
     std::cout << "  Dtype      : " << args.dtype << std::endl;
     std::cout << "  transBatchA: " << (args.transBatchA ? "true" : "false") << std::endl;
     std::cout << "  isHf32     : " << (args.isHf32 ? "true" : "false") << std::endl;
-    std::cout << "  bias       : " << args.bias << std::endl;
     std::cout << "  L1 Tile    : [" << tilingCfg.mL1 << ", " << tilingCfg.nL1 << ", " << tilingCfg.kL1 << "]"
               << std::endl;
     std::cout << "  L0 Tile    : [" << tilingCfg.baseM << ", " << tilingCfg.baseN << ", " << tilingCfg.baseK << "]"
@@ -320,33 +292,33 @@ static void Run(const CliArgs &args) {
 
     if (args.dtype == "float32") {
         if (args.transBatchA) {
-            LaunchKernel<float, float, float, float, true>(
-                args.m, args.n, args.k, args.batch, deviceA, deviceB, deviceC, deviceBias, deviceWorkspace,
-                tilingCfg, blockNum, stream, args.isHf32);
+            LaunchKernel<float, float, float, float, true>(args.m, args.n, args.k, args.batch, deviceA, deviceB,
+                                                           deviceC, deviceBias, deviceWorkspace, tilingCfg, blockNum,
+                                                           stream, args.isHf32);
         } else {
-            LaunchKernel<float, float, float, float, false>(
-                args.m, args.n, args.k, args.batch, deviceA, deviceB, deviceC, deviceBias, deviceWorkspace,
-                tilingCfg, blockNum, stream, args.isHf32);
+            LaunchKernel<float, float, float, float, false>(args.m, args.n, args.k, args.batch, deviceA, deviceB,
+                                                            deviceC, deviceBias, deviceWorkspace, tilingCfg, blockNum,
+                                                            stream, args.isHf32);
         }
     } else if (args.dtype == "bfloat16") {
         if (args.transBatchA) {
             LaunchKernel<bfloat16_t, bfloat16_t, bfloat16_t, bfloat16_t, true>(
-                args.m, args.n, args.k, args.batch, deviceA, deviceB, deviceC, deviceBias, deviceWorkspace,
-                tilingCfg, blockNum, stream, args.isHf32);
+                args.m, args.n, args.k, args.batch, deviceA, deviceB, deviceC, deviceBias, deviceWorkspace, tilingCfg,
+                blockNum, stream, args.isHf32);
         } else {
             LaunchKernel<bfloat16_t, bfloat16_t, bfloat16_t, bfloat16_t, false>(
-                args.m, args.n, args.k, args.batch, deviceA, deviceB, deviceC, deviceBias, deviceWorkspace,
-                tilingCfg, blockNum, stream, args.isHf32);
+                args.m, args.n, args.k, args.batch, deviceA, deviceB, deviceC, deviceBias, deviceWorkspace, tilingCfg,
+                blockNum, stream, args.isHf32);
         }
     } else {
         if (args.transBatchA) {
-            LaunchKernel<half, half, half, half, true>(
-                args.m, args.n, args.k, args.batch, deviceA, deviceB, deviceC, deviceBias, deviceWorkspace,
-                tilingCfg, blockNum, stream, args.isHf32);
+            LaunchKernel<half, half, half, half, true>(args.m, args.n, args.k, args.batch, deviceA, deviceB, deviceC,
+                                                       deviceBias, deviceWorkspace, tilingCfg, blockNum, stream,
+                                                       args.isHf32);
         } else {
-            LaunchKernel<half, half, half, half, false>(
-                args.m, args.n, args.k, args.batch, deviceA, deviceB, deviceC, deviceBias, deviceWorkspace,
-                tilingCfg, blockNum, stream, args.isHf32);
+            LaunchKernel<half, half, half, half, false>(args.m, args.n, args.k, args.batch, deviceA, deviceB, deviceC,
+                                                        deviceBias, deviceWorkspace, tilingCfg, blockNum, stream,
+                                                        args.isHf32);
         }
     }
 
@@ -369,9 +341,6 @@ static void Run(const CliArgs &args) {
     ACL_CHECK(aclrtFree(deviceB));
     ACL_CHECK(aclrtFree(deviceC));
     ACL_CHECK(aclrtFree(deviceWorkspace));
-    if (deviceBias != nullptr) {
-        ACL_CHECK(aclrtFree(deviceBias));
-    }
     ACL_CHECK(aclrtDestroyStream(stream));
     ACL_CHECK(aclrtResetDevice(0));
     ACL_CHECK(aclFinalize());
@@ -381,7 +350,8 @@ static void Run(const CliArgs &args) {
 /* Entry point                                                                 */
 /* ========================================================================== */
 
-int main(int argc, const char **argv) {
+int main(int argc, const char** argv)
+{
     CliArgs args;
     if (!ParseCliArgs(argc, argv, args)) {
         return 1;
