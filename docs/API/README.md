@@ -280,10 +280,21 @@ auto gmBlockA = gmA.Slice(
 ```
 blaze/
 ├── include/blaze/
+│   ├── attention/               # Attention 类算子kernel实现
+│   │   ├── kernel/                  # Kernel 层组件
+│   │   │   ├── kernel_universal.h       # AttentionUniversal 基础模板
+│   │   │   └── kernel_flat_quant.h     # FlatQuant Kernel 特化
+│   │   ├── block/                   # Block 层组件
+│   │   │   ├── block_mmad.h             # BlockMmad 基础模板
+│   │   │   ├── block_mmad_flat_quant.h # FlatQuant BlockMmad 特化
+│   │   │   └── block_scheduler_flat_quant.h
+│   │   └── policy/                  # Policy 层
+│   │       └── dispatch_policy.h
 │   ├── epilogue/            # Epilogue 层组件
 │   │   ├── block_epilogue_empty.h
 │   │   ├── block_epilogue_matmul_streamk.h
-│   │   └── block_epilogue_qbmm_pertensor_streamk.h
+│   │   ├── block_epilogue_qbmm_pertensor_streamk.h
+│   │   └── block_epilogue_flat_quant.h  # FlatQuant AIV 量化后处理
 |   └── gemm/
 │       ├── kernel/              # Kernel 层组件
 │       │   ├── kernel_matmul_basic.h
@@ -325,6 +336,10 @@ blaze/
 │
 └── docs/API/                # API 文档
     ├── README.md            # 本文档
+    ├── attention/           # Attention 层文档
+    │   ├── kernel/              # Kernel 层文档
+    │   ├── block/               # Block 层文档
+    │   └── policy/              # Policy 层文档
     ├── epilogue/            # Epilogue 层文档
     |   └── block/                # Block 层文档
     └── gemm/                # Gemm 层文档

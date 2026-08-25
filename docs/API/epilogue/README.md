@@ -10,6 +10,7 @@
 | [block_epilogue_qbmm_pertensor_streamk](./block/block_epilogue_qbmm_pertensor_streamk.md) | QBMM per-tensor StreamK 专用后处理，归约 raw partial 后应用 scale/bias |
 | [block_epilogue_per_token_scale](./block/block_epilogue_per_token_scale.md) | 应用 per-token scale 和可选 row-sum offset 修正 |
 | [block_epilogue_fmm_with_scale_add](./block/block_epilogue_fmm_with_scale_add.md) | FusedMatMul scale_add 向量后处理，执行 alpha × (x1@x2) + beta × x3 |
+| [block_epilogue_flat_quant](./block/block_epilogue_flat_quant.md) | FlatQuant AIV 侧 MX FP4 量化后处理，bf16→eMax→E8M0 scale→FP4 量化 |
 
 ## 公共框架
 
@@ -42,6 +43,7 @@ BlockEpilogue
 | BlockEpilogueDequant | dequant：int32→fp32 × x2Scale [× x1Scale] + bias | AIV 核 | 不支持 | 支持 fp32 → bf16/fp16/fp32 | 不支持 | QBMM MIX Kernel |
 | BlockEpilogueQbmmPertensorStreamK | workspace 归约 + dequant + bias | AIV 核 | 支持 | 支持 int32/fp32 → bf16/fp16/fp32 | 不支持 | QBMM per-tensor StreamK |
 | BlockEpilogueFmmWithScaleAdd | alpha × (x1@x2) + beta × x3 | AIV 核 | 不支持 | 支持 fp32 → bf16/fp16 | 不支持 | FusedMatMul scale_add Kernel |
+| BlockEpilogueFlatQuant | MX FP4 量化：eMax→E8M0 scale→FP4 quant | AIV 核 | 不支持 | 支持 bf16 → FP4(int8) | 不支持 | Attention FlatQuant Kernel |
 
 ## 使用流程
 
