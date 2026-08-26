@@ -39,11 +39,11 @@ struct KernelMmadMultiBlockAFullLoad {};          // Multi-tile aFullLoad
 struct KernelMmadMultiBlockBFullLoad {};          // Multi-tile fullLoad
 struct KernelMmadMultiBlockFixpipeOpti {};        // Multi-tile FixpipeOpti
 struct KernelMmadMultiBlockTBMM {};               // tbmm schedule
+struct KernelMmadMultiBlockTQBMM {};              // tqbmm schedule
 struct KernelMixWithWeightPrologue {};            // Mix matmul with AIV weight preprocessing
 struct KernelGmmSwiGluMixMx {};                   // MIX AIC+AIV schedule for GroupedMatmul + SwiGLU + MX quant
 struct KernelMatmulEmuSplitWeight {};             // Double bf16 matmul to simulate fp32 (AIC+AIV)
 struct KernelMmadWithScaleMxMix {};               // Multi-block with Mx scale, epilogue after block mmad
-
 enum class MatMulL0C2Out : std::uint8_t { ON_THE_FLY = 0, ND_FIXPIPE_1_1 = 1, ND_FIXPIPE_1_2 = 2 };
 
 /**
@@ -78,12 +78,13 @@ struct MatmulWithScaleMix {
  * @brief Mx Matrix multiplication with scaleA and scaleB
  */
 template <uint64_t FullLoadMode_ = 0, bool AtomicAdd_ = false, class ScheduleType_ = KernelMmadWithScaleMx,
-          uint64_t L0C2UBMode_ = L0C2UB_MODE_NONE>
+          uint64_t L0C2UBMode_ = L0C2UB_MODE_NONE, uint64_t NonContiguousType_ = 0>
 struct MatmulWithScaleMx {
     using ScheduleType = ScheduleType_;
     static constexpr uint64_t FULL_LOAD_MODE = FullLoadMode_;
     static constexpr bool IS_ATOMIC_ADD = AtomicAdd_;
     static constexpr uint64_t L0C2UB_MODE = L0C2UBMode_;
+    static constexpr uint64_t NON_CONTIGUOUS_TYPE = NonContiguousType_;
 };
 
 /**

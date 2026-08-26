@@ -32,11 +32,11 @@ namespace Blaze {
 namespace Gemm {
 namespace Block {
 #if (defined(__NPU_ARCH__) && __NPU_ARCH__ == 3510)
-template <uint64_t FullLoadMode_, bool AtomicAdd_, class ScheduleType_, uint64_t L0C2UBMode_, class AType_,
-          class LayoutA_, class BType_, class LayoutB_, class CType_, class LayoutC_, class BiasType_,
-          class LayoutBias_>
-class BlockMmad<MatmulWithScaleMx<FullLoadMode_, AtomicAdd_, ScheduleType_, L0C2UBMode_>, AType_, LayoutA_, BType_,
-                LayoutB_, CType_, LayoutC_, BiasType_, LayoutBias_> {
+template <uint64_t FullLoadMode_, bool AtomicAdd_, class ScheduleType_, uint64_t L0C2UBMode_,
+          uint64_t NonContiguousType_, class AType_, class LayoutA_, class BType_, class LayoutB_, class CType_,
+          class LayoutC_, class BiasType_, class LayoutBias_>
+class BlockMmad<MatmulWithScaleMx<FullLoadMode_, AtomicAdd_, ScheduleType_, L0C2UBMode_, NonContiguousType_>, AType_,
+                LayoutA_, BType_, LayoutB_, CType_, LayoutC_, BiasType_, LayoutBias_> {
 public:
     using AType = AType_;
     using BType = BType_;
@@ -45,10 +45,11 @@ public:
     using LayoutB = LayoutB_;
     using LayoutC = LayoutC_;
     using BiasType = BiasType_;
-    using DispatchPolicy = MatmulWithScaleMx<FullLoadMode_, AtomicAdd_, ScheduleType_, L0C2UBMode_>;
+    using DispatchPolicy = MatmulWithScaleMx<FullLoadMode_, AtomicAdd_, ScheduleType_, L0C2UBMode_, NonContiguousType_>;
     using ProblemShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
     using BlockShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
 
+    static constexpr uint64_t NON_CONTIGUOUS_TYPE = DispatchPolicy::NON_CONTIGUOUS_TYPE;
     static constexpr bool WEIGHT_NZ = IsWeightNz<LayoutB>::value;
     static constexpr bool TRANS_A = IsTrans<LayoutA>::value;
     static constexpr bool TRANS_B = IsTrans<LayoutB>::value;
