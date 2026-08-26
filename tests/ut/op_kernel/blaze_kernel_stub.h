@@ -18,8 +18,9 @@
  *    但 x86_64 CPU debug 模式不引入 bisheng 头文件)
  *    NOTE: MODE_ZEROING / MODE_MERGING / MODE_UNKNOWN 已存在于 stub_fun.h 的 Literal enum,
  *    不需重复定义, 否则会与 Literal enum 成员冲突 ("redeclared as different kind of entity")
- * 3. 融合操作类型常量
- * 4. BLOCK_SIZE 常量 (blaze epilogue 使用但未定义, 值为32字节对齐粒度)
+ * 3. CPU debug头文件缺失的predicate pattern常量
+ * 4. 融合操作类型常量
+ * 5. BLOCK_SIZE 常量 (blaze epilogue 使用但未定义, 值为32字节对齐粒度)
  *
  * POS_LOWEST/POS_HIGHEST 定义为 constexpr int32_t (值为 bisheng Pos::LOWEST=0, Pos::HIGHEST=1),
  *    可匹配 stub_fun.h 中 vdup 等 5 参数 overload 的 int32_t type 参数;
@@ -50,3 +51,22 @@ using float8_e5m2_t = fp8_e5m2_t;
 using float4_e1m2x2_t = fp4x2_e1m2_t;
 using float4_e2m1x2_t = fp4x2_e2m1_t;
 using float8_e8m0_t = fp8_e8m0_t;
+
+// Host-only values for predicate patterns absent from tikicpulib's CPU debug stub.
+inline constexpr Literal PAT_VL1 = static_cast<Literal>(100);
+inline constexpr Literal PAT_VL2 = static_cast<Literal>(101);
+inline constexpr Literal PAT_VL3 = static_cast<Literal>(102);
+inline constexpr Literal PAT_VL4 = static_cast<Literal>(103);
+inline constexpr Literal PAT_VL128 = static_cast<Literal>(104);
+inline constexpr Literal PAT_M3 = static_cast<Literal>(105);
+inline constexpr Literal PAT_M4 = static_cast<Literal>(106);
+inline constexpr Literal PAT_Q = static_cast<Literal>(107);
+
+// copy_gm_to_cbuf_v2 9参数重载 (带 cache_mode 参数)
+// cann stub_fun.h 只提供了 8 参数版本，tensor_api 的 asc_copy_gm2l1_impl 需要此重载
+#ifndef COPY_GM_TO_CBUF_V2_WITH_CACHE_MODE
+#define COPY_GM_TO_CBUF_V2_WITH_CACHE_MODE
+inline void copy_gm_to_cbuf_v2(void* dst, void* src, uint8_t sid, uint32_t n_burst, uint32_t len_burst,
+                               uint8_t pad_func_mode, uint8_t cache_mode, uint64_t src_stride, uint32_t dst_stride)
+{}
+#endif
