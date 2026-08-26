@@ -31,6 +31,7 @@
 #pragma once
 
 #include <cstdint>
+#include "stub_fun.h"
 
 #ifndef __biasbuf__
 #define __biasbuf__
@@ -43,3 +44,9 @@ constexpr int32_t POS_LOWEST = 0;
 #ifndef POS_HIGHEST
 constexpr int32_t POS_HIGHEST = 1;
 #endif
+
+using float8_e4m3_t = fp8_e4m3fn_t;
+using float8_e5m2_t = fp8_e5m2_t;
+using float4_e1m2x2_t = fp4x2_e1m2_t;
+using float4_e2m1x2_t = fp4x2_e2m1_t;
+using float8_e8m0_t = fp8_e8m0_t;
