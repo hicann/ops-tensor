@@ -27,7 +27,7 @@ def main():
         "--dtype",
         type=str,
         default="bfloat16",
-        choices=["float16", "bfloat16", "float32"],
+        choices=["float16", "bfloat16"],
     )
     args = parser.parse_args()
 
@@ -36,7 +36,7 @@ def main():
         print(f"FAIL: output file not found: {out_path}")
         exit(1)
 
-    dtype_map = {"float16": np.float16, "bfloat16": np.uint16, "float32": np.float32}
+    dtype_map = {"float16": np.float16, "bfloat16": np.uint16}
     np_dtype = dtype_map.get(args.dtype)
     if np_dtype is None:
         print(

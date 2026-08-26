@@ -42,11 +42,19 @@ def main():
     parser.add_argument(
         "--dtype", type=str, default="fp8_e4m3", choices=["fp8_e4m3", "fp4_e2m1"]
     )
+    parser.add_argument(
+        "--output-dir", type=str, default=None, help="Directory to write .bin files"
+    )
     args = parser.parse_args()
 
     m, n, k, batch = args.M, args.N, args.K, args.Batch
     scale_k = get_scale_k_len(k)
-    out_dir = os.path.dirname(os.path.abspath(__file__))
+    out_dir = (
+        args.output_dir
+        if args.output_dir
+        else os.path.dirname(os.path.abspath(__file__))
+    )
+    os.makedirs(out_dir, exist_ok=True)
 
     if args.dtype == "fp4_e2m1":
         a_data = np.random.randint(0, 16, size=m * batch * k, dtype=np.uint8)
@@ -61,14 +69,12 @@ def main():
 
     scale_a = np.full(m * batch * scale_k, 0x7F, dtype=np.uint8)
     scale_b = np.full(batch * scale_k * n, 0x7F, dtype=np.uint8)
-    bias = np.zeros(n, dtype=np.float32)
     initial_c = np.zeros(m * batch * n * 2, dtype=np.uint8)
 
     a_bytes.tofile(os.path.join(out_dir, "input_a.bin"))
     b_bytes.tofile(os.path.join(out_dir, "input_b.bin"))
     scale_a.tofile(os.path.join(out_dir, "scale_a.bin"))
     scale_b.tofile(os.path.join(out_dir, "scale_b.bin"))
-    bias.tofile(os.path.join(out_dir, "bias.bin"))
     initial_c.tofile(os.path.join(out_dir, "initial_c.bin"))
 
     print(f"Generated: M={m}, N={n}, K={k}, batch={batch}, dtype={args.dtype}")

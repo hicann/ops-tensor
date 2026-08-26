@@ -30,27 +30,28 @@
 #include <vector>
 
 #include "acl/acl.h"
-#include "blaze/epilogue/block/block_epilogue_empty.h"
-#include "blaze/gemm/block/block_mmad_qbmm_mx.h"
-#include "blaze/gemm/block/block_scheduler_qbmm.h"
-#include "blaze/gemm/kernel/kernel_tqbmm_mx.h"
-#include "blaze/gemm/policy/dispatch_policy.h"
 #include "data_utils.h"
 #include "kernel_basic_intf.h"
 #include "platform/platform_ascendc.h"
 
+#define __fp8e4m3 fp8_e4m3fn_t
+#define __fp4e2m1x2 fp4x2_e2m1_t
+#include "blaze/gemm/block/block_mmad_qbmm_mx.h"
+#include "blaze/gemm/block/block_scheduler_qbmm.h"
+#include "blaze/gemm/kernel/kernel_tqbmm_mx.h"
+#include "blaze/gemm/policy/dispatch_policy.h"
+#include "blaze/epilogue/block/block_epilogue_empty.h"
+#undef __fp4e2m1x2
+#undef __fp8e4m3
+
 static constexpr uint64_t GROUP_SIZE = 32UL;
 static constexpr uint64_t MXFP_DIVISOR_SIZE = 64UL;
-static constexpr int64_t BLOCK_16 = 16L;
-static constexpr uint64_t C0_SIZE_B8 = 32UL;
-static constexpr uint64_t C0_SIZE_B4 = 64UL;
 
 struct CliArgs {
     int64_t m = 0;
     int64_t k = 0;
     int64_t n = 0;
     int64_t batch = 1;
-    int64_t bias = 0;
     std::string aDtype;
     std::string bDtype;
     std::string cDtype;
@@ -75,9 +76,9 @@ static bool ParseBool(const char* s)
 
 static bool ParseCliArgs(int argc, const char** argv, CliArgs& args)
 {
-    if (argc != 20) {
+    if (argc != 19) {
         std::fprintf(stderr,
-                     "Usage: %s <m> <k> <n> <batch> <bias> <a_dtype> <b_dtype> <c_dtype>"
+                     "Usage: %s <m> <k> <n> <batch> <a_dtype> <b_dtype> <c_dtype>"
                      " <transA> <transB> <format> <base_m> <base_n> <base_k> <tile_k_l1> <scale_k_l1>"
                      " <l1_buffers> <db_l0c> <a_full_load>\n",
                      argv[0]);
@@ -88,22 +89,21 @@ static bool ParseCliArgs(int argc, const char** argv, CliArgs& args)
     args.k = std::atoll(argv[2]);
     args.n = std::atoll(argv[3]);
     args.batch = std::atoll(argv[4]);
-    args.bias = std::atoll(argv[5]);
-    args.aDtype = argv[6];
-    args.bDtype = argv[7];
-    args.cDtype = argv[8];
-    args.transA = ParseBool(argv[9]);
-    args.transB = ParseBool(argv[10]);
-    args.format = argv[11];
+    args.aDtype = argv[5];
+    args.bDtype = argv[6];
+    args.cDtype = argv[7];
+    args.transA = ParseBool(argv[8]);
+    args.transB = ParseBool(argv[9]);
+    args.format = argv[10];
 
-    args.baseM = std::atoll(argv[12]);
-    args.baseN = std::atoll(argv[13]);
-    args.baseK = std::atoll(argv[14]);
-    args.kL1 = std::atoll(argv[15]);
-    args.scaleKL1 = std::atoll(argv[16]);
-    args.l1Buffers = std::atoll(argv[17]);
-    args.dbL0C = std::atoll(argv[18]);
-    args.aFullLoad = ParseBool(argv[19]);
+    args.baseM = std::atoll(argv[11]);
+    args.baseN = std::atoll(argv[12]);
+    args.baseK = std::atoll(argv[13]);
+    args.kL1 = std::atoll(argv[14]);
+    args.scaleKL1 = std::atoll(argv[15]);
+    args.l1Buffers = std::atoll(argv[16]);
+    args.dbL0C = std::atoll(argv[17]);
+    args.aFullLoad = ParseBool(argv[18]);
 
     if (args.m <= 0 || args.k <= 0 || args.n <= 0 || args.batch <= 0) {
         std::fprintf(stderr, "Error: M, K, N, batch must be positive integers.\n");
@@ -117,6 +117,10 @@ static bool ParseCliArgs(int argc, const char** argv, CliArgs& args)
         std::fprintf(stderr, "Error: B dtype must be fp8_e4m3 or fp4_e2m1.\n");
         return false;
     }
+    if (args.cDtype != "float16" && args.cDtype != "bfloat16") {
+        std::fprintf(stderr, "Error: C dtype must be float16 or bfloat16.\n");
+        return false;
+    }
     return true;
 }
 
@@ -128,8 +132,6 @@ static size_t DtypeSize(const std::string& dtype)
         return 1;
     if (dtype == "float16" || dtype == "bfloat16")
         return 2;
-    if (dtype == "float32")
-        return 4;
     return 0;
 }
 
@@ -188,10 +190,10 @@ __global__ __aicore__ void tqbmm_mx_example_kernel(GM_ADDR aGm, GM_ADDR bGm, GM_
     kernel(params);
 }
 
-#define LAUNCH_TQBMM_KERNEL(FULL_LOAD_MODE)                                                                           \
-    tqbmm_mx_example_kernel<A_TYPE, B_TYPE, C_TYPE, LAYOUT_A, LAYOUT_B, FULL_LOAD_MODE><<<p.blockNum, 0, p.stream>>>( \
-        p.dA, p.dB, p.dBias, p.dScaleA, p.dScaleB, p.dC, p.m, p.k, p.n, p.batch, p.baseM, p.baseN, p.baseK, p.kL1,    \
-        p.scaleKL1, p.l1BufferNum, p.dbL0C, p.biasElements)
+#define LAUNCH_TQBMM_KERNEL(FULL_LOAD_MODE)                                                                    \
+    tqbmm_mx_example_kernel<A_TYPE, B_TYPE, C_TYPE, LAYOUT_A, LAYOUT_B, FULL_LOAD_MODE>                        \
+        <<<p.blockNum, 0, p.stream>>>(p.dA, p.dB, nullptr, p.dScaleA, p.dScaleB, p.dC, p.m, p.k, p.n, p.batch, \
+                                      p.baseM, p.baseN, p.baseK, p.kL1, p.scaleKL1, p.l1BufferNum, p.dbL0C, 0)
 
 #define DISPATCH_TQBMM(A_TYPE, B_TYPE, C_TYPE, TRANS_B, FULL_LOAD_MODE)                \
     do {                                                                               \
@@ -205,13 +207,12 @@ __global__ __aicore__ void tqbmm_mx_example_kernel(GM_ADDR aGm, GM_ADDR bGm, GM_
 struct LaunchParams {
     uint8_t* dA;
     uint8_t* dB;
-    uint8_t* dBias;
     uint8_t* dScaleA;
     uint8_t* dScaleB;
     uint8_t* dC;
     int64_t m, n, k, batch;
     int64_t blockNum;
-    uint64_t baseM, baseN, baseK, kL1, scaleKL1, l1BufferNum, dbL0C, biasElements;
+    uint64_t baseM, baseN, baseK, kL1, scaleKL1, l1BufferNum, dbL0C;
     aclrtStream stream;
 };
 
@@ -226,9 +227,7 @@ void LaunchKernel(const LaunchParams& p)
 template <class A_TYPE, class B_TYPE, uint64_t FullLoadMode>
 void LaunchByC(const CliArgs& args, const LaunchParams& launchParams)
 {
-    if (args.cDtype == "float32") {
-        DISPATCH_TQBMM(A_TYPE, B_TYPE, float, args.transB, FullLoadMode);
-    } else if (args.cDtype == "float16") {
+    if (args.cDtype == "float16") {
         DISPATCH_TQBMM(A_TYPE, B_TYPE, half, args.transB, FullLoadMode);
     } else if (args.cDtype == "bfloat16") {
         DISPATCH_TQBMM(A_TYPE, B_TYPE, bfloat16_t, args.transB, FullLoadMode);
@@ -258,7 +257,6 @@ static void Run(const CliArgs& args)
                             (MXFP_DIVISOR_SIZE / GROUP_SIZE);
     const size_t aSize = ElementCountToBytes(args.m * args.batch * args.k, args.aDtype);
     const size_t bSize = ElementCountToBytes(args.k * args.batch * args.n, args.bDtype);
-    const size_t biasSize = args.bias > 0 ? static_cast<size_t>(args.bias) * sizeof(float) : 1;
     const size_t scaleASize = static_cast<size_t>(args.m * args.batch) * scaleK;
     const size_t scaleBSize = static_cast<size_t>(args.n * args.batch) * scaleK;
     const size_t cSize = static_cast<size_t>(args.m * args.batch * args.n) * DtypeSize(args.cDtype);
@@ -266,37 +264,32 @@ static void Run(const CliArgs& args)
     std::string inputDir = "./input";
     std::string outputDir = "./output";
 
-    std::vector<uint8_t> hostA(aSize), hostB(bSize), hostC(cSize, 0), hostBias(biasSize, 0);
+    std::vector<uint8_t> hostA(aSize), hostB(bSize), hostC(cSize, 0);
     std::vector<uint8_t> hostScaleA(scaleASize), hostScaleB(scaleBSize);
 
     ReadFile(inputDir + "/input_a.bin", hostA.data(), aSize);
     ReadFile(inputDir + "/input_b.bin", hostB.data(), bSize);
     ReadFile(inputDir + "/scale_a.bin", hostScaleA.data(), scaleASize);
     ReadFile(inputDir + "/scale_b.bin", hostScaleB.data(), scaleBSize);
-    if (args.bias > 0)
-        ReadFile(inputDir + "/bias.bin", hostBias.data(), biasSize);
     ReadFile(inputDir + "/initial_c.bin", hostC.data(), cSize);
 
-    uint8_t *deviceA{nullptr}, *deviceB{nullptr}, *deviceC{nullptr}, *deviceBias{nullptr};
+    uint8_t *deviceA{nullptr}, *deviceB{nullptr}, *deviceC{nullptr};
     uint8_t *deviceScaleA{nullptr}, *deviceScaleB{nullptr};
 
     ACL_CHECK(aclrtMalloc(reinterpret_cast<void**>(&deviceA), aSize, ACL_MEM_MALLOC_HUGE_FIRST));
     ACL_CHECK(aclrtMalloc(reinterpret_cast<void**>(&deviceB), bSize, ACL_MEM_MALLOC_HUGE_FIRST));
     ACL_CHECK(aclrtMalloc(reinterpret_cast<void**>(&deviceC), cSize, ACL_MEM_MALLOC_HUGE_FIRST));
-    ACL_CHECK(aclrtMalloc(reinterpret_cast<void**>(&deviceBias), biasSize, ACL_MEM_MALLOC_HUGE_FIRST));
     ACL_CHECK(aclrtMalloc(reinterpret_cast<void**>(&deviceScaleA), scaleASize, ACL_MEM_MALLOC_HUGE_FIRST));
     ACL_CHECK(aclrtMalloc(reinterpret_cast<void**>(&deviceScaleB), scaleBSize, ACL_MEM_MALLOC_HUGE_FIRST));
 
     ACL_CHECK(aclrtMemcpy(deviceA, aSize, hostA.data(), aSize, ACL_MEMCPY_HOST_TO_DEVICE));
     ACL_CHECK(aclrtMemcpy(deviceB, bSize, hostB.data(), bSize, ACL_MEMCPY_HOST_TO_DEVICE));
     ACL_CHECK(aclrtMemcpy(deviceC, cSize, hostC.data(), cSize, ACL_MEMCPY_HOST_TO_DEVICE));
-    ACL_CHECK(aclrtMemcpy(deviceBias, biasSize, hostBias.data(), biasSize, ACL_MEMCPY_HOST_TO_DEVICE));
     ACL_CHECK(aclrtMemcpy(deviceScaleA, scaleASize, hostScaleA.data(), scaleASize, ACL_MEMCPY_HOST_TO_DEVICE));
     ACL_CHECK(aclrtMemcpy(deviceScaleB, scaleBSize, hostScaleB.data(), scaleBSize, ACL_MEMCPY_HOST_TO_DEVICE));
 
     LaunchParams launchParams = {deviceA,
                                  deviceB,
-                                 deviceBias,
                                  deviceScaleA,
                                  deviceScaleB,
                                  deviceC,
@@ -312,7 +305,6 @@ static void Run(const CliArgs& args)
                                  static_cast<uint64_t>(args.scaleKL1),
                                  static_cast<uint64_t>(args.l1Buffers),
                                  static_cast<uint64_t>(args.dbL0C),
-                                 static_cast<uint64_t>(args.bias),
                                  stream};
 
     if (args.aDtype == "fp8_e4m3" && args.bDtype == "fp8_e4m3") {
@@ -328,7 +320,6 @@ static void Run(const CliArgs& args)
     ACL_CHECK(aclrtFree(deviceA));
     ACL_CHECK(aclrtFree(deviceB));
     ACL_CHECK(aclrtFree(deviceC));
-    ACL_CHECK(aclrtFree(deviceBias));
     ACL_CHECK(aclrtFree(deviceScaleA));
     ACL_CHECK(aclrtFree(deviceScaleB));
 }

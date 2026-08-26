@@ -1,5 +1,7 @@
-casename,M,N,K,Batch
-tqbmm_mx_32_128_512_4,32,128,512,4
-tqbmm_mx_64_256_1024_2,64,256,1024,2
-tqbmm_mx_48_64_256_8,48,64,256,8
-tqbmm_mx_16_128_512_16,16,128,512,16
+casename,m,k,n,batch,a_dtype,b_dtype,c_dtype,transA,transB,format,base_m,base_n,base_k,tile_k_l1,scale_k_l1,l1_buffers,db_l0c,a_full_load
+tqbmm_mx_32_512_128_4_fp8_bf16,32,512,128,4,fp8_e4m3,fp8_e4m3,bfloat16,false,false,"(ND,ND)",32,128,64,128,16,2,1,false
+tqbmm_mx_64_1024_256_2_fp8_bf16,64,1024,256,2,fp8_e4m3,fp8_e4m3,bfloat16,false,false,"(ND,ND)",64,256,64,256,32,2,1,false
+tqbmm_mx_48_256_64_8_fp8_bf16,48,256,64,8,fp8_e4m3,fp8_e4m3,bfloat16,false,false,"(ND,ND)",48,64,64,256,8,2,1,false
+tqbmm_mx_16_512_128_16_fp8_bf16,16,512,128,16,fp8_e4m3,fp8_e4m3,bfloat16,false,false,"(ND,ND)",16,128,64,128,16,2,1,false
+tqbmm_mx_32_512_128_4_fp4_bf16,32,512,128,4,fp4_e2m1,fp4_e2m1,bfloat16,false,false,"(ND,ND)",32,128,64,128,16,2,1,false
+tqbmm_mx_64_1024_256_2_fp4_f16,64,1024,256,2,fp4_e2m1,fp4_e2m1,float16,false,false,"(ND,ND)",64,256,64,256,32,2,1,false
