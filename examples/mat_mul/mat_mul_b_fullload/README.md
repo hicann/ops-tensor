@@ -7,7 +7,7 @@
 - **算子**: mat_mul
 - **场景**: mat_mul_b_fullload
 - **算法特点**: B 矩阵全量加载到 L1，A 矩阵流式加载，支持 FP16/BF16/FP32/HF32 及 Weight NZ 格式
-- **参考实现**: 基于 Blaze 框架 `blaze/gemm/kernel/kernel_matmul_b_full_load.h`
+- **参考实现**: 基于 Blaze 框架 `blaze/gemm/kernel/kernel_matmul_bl1_full_load.h`
 
 ## 支持架构
 
@@ -58,8 +58,8 @@ mat_mul_b_fullload/
 
 | 组件 | 头文件 | 职责 |
 |------|--------|------|
-| Kernel | `blaze/gemm/kernel/kernel_matmul_b_full_load.h` | BFullLoad kernel 入口 |
-| Block MMAD | `blaze/gemm/block/block_mmad_matmul_b_fullLoad_fixpipe_opti.h` | B 全量加载的 Block 级矩阵乘 |
+| Kernel | `blaze/gemm/kernel/kernel_matmul_bl1_full_load.h` | BFullLoad kernel 入口 |
+| Block MMAD | `blaze/gemm/block/block_mmad_matmul_bl1_fullLoad.h` | B 全量加载的 Block 级矩阵乘 |
 | Block Scheduler | `blaze/gemm/block/block_scheduler_matmul_basic.h` | Basic 调度器 (B_FULL_LOAD_MODE) |
 | Epilogue | `blaze/epilogue/block/block_epilogue_empty.h` | 空后处理 |
-| Dispatch Policy | `blaze/gemm/policy/dispatch_policy.h` | MatmulMultiBlockFullLoadOrFixpipe |
+| Dispatch Policy | `blaze/gemm/policy/dispatch_policy.h` | MatmulMultiBlockBFullLoad |

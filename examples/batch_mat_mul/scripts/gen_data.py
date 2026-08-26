@@ -102,7 +102,7 @@ def gen_batch_data(
 if __name__ == "__main__":
     if len(sys.argv) < 10:
         print(
-            "Usage: python3 gen_data_batch.py m k n batch_a batch_b batch_c transA transB dtype [bias]"
+            "Usage: python3 gen_data.py m k n batch_a batch_b batch_c transA transB dtype [bias]"
         )
         sys.exit(1)
 

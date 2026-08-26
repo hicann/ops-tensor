@@ -2,13 +2,15 @@
 
 ## 🔥Latest News
 
-- [2026/06] 支持 `GroupedMatmul` 算子。
+- [2026/08] 支持 `FusedMatMul`（MatMul + Scale + Add 融合矩阵乘）、`WeightQuantBatchMatmul`（Weight-only 量化）、`QuantGroupedMatmul`（QGMM）Swiglu 激活量化融合（GMMSGQ），`GroupedMatmul`（GMM）支持 S8S4/S4S4 量化。
+- [2026/07] 支持 `TransposeBatchMatMul`（TBMM）、`QuantGroupedMatmul`（QGMM）算子。
+- [2026/06] 支持 `GroupedMatmul`（GMM）算子。
 - [2026/05] 支持 `MatMul`、`BatchMatMul` 算子。
 - [2026/04] `Blaze` 为算子开发提供基础线性代数加速能力，支持 `QuantBatchMatMul`。
 
 ## 🚀概述
 
-ops-tensor 内置了 **Blaze**（Basic Linear Algebra optimiZed Engine）基础线性代数加速引擎，构建 NPU 高性能 CUBE 底座, 为算子开发提供 CUBE 公共能力。
+ops-tensor 内置了 **Blaze**（Basic Linear Algebra optimiZed Engine）基础线性代数加速引擎，构建 NPU 高性能 CUBE 底座，为算子开发提供 CUBE 公共能力。
 
 ## 🔍目录结构
 
@@ -34,12 +36,17 @@ ops-tensor/
 
 ## 🔧支持的算子
 
-| 算子名称         | 描述               | 状态      |
-| ---------------- | ------------------ | --------- |
-| MatMul           | 矩阵乘运算         | ✅ 已实现 |
-| BatchMatMul      | 批量矩阵乘运算     | ✅ 已实现 |
-| QuantBatchMatMul | 量化批量矩阵乘运算 | ✅ 已实现 |
-| GroupedMatmul    | 分组矩阵乘运算     | ✅ 已实现 |
+| 算子名称 | 描述 | 实现变体 | 状态 |
+|---------|------|---------|------|
+| MatMul | 矩阵乘运算 | Basic / A 全载 / B 全载 / Fixpipe / StreamK | ✅ 已实现 |
+| BatchMatMul | 批量矩阵乘运算 | Broadcast / IterBatch Broadcast | ✅ 已实现 |
+| TransposeBatchMatMul（TBMM） | 转置批量矩阵乘运算 | Basic | ✅ 已实现 |
+| QuantBatchMatMul（QBMM） | 量化批量矩阵乘运算 | Cube（per-tensor/per-channel）/ MX / MIX（A8W8）/ StreamK | ✅ 已实现 |
+| WeightQuantBatchMatmulMX | 权重量化批量矩阵乘（weight-only，介于全量化与非量化矩阵乘之间） | Weight Prologue（SWAT） | ✅ 已实现 |
+| GroupedMatmul（GMM） | 分组矩阵乘运算 | Fixpipe Quant | ✅ 已实现 |
+| QuantGroupedMatmul（QGMM） | 量化分组矩阵乘运算 | MX / Swiglu MX | ✅ 已实现 |
+
+各算子可运行的完整示例见 [examples/](./examples/) 目录。
 
 ## 💻SoC 支持
 
@@ -57,12 +64,12 @@ Ascend 950PR / Ascend 950DT
 
 ## 📖文档介绍
 
-| 文档                                    | 说明                                 |
-| --------------------------------------- | ------------------------------------ |
-| [快速入门](./QUICKSTART.md)              | 快速体验项目的简易教程。             |
-| [算子开发指南](./QUICK_OP_INVOCATION.md) | 使用 ops-tensor 实现算子开发的教程。 |
-| [Blaze 模块](./include/blaze/README.md)  | Blaze 高性能线性代数引擎介绍。       |
-| [API 文档](./docs/API/README.md)         | API 详细说明。                       |
+| 文档 | 说明 |
+|------|------|
+|[快速入门](./QUICKSTART.md)|快速体验项目的简易教程。|
+|[算子开发指南](./QUICK_OP_INVOCATION.md)|使用 ops-tensor 实现算子开发的教程。|
+|[Blaze 模块](./include/blaze/README.md)|Blaze 高性能线性代数引擎介绍。|
+|[Blaze 接口文档](./docs/API/README.md)|Blaze 分层架构与各组件 API 详细说明。|
 
 ## 📝相关信息
 

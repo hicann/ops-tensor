@@ -146,7 +146,6 @@ static StreamKTiling ComputeTiling(TilingConfig& cfg, int64_t m, int64_t k, int6
         tiling.skSingleK = skSingleCoreK;
     }
     int64_t baseKAlignValue = !transA || transB ? BASIC_BLOCK_SIZE_128 / cfg.dtypeSize : BLOCK_16;
-    ;
     int64_t kValueMax = (L0A_SIZE_2 / 2 / cfg.dtypeSize / std::max(cfg.baseM, cfg.baseN)) / baseKAlignValue *
                         baseKAlignValue;
     cfg.baseK = std::min(tiling.skSingleK, kValueMax);

@@ -151,7 +151,10 @@ Kernel UT（单元测试）用于验证算子内核的正确性。
 
 **支持的 Kernel UT 算子**（位于 `tests/ut/op_kernel/`）：
 - `mat_mul` - 矩阵乘算子
+- `fused_mat_mul` - 融合矩阵乘算子（MatMul + Scale + Add）
+- `transpose_batch_mat_mul` - 转置批量矩阵乘算子
 - `quant_batch_matmul` - 量化批量矩阵乘算子
+- `quant_grouped_matmul` - 量化分组矩阵乘算子
 - `weight_quant_batch_matmul_mx` - MXA8W4 权重量化矩阵乘组件
 
 若提示如下信息，则说明 Kernel UT 测试通过：
@@ -186,11 +189,8 @@ Samples 测试用于验证算子样例在 NPU 上的编译、执行和精度正�
 
 ### 3. 通过 run.sh 执行
 
-进入样例目录，直接指定 CSV 文件执行：
-
 ```bash
-cd examples/mat_mul/mat_mul_streamk
-bash run.sh --case=mat_mul_streamk.csv
+bash examples/common/run.sh --ops=mat_mul --target=mat_mul_streamk
 ```
 
 ### 4. CSV 测试用例格式
