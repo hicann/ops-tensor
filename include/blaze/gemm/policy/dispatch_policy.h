@@ -44,6 +44,8 @@ struct KernelMixWithWeightPrologue {};            // Mix matmul with AIV weight 
 struct KernelGmmSwiGluMixMx {};                   // MIX AIC+AIV schedule for GroupedMatmul + SwiGLU + MX quant
 struct KernelMatmulEmuSplitWeight {};             // Double bf16 matmul to simulate fp32 (AIC+AIV)
 struct KernelMmadWithScaleMxMix {};               // Multi-block with Mx scale, epilogue after block mmad
+struct KernelGroupedMmadNoQuant {};               // Grouped multi-block without quantization
+enum class MatmulOutputMode : std::uint8_t { OVERWRITE = 0, INPLACE_ADD = 1 };
 enum class MatMulL0C2Out : std::uint8_t { ON_THE_FLY = 0, ND_FIXPIPE_1_1 = 1, ND_FIXPIPE_1_2 = 2 };
 
 /**
@@ -155,14 +157,16 @@ struct MatmulMultiBlockWithStreamKSplitK {
  * @param [in] FusedOpType_: execute fusion after mmad , default is 0
  * @param [in] KernelSchedule_: mmad dispatch policy
  * @param [in] NonContiguousType_: matmul support non-contiguous scene such as: slice, transpose
+ * @param [in] OutputMode_: grouped matmul output mode, default is overwrite
  */
 template <uint64_t FullLoadMode_ = 0, uint64_t FusedOpType_ = 0, class KernelSchedule_ = KernelMmadMultiBlockBasic,
-          uint64_t NonContiguousType_ = 0>
+          uint64_t NonContiguousType_ = 0, MatmulOutputMode OutputMode_ = MatmulOutputMode::OVERWRITE>
 struct MatmulMultiBlockBasic {
     using ScheduleType = KernelSchedule_;
     static constexpr uint64_t FULL_LOAD_MODE = FullLoadMode_;
     static constexpr uint64_t FUSED_OP_TYPE = FusedOpType_;
     static constexpr uint64_t NON_CONTIGUOUS_TYPE = NonContiguousType_;
+    static constexpr MatmulOutputMode OUTPUT_MODE = OutputMode_;
 };
 
 /**

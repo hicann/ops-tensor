@@ -28,10 +28,10 @@ namespace Gemm {
 namespace Block {
 
 template <uint64_t FullLoadMode_, uint64_t FusedOpType_, class KernelSchedule_, uint64_t NonContiguousType_,
-          class AType_, class LayoutA_, class BType_, class LayoutB_, class CType_, class LayoutC_, class BiasType_,
-          class LayoutBias_>
-class BlockMmad<MatmulMultiBlockBasic<FullLoadMode_, FusedOpType_, KernelSchedule_, NonContiguousType_>, AType_,
-                LayoutA_, BType_, LayoutB_, CType_, LayoutC_, BiasType_, LayoutBias_> {
+          MatmulOutputMode OutputMode_, class AType_, class LayoutA_, class BType_, class LayoutB_, class CType_,
+          class LayoutC_, class BiasType_, class LayoutBias_>
+class BlockMmad<MatmulMultiBlockBasic<FullLoadMode_, FusedOpType_, KernelSchedule_, NonContiguousType_, OutputMode_>,
+                AType_, LayoutA_, BType_, LayoutB_, CType_, LayoutC_, BiasType_, LayoutBias_> {
 public:
     using AType = AType_;
     using BType = BType_;
@@ -41,7 +41,8 @@ public:
     using LayoutB = LayoutB_;
     using LayoutC = LayoutC_;
     using LayoutBias = LayoutBias_;
-    using DispatchPolicy = MatmulMultiBlockBasic<FullLoadMode_, FusedOpType_, KernelSchedule_, NonContiguousType_>;
+    using DispatchPolicy = MatmulMultiBlockBasic<FullLoadMode_, FusedOpType_, KernelSchedule_, NonContiguousType_,
+                                                 OutputMode_>;
     static constexpr uint64_t NON_CONTIGUOUS_TYPE = DispatchPolicy::NON_CONTIGUOUS_TYPE;
     using TupleShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
     using TripleShape = AscendC::Te::Shape<int64_t, int64_t, int64_t>;
