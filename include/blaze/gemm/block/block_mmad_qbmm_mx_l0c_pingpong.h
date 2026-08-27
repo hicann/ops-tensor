@@ -261,10 +261,10 @@ private:
             // Triple-buffer: keep buffers 0/2 in the front half and buffer 1 in the back half.
             // L1 space: A0|A2|B0|B2|AScale0|BScale0|bias0|...|A1|B1|AScale1|BScale1|bias1
             l1BufferAOffset_[0] = 0UL;
-            l1BufferAOffset_[2] = l1BufferAOffset_[0] + aL1OneBuffer;
-            l1BufferBOffset_[0] = l1BufferAOffset_[2] + aL1OneBuffer;
-            l1BufferBOffset_[2] = l1BufferBOffset_[0] + bL1OneBuffer;
-            l1BufferScaleAOffset_[0] = l1BufferBOffset_[2] + bL1OneBuffer;
+            l1BufferAOffset_[THIRD_BUFFER_ID] = l1BufferAOffset_[0] + aL1OneBuffer;
+            l1BufferBOffset_[0] = l1BufferAOffset_[THIRD_BUFFER_ID] + aL1OneBuffer;
+            l1BufferBOffset_[THIRD_BUFFER_ID] = l1BufferBOffset_[0] + bL1OneBuffer;
+            l1BufferScaleAOffset_[0] = l1BufferBOffset_[THIRD_BUFFER_ID] + bL1OneBuffer;
             l1BufferScaleBOffset_[0] = l1BufferScaleAOffset_[0] + scaleAL1OneBuffer;
             l1BufferBiasOffset_[0] = l1BufferScaleBOffset_[0] + scaleBL1OneBuffer;
             l1BufferAOffset_[1] = Max(halfL1Size, l1BufferBiasOffset_[0] + biasL1OneBuffer);
@@ -307,8 +307,8 @@ private:
         if (l1BufNum_ == TRIPLE_BUFFER_COUNT) {
             // Triple-buffer full-load: B0|B2|BScale0|bias0|A|AScale|...|B1|BScale1|bias1
             l1BufferBOffset_[0] = 0UL;
-            l1BufferBOffset_[2] = l1BufferBOffset_[0] + bL1OneBuffer;
-            l1BufferScaleBOffset_[0] = l1BufferBOffset_[2] + bL1OneBuffer;
+            l1BufferBOffset_[THIRD_BUFFER_ID] = l1BufferBOffset_[0] + bL1OneBuffer;
+            l1BufferScaleBOffset_[0] = l1BufferBOffset_[THIRD_BUFFER_ID] + bL1OneBuffer;
             l1BufferBiasOffset_[0] = l1BufferScaleBOffset_[0] + scaleBL1OneBuffer;
             l1BufferAOffset_[0] = l1BufferBiasOffset_[0] + biasL1OneBuffer;
             l1BufferScaleAOffset_[0] = l1BufferAOffset_[0] + aL1OneBuffer;
