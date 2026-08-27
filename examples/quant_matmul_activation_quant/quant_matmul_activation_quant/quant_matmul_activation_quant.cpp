@@ -23,7 +23,7 @@
  * Supported transposes: transA (A stored as (K,M)), transB (B stored as (N,K))
  * Weight B is always in NZ layout (ZN when transB=true).
  *
- * Supported A dtypes: fp8_e4m3, fp8_e5m2. B dtype: fp8_e4m3 (weight only supports e4m3).
+ * Supported A dtypes: fp8_e4m3, fp8_e5m2, fp4_e2m1. B dtype: fp8_e4m3 or fp4_e2m1 (must match A's FP4/FP8 category).
  * C dtype (matmul intermediate / epilogue input): float32 (L0C accumulator, DualDst to UB).
  * Bias dtype: float32
  */
@@ -57,6 +57,7 @@ static constexpr uint64_t GROUP_SIZE = 32UL;
 static constexpr uint64_t MXFP_DIVISOR_SIZE = 64UL;
 static constexpr int64_t BLOCK_16 = 16L;
 static constexpr uint64_t C0_SIZE_B8 = 32UL;
+static constexpr uint64_t C0_SIZE_B4 = 64UL;
 
 /* ========================================================================== */
 /* Macros                                                                     */
@@ -68,21 +69,37 @@ static constexpr uint64_t C0_SIZE_B8 = 32UL;
                                       p.baseM, p.baseN, p.baseK, p.kL1, p.scaleKL1, p.l1BufferNum, p.dbL0C,      \
                                       p.biasElements)
 
-#define DISPATCH_TRANS(A_TYPE, B_TYPE, TRANS_A, TRANS_B, FULL_LOAD_MODE)                  \
-    do {                                                                                  \
-        if (TRANS_A) {                                                                    \
-            if (TRANS_B) {                                                                \
-                LaunchKernel<A_TYPE, B_TYPE, true, true, FULL_LOAD_MODE>(launchParams);   \
-            } else {                                                                      \
-                LaunchKernel<A_TYPE, B_TYPE, true, false, FULL_LOAD_MODE>(launchParams);  \
-            }                                                                             \
-        } else {                                                                          \
-            if (TRANS_B) {                                                                \
-                LaunchKernel<A_TYPE, B_TYPE, false, true, FULL_LOAD_MODE>(launchParams);  \
-            } else {                                                                      \
-                LaunchKernel<A_TYPE, B_TYPE, false, false, FULL_LOAD_MODE>(launchParams); \
-            }                                                                             \
-        }                                                                                 \
+#define DISPATCH_TRANS(A_TYPE, B_TYPE, TRANS_A, TRANS_B, IS_NZ, FULL_LOAD_MODE)                      \
+    do {                                                                                             \
+        if (TRANS_A) {                                                                               \
+            if (TRANS_B) {                                                                           \
+                if (IS_NZ) {                                                                         \
+                    LaunchKernel<A_TYPE, B_TYPE, true, true, true, FULL_LOAD_MODE>(launchParams);    \
+                } else {                                                                             \
+                    LaunchKernel<A_TYPE, B_TYPE, true, true, false, FULL_LOAD_MODE>(launchParams);   \
+                }                                                                                    \
+            } else {                                                                                 \
+                if (IS_NZ) {                                                                         \
+                    LaunchKernel<A_TYPE, B_TYPE, true, false, true, FULL_LOAD_MODE>(launchParams);   \
+                } else {                                                                             \
+                    LaunchKernel<A_TYPE, B_TYPE, true, false, false, FULL_LOAD_MODE>(launchParams);  \
+                }                                                                                    \
+            }                                                                                        \
+        } else {                                                                                     \
+            if (TRANS_B) {                                                                           \
+                if (IS_NZ) {                                                                         \
+                    LaunchKernel<A_TYPE, B_TYPE, false, true, true, FULL_LOAD_MODE>(launchParams);   \
+                } else {                                                                             \
+                    LaunchKernel<A_TYPE, B_TYPE, false, true, false, FULL_LOAD_MODE>(launchParams);  \
+                }                                                                                    \
+            } else {                                                                                 \
+                if (IS_NZ) {                                                                         \
+                    LaunchKernel<A_TYPE, B_TYPE, false, false, true, FULL_LOAD_MODE>(launchParams);  \
+                } else {                                                                             \
+                    LaunchKernel<A_TYPE, B_TYPE, false, false, false, FULL_LOAD_MODE>(launchParams); \
+                }                                                                                    \
+            }                                                                                        \
+        }                                                                                            \
     } while (0)
 
 /* ========================================================================== */
@@ -98,6 +115,7 @@ struct CliArgs {
     std::string bDtype;
     bool transA = false;
     bool transB = false;
+    std::string format = "(ND,NZ)";
     int64_t baseM = 0;
     int64_t baseN = 0;
     int64_t baseK = 0;
@@ -116,10 +134,10 @@ static bool ParseBool(const char* s)
 
 static bool ParseCliArgs(int argc, const char** argv, CliArgs& args)
 {
-    if (argc != 17) {
+    if (argc != 18) {
         std::fprintf(stderr,
                      "Usage: %s <m> <k> <n> <bias> <a_dtype> <b_dtype>"
-                     " <transA> <transB> <base_m> <base_n> <base_k> <tile_k_l1> <scale_k_l1>"
+                     " <transA> <transB> <format> <base_m> <base_n> <base_k> <tile_k_l1> <scale_k_l1>"
                      " <l1_buffers> <db_l0c> <a_full_load>\n",
                      argv[0]);
         return false;
@@ -133,15 +151,16 @@ static bool ParseCliArgs(int argc, const char** argv, CliArgs& args)
     args.bDtype = argv[6];
     args.transA = ParseBool(argv[7]);
     args.transB = ParseBool(argv[8]);
+    args.format = argv[9];
 
-    args.baseM = std::atoll(argv[9]);
-    args.baseN = std::atoll(argv[10]);
-    args.baseK = std::atoll(argv[11]);
-    args.kL1 = std::atoll(argv[12]);
-    args.scaleKL1 = std::atoll(argv[13]);
-    args.l1Buffers = std::atoll(argv[14]);
-    args.dbL0C = std::atoll(argv[15]);
-    args.aFullLoad = ParseBool(argv[16]);
+    args.baseM = std::atoll(argv[10]);
+    args.baseN = std::atoll(argv[11]);
+    args.baseK = std::atoll(argv[12]);
+    args.kL1 = std::atoll(argv[13]);
+    args.scaleKL1 = std::atoll(argv[14]);
+    args.l1Buffers = std::atoll(argv[15]);
+    args.dbL0C = std::atoll(argv[16]);
+    args.aFullLoad = ParseBool(argv[17]);
 
     // Validation
     if (args.m <= 0 || args.k <= 0 || args.n <= 0) {
@@ -152,12 +171,23 @@ static bool ParseCliArgs(int argc, const char** argv, CliArgs& args)
         std::fprintf(stderr, "Error: bias (%ld) must equal n (%ld) or be 0.\n", args.bias, args.n);
         return false;
     }
-    if (args.aDtype != "fp8_e4m3" && args.aDtype != "fp8_e5m2") {
-        std::fprintf(stderr, "Error: A dtype must be fp8_e4m3 or fp8_e5m2.\n");
+    if (args.aDtype != "fp8_e4m3" && args.aDtype != "fp8_e5m2" && args.aDtype != "fp4_e2m1") {
+        std::fprintf(stderr, "Error: A dtype must be fp8_e4m3, fp8_e5m2, or fp4_e2m1.\n");
         return false;
     }
-    if (args.bDtype != "fp8_e4m3") {
-        std::fprintf(stderr, "Error: B dtype must be fp8_e4m3 (weight only supports e4m3).\n");
+    if (args.bDtype != "fp8_e4m3" && args.bDtype != "fp4_e2m1") {
+        std::fprintf(stderr, "Error: B dtype must be fp8_e4m3 or fp4_e2m1.\n");
+        return false;
+    }
+    bool aIsFp4 = args.aDtype == "fp4_e2m1";
+    bool bIsFp4 = args.bDtype == "fp4_e2m1";
+    if (aIsFp4 != bIsFp4) {
+        std::fprintf(stderr, "Error: FP4*FP8 mixed dtype is not supported by hardware (got a=%s b=%s).\n",
+                     args.aDtype.c_str(), args.bDtype.c_str());
+        return false;
+    }
+    if (args.format != "(ND,ND)" && args.format != "(ND,NZ)") {
+        std::fprintf(stderr, "Error: format must be (ND,ND) or (ND,NZ) (got '%s').\n", args.format.c_str());
         return false;
     }
     return true;
@@ -167,9 +197,11 @@ static bool ParseCliArgs(int argc, const char** argv, CliArgs& args)
 /* Dtype utilities                                                            */
 /* ========================================================================== */
 
+static bool IsFp4Dtype(const std::string& dtype) { return dtype == "fp4_e2m1"; }
+
 static size_t DtypeSize(const std::string& dtype)
 {
-    if (dtype == "fp8_e4m3" || dtype == "fp8_e5m2") {
+    if (dtype == "fp8_e4m3" || dtype == "fp8_e5m2" || dtype == "fp4_e2m1") {
         return 1;
     }
     std::fprintf(stderr, "Unknown dtype: %s\n", dtype.c_str());
@@ -178,6 +210,9 @@ static size_t DtypeSize(const std::string& dtype)
 
 static size_t ElementCountToBytes(int64_t count, const std::string& dtype)
 {
+    if (IsFp4Dtype(dtype)) {
+        return static_cast<size_t>((count + 1) / 2) * DtypeSize(dtype);
+    }
     return static_cast<size_t>(count) * DtypeSize(dtype);
 }
 
@@ -185,15 +220,18 @@ static size_t ElementCountToBytes(int64_t count, const std::string& dtype)
 /* NZ format utilities (weight B is always NZ)                                */
 /* ========================================================================== */
 
-static int64_t CalcNZElementCount(int64_t k, int64_t n, bool transB)
+static uint64_t GetC0Size(const std::string& dtype) { return IsFp4Dtype(dtype) ? C0_SIZE_B4 : C0_SIZE_B8; }
+
+static int64_t CalcNZElementCount(int64_t k, int64_t n, const std::string& dtype, bool transB)
 {
+    uint64_t c0Size = GetC0Size(dtype);
     if (transB) {
-        int64_t kCeil = CeilAlign(k, static_cast<int64_t>(C0_SIZE_B8));
+        int64_t kCeil = CeilAlign(k, static_cast<int64_t>(c0Size));
         int64_t nCeil = CeilAlign(n, BLOCK_16);
         return kCeil * nCeil;
     }
     int64_t kCeil = CeilAlign(k, BLOCK_16);
-    int64_t nCeil = CeilAlign(n, static_cast<int64_t>(C0_SIZE_B8));
+    int64_t nCeil = CeilAlign(n, static_cast<int64_t>(c0Size));
     return kCeil * nCeil;
 }
 
@@ -231,13 +269,18 @@ __global__ __aicore__ void quant_matmul_activation_quant_kernel(GM_ADDR aGm, GM_
     typename Kernel::Params params{};
     params.problemShape = ProblemShape{m, n, k, 1};
     params.mmadParams = {aGm, bGm, yGm, biasGm, scaleAGm, scaleBGm};
+    float dtypeMaxVal = 0.0f;
+    if constexpr (AscendC::IsSameType<OutType, fp4x2_e2m1_t>::value) {
+        dtypeMaxVal = 6.0f;
+    }
     params.epilogueParams = {yGm,
                              yScaleGm,
                              static_cast<uint32_t>(baseM),
                              static_cast<uint32_t>(baseN),
                              Blaze::Epilogue::Block::GeluAlg::TANH,
                              Blaze::Epilogue::Block::QuantAlg::OCP,
-                             Blaze::Epilogue::Block::ROUND_MODE_FP4::RINT};
+                             Blaze::Epilogue::Block::ROUND_MODE_FP4::RINT,
+                             dtypeMaxVal};
     params.l1Params = {kL1, scaleKL1, l1BufferNum};
     params.schParams = {static_cast<int64_t>(baseM), static_cast<int64_t>(baseN), 1, 1, 1, 1, 0, 0};
     params.qbmmParams = {1,
@@ -283,28 +326,30 @@ struct LaunchParams {
     aclrtStream stream;
 };
 
-template <class A_TYPE, class B_TYPE, bool TransA, bool TransB, uint64_t FullLoadMode>
+template <class A_TYPE, class B_TYPE, bool TransA, bool TransB, bool IsNzFormat, uint64_t FullLoadMode>
 void LaunchKernel(const LaunchParams& p)
 {
     using LAYOUT_A = std::conditional_t<TransA, AscendC::Te::DNExtLayoutPtn, AscendC::Te::NDExtLayoutPtn>;
-    using LAYOUT_B = std::conditional_t<TransB, AscendC::Te::ZNLayoutPtn, AscendC::Te::NZLayoutPtn>;
+    using LAYOUT_B = std::conditional_t<
+        IsNzFormat, std::conditional_t<TransB, AscendC::Te::ZNLayoutPtn, AscendC::Te::NZLayoutPtn>,
+        std::conditional_t<TransB, AscendC::Te::DNExtLayoutPtn, AscendC::Te::NDExtLayoutPtn>>;
 
     LAUNCH_KERNEL_IMPL(FullLoadMode);
 }
 
 template <class A_TYPE, class B_TYPE, uint64_t FullLoadMode>
-void LaunchByTrans(const CliArgs& args, const LaunchParams& launchParams)
+void LaunchByTrans(const CliArgs& args, bool isNzFormat, const LaunchParams& launchParams)
 {
-    DISPATCH_TRANS(A_TYPE, B_TYPE, args.transA, args.transB, FullLoadMode);
+    DISPATCH_TRANS(A_TYPE, B_TYPE, args.transA, args.transB, isNzFormat, FullLoadMode);
 }
 
 template <class A_TYPE, class B_TYPE>
-void LaunchByFullLoad(const CliArgs& args, const LaunchParams& launchParams)
+void LaunchByFullLoad(const CliArgs& args, bool isNzFormat, const LaunchParams& launchParams)
 {
     if (args.aFullLoad) {
-        LaunchByTrans<A_TYPE, B_TYPE, Blaze::Gemm::A_FULL_LOAD_MODE>(args, launchParams);
+        LaunchByTrans<A_TYPE, B_TYPE, Blaze::Gemm::A_FULL_LOAD_MODE>(args, isNzFormat, launchParams);
     } else {
-        LaunchByTrans<A_TYPE, B_TYPE, Blaze::Gemm::NONE_FULL_LOAD_MODE>(args, launchParams);
+        LaunchByTrans<A_TYPE, B_TYPE, Blaze::Gemm::NONE_FULL_LOAD_MODE>(args, isNzFormat, launchParams);
     }
 }
 
@@ -330,8 +375,14 @@ static void Run(const CliArgs& args)
     const uint64_t scaleN = static_cast<uint64_t>(CeilDiv(args.n, static_cast<int64_t>(MXFP_DIVISOR_SIZE))) *
                             (MXFP_DIVISOR_SIZE / GROUP_SIZE);
     const size_t aSize = ElementCountToBytes(args.m * args.k, args.aDtype);
-    int64_t nzElementCount = CalcNZElementCount(args.k, args.n, args.transB);
-    const size_t bSize = ElementCountToBytes(nzElementCount, args.bDtype);
+    bool isNzFormat = (args.format == "(ND,NZ)");
+    size_t bSize;
+    if (isNzFormat) {
+        int64_t nzElementCount = CalcNZElementCount(args.k, args.n, args.bDtype, args.transB);
+        bSize = ElementCountToBytes(nzElementCount, args.bDtype);
+    } else {
+        bSize = ElementCountToBytes(args.k * args.n, args.bDtype);
+    }
     const size_t biasSize = args.bias > 0 ? static_cast<size_t>(args.bias) * sizeof(float) : 1;
     const size_t scaleASize = static_cast<size_t>(args.m) * scaleK;
     const size_t scaleBSize = static_cast<size_t>(args.n) * scaleK;
@@ -410,6 +461,7 @@ static void Run(const CliArgs& args)
     std::cout << "  B Dtype  : " << args.bDtype << " (weight NZ)" << std::endl;
     std::cout << "  transA   : " << (args.transA ? "true" : "false") << std::endl;
     std::cout << "  transB   : " << (args.transB ? "true" : "false") << std::endl;
+    std::cout << "  Format   : " << args.format << std::endl;
     std::cout << "  Bias     : " << args.bias << " (float32)" << std::endl;
     std::cout << "  L0 Tile  : [" << args.baseM << ", " << args.baseN << ", " << args.baseK << "]" << std::endl;
     std::cout << "  L1 kL1   : " << args.kL1 << std::endl;
@@ -444,13 +496,15 @@ static void Run(const CliArgs& args)
                                  stream};
 
     if (args.aDtype == "fp8_e4m3" && args.bDtype == "fp8_e4m3") {
-        LaunchByFullLoad<fp8_e4m3fn_t, fp8_e4m3fn_t>(args, launchParams);
+        LaunchByFullLoad<fp8_e4m3fn_t, fp8_e4m3fn_t>(args, isNzFormat, launchParams);
     } else if (args.aDtype == "fp8_e5m2" && args.bDtype == "fp8_e4m3") {
-        LaunchByFullLoad<fp8_e5m2_t, fp8_e4m3fn_t>(args, launchParams);
+        LaunchByFullLoad<fp8_e5m2_t, fp8_e4m3fn_t>(args, isNzFormat, launchParams);
+    } else if (args.aDtype == "fp4_e2m1" && args.bDtype == "fp4_e2m1") {
+        LaunchByFullLoad<fp4x2_e2m1_t, fp4x2_e2m1_t>(args, isNzFormat, launchParams);
     } else {
         std::fprintf(stderr,
                      "Unsupported A/B dtype combination: a=%s b=%s.\n"
-                     "Supported: fp8_e4m3*fp8_e4m3, fp8_e5m2*fp8_e4m3.\n",
+                     "Supported: fp8_e4m3*fp8_e4m3, fp8_e5m2*fp8_e4m3, fp4_e2m1*fp4_e2m1.\n",
                      args.aDtype.c_str(), args.bDtype.c_str());
         std::exit(1);
     }

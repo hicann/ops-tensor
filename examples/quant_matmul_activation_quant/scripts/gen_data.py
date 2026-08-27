@@ -13,7 +13,8 @@
 
 """Generate deterministic MX inputs and compute golden: matmul -> gelu -> dynamic MX quant.
 
-A is MX-quantized FP8 (fp8_e4m3 / fp8_e5m2). B is MX-quantized FP8 (fp8_e4m3 only), NZ layout.
+A is MX-quantized FP8 (fp8_e4m3 / fp8_e5m2) or FP4 (fp4_e2m1). B is MX-quantized FP8 (fp8_e4m3)
+or FP4 (fp4_e2m1), NZ layout. FP4*FP8 mixed dtype is not supported.
 C dtype is float (L0C float32 accumulator, DualDst to UB).
 Output Y dtype follows A dtype; Y_scale is fp8_e8m0.
 """
@@ -29,6 +30,9 @@ from ml_dtypes import bfloat16
 FP8_E4M3FN = ml_dtypes.float8_e4m3fn
 FP8_E5M2 = ml_dtypes.float8_e5m2
 FP8_E8M0 = ml_dtypes.float8_e8m0fnu
+FP4_E2M1_TO_FP32 = (
+    np.arange(16, dtype=np.int8).view(ml_dtypes.float4_e2m1fn).astype(np.float32)
+)
 
 GROUP_SIZE = 32
 MXFP_DIVISOR_SIZE = 64
@@ -37,23 +41,48 @@ MXFP_MULTI_BASE_SIZE = 2
 _DTYPE_MAP = {
     "fp8_e4m3": FP8_E4M3FN,
     "fp8_e5m2": FP8_E5M2,
+    "fp4_e2m1": None,
 }
 
 _EMAX_MAP = {
     "fp8_e4m3": 8,
     "fp8_e5m2": 15,
+    "fp4_e2m1": 2,
 }
 
 _DTYPE_MAX = {
     "fp8_e4m3": 448.0,
     "fp8_e5m2": 57344.0,
+    "fp4_e2m1": 6.0,
 }
 
-_C0_SIZE = 32
+_C0_SIZE = {"fp8_e4m3": 32, "fp8_e5m2": 32, "fp4_e2m1": 64}
 
 
 def align(value, alignment):
     return (value + alignment - 1) // alignment * alignment
+
+
+# ---------------------------------------------------------------------------
+# FP4 helpers
+# ---------------------------------------------------------------------------
+
+
+def pack_fp4(codes):
+    codes = np.asarray(codes, dtype=np.uint8)
+    if codes.shape[-1] % 2 != 0:
+        raise ValueError("FP4 packing axis must have an even length")
+    low = np.bitwise_and(codes[..., 0::2], 0x0F)
+    high = np.bitwise_and(codes[..., 1::2], 0x0F)
+    return np.bitwise_or(low, np.left_shift(high, 4)).astype(np.uint8)
+
+
+def unpack_fp4(packed):
+    packed = np.asarray(packed, dtype=np.uint8)
+    codes = np.empty(packed.shape[:-1] + (packed.shape[-1] * 2,), dtype=np.uint8)
+    codes[..., 0::2] = np.bitwise_and(packed, 0x0F)
+    codes[..., 1::2] = np.right_shift(packed, 4)
+    return codes
 
 
 # ---------------------------------------------------------------------------
@@ -73,13 +102,37 @@ def make_scale(shape):
 
 
 def generate_quantized_data(shape, dtype, rng):
-    np_dtype = _DTYPE_MAP[dtype]
-    values = rng.choice(np.array([0.5, 1.0, -1.0, 2.0], dtype=np.float32), size=shape)
-    return values.astype(np_dtype), values.astype(np.float32)
+    if dtype in ("fp8_e4m3", "fp8_e5m2"):
+        np_dtype = _DTYPE_MAP[dtype]
+        values = rng.choice(
+            np.array([0.5, 1.0, -1.0, 2.0], dtype=np.float32), size=shape
+        )
+        return values.astype(np_dtype), values.astype(np.float32)
+    if dtype == "fp4_e2m1":
+        codes = rng.integers(0, 16, size=shape, dtype=np.uint8)
+        fp32_values = FP4_E2M1_TO_FP32[codes]
+        if len(shape) == 2:
+            rows, cols = shape
+            padded = np.zeros((rows, cols + (cols % 2)), dtype=np.uint8)
+            padded[:, :cols] = codes
+            packed = pack_fp4(padded.reshape(rows, -1))
+        else:
+            packed = pack_fp4(codes.reshape(-1))
+        return packed, fp32_values
+    raise ValueError(f"Unsupported quantized dtype: {dtype}")
 
 
 def _transpose_quantized(raw, dtype, rows, cols):
-    return raw.reshape(rows, cols).T.copy()
+    if dtype in ("fp8_e4m3", "fp8_e5m2"):
+        return raw.reshape(rows, cols).T.copy()
+    if dtype == "fp4_e2m1":
+        packed = np.asarray(raw, dtype=np.uint8)
+        half_cols = (cols + 1) // 2
+        codes = unpack_fp4(packed.reshape(rows, half_cols))
+        codes = codes[:, :cols]
+        codes_t = codes.T.copy()
+        return pack_fp4(codes_t.reshape(-1))
+    raise ValueError(f"Unsupported dtype for transpose: {dtype}")
 
 
 # ---------------------------------------------------------------------------
@@ -117,29 +170,45 @@ def format_scale_b_trans(scale_b, n):
 
 
 def _convert_to_nz(data_nd, dtype, k, n, trans_b):
-    mat = data_nd.view(np.uint8).reshape(k, n)
+    c0 = _C0_SIZE[dtype]
+    is_fp4 = dtype == "fp4_e2m1"
+
+    if is_fp4:
+        codes = unpack_fp4(data_nd.view(np.uint8).reshape(k, (n + 1) // 2))[..., :n]
+        mat = codes.astype(np.uint8)
+    else:
+        mat = data_nd.view(np.uint8).reshape(k, n)
+
+    k_padded = align(k, 16 if not trans_b else c0)
+    n_padded = align(n, c0 if not trans_b else 16)
+    padded = np.zeros((max(k, k_padded), max(n, n_padded)), dtype=np.uint8)
+    padded[:k, :n] = mat
+
     if not trans_b:
         num_k_tiles = align(k, 16) // 16
-        num_n_tiles = align(n, _C0_SIZE) // _C0_SIZE
-        out = np.zeros(num_n_tiles * num_k_tiles * 16 * _C0_SIZE, dtype=np.uint8)
+        num_n_tiles = align(n, c0) // c0
+        out = np.zeros(num_n_tiles * num_k_tiles * 16 * c0, dtype=np.uint8)
         idx = 0
         for nt in range(num_n_tiles):
             for kt in range(num_k_tiles):
                 for r in range(16):
-                    for c in range(_C0_SIZE):
-                        out[idx] = mat[kt * 16 + r, nt * _C0_SIZE + c]
+                    for c in range(c0):
+                        out[idx] = padded[kt * 16 + r, nt * c0 + c]
                         idx += 1
     else:
-        num_k_tiles = align(k, _C0_SIZE) // _C0_SIZE
+        num_k_tiles = align(k, c0) // c0
         num_n_tiles = align(n, 16) // 16
-        out = np.zeros(num_k_tiles * num_n_tiles * _C0_SIZE * 16, dtype=np.uint8)
+        out = np.zeros(num_k_tiles * num_n_tiles * c0 * 16, dtype=np.uint8)
         idx = 0
         for kt in range(num_k_tiles):
             for nt in range(num_n_tiles):
                 for c in range(16):
-                    for r in range(_C0_SIZE):
-                        out[idx] = mat[kt * _C0_SIZE + r, nt * 16 + c]
+                    for r in range(c0):
+                        out[idx] = padded[kt * c0 + r, nt * 16 + c]
                         idx += 1
+
+    if is_fp4:
+        return pack_fp4(out.reshape(-1))
     return out
 
 
@@ -228,7 +297,15 @@ def generate(args):
         gelu_result.astype(np.float32), emax, dtype_max
     )
 
-    golden_y = quantized_fp32.astype(_DTYPE_MAP[args.a_dtype])
+    if args.a_dtype == "fp4_e2m1":
+        codes = quantized_fp32.astype(ml_dtypes.float4_e2m1fn).view(np.uint8)
+        if codes.size % 2 != 0:
+            padded = np.zeros(codes.size + 1, dtype=np.uint8)
+            padded[: codes.size] = codes
+            codes = padded
+        golden_y = pack_fp4(codes.reshape(-1))
+    else:
+        golden_y = quantized_fp32.astype(_DTYPE_MAP[args.a_dtype])
     y_scale_per_row = y_scale_flat.reshape(args.m, -1)
     golden_y_scale = np.zeros((args.m, scale_n), dtype=FP8_E8M0)
     golden_y_scale[:, : y_scale_per_row.shape[1]] = y_scale_per_row
@@ -240,10 +317,18 @@ def generate(args):
         else a_raw
     )
     _write_bin(os.path.join(d, "input_a.bin"), a_write)
-    _write_bin(
-        os.path.join(d, "input_b.bin"),
-        _convert_to_nz(b_raw, args.b_dtype, args.k, args.n, args.trans_b),
-    )
+    if args.format == "(ND,NZ)":
+        _write_bin(
+            os.path.join(d, "input_b.bin"),
+            _convert_to_nz(b_raw, args.b_dtype, args.k, args.n, args.trans_b),
+        )
+    else:
+        b_write = (
+            _transpose_quantized(b_raw, args.b_dtype, args.k, args.n)
+            if args.trans_b
+            else b_raw
+        )
+        _write_bin(os.path.join(d, "input_b.bin"), b_write)
 
     sa_fmt = (
         format_scale_a_trans(scale_a, args.m)
@@ -274,10 +359,13 @@ def main():
     parser.add_argument("--n", type=int, required=True)
     parser.add_argument("--bias", type=int, default=0)
     parser.add_argument("--output-dir", required=True)
-    parser.add_argument("--a-dtype", required=True, choices=("fp8_e4m3", "fp8_e5m2"))
-    parser.add_argument("--b-dtype", required=True, choices=("fp8_e4m3",))
+    parser.add_argument(
+        "--a-dtype", required=True, choices=("fp8_e4m3", "fp8_e5m2", "fp4_e2m1")
+    )
+    parser.add_argument("--b-dtype", required=True, choices=("fp8_e4m3", "fp4_e2m1"))
     parser.add_argument("--trans-a", action="store_true", default=False)
     parser.add_argument("--trans-b", action="store_true", default=False)
+    parser.add_argument("--format", default="(ND,NZ)", choices=("(ND,ND)", "(ND,NZ)"))
     generate(parser.parse_args())
 
 

@@ -347,7 +347,7 @@ __aicore__ inline void GemmUniversal<QBMM_MX_KERNEL_TEM_PARAMS>::AddBatchOffset(
     const auto m = AscendC::Te::Get<MNK_M>(params.problemShape);
     const auto n = AscendC::Te::Get<MNK_N>(params.problemShape);
     const int64_t scaleN = CeilDiv(n, BLOCK_SIZE * ALIGN_NUM_2) * ALIGN_NUM_2;
-    epilogueOp_.UpdateGlobalAddr({batchCOffset_ * m * n, batchCOffset_ * m * scaleN, 0, 0, 0});
+    epilogueOp_.UpdateGlobalAddr({batchCOffset_ * m * n >> sizeShift, batchCOffset_ * m * scaleN, 0, 0, 0});
 }
 
 QBMM_MX_KERNEL_CLASS_TEM_PARAMS

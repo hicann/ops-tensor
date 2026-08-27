@@ -6,7 +6,7 @@
 
 - **算子**: quant_matmul_activation_quant
 - **场景**: AIC MX GEMM + AIV Gelu 激活 + 动态 MX 量化融合
-- **算法特点**: A/B 双侧 MX FP8 量化输入，DualDst L0C→UB，OCP 动态 MX 量化输出
+- **算法特点**: A/B 双侧 MX FP8/FP4 量化输入，DualDst L0C→UB，OCP 动态 MX 量化输出
 - **参考实现**: 基于 Blaze 框架 `blaze/gemm/kernel/kernel_qbmm_mx_activation_quant.h`
 
 ## 支持架构
@@ -18,11 +18,11 @@
 ## 使用约束
 
 - 输入 A shape: `[M, K]`（transA=false）或 `[K, M]`（transA=true）
-- 输入 B shape: `[K, N]`（transB=false）或 `[N, K]`（transB=true），权重固定 NZ 布局
+- 输入 B shape: `[K, N]`（transB=false）或 `[N, K]`（transB=true），支持 NZ 和 ND 两种布局
 - 输出 Y shape: `[M, N]`，输出 Y_scale shape: `[M, ceil(N/64)*2]`
-- A/B dtype: `fp8_e4m3`、`fp8_e5m2`（A 和 B 可为不同 FP8 子类型）
+- A/B dtype: `fp8_e4m3`、`fp8_e5m2`、`fp4_e2m1`（A 和 B 可为不同 FP8 子类型；FP4 时 A 和 B 必须同为 `fp4_e2m1`，不支持 FP4×FP8 混合）
 - C dtype（epilogue 输出结果）= A dtype
-- 输出 Y dtype 跟随 A dtype
+- 输出 Y dtype 跟随 A dtype（FP4 时 Y 为 `fp4x2_e2m1` 打包格式，2 元素/字节）
 - ScaleA/ScaleB/Y_scale dtype: `fp8_e8m0`
 - Bias dtype: `float32`
 
@@ -42,20 +42,45 @@ bash examples/common/run.sh --ops=quant_matmul_activation_quant --target=quant_m
 测试用例定义在 `quant_matmul_activation_quant.csv` 中，格式如下：
 
 ```csv
-nz_basic_fp8e4m3,64,128,128,0,fp8_e4m3,fp8_e4m3,false,false,64,128,64,64,64,2,1,false
-nz_bias_fp8e4m3,64,128,128,128,fp8_e4m3,fp8_e4m3,false,false,64,128,64,64,64,2,1,false
-nz_fp8e5m2_fp8_e4m3,64,128,128,0,fp8_e5m2,fp8_e4m3,false,false,64,128,64,64,64,2,1,false
-nz_fp8e4m3_fp8_e4m3,64,128,128,0,fp8_e4m3,fp8_e4m3,false,false,64,128,64,64,64,2,1,false
-nz_fp8e5m2_fp8e4m3_bias,64,128,128,128,fp8_e5m2,fp8_e4m3,false,false,64,128,64,64,64,2,1,false
-nz_fp8e4m3_afl,64,128,128,0,fp8_e4m3,fp8_e4m3,false,false,64,128,64,64,64,2,2,true
-nz_fp8e5m2_afl_bias,64,128,128,128,fp8_e5m2,fp8_e4m3,false,false,64,128,64,64,64,2,2,true
-nz_fp8e4m3_dbl0c2,128,256,256,0,fp8_e4m3,fp8_e4m3,false,false,128,128,128,128,128,2,2,false
-nz_fp8e4m3_transB,64,128,128,0,fp8_e4m3,fp8_e4m3,false,true,64,128,64,64,64,2,1,false
-nz_fp8e4m3_transA,64,128,128,0,fp8_e4m3,fp8_e4m3,true,false,64,128,64,64,64,2,1,false
-nz_fp8e4m3_transA_transB_bias,64,128,128,128,fp8_e4m3,fp8_e4m3,true,true,64,128,64,64,64,2,1,false
-nz_fp8e5m2_dbl0c2_afl,128,256,256,256,fp8_e5m2,fp8_e4m3,false,false,128,128,128,128,128,2,2,true
-nz_large_fp8e4m3,256,512,256,0,fp8_e4m3,fp8_e4m3,false,false,128,128,128,256,256,2,1,false
-nz_fp8e4m3_fp8_e4m3_transB_bias,128,256,256,256,fp8_e4m3,fp8_e4m3,false,true,128,128,128,128,128,2,1,false
+nz_basic_fp8e4m3,64,128,128,0,fp8_e4m3,fp8_e4m3,false,false,"(ND,NZ)",64,128,64,64,64,2,1,false
+nz_bias_fp8e4m3,64,128,128,128,fp8_e4m3,fp8_e4m3,false,false,"(ND,NZ)",64,128,64,64,64,2,1,false
+nz_fp8e5m2_fp8_e4m3,64,128,128,0,fp8_e5m2,fp8_e4m3,false,false,"(ND,NZ)",64,128,64,64,64,2,1,false
+nz_fp8e4m3_fp8_e4m3,64,128,128,0,fp8_e4m3,fp8_e4m3,false,false,"(ND,NZ)",64,128,64,64,64,2,1,false
+nz_fp8e5m2_fp8e4m3_bias,64,128,128,128,fp8_e5m2,fp8_e4m3,false,false,"(ND,NZ)",64,128,64,64,64,2,1,false
+nz_fp8e4m3_afl,64,128,128,0,fp8_e4m3,fp8_e4m3,false,false,"(ND,NZ)",64,128,64,64,64,2,2,true
+nz_fp8e5m2_afl_bias,64,128,128,128,fp8_e5m2,fp8_e4m3,false,false,"(ND,NZ)",64,128,64,64,64,2,2,true
+nz_fp8e4m3_dbl0c2,128,256,256,0,fp8_e4m3,fp8_e4m3,false,false,"(ND,NZ)",128,128,128,128,128,2,2,false
+nz_fp8e4m3_transB,64,128,128,0,fp8_e4m3,fp8_e4m3,false,true,"(ND,NZ)",64,128,64,64,64,2,1,false
+nz_fp8e4m3_transA,64,128,128,0,fp8_e4m3,fp8_e4m3,true,false,"(ND,NZ)",64,128,64,64,64,2,1,false
+nz_fp8e4m3_transA_transB_bias,64,128,128,128,fp8_e4m3,fp8_e4m3,true,true,"(ND,NZ)",64,128,64,64,64,2,1,false
+nz_fp8e5m2_dbl0c2_afl,128,256,256,256,fp8_e5m2,fp8_e4m3,false,false,"(ND,NZ)",128,128,128,128,128,2,2,true
+nz_large_fp8e4m3,256,512,256,0,fp8_e4m3,fp8_e4m3,false,false,"(ND,NZ)",128,128,128,256,256,2,1,false
+nz_fp8e4m3_fp8_e4m3_transB_bias,128,256,256,256,fp8_e4m3,fp8_e4m3,false,true,"(ND,NZ)",128,128,128,128,128,2,1,false
+nz_basic_fp4e2m1,64,128,128,0,fp4_e2m1,fp4_e2m1,false,false,"(ND,NZ)",64,128,64,64,64,2,1,false
+nz_bias_fp4e2m1,64,128,128,128,fp4_e2m1,fp4_e2m1,false,false,"(ND,NZ)",64,128,64,64,64,2,1,false
+nz_fp4e2m1_afl,64,128,128,0,fp4_e2m1,fp4_e2m1,false,false,"(ND,NZ)",64,128,64,64,64,2,2,true
+nz_fp4e2m1_dbl0c2,128,256,256,0,fp4_e2m1,fp4_e2m1,false,false,"(ND,NZ)",128,128,128,128,128,2,2,false
+nz_fp4e2m1_transB,64,128,128,0,fp4_e2m1,fp4_e2m1,false,true,"(ND,NZ)",64,128,64,64,64,2,1,false
+nz_fp4e2m1_transA,64,128,128,0,fp4_e2m1,fp4_e2m1,true,false,"(ND,NZ)",64,128,64,64,64,2,1,false
+nz_fp4e2m1_transA_transB_bias,64,128,128,128,fp4_e2m1,fp4_e2m1,true,true,"(ND,NZ)",64,128,64,64,64,2,1,false
+nz_fp4e2m1_afl_bias,64,128,128,128,fp4_e2m1,fp4_e2m1,false,false,"(ND,NZ)",64,128,64,64,64,2,2,true
+nz_fp4e2m1_dbl0c2_afl,128,256,256,256,fp4_e2m1,fp4_e2m1,false,false,"(ND,NZ)",128,128,128,128,128,2,2,true
+nz_large_fp4e2m1,256,512,256,0,fp4_e2m1,fp4_e2m1,false,false,"(ND,NZ)",128,128,128,256,256,2,1,false
+nz_fp4e2m1_transB_bias,128,256,256,256,fp4_e2m1,fp4_e2m1,false,true,"(ND,NZ)",128,128,128,128,128,2,1,false
+nd_basic_fp8e4m3,64,128,128,0,fp8_e4m3,fp8_e4m3,false,false,"(ND,ND)",64,128,64,64,64,2,1,false
+nd_bias_fp8e4m3,64,128,128,128,fp8_e4m3,fp8_e4m3,false,false,"(ND,ND)",64,128,64,64,64,2,1,false
+nd_fp8e5m2_fp8e4m3,64,128,128,0,fp8_e5m2,fp8_e4m3,false,false,"(ND,ND)",64,128,64,64,64,2,1,false
+nd_fp8e4m3_transB,64,128,128,0,fp8_e4m3,fp8_e4m3,false,true,"(ND,ND)",64,128,64,64,64,2,1,false
+nd_fp8e4m3_transA,64,128,128,0,fp8_e4m3,fp8_e4m3,true,false,"(ND,ND)",64,128,64,64,64,2,1,false
+nd_fp8e4m3_afl_bias,64,128,128,128,fp8_e4m3,fp8_e4m3,false,false,"(ND,ND)",64,128,64,64,64,2,2,true
+nd_large_fp8e4m3,256,512,256,0,fp8_e4m3,fp8_e4m3,false,false,"(ND,ND)",128,128,128,256,256,2,1,false
+nd_basic_fp4e2m1,64,128,128,0,fp4_e2m1,fp4_e2m1,false,false,"(ND,ND)",64,128,64,64,64,2,1,false
+nd_bias_fp4e2m1,64,128,128,128,fp4_e2m1,fp4_e2m1,false,false,"(ND,ND)",64,128,64,64,64,2,1,false
+nd_fp4e2m1_transB,64,128,128,0,fp4_e2m1,fp4_e2m1,false,true,"(ND,ND)",64,128,64,64,64,2,1,false
+nd_fp4e2m1_transA,64,128,128,0,fp4_e2m1,fp4_e2m1,true,false,"(ND,ND)",64,128,64,64,64,2,1,false
+nd_fp4e2m1_afl_bias,64,128,128,128,fp4_e2m1,fp4_e2m1,false,false,"(ND,ND)",64,128,64,64,64,2,2,true
+nd_fp4e2m1_dbl0c2,128,256,256,0,fp4_e2m1,fp4_e2m1,false,false,"(ND,ND)",128,128,128,128,128,2,2,false
+nd_large_fp4e2m1,256,512,256,0,fp4_e2m1,fp4_e2m1,false,false,"(ND,ND)",128,128,128,256,256,2,1,false
 ```
 
 **列说明**：
@@ -65,8 +90,9 @@ nz_fp8e4m3_fp8_e4m3_transB_bias,128,256,256,256,fp8_e4m3,fp8_e4m3,false,true,128
 | casename | 用例名称 |
 | m, k, n | 矩阵维度 |
 | bias | bias 元素数量，必须为 n 或 0 |
-| a_dtype, b_dtype | A/B 量化 dtype: fp8_e4m3, fp8_e5m2 |
+| a_dtype, b_dtype | A/B 量化 dtype: fp8_e4m3, fp8_e5m2, fp4_e2m1（FP4 时 A/B 必须同为 fp4_e2m1） |
 | transA, transB | A/B 矩阵是否转置 |
+| format | B 矩阵布局: `(ND,NZ)` 或 `(ND,ND)` |
 | base_m, base_n, base_k | Cube 基础分块大小 |
 | tile_k_l1 | L1 中 K 方向的 Tile 大小 |
 | scale_k_l1 | L1 中 Scale K 方向的 Tile 大小 |
@@ -105,6 +131,7 @@ nz_fp8e4m3_fp8_e4m3_transB_bias,128,256,256,256,fp8_e4m3,fp8_e4m3,false,true,128
 |-------|------|------|
 | fp8_e4m3 | 1e-3 | 1.0 |
 | fp8_e5m2 | 1e-3 | 1.0 |
+| fp4_e2m1 | 1e-3 | 1.0 |
 | fp8_e8m0 (Y_scale) | 1e-3 | 1.0 |
 
 ## 代码结构

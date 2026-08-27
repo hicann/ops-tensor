@@ -13,7 +13,7 @@
 
 """Compare the NPU MX quant output (Y + Y_scale) with the golden result.
 
-Y dtype follows A dtype: fp8_e4m3 or fp8_e5m2.
+Y dtype follows A dtype: fp8_e4m3, fp8_e5m2, or fp4_e2m1.
 Y_scale is always fp8_e8m0.
 """
 
@@ -26,12 +26,26 @@ import numpy as np
 FP8_E4M3FN = ml_dtypes.float8_e4m3fn
 FP8_E5M2 = ml_dtypes.float8_e5m2
 FP8_E8M0 = ml_dtypes.float8_e8m0fnu
+FP4_E2M1_TO_FP32 = (
+    np.arange(16, dtype=np.int8).view(ml_dtypes.float4_e2m1fn).astype(np.float32)
+)
 
 _DTYPE_MAP = {"fp8_e4m3": FP8_E4M3FN, "fp8_e5m2": FP8_E5M2}
 
 
+def unpack_fp4(packed):
+    packed = np.asarray(packed, dtype=np.uint8)
+    codes = np.empty(packed.size * 2, dtype=np.uint8)
+    codes[0::2] = np.bitwise_and(packed, 0x0F)
+    codes[1::2] = np.right_shift(packed, 4)
+    return codes
+
+
 def load_y_as_fp32(path, dtype):
     raw = np.fromfile(path, dtype=np.uint8)
+    if dtype == "fp4_e2m1":
+        codes = unpack_fp4(raw)
+        return FP4_E2M1_TO_FP32[codes]
     return raw.view(_DTYPE_MAP[dtype]).astype(np.float32)
 
 
@@ -87,7 +101,7 @@ def parse_args():
     parser.add_argument(
         "--dtype",
         required=True,
-        choices=("fp8_e4m3", "fp8_e5m2"),
+        choices=("fp8_e4m3", "fp8_e5m2", "fp4_e2m1"),
         help="Y output dtype (follows A dtype)",
     )
     return parser.parse_args()

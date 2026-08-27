@@ -10,7 +10,7 @@
 
 ### 量化格式支持
 支持以下量化数据类型：
-- **MxFP8**：`fp8_e5m2_t`、`fp8_e4m3fn_t`（8-bit 浮点）
+- **MxFP8**：`fp8_e5m2_t`、`fp8_e4m3fn_t`、`fp4x2_e2m1_t`（8-bit 浮点）
 
 ### Scale 因子要求
 必须提供两个 Scale 因子：
