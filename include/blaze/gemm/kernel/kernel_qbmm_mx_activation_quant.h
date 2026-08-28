@@ -112,6 +112,36 @@ private:
     __aicore__ inline void ResetGmAddr(const Params& params);
     __aicore__ inline void ProcessSingleBatch(const Params& params, BlockScheduler& bs, uint64_t restBatch,
                                               bool isTailRound);
+    __aicore__ inline void ProcessTileLoop(const Params& params, BlockScheduler& bs);
+    template <class GmTensorA, class GmTensorB, class GmTensorScaleA, class GmTensorScaleB, class GmTensorBias,
+              class GmTensorC, class UbMemPtr>
+    __aicore__ inline void ProcessOneBlock(const GmTensorA& gmA, const GmTensorB& gmB, const GmTensorScaleA& gmScaleA,
+                                           const GmTensorScaleB& gmScaleB, const GmTensorBias& gmBias,
+                                           const GmTensorC& gmC, const BlockShape& singleShape, int64_t mPos,
+                                           int64_t nPos, int64_t baseM, int64_t baseN, int64_t k, int64_t scaleKLen,
+                                           int64_t n, const UbMemPtr& ubmemPtr);
+
+    struct BatchStrideInfo {
+        uint64_t aBatchElementStride;
+        uint64_t bBatchElementStride;
+        uint64_t cBatchStride;
+        uint64_t biasBatchStride;
+        uint64_t scaleABatchStride;
+        uint64_t scaleBBatchStride;
+        uint64_t batchC2C3C4;
+        uint64_t batchB2B3B4;
+        uint64_t batchA2A3A4;
+        uint32_t multiA1C1;
+        uint32_t multiA2C2;
+        uint32_t multiA3C3;
+        uint32_t multiA4C4;
+        uint32_t multiB1C1;
+        uint32_t multiB2C2;
+        uint32_t multiB3C3;
+        uint32_t multiB4C4;
+    };
+    __aicore__ inline BatchStrideInfo CalcBatchStrides(const Params& params);
+    __aicore__ inline void ProcessBatchLoop(const Params& params, BlockScheduler& bs, const BatchStrideInfo& info);
 
     __aicore__ inline void ProcessWithBatch(const Params& params, BlockScheduler& bs);
     __aicore__ inline void AddBatchOffset(const Params& params, uint64_t aBatchElementStride,
@@ -242,91 +272,99 @@ __aicore__ inline void GemmUniversal<QBMM_MX_KERNEL_TEM_PARAMS>::ResetGmAddr(con
 }
 
 QBMM_MX_KERNEL_CLASS_TEM_PARAMS
-__aicore__ inline void GemmUniversal<QBMM_MX_KERNEL_TEM_PARAMS>::ProcessWithBatch(const Params& params,
-                                                                                  BlockScheduler& bs)
+__aicore__ inline auto GemmUniversal<QBMM_MX_KERNEL_TEM_PARAMS>::CalcBatchStrides(const Params& params)
+    -> BatchStrideInfo
 {
     const auto& qbmmParams = params.qbmmParams;
-    const auto& problemShape = params.problemShape;
-    const auto m = AscendC::Te::Get<MNK_M>(problemShape);
-    const auto n = AscendC::Te::Get<MNK_N>(problemShape);
-    const auto k = AscendC::Te::Get<MNK_K>(problemShape);
-    const uint64_t aBatchElementStride = m * k;
-    uint64_t bBatchElementStride = 0;
+    const auto m = AscendC::Te::Get<MNK_M>(params.problemShape);
+    const auto n = AscendC::Te::Get<MNK_N>(params.problemShape);
+    const auto k = AscendC::Te::Get<MNK_K>(params.problemShape);
+
+    BatchStrideInfo info{};
+    info.aBatchElementStride = m * k;
     if constexpr (WEIGHT_NZ) {
         if constexpr (TRANS_B) {
-            const auto kBlockCnt = Blaze::Gemm::CeilDiv(k, C0_SIZE);
-            const auto nBlockCnt = Blaze::Gemm::CeilDiv(n, static_cast<int64_t>(BLOCK_CUBE));
-            bBatchElementStride = kBlockCnt * nBlockCnt * BLOCK_CUBE * C0_SIZE;
+            info.bBatchElementStride = Blaze::Gemm::CeilDiv(k, C0_SIZE) *
+                                       Blaze::Gemm::CeilDiv(n, static_cast<int64_t>(BLOCK_CUBE)) * BLOCK_CUBE * C0_SIZE;
         } else {
-            const auto nBlockCnt = Blaze::Gemm::CeilDiv(n, C0_SIZE);
-            const auto kBlockCnt = Blaze::Gemm::CeilDiv(k, static_cast<int64_t>(BLOCK_CUBE));
-            bBatchElementStride = nBlockCnt * kBlockCnt * BLOCK_CUBE * C0_SIZE;
+            info.bBatchElementStride = Blaze::Gemm::CeilDiv(n, C0_SIZE) *
+                                       Blaze::Gemm::CeilDiv(k, static_cast<int64_t>(BLOCK_CUBE)) * BLOCK_CUBE * C0_SIZE;
         }
     } else {
-        bBatchElementStride = n * k;
+        info.bBatchElementStride = n * k;
     }
-    const uint64_t cBatchStride = m * n;
-    const uint64_t biasBatchStride = isBiasThreeDim_ ? n : 0;
+    info.cBatchStride = m * n;
+    info.biasBatchStride = isBiasThreeDim_ ? n : 0;
     const uint64_t scaleKLen = Blaze::Gemm::CeilDiv(k, static_cast<int64_t>(MXFP_DIVISOR_SIZE)) * MXFP_MULTI_BASE_SIZE;
-    const uint64_t scaleABatchStride = m * scaleKLen;
-    const uint64_t scaleBBatchStride = n * scaleKLen;
-    const uint64_t batchC3C4 = static_cast<uint64_t>(qbmmParams.batchC3) * qbmmParams.batchC4;
-    const uint64_t batchC2C3C4 = qbmmParams.batchC2 * batchC3C4;
-    const uint64_t batchB3B4 = static_cast<uint64_t>(qbmmParams.batchB3) * qbmmParams.batchB4;
-    const uint64_t batchB2B3B4 = qbmmParams.batchB2 * batchB3B4;
-    const uint64_t batchA3A4 = static_cast<uint64_t>(qbmmParams.batchA3) * qbmmParams.batchA4;
-    const uint64_t batchA2A3A4 = qbmmParams.batchA2 * batchA3A4;
-    const uint32_t multiA1C1 = qbmmParams.batchA1 / qbmmParams.batchC1;
-    const uint32_t multiA2C2 = qbmmParams.batchA2 / qbmmParams.batchC2;
-    const uint32_t multiA3C3 = qbmmParams.batchA3 / qbmmParams.batchC3;
-    const uint32_t multiA4C4 = qbmmParams.batchA4 / qbmmParams.batchC4;
-    const uint32_t multiB1C1 = qbmmParams.batchB1 / qbmmParams.batchC1;
-    const uint32_t multiB2C2 = qbmmParams.batchB2 / qbmmParams.batchC2;
-    const uint32_t multiB3C3 = qbmmParams.batchB3 / qbmmParams.batchC3;
-    const uint32_t multiB4C4 = qbmmParams.batchB4 / qbmmParams.batchC4;
+    info.scaleABatchStride = m * scaleKLen;
+    info.scaleBBatchStride = n * scaleKLen;
+    info.batchC2C3C4 = qbmmParams.batchC2 * static_cast<uint64_t>(qbmmParams.batchC3) * qbmmParams.batchC4;
+    info.batchB2B3B4 = qbmmParams.batchB2 * static_cast<uint64_t>(qbmmParams.batchB3) * qbmmParams.batchB4;
+    info.batchA2A3A4 = qbmmParams.batchA2 * static_cast<uint64_t>(qbmmParams.batchA3) * qbmmParams.batchA4;
+    info.multiA1C1 = qbmmParams.batchA1 / qbmmParams.batchC1;
+    info.multiA2C2 = qbmmParams.batchA2 / qbmmParams.batchC2;
+    info.multiA3C3 = qbmmParams.batchA3 / qbmmParams.batchC3;
+    info.multiA4C4 = qbmmParams.batchA4 / qbmmParams.batchC4;
+    info.multiB1C1 = qbmmParams.batchB1 / qbmmParams.batchC1;
+    info.multiB2C2 = qbmmParams.batchB2 / qbmmParams.batchC2;
+    info.multiB3C3 = qbmmParams.batchB3 / qbmmParams.batchC3;
+    info.multiB4C4 = qbmmParams.batchB4 / qbmmParams.batchC4;
+    return info;
+}
 
-    uint64_t batchC1Offset = 0;
-    uint64_t batchA1Offset = 0;
-    uint64_t batchB1Offset = 0;
-    uint64_t curBatchC = 1UL;
+QBMM_MX_KERNEL_CLASS_TEM_PARAMS
+__aicore__ inline void GemmUniversal<QBMM_MX_KERNEL_TEM_PARAMS>::ProcessBatchLoop(const Params& params,
+                                                                                  BlockScheduler& bs,
+                                                                                  const BatchStrideInfo& info)
+{
+    const auto& qbmmParams = params.qbmmParams;
+    const uint64_t batchC3C4 = static_cast<uint64_t>(qbmmParams.batchC3) * qbmmParams.batchC4;
+    const uint64_t batchA3A4 = static_cast<uint64_t>(qbmmParams.batchA3) * qbmmParams.batchA4;
+    const uint64_t batchB3B4 = static_cast<uint64_t>(qbmmParams.batchB3) * qbmmParams.batchB4;
     const uint64_t singleBatchBlockCnt = bs.GetTotalCnt();
     const uint64_t batchCount = AscendC::Te::Get<MNK_B>(params.problemShape);
     const uint64_t tailRoundStart = (singleBatchBlockCnt * batchCount / AscendC::GetBlockNum()) *
                                     AscendC::GetBlockNum();
-    for (uint64_t b1Index = 0; b1Index < qbmmParams.batchC1; ++b1Index) {
-        uint64_t batchC2Offset = batchC1Offset;
-        uint64_t batchA2Offset = batchA1Offset;
-        uint64_t batchB2Offset = batchB1Offset;
-        for (uint64_t b2Index = 0; b2Index < qbmmParams.batchC2; ++b2Index) {
-            uint64_t batchC3Offset = batchC2Offset;
-            uint64_t batchA3Offset = batchA2Offset;
-            uint64_t batchB3Offset = batchB2Offset;
-            for (uint64_t b3Index = 0; b3Index < qbmmParams.batchC3; ++b3Index) {
-                batchCOffset_ = batchC3Offset;
-                batchAOffset_ = batchA3Offset;
-                batchBOffset_ = batchB3Offset;
-                for (uint64_t b4Index = 0; b4Index < qbmmParams.batchC4; ++b4Index) {
-                    const bool isTailRound = curBatchC * singleBatchBlockCnt > tailRoundStart;
-                    AddBatchOffset(params, aBatchElementStride, bBatchElementStride, cBatchStride, scaleABatchStride,
-                                   scaleBBatchStride, biasBatchStride);
+
+    uint64_t batchC1Offset = 0, batchA1Offset = 0, batchB1Offset = 0, curBatchC = 1UL;
+    for (uint64_t b1 = 0; b1 < qbmmParams.batchC1; ++b1) {
+        uint64_t c2 = batchC1Offset, a2 = batchA1Offset, b2 = batchB1Offset;
+        for (uint64_t b2i = 0; b2i < qbmmParams.batchC2; ++b2i) {
+            uint64_t c3 = c2, a3 = a2, b3 = b2;
+            for (uint64_t b3i = 0; b3i < qbmmParams.batchC3; ++b3i) {
+                batchCOffset_ = c3;
+                batchAOffset_ = a3;
+                batchBOffset_ = b3;
+                for (uint64_t b4 = 0; b4 < qbmmParams.batchC4; ++b4) {
+                    bool isTailRound = curBatchC * singleBatchBlockCnt > tailRoundStart;
+                    AddBatchOffset(params, info.aBatchElementStride, info.bBatchElementStride, info.cBatchStride,
+                                   info.scaleABatchStride, info.scaleBBatchStride, info.biasBatchStride);
                     ProcessSingleBatch(params, bs, batchCount - curBatchC, isTailRound);
                     curBatchC++;
-                    batchCOffset_ += 1;
-                    batchAOffset_ += multiA4C4;
-                    batchBOffset_ += multiB4C4;
+                    batchCOffset_++;
+                    batchAOffset_ += info.multiA4C4;
+                    batchBOffset_ += info.multiB4C4;
                 }
-                batchC3Offset += qbmmParams.batchC4;
-                batchA3Offset += qbmmParams.batchA4 * static_cast<uint64_t>(multiA3C3);
-                batchB3Offset += qbmmParams.batchB4 * static_cast<uint64_t>(multiB3C3);
+                c3 += qbmmParams.batchC4;
+                a3 += qbmmParams.batchA4 * info.multiA3C3;
+                b3 += qbmmParams.batchB4 * info.multiB3C3;
             }
-            batchC2Offset += batchC3C4;
-            batchA2Offset += batchA3A4 * multiA2C2;
-            batchB2Offset += batchB3B4 * multiB2C2;
+            c2 += batchC3C4;
+            a2 += batchA3A4 * info.multiA2C2;
+            b2 += batchB3B4 * info.multiB2C2;
         }
-        batchC1Offset += batchC2C3C4;
-        batchA1Offset += batchA2A3A4 * multiA1C1;
-        batchB1Offset += batchB2B3B4 * multiB1C1;
+        batchC1Offset += info.batchC2C3C4;
+        batchA1Offset += info.batchA2A3A4 * info.multiA1C1;
+        batchB1Offset += info.batchB2B3B4 * info.multiB1C1;
     }
+}
+
+QBMM_MX_KERNEL_CLASS_TEM_PARAMS
+__aicore__ inline void GemmUniversal<QBMM_MX_KERNEL_TEM_PARAMS>::ProcessWithBatch(const Params& params,
+                                                                                  BlockScheduler& bs)
+{
+    BatchStrideInfo info = CalcBatchStrides(params);
+    ProcessBatchLoop(params, bs, info);
 }
 
 QBMM_MX_KERNEL_CLASS_TEM_PARAMS
@@ -361,10 +399,42 @@ __aicore__ inline void GemmUniversal<QBMM_MX_KERNEL_TEM_PARAMS>::End()
 }
 
 QBMM_MX_KERNEL_CLASS_TEM_PARAMS
-__aicore__ inline void GemmUniversal<QBMM_MX_KERNEL_TEM_PARAMS>::ProcessSingleBatch(const Params& params,
-                                                                                    BlockScheduler& bs,
-                                                                                    uint64_t restBatch,
-                                                                                    bool isTailRound)
+template <class GmTensorA, class GmTensorB, class GmTensorScaleA, class GmTensorScaleB, class GmTensorBias,
+          class GmTensorC, class UbMemPtr>
+__aicore__ inline void GemmUniversal<QBMM_MX_KERNEL_TEM_PARAMS>::ProcessOneBlock(
+    const GmTensorA& gmA, const GmTensorB& gmB, const GmTensorScaleA& gmScaleA, const GmTensorScaleB& gmScaleB,
+    const GmTensorBias& gmBias, const GmTensorC& gmC, const BlockShape& singleShape, int64_t mPos, int64_t nPos,
+    int64_t baseM, int64_t baseN, int64_t k, int64_t scaleKLen, int64_t n, const UbMemPtr& ubmemPtr)
+{
+    constexpr int64_t kPos = 0L;
+    auto gmBlockA = gmA.Slice(AscendC::Te::MakeCoord(mPos, kPos), AscendC::Te::MakeShape(baseM, k));
+    auto gmBlockScaleA = gmScaleA.Slice(AscendC::Te::MakeCoord(mPos, kPos), AscendC::Te::MakeShape(baseM, scaleKLen));
+    auto gmBlockB = gmB.Slice(AscendC::Te::MakeCoord(kPos, nPos), AscendC::Te::MakeShape(k, baseN));
+    auto gmBlockScaleB = gmScaleB.Slice(AscendC::Te::MakeCoord(kPos, nPos), AscendC::Te::MakeShape(scaleKLen, baseN));
+    auto gmBlockBias = gmBias.Slice(AscendC::Te::MakeCoord(0L, nPos), AscendC::Te::MakeShape(1L, baseN));
+    auto gmBlockC = gmC.Slice(AscendC::Te::MakeCoord(mPos, nPos), AscendC::Te::MakeShape(baseM, baseN));
+    auto locOutUb = AscendC::Te::MakeTensor(
+        ubmemPtr, AscendC::Te::MakeFrameLayout<AscendC::Te::NDExtLayoutPtn>((baseM + 1) & ~1, Align32(baseN)));
+    if ASCEND_IS_AIC {
+        if (isVecSetSyncCom_) {
+            WaitForVector();
+        }
+        mmadOp_(gmBlockA, gmBlockB, gmBlockScaleA, gmBlockScaleB, gmBlockBias, locOutUb, singleShape);
+        NotifyVector();
+    }
+    isVecSetSyncCom_ = true;
+    if ASCEND_IS_AIV {
+        WaitForCube();
+        epilogueOp_({baseM, baseN, 0, 0},
+                    {mPos * n + nPos,
+                     mPos * CeilDiv(n, BLOCK_SIZE * ALIGN_NUM_2) * ALIGN_NUM_2 + CeilDiv(nPos, BLOCK_SIZE), 0, 0, 0});
+        NotifyCube();
+    }
+}
+
+QBMM_MX_KERNEL_CLASS_TEM_PARAMS
+__aicore__ inline void GemmUniversal<QBMM_MX_KERNEL_TEM_PARAMS>::ProcessTileLoop(const Params& params,
+                                                                                 BlockScheduler& bs)
 {
     const auto& problemShape = params.problemShape;
     const auto m = AscendC::Te::Get<MNK_M>(problemShape);
@@ -377,7 +447,6 @@ __aicore__ inline void GemmUniversal<QBMM_MX_KERNEL_TEM_PARAMS>::ProcessSingleBa
     auto layoutScaleB = MakeLayoutScaleB{}(scaleKLen, n);
     auto layoutBias = AscendC::Te::MakeFrameLayout<AscendC::Te::NDExtLayoutPtn>(1L, n);
     auto layoutC = MakeLayoutC{}(m, n);
-
     auto gmA = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(aGmAddr_), layoutA);
     auto gmScaleA = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(scaleAGmAddr_),
                                             layoutScaleA);
@@ -386,23 +455,11 @@ __aicore__ inline void GemmUniversal<QBMM_MX_KERNEL_TEM_PARAMS>::ProcessSingleBa
                                             layoutScaleB);
     auto gmBias = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(biasGmAddr_), layoutBias);
     auto gmC = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(cGmAddr_), layoutC);
-
     auto ubmemPtr = AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB, float>(0);
-    const auto mTailTile = params.schParams.mTailTile;
-    const auto nTailTile = params.schParams.nTailTile;
-    // both tail of current batch and rest batch are tail round
-    if (needUpdateTail_ ||
-        (isTailRound && ((bs.GetEndBlockIdx() + 1) + (restBatch * bs.GetTotalCnt())) * mTailTile * nTailTile <=
-                            AscendC::GetBlockNum())) {
-        needUpdateTail_ = true;
-        bs.UpdateTailTile(mTailTile, nTailTile);
-    }
     SetL2Cache(problemShape, params.qbmmParams.baseM, params.qbmmParams.baseN, gmB, gmC);
 
     BlockCoord blockCoord;
-    int64_t mPos = 0L;
-    int64_t nPos = 0L;
-    constexpr int64_t kPos = 0L; // K is not split, so the K coordinate is 0.
+    int64_t mPos = 0L, nPos = 0L;
     while (bs.GetTileIdx(blockCoord)) {
         BlockShape singleShape = bs.template GetBlockShape<QuantMode::MX_PERGROUP_MODE, QuantMode::MX_PERGROUP_MODE,
                                                            WEIGHT_NZ, 32>(blockCoord);
@@ -417,36 +474,28 @@ __aicore__ inline void GemmUniversal<QBMM_MX_KERNEL_TEM_PARAMS>::ProcessSingleBa
             }
             return;
         }
-
         bs.GetTileCoord(blockCoord, mPos, nPos);
-        auto gmBlockA = gmA.Slice(AscendC::Te::MakeCoord(mPos, kPos), AscendC::Te::MakeShape(baseM, k));
-        auto gmBlockScaleA = gmScaleA.Slice(AscendC::Te::MakeCoord(mPos, kPos),
-                                            AscendC::Te::MakeShape(baseM, scaleKLen));
-        auto gmBlockB = gmB.Slice(AscendC::Te::MakeCoord(kPos, nPos), AscendC::Te::MakeShape(k, baseN));
-        auto gmBlockScaleB = gmScaleB.Slice(AscendC::Te::MakeCoord(kPos, nPos),
-                                            AscendC::Te::MakeShape(scaleKLen, baseN));
-        auto gmBlockBias = gmBias.Slice(AscendC::Te::MakeCoord(0L, nPos), AscendC::Te::MakeShape(1L, baseN));
-        auto gmBlockC = gmC.Slice(AscendC::Te::MakeCoord(mPos, nPos), AscendC::Te::MakeShape(baseM, baseN));
-        auto locOutUb = AscendC::Te::MakeTensor(
-            ubmemPtr, AscendC::Te::MakeFrameLayout<AscendC::Te::NDExtLayoutPtn>((baseM + 1) & ~1, Align32(baseN)));
-        if ASCEND_IS_AIC {
-            if (isVecSetSyncCom_) {
-                WaitForVector();
-            }
-            mmadOp_(gmBlockA, gmBlockB, gmBlockScaleA, gmBlockScaleB, gmBlockBias, locOutUb, singleShape);
-            NotifyVector();
-        }
-        isVecSetSyncCom_ = true;
-        if ASCEND_IS_AIV {
-            WaitForCube();
-            epilogueOp_(
-                {baseM, baseN, 0, 0},
-                {mPos * n + nPos, mPos * CeilDiv(n, BLOCK_SIZE * ALIGN_NUM_2) * ALIGN_NUM_2 + CeilDiv(nPos, BLOCK_SIZE),
-                 0, 0, 0});
-            NotifyCube();
-        }
+        ProcessOneBlock(gmA, gmB, gmScaleA, gmScaleB, gmBias, gmC, singleShape, mPos, nPos, baseM, baseN, k, scaleKLen,
+                        n, ubmemPtr);
     }
     bs.UpdateNextBatchBlockRoundParams();
+}
+
+QBMM_MX_KERNEL_CLASS_TEM_PARAMS
+__aicore__ inline void GemmUniversal<QBMM_MX_KERNEL_TEM_PARAMS>::ProcessSingleBatch(const Params& params,
+                                                                                    BlockScheduler& bs,
+                                                                                    uint64_t restBatch,
+                                                                                    bool isTailRound)
+{
+    const auto mTailTile = params.schParams.mTailTile;
+    const auto nTailTile = params.schParams.nTailTile;
+    if (needUpdateTail_ ||
+        (isTailRound && ((bs.GetEndBlockIdx() + 1) + (restBatch * bs.GetTotalCnt())) * mTailTile * nTailTile <=
+                            AscendC::GetBlockNum())) {
+        needUpdateTail_ = true;
+        bs.UpdateTailTile(mTailTile, nTailTile);
+    }
+    ProcessTileLoop(params, bs);
 }
 } // namespace Kernel
 } // namespace Gemm
