@@ -1,6 +1,6 @@
-# Kernel GMM Fixpipe Quant
+# Kernel QGMM MIX Fixpipe Quant
 
-> [代码位置](../../../../include/blaze/gemm/kernel/kernel_gmm_fixpipe_quant.h)
+> [代码位置](../../../../include/blaze/gemm/kernel/kernel_qgmm_mix_fixpipe_quant.h)
 
 ## 功能说明
 

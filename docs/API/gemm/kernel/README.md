@@ -14,7 +14,7 @@
 | [kernel_qbmm_mix](./kernel_qbmm_mix.md) | MIX 模板 A8W8 量化 Batch Matmul，AIC cube + AIV dequant 后处理 |
 | [kernel_qbmm_mix_without_batch](./kernel_qbmm_mix_without_batch.md) | MIX 模板 A8W8 量化单 Batch Matmul，裁剪 Batch 广播路径 |
 | [kernel_qgmm_mx_basic](./kernel_qgmm_mx_basic.md) | MX 量化 Grouped Matmul，支持 group list 与 tail split |
-| [kernel_gmm_fixpipe_quant](./kernel_gmm_fixpipe_quant.md) | Fixpipe 量化 Grouped Matmul，支持 per-channel/per-group 和可选 offset 后处理 |
+| [kernel_qgmm_mix_fixpipe_quant](./kernel_qgmm_mix_fixpipe_quant.md) | Fixpipe 量化 Grouped Matmul，支持 per-channel/per-group 和可选 offset 后处理 |
 | [kernel_matmul_streamk](./kernel_matmul_streamk.md) | StreamK 矩阵乘 Kernel，AIC+AIV 双核计算，支持 workspace |
 | [kernel_qbmm_streamk](./kernel_qbmm_streamk.md) | MX 量化 StreamK Kernel，支持单 Batch MxFP4/MxFP8 workspace 归约 |
 | [kernel_qbmm_pertensor_streamk](./kernel_qbmm_pertensor_streamk.md) | QBMM per-tensor StreamK Kernel，AIC raw partial + AIV 统一反量化 |

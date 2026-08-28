@@ -25,7 +25,7 @@
 #include "blaze/epilogue/block/block_epilogue_per_token_scale.h"
 #include "blaze/gemm/block/block_mmad_a8w8_fixpipe_quant.h"
 #include "blaze/gemm/block/block_scheduler_gmm_swat_with_tail_split.h"
-#include "blaze/gemm/kernel/kernel_gmm_fixpipe_quant.h"
+#include "blaze/gemm/kernel/kernel_qgmm_mix_fixpipe_quant.h"
 #include "blaze/gemm/policy/dispatch_policy.h"
 
 namespace GMMFixpipeUT {
