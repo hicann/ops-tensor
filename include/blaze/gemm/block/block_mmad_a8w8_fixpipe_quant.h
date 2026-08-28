@@ -23,7 +23,7 @@
 #include "blaze/gemm/utils/layout_utils.h"
 #include "blaze/gemm/utils/common_utils.h"
 #include "blaze/gemm/policy/dispatch_policy.h"
-#include "block_mmad.h"
+#include "blaze/gemm/block/block_mmad.h"
 #include "tensor_api/tensor.h"
 
 namespace Blaze {
@@ -76,6 +76,17 @@ public:
         GM_ADDR biasGmAddr{nullptr};
         GM_ADDR scaleAGmAddr{nullptr};
         GM_ADDR scaleBGmAddr{nullptr};
+        // Keep new fields after the original GM addresses to preserve six-address aggregate initialization.
+        uint64_t oriK{0};
+        uint64_t kAL1{0};
+        uint64_t kBL1{0};
+        uint64_t l1BufNum{0};
+        uint32_t mL0{0};
+        uint32_t nL0{0};
+        uint32_t kL0{0};
+        QuantMode quantMode{QuantMode::DEFAULT};
+        bool isBias{false};
+        bool enableL0cPingPong{false};
     };
 
     __aicore__ inline BlockMmad()
@@ -108,23 +119,23 @@ public:
         AscendC::SetMMLayoutTransform(false);
     }
 
-    __aicore__ inline void Init(const ProblemShape& problemShape, const BlockShape& l0TileShape, const uint64_t& kAL1,
-                                const uint64_t& kBL1, const uint64_t& l1BufferNum, QuantMode quantMode, bool isBias,
-                                bool dbL0C)
+    __aicore__ inline void Init(const Params& params)
     {
-        k_ = AscendC::Te::Get<IDX_K_IDX>(problemShape);
-        baseM_ = AscendC::Te::Get<IDX_M_IDX>(l0TileShape);
-        baseN_ = AscendC::Te::Get<IDX_N_IDX>(l0TileShape);
-        baseK_ = AscendC::Te::Get<IDX_K_IDX>(l0TileShape);
-        isBias_ = isBias;
-        l1BufNum_ = l1BufferNum;
-        enableL0cPingPong_ = dbL0C;
+        k_ = params.oriK;
+        baseM_ = params.mL0;
+        baseN_ = params.nL0;
+        baseK_ = params.kL0;
+        isBias_ = params.isBias;
+        l1BufNum_ = params.l1BufNum;
+        enableL0cPingPong_ = params.enableL0cPingPong;
+        const uint64_t kAL1 = params.kAL1;
+        const uint64_t kBL1 = params.kBL1;
         uint64_t x2ScaleL1OneBuffer = 0UL;
         if constexpr (IS_GROUPED_FIXPIPE) {
-            if (quantMode == QuantMode::PERCHANNEL_MODE || quantMode == QuantMode::PERGROUP_MODE) {
+            if (params.quantMode == QuantMode::PERCHANNEL_MODE || params.quantMode == QuantMode::PERGROUP_MODE) {
                 x2ScaleL1OneBuffer = GetScaleL1Bytes(baseN_);
             }
-        } else if (quantMode == QuantMode::PERCHANNEL_MODE) {
+        } else if (params.quantMode == QuantMode::PERCHANNEL_MODE) {
             x2ScaleL1OneBuffer = baseN_ * sizeof(uint64_t);
         }
         uint64_t biasL1OneBuffer = IS_GROUPED_FIXPIPE ? GetBiasL1Bytes(baseN_, isBias_) :
@@ -135,7 +146,7 @@ public:
             kL1_ = kBL1;
             kL1Iter_ = CeilDiv(k_, kL1_);
         } else {
-            if (l1BufferNum == DOUBLE_BUFFER_COUNT) {
+            if (l1BufNum_ == DOUBLE_BUFFER_COUNT) {
                 kAL1_ = kAL1;
                 kBL1_ = kBL1;
                 kAL1Iter_ = CeilDiv(k_, kAL1_);
@@ -154,6 +165,25 @@ public:
         const uint64_t aL1OneBuffer = GetAL1BufferSize();
         const uint64_t bL1OneBuffer = GetBL1BufferSize();
         GetL1BufferOffset(aL1OneBuffer, bL1OneBuffer, x2ScaleL1OneBuffer, biasL1OneBuffer);
+    }
+
+    // Compatibility overload for existing callers of the original multi-argument Init interface.
+    __aicore__ inline void Init(const ProblemShape& problemShape, const BlockShape& l0TileShape, const uint64_t& kAL1,
+                                const uint64_t& kBL1, const uint64_t& l1BufNum, QuantMode quantMode, bool isBias,
+                                bool enableL0cPingPong)
+    {
+        Params params{};
+        params.oriK = static_cast<uint64_t>(AscendC::Te::Get<IDX_K_IDX>(problemShape));
+        params.kAL1 = kAL1;
+        params.kBL1 = kBL1;
+        params.l1BufNum = l1BufNum;
+        params.mL0 = static_cast<uint32_t>(AscendC::Te::Get<IDX_M_IDX>(l0TileShape));
+        params.nL0 = static_cast<uint32_t>(AscendC::Te::Get<IDX_N_IDX>(l0TileShape));
+        params.kL0 = static_cast<uint32_t>(AscendC::Te::Get<IDX_K_IDX>(l0TileShape));
+        params.quantMode = quantMode;
+        params.isBias = isBias;
+        params.enableL0cPingPong = enableL0cPingPong;
+        Init(params);
     }
 
     template <typename TensorA, typename TensorB, typename TScale, typename TensorBias, typename TensorC>

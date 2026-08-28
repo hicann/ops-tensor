@@ -9,14 +9,30 @@ Fixpipe 量化 Batch Matmul Kernel，仅支持 AIC 计算。该 Kernel 组合 `B
 ## 特殊约束
 
 ### 量化格式支持
-支持 Tensor API Cube Mmad/Fixpipe 路径可处理的量化输入类型，典型包括：
-- `int8_t`：A8W8 输入，L0C 通常累加为 `int32_t`
-- `hifloat8_t`：HiFloat8 输入，L0C 通常累加为 `float`
-- `fp8_e4m3fn_t`、`fp8_e5m2_t`：FP8 输入，支持 E4M3FN/E5M2 同型或混合组合，L0C 通常累加为 `float`
-- C 输出由 `CType` 指定，支持 `half`、`bfloat16_t`、`float` 或 `int32_t`，最终以 Tensor API Fixpipe 静态检查为准
+Kernel 对 A/B、C/Bias 的数据类型组合执行编译期校验，支持范围如下：
+
+| AType | BType | CType | BiasType | L0C 累加类型 |
+|-------|-------|-------|----------|---------------|
+| `int8_t` | `int8_t` | `half` / `bfloat16_t` / `int8_t` / `int32_t` | `int32_t` | `int32_t` |
+| `hifloat8_t` | `hifloat8_t` | `half` / `bfloat16_t` / `float` | `float` | `float` |
+| `fp8_e4m3fn_t` / `fp8_e5m2_t` | `fp8_e4m3fn_t` / `fp8_e5m2_t` | `half` / `bfloat16_t` / `float` | `float` | `float` |
+
+FP8 A/B 支持 E4M3FN、E5M2 的同型或混合组合。Bias 为可选输入，但 `BiasType` 是 BlockMmad 的模板参数；即使运行时不启用 Bias，也需要使用表中与输入类型匹配的 `BiasType` 实例化模板。
+
+### 数据排布格式支持
+
+| Layout | Kernel 编译期约束 |
+|--------|-------------------|
+| `LayoutA` | 支持 `NDExtLayoutPtn` 和 `DNExtLayoutPtn` |
+| `LayoutB` | Kernel 层不执行编译期校验，由 BlockMmad 和 Tensor API 的数据搬运路径约束 |
+| `LayoutC` | 仅支持 `NDExtLayoutPtn` |
+
+`LayoutA` 的 ND/DN 分别用于表达 A 矩阵不转置/转置的数据排布；输出 C 固定使用 ND 数据排布。
 
 ### Scale 因子要求
 Scale 模式由 `x1QuantMode` 和 `x2QuantMode` 决定，取值来自 `QuantMode`：
+
+Kernel 对 `ScaleGmType` 执行编译期类型校验，支持 `uint64_t`、`int64_t`、`bfloat16_t` 和 `float`。该校验只覆盖所有模式允许类型的并集；调用方仍须根据下表中的量化模式传入匹配的 Scale 数据类型和数据布局。
 
 | 枚举值 | 取值 | 说明 |
 |--------|------|------|
@@ -33,8 +49,8 @@ Scale 模式由 `x1QuantMode` 和 `x2QuantMode` 决定，取值来自 `QuantMode
 | A 矩阵模式 (`x1QuantMode`) | B 矩阵模式 (`x2QuantMode`) | 适用场景与 Scale 处理 |
 |----------------------------|----------------------------|-----------------------|
 | `DEFAULT` | `DEFAULT` | A、B 均不提供反量化 scale。用于 `CType = int32_t` 的场景，Block 将 L0C 累加结果直接写入 GM。 |
-| `DEFAULT` | `PERCHANNEL_MODE` | A 不提供 scale，B 的每个 N 通道分别使用一个 scale。`scaleBGmAddr` 指向 B 的 per-channel scale 数组；Kernel 根据当前 block 负责的 N 范围截取对应 scale Tensor 并传给 Block，Block 将 scale 搬入 L1，Fixpipe 搬出结果时按通道完成反量化。 |
-| `DEFAULT` | `PERTENSOR_MODE` | A 不提供 scale，整个 B 矩阵共用一个 scalar scale。Kernel 从 `scaleBGmAddr` 读取该值，将其转换并封装为 Fixpipe 使用的 `uint64_t scaleScalar_`，再传给 Block。支持的 scale 存储类型为 `uint64_t/int64_t`、`bfloat16_t` 或 `uint32_t`。Block 在 Fixpipe 搬出结果时使用该 scalar scale 完成反量化。 |
+| `DEFAULT` | `PERCHANNEL_MODE` | A 不提供 scale，B 的每个 N 通道分别使用一个 scale。`scaleBGmAddr` 指向按 `uint64_t` 位模式编码的 per-channel scale 数组；Kernel 根据当前 block 负责的 N 范围截取对应 scale Tensor 并传给 Block，Block 将 scale 搬入 L1，Fixpipe 搬出结果时按通道完成反量化。`int64_t` 使用相同的 64-bit 位模式。 |
+| `DEFAULT` | `PERTENSOR_MODE` | A 不提供 scale，整个 B 矩阵共用一个 scalar scale。Kernel 从 `scaleBGmAddr` 读取该值，将其转换并封装为 Fixpipe 使用的 `uint64_t scaleScalar_`，再传给 Block。支持的 scale 存储类型为 `uint64_t/int64_t`、`bfloat16_t` 或 `float`。Block 在 Fixpipe 搬出结果时使用该 scalar scale 完成反量化。 |
 | `PERTENSOR_MODE` | `PERTENSOR_MODE` | A、B 各自提供一个 per-tensor scalar scale，二者的存储类型均为 `float`。Kernel 分别从 `scaleAGmAddr` 和 `scaleBGmAddr` 读取 scale，计算两者乘积，将乘积转换并封装为 Fixpipe 使用的 `uint64_t scaleScalar_`，再传给 Block。Block 在 Fixpipe 搬出结果时使用该乘积 scale 完成反量化。 |
 
 其他组合当前模板未提供对应 scale 数据流。
@@ -82,7 +98,7 @@ template <
 | BlockMmadParams | BlockMmad 参数类型，包含 GM 地址 |
 | AType/BType/CType/BiasType | 继承自 BlockMmad 的数据类型 |
 | X2ScaleType | Kernel 内部使用的 scalar scale 类型，固定为 `uint64_t` |
-| ScaleGmType | BlockMmad 中 `BTypeTuple` 的第 1 个类型 |
+| ScaleGmType | BlockMmad 中 `BTypeTuple` 的第 1 个类型；支持 `uint64_t`、`int64_t`、`bfloat16_t` 和 `float` |
 | WEIGHT_NZ | B 矩阵是否为 NZ 格式（继承自 BlockMmad） |
 | TRANS_A | A 矩阵是否转置（继承自 BlockMmad） |
 | TRANS_B | B 矩阵是否转置（继承自 BlockMmad） |
@@ -132,8 +148,56 @@ struct Params {
     GM_ADDR biasGmAddr;   // Bias GM 地址（可选）
     GM_ADDR scaleAGmAddr; // x1 scale GM 地址
     GM_ADDR scaleBGmAddr; // x2 scale GM 地址
+    uint64_t oriK;
+    uint64_t kAL1;
+    uint64_t kBL1;
+    uint64_t l1BufNum;
+    uint32_t mL0;
+    uint32_t nL0;
+    uint32_t kL0;
+    QuantMode quantMode;
+    bool isBias;
+    bool enableL0cPingPong;
 };
 ```
+
+## 对外接口
+
+### 构造函数
+
+```cpp
+__aicore__ inline GemmUniversal();
+```
+
+功能：构造 QBMM Cube Kernel 对象。
+
+### 析构函数
+
+```cpp
+__aicore__ inline ~GemmUniversal();
+```
+
+功能：析构 QBMM Cube Kernel 对象。
+
+### operator函数
+
+```cpp
+__aicore__ inline void operator()(const Params& params);
+```
+
+功能：执行完整的 QBMM Cube Kernel 计算。该方法是 Kernel 唯一对外开放的执行接口，内部完成组件初始化、Batch 广播、Block 调度、Tensor 切片及 BlockMmad 调用。
+
+参数说明：
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| params | `const Params&` | Kernel 参数，包含问题规模、BlockMmad 参数、BlockScheduler 参数和 QBMM tiling 参数。 |
+
+返回值：无。
+
+约束：
+
+- `qbmmParams.isBias` 为非零值时启用 Bias，`mmadParams.biasGmAddr` 必须指向有效的 Bias 数据。
 
 ## 执行流程
 
@@ -149,7 +213,7 @@ Kernel 对外通过 `operator()` 执行完整 QBMM Cube 计算，内部流程概
 
 ### 组件组装
 ```
-// 以下以 int8_t A/B 为例，可按 Tensor API 支持组合替换为 hifloat8_t 或 fp8 类型。
+// 以下以 int8_t A/B 为例；替换为 hifloat8_t 或 fp8 类型时，CType/BiasType 也必须使用支持表中的组合。
 using AType = int8_t;
 using BType = int8_t;
 using CType = bfloat16_t;
@@ -212,7 +276,7 @@ params.qbmmParams = {
 ### Kernel 执行
 ```
 QBMMKernel kernel;
-kernel(params);  // 或 kernel.Run(params)
+kernel(params);
 ```
 
 ## 数据流
@@ -248,9 +312,9 @@ GM 输出
 Scale 的处理分为 Kernel 准备和 Block 搬出两个阶段。Kernel 根据 `x1QuantMode/x2QuantMode` 确定 scale 的来源和形态，并将 scalar scale 或当前 N 分片的 per-channel scale Tensor 传给 Block。Mmad 计算始终先在 L0C 中完成累加；仅当输出类型不是 `int32_t` 时，Block 才在结果搬出阶段使用 scale 进行 Fixpipe 反量化。
 
 - `CType = int32_t`：Mmad 完成后，Block 将 L0C 中的 `int32_t` 累加结果直接写入 GM。该路径不使用传入 Block 的 scale，不执行 Fixpipe 反量化，也不把累加结果转换为浮点类型。
-- `CType = half/bfloat16_t/float`，且 B 使用 per-channel scale：Kernel 根据当前 block 的 N 方向起始位置和长度，从 `scaleBGmAddr` 中取得对应通道的 scale Tensor。Block 将该 Tensor 从 GM 搬入 L1，Fixpipe 搬出 L0C 结果时对每个 N 通道应用各自的 scale，并转换为 `CType` 后写入 GM。
-- `CType = half/bfloat16_t/float`，且仅 B 使用 per-tensor scale：Kernel 从 `scaleBGmAddr` 读取整个 B 矩阵共用的 scalar scale，将其转换并封装为 `uint64_t scaleScalar_` 后传给 Block。Fixpipe 搬出 L0C 结果时对所有元素使用同一个 scale，并转换为 `CType` 后写入 GM。
-- `CType = half/bfloat16_t/float`，且 A、B 均使用 per-tensor scale：Kernel 从 `scaleAGmAddr` 和 `scaleBGmAddr` 分别读取 A、B 的 `float` scalar scale，先计算二者的乘积，再将乘积转换并封装为 `uint64_t scaleScalar_` 后传给 Block。Fixpipe 使用该乘积 scale 完成反量化和输出类型转换，然后将结果写入 GM。
+- 对支持表中的非 `int32_t` 输出类型，且 B 使用 per-channel scale：Kernel 根据当前 block 的 N 方向起始位置和长度，从 `scaleBGmAddr` 中取得对应通道的 scale Tensor。Block 将该 Tensor 从 GM 搬入 L1，Fixpipe 搬出 L0C 结果时对每个 N 通道应用各自的 scale，并转换为 `CType` 后写入 GM。
+- 对支持表中的非 `int32_t` 输出类型，且仅 B 使用 per-tensor scale：Kernel 从 `scaleBGmAddr` 读取整个 B 矩阵共用的 scalar scale，将其转换并封装为 `uint64_t scaleScalar_` 后传给 Block。Fixpipe 搬出 L0C 结果时对所有元素使用同一个 scale，并转换为 `CType` 后写入 GM。
+- 对支持表中的非 `int32_t` 输出类型，且 A、B 均使用 per-tensor scale：Kernel 从 `scaleAGmAddr` 和 `scaleBGmAddr` 分别读取 A、B 的 `float` scalar scale，先计算二者的乘积，再将乘积转换并封装为 `uint64_t scaleScalar_` 后传给 Block。Fixpipe 使用该乘积 scale 完成反量化和输出类型转换，然后将结果写入 GM。
 
 ## 性能优化建议
 

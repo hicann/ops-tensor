@@ -43,7 +43,7 @@ Fixpipe 量化矩阵乘 Block，基于 Tensor API 实现，仅支持 AIC 计算�
 - A 矩阵类型由 `AType` 指定。
 - B 矩阵模板参数为 `BTypeTuple`，其中第 0 个类型为 B 数据类型，第 1 个类型为 X2 scale GM 类型。
 - 典型 A/B 组合包括 `int8_t/int8_t`、`hifloat8_t/hifloat8_t`、`fp8_e4m3fn_t/fp8_e4m3fn_t`、`fp8_e4m3fn_t/fp8_e5m2_t`、`fp8_e5m2_t/fp8_e4m3fn_t` 和 `fp8_e5m2_t/fp8_e5m2_t`，最终以 Tensor API Mmad 静态检查为准。
-- L0C 累加类型由 `AscendC::GetMmDstType<AType>::Type` 推导，`int8_t` 输入通常累加为 `int32_t`，HiFloat8/FP8 输入通常累加为 `float`。
+- L0C 累加类型使用显式条件映射：`int8_t` 输入映射为 `int32_t`，其他受支持输入映射为 `float`。
 
 ### Scale 因子类型
 Fixpipe 反量化使用 X2 scale，支持两类输入方式：
@@ -69,8 +69,8 @@ StreamK SK block 输出到 workspace GM：
 ### L1 切分要求
 - `kAL1`：A 矩阵 L1 K 轴切分大小。
 - `kBL1`：B 矩阵 L1 K 轴切分大小。
-- `l1BufferNum` 支持 2 或 4 缓冲。
-- 非全载模式下，当 `l1BufferNum == 2` 时支持 `kAL1` 与 `kBL1` 不同，并按 A/B 的 K-L1 大小选择复用策略。
+- `l1BufNum` 支持 2 或 4 缓冲。
+- 非全载模式下，当 `l1BufNum == 2` 时支持 `kAL1` 与 `kBL1` 不同，并按 A/B 的 K-L1 大小选择复用策略。
 - A 全载模式下，A 常驻 L1，`kAL1` 跟随 `kBL1`，适用于 A 分片复用收益明显的场景。
 - 注意：kAL1与kBL1不相等时必须满足整数倍关系。
 
@@ -98,6 +98,8 @@ Bias 仅在首个 K-L1/L0 迭代搬入 BT 并参与 Mmad。StreamK SK block 还�
 | C0_SIZE_L0C | L0C C0 对齐大小，固定为 16，定义于 `common_utils.h` |
 | SCALE_BUFFER_NUM | X2 scale L1 缓冲数量，固定为 2，定义于 `common_utils.h` |
 | DOUBLE_BUFFER_COUNT | A/B L1 双缓冲数量，固定为 2，定义于 `common_utils.h` |
+| STREAMK_BIAS_IN_MMAD | 当前 StreamK 数据类型和 scale 组合是否支持在 Mmad 阶段处理 Bias。 |
+| BIAS_IN_MMAD | Bias 是否由 BlockMmad 处理；非 StreamK 调度恒为 `true`，StreamK 调度由 `STREAMK_BIAS_IN_MMAD` 决定。 |
 
 ## 特殊类型别名
 
@@ -120,20 +122,131 @@ struct Params {
     GM_ADDR biasGmAddr{nullptr};   // Bias GM 地址
     GM_ADDR scaleAGmAddr{nullptr}; // A 矩阵 Scale GM 地址
     GM_ADDR scaleBGmAddr{nullptr}; // B 矩阵 Scale GM 地址
+    uint64_t oriK{0};              // 原始 K
+    uint64_t kAL1{0};
+    uint64_t kBL1{0};
+    uint64_t l1BufNum{0};
+    uint32_t mL0{0};
+    uint32_t nL0{0};
+    uint32_t kL0{0};
+    QuantMode quantMode{QuantMode::DEFAULT};
+    bool isBias{false};
+    bool enableL0cPingPong{false};
 };
 ```
 
 说明：
 - `scaleAGmAddr` 由 Kernel 层用于 per-tensor scale 融合，Block 主要消费传入的 scalar scale 或 `scaleBGmAddr` 对应的 per-channel scale Tensor。
-- `biasGmAddr` 可选；无 bias 时 Kernel 会传入占位 Tensor Slice。
+- `isBias` 显式控制 Block 是否处理 bias，不通过 `biasGmAddr` 是否为空推导。
+- `Init()` 对外接口入参为 `const Params&`。
 
-## 接口概要
+## 对外接口
 
-Block 对外主要通过初始化接口和调用接口完成单 block 计算：
-- 初始化阶段配置问题规模、L0 tile、`kAL1/kBL1`、L1 缓冲数量、X2 scale 模式、Bias 标志和 L0C 双缓冲标志。
-- 执行阶段接收当前 block 的 A/B/C/Bias Tensor，以及 scalar scale 或 per-channel scale Tensor，完成量化 Mmad 累加和 Fixpipe 搬出。
+### Init函数
 
-非全载模式下，`l1BufferNum == 2` 时可分别使用 `kAL1/kBL1`；`l1BufferNum != 2` 时使用统一 K-L1 窗口。A 全载模式下，A 常驻 L1，适用于 A 分片复用收益明显的场景。
+```cpp
+__aicore__ inline void Init(const Params& params);
+```
+
+功能：初始化 BlockMmad 的问题规模、L0/L1 切分、scale 模式、Bias 标志及 L0C 双缓冲状态。新代码应优先使用该接口。
+
+参数说明：
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| params | `const Params&` | BlockMmad 初始化参数。当前初始化过程使用 `oriK`、`kAL1`、`kBL1`、`l1BufNum`、`mL0/nL0/kL0`、`quantMode`、`isBias` 和 `enableL0cPingPong`。 |
+
+返回值：无。
+
+非全载模式下，`l1BufNum == 2` 时可分别使用 `kAL1/kBL1`；`l1BufNum != 2` 时使用统一 K-L1 窗口。A 全载模式下，A 常驻 L1，适用于 A 分片复用收益明显的场景。
+
+### 兼容Init函数
+
+```cpp
+__aicore__ inline void Init(
+    const ProblemShape& problemShape,
+    const BlockShape& l0TileShape,
+    const uint64_t& kAL1,
+    const uint64_t& kBL1,
+    const uint64_t& l1BufNum,
+    QuantMode quantMode,
+    bool isBias,
+    bool enableL0cPingPong);
+```
+
+功能：保留原多参数初始化方式的源码兼容性。该接口在内部将参数转换为 `Params` 后调用 `Init(const Params&)`，仅用于现有调用方迁移过渡，后续版本将废弃。新代码应直接构造 `Params`，现有调用方也应逐步迁移到 `Init(const Params&)`。
+
+| 参数 | 说明 |
+|------|------|
+| problemShape | 原问题形状，K 维用于初始化完整 K 轴循环。 |
+| l0TileShape | L0 tile 的 M/N/K 形状。 |
+| kAL1/kBL1 | A/B 的 L1 K 轴切分大小。 |
+| l1BufNum | L1 Buffer数量。 |
+| quantMode | X2 scale 量化模式。 |
+| isBias | 是否在 Block 中处理 Bias。 |
+| enableL0cPingPong | 是否启用 L0C ping-pong。 |
+
+返回值：无。
+
+### 普通operator函数
+
+```cpp
+template <typename TensorA, typename TensorB, typename TScale, typename TensorBias, typename TensorC>
+__aicore__ inline void operator()(
+    TensorA gmA,
+    TensorB gmB,
+    TScale scaleGlobal,
+    TensorBias gmBias,
+    TensorC gmC,
+    BlockShape singleShape);
+```
+
+功能：计算一个 M/N block。Block 将 A/B 搬入 L1/L0，在首次 K 累加中按需加入 Bias，并将 L0C 结果通过 Fixpipe 写入 C。
+
+| 参数 | 说明 |
+|------|------|
+| gmA | 当前 block 的 A GM Tensor。 |
+| gmB | 当前 block 的 B GM Tensor。 |
+| scaleGlobal | Scalar `uint64_t` scale，或当前 N 分片对应的 per-channel scale Tensor。 |
+| gmBias | 当前 N 分片对应的 Bias GM Tensor；仅在 `Params::isBias` 为 `true` 时读取。 |
+| gmC | 当前 block 的 C GM Tensor。 |
+| singleShape | 当前 block 的形状；普通 QBMM 路径使用其中的有效 M/N，K 轴循环由 `Init()` 初始化。 |
+
+返回值：无。
+
+### StreamK operator函数
+
+```cpp
+template <typename TensorA, typename TensorB, typename TScale, typename TensorBias, typename TensorC,
+          typename TensorWorkspace>
+__aicore__ inline void operator()(
+    TensorA gmA,
+    TensorB gmB,
+    TScale scaleGlobal,
+    TensorBias gmBias,
+    TensorC gmC,
+    TensorWorkspace gmWorkspace,
+    BlockShape singleShape,
+    int64_t kCntIndex,
+    bool isSkBlock);
+```
+
+功能：处理 per-tensor StreamK 的 DP/SK block。DP block 通过 Fixpipe 输出 C；SK block 将原始累加结果写入 workspace，交由后续 AIV epilogue 归约。
+
+| 参数 | 说明 |
+|------|------|
+| gmA/gmB | 当前 K 分片的 A/B GM Tensor。 |
+| scaleGlobal | 当前计算使用的 per-tensor scale。 |
+| gmBias | Bias GM Tensor；是否由该 Block 读取由 `BIAS_IN_MMAD` 决定。 |
+| gmC | DP block 的 C GM 输出 Tensor。 |
+| gmWorkspace | SK block 的原始累加结果输出 Tensor。 |
+| singleShape | 当前 block 的 M/N/K 分片形状。 |
+| kCntIndex | 当前 K 分片索引。 |
+| isSkBlock | 当前 block 是否为 SK block。 |
+
+约束：仅当调度类型为 `KernelQbmmPertensorMultiBlockStreamK` 时可用。`kCntIndex` 表示当前 K 分片索引，`isSkBlock` 表示当前是否为 SK block；Mmad Bias 仅在需要处理 Bias 且 `kCntIndex == 0` 时加入。
+
+返回值：无。
 
 ## 事件同步
 
@@ -173,14 +286,19 @@ using BlockMmad = Blaze::Gemm::Block::BlockMmad<
 ### 组件初始化
 ```
 BlockMmad blockMmad;
-BlockMmad::ProblemShape problemShape{m, n, k, batch};
-BlockMmad::BlockShape l0TileShape{baseM, baseN, baseK, 0};
+BlockMmad::Params params{};
+params.oriK = k;
+params.kAL1 = kAL1;
+params.kBL1 = kBL1;
+params.l1BufNum = l1BufNum;
+params.mL0 = baseM;
+params.nL0 = baseN;
+params.kL0 = baseK;
+params.quantMode = QuantMode::PERTENSOR_MODE;
+params.isBias = isBias;
+params.enableL0cPingPong = dbL0C;
 
-blockMmad.Init(
-    problemShape, l0TileShape,
-    kAL1, kBL1, l1BufferNum,
-    QuantMode::PERTENSOR_MODE,
-    isBias, dbL0C);
+blockMmad.Init(params);
 ```
 
 ### 组件执行
@@ -245,8 +363,8 @@ Fixpipe 搬出并完成反量化
 - `kBL1 > kAL1`：复用 B，适合 B 搬运压力较大或 B 数据复用较高的场景。
 
 ### L1 缓冲数量
-- `l1BufferNum = 2`：支持 A/B 不同 K-L1 窗口。
-- `l1BufferNum = 4`：提高数据搬运流水并行度，但内部统一使用 `min(kAL1, kBL1)`。
+- `l1BufNum = 2`：支持 A/B 不同 K-L1 窗口。
+- `l1BufNum = 4`：提高数据搬运流水并行度，但内部统一使用 `min(kAL1, kBL1)`。
 
 ### Scale 模式选择
 - per-tensor scale 使用 scalar 传入，搬运开销最低。
