@@ -41,10 +41,14 @@ Usage:
 import argparse
 import configparser
 import csv
+import json
 import os
 import subprocess
 import sys
 import time
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from metrics import METRICS_FILENAME, parse_stdout_metrics
 
 
 # ---------------------------------------------------------------------------
@@ -265,6 +269,48 @@ def parse_ti(ti_value):
 
 
 # ---------------------------------------------------------------------------
+# Metrics extraction from verify_metrics.json
+# ---------------------------------------------------------------------------
+
+
+def _load_metrics(output_dir, verify_stdout, rc):
+    metrics_path = os.path.join(output_dir, METRICS_FILENAME)
+    if os.path.isfile(metrics_path):
+        try:
+            with open(metrics_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except (json.JSONDecodeError, OSError) as exc:
+            print(f"  [WARN] failed to parse {metrics_path}: {exc}", file=sys.stderr)
+    return parse_stdout_metrics(verify_stdout, rc)
+
+
+def _extract_accuracy(metrics):
+    if not metrics or not metrics.get("outputs"):
+        return ""
+    worst_err = max(o.get("error_ratio", 0.0) for o in metrics["outputs"])
+    return f"{(1.0 - worst_err) * 100:.2f}%"
+
+
+def _format_metrics_json(metrics):
+    """Convert error_ratio→accuracy, ratio_tol→tol accuracy (both percentage)."""
+    if not metrics:
+        return ""
+    result = {"outputs": [], "overall_status": metrics.get("overall_status", "fail")}
+    for o in metrics.get("outputs", []):
+        entry = {"name": o.get("name", "output"), "status": o.get("status", "fail")}
+        if o.get("max_abs_diff") is not None:
+            entry["max_abs_diff"] = o["max_abs_diff"]
+        err = o.get("error_ratio")
+        if err is not None:
+            entry["accuracy"] = f"{(1.0 - err) * 100:.2f}%"
+        tol = o.get("ratio_tol")
+        if tol is not None:
+            entry["ratio_tol"] = f"{(1.0 - tol) * 100:.2f}%"
+        result["outputs"].append(entry)
+    return json.dumps(result, ensure_ascii=False)
+
+
+# ---------------------------------------------------------------------------
 # Per-case execution
 # ---------------------------------------------------------------------------
 
@@ -284,23 +330,26 @@ def run_single_case(
     gen_cmd = [sys.executable, gen_data_py] + gen_args
     rc, out = run_subprocess(gen_cmd, cwd=scripts_dir)
     if rc != 0:
-        return "FAIL", "gen_data", out
+        return "FAIL", "gen_data", out, None
 
     # -- Stage 2: kernel binary ----------------------------------------------
     kernel_args = build_args(kernel_params + kernel_bools, row, runtime_vars)
     kernel_cmd = [executable] + kernel_args
     rc, out = run_subprocess(kernel_cmd, cwd=scripts_dir, settle=1)
     if rc != 0:
-        return "FAIL", "kernel", out
+        return "FAIL", "kernel", out, None
 
     # -- Stage 3: verify -----------------------------------------------------
     verify_args = build_args(verify_params + verify_bools, row, runtime_vars)
     verify_cmd = [sys.executable, verify_py] + verify_args
     rc, out = run_subprocess(verify_cmd, cwd=scripts_dir)
-    if rc != 0:
-        return "FAIL", "verify", out
 
-    return "PASS", "verify", ""
+    metrics = _load_metrics(output_dir, out, rc)
+
+    if rc != 0:
+        return "FAIL", "verify", out, metrics
+
+    return "PASS", "verify", "", metrics
 
 
 # ---------------------------------------------------------------------------
@@ -420,7 +469,7 @@ def main():
     for seq, (idx, row) in enumerate(indexed_rows, 1):
         casename = (row.get("casename") or row.get("caseName") or f"case_{idx}").strip()
         try:
-            status, stage, message = run_single_case(
+            status, stage, message, metrics = run_single_case(
                 args.executable,
                 row,
                 conf,
@@ -431,12 +480,29 @@ def main():
                 input_dir,
             )
         except ValueError as exc:
-            # Config/CSV column mismatch
-            status, stage, message = "FAIL", "config", str(exc)
+            status, stage, message, metrics = "FAIL", "config", str(exc), None
 
         if status == "PASS":
             pass_count += 1
             print(f"[PASS] {casename}")
+            if metrics and metrics.get("outputs"):
+                for out in metrics["outputs"]:
+                    name = out.get("name", "output")
+                    max_diff = out.get("max_abs_diff", 0.0)
+                    err_ratio = out.get("error_ratio", 0.0)
+                    ratio_tol = out.get("ratio_tol")
+                    accuracy = (1.0 - err_ratio) * 100
+                    if ratio_tol is not None:
+                        tol_accuracy = (1.0 - ratio_tol) * 100
+                        print(
+                            f"  {name}: accuracy={accuracy:.2f}% (tol {tol_accuracy:.2f}%), "
+                            f"max_abs_diff={max_diff:.6e}"
+                        )
+                    else:
+                        print(
+                            f"  {name}: accuracy={accuracy:.2f}%, "
+                            f"max_abs_diff={max_diff:.6e}"
+                        )
         else:
             fail_count += 1
             print(f"[FAIL] {casename} (stage={stage})")
@@ -445,6 +511,24 @@ def main():
                 if len(message) > 500:
                     preview += "..."
                 print(f"  Error: {preview}")
+            if metrics and metrics.get("outputs"):
+                for out in metrics["outputs"]:
+                    name = out.get("name", "output")
+                    max_diff = out.get("max_abs_diff", 0.0)
+                    err_ratio = out.get("error_ratio", 0.0)
+                    ratio_tol = out.get("ratio_tol")
+                    accuracy = (1.0 - err_ratio) * 100
+                    if ratio_tol is not None:
+                        tol_accuracy = (1.0 - ratio_tol) * 100
+                        print(
+                            f"  {name}: accuracy={accuracy:.2f}% (tol {tol_accuracy:.2f}%), "
+                            f"max_abs_diff={max_diff:.6e}"
+                        )
+                    else:
+                        print(
+                            f"  {name}: accuracy={accuracy:.2f}%, "
+                            f"max_abs_diff={max_diff:.6e}"
+                        )
 
         results.append(
             {
@@ -452,6 +536,8 @@ def main():
                 "status": status,
                 "stage": stage,
                 "message": message,
+                "accuracy": _extract_accuracy(metrics),
+                "metrics_json": _format_metrics_json(metrics),
             }
         )
 
@@ -459,7 +545,14 @@ def main():
     with open(args.result_file, "w", newline="", encoding="utf-8") as fh:
         writer = csv.DictWriter(
             fh,
-            fieldnames=["casename", "status", "stage", "message"],
+            fieldnames=[
+                "casename",
+                "status",
+                "stage",
+                "message",
+                "accuracy",
+                "metrics_json",
+            ],
         )
         writer.writeheader()
         writer.writerows(results)

@@ -15,6 +15,12 @@
 
 import argparse
 import os
+import sys
+
+sys.path.insert(
+    0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "common")
+)
+from metrics import write_metrics_json
 
 os.environ["TORCH_DEVICE_BACKEND_AUTOLOAD"] = "0"
 
@@ -25,6 +31,22 @@ import torch
 POINT_ERROR_TOL = 1e-1
 RATIO_POINT_ERROR_TOL = 1e-3
 ERROR_RATIO_TOL = 1e-3
+
+
+def _write_metrics_json(status, max_abs_diff, error_ratio, ratio_tol, elements):
+    write_metrics_json(
+        [
+            {
+                "name": "output",
+                "max_abs_diff": float(max_abs_diff),
+                "error_ratio": float(error_ratio),
+                "ratio_tol": float(ratio_tol),
+                "status": status,
+            }
+        ],
+        status,
+        "./output",
+    )
 
 
 def main():
@@ -65,8 +87,16 @@ def main():
         print(f"max abs diff: {max_abs_diff}")
         print(f"mismatch count: {mismatch_count}/{expected_size}")
         if mismatch_count != 0:
+            _write_metrics_json(
+                "fail",
+                float(max_abs_diff),
+                float(mismatch_count) / expected_size if expected_size else 0.0,
+                0.0,
+                expected_size,
+            )
             return 1
         print(f"PASS: verified {expected_size} Int32 elements")
+        _write_metrics_json("pass", float(max_abs_diff), 0.0, 0.0, expected_size)
         return 0
 
     shape = (args.batch, args.m, args.n)
@@ -101,8 +131,22 @@ def main():
         f"error ratio: {error_ratio:.6f}"
     )
     if point_error_count != 0 or error_ratio > ERROR_RATIO_TOL:
+        _write_metrics_json(
+            "fail",
+            float(abs_diff.max().item()) if expected_size else 0.0,
+            float(error_ratio),
+            float(ERROR_RATIO_TOL),
+            expected_size,
+        )
         return 1
     print(f"PASS: verified {expected_size} BF16 elements")
+    _write_metrics_json(
+        "pass",
+        float(abs_diff.max().item()) if expected_size else 0.0,
+        float(error_ratio),
+        float(ERROR_RATIO_TOL),
+        expected_size,
+    )
     return 0
 
 

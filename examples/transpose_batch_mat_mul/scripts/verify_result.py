@@ -13,6 +13,11 @@
 
 import os
 import sys
+
+sys.path.insert(
+    0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "common")
+)
+from metrics import write_metrics_json
 import argparse
 from dataclasses import dataclass
 
@@ -139,6 +144,21 @@ def verify_result(m, batch, n, dtype_str, is_hf32=False):
     print(
         f"ratio error count({_ratio_label(dtype_str, ratio_tol)}): {error_count}/{numel}, "
         f"error ratio: {error_ratio:.6f}"
+    )
+
+    _status = "pass" if error_ratio <= ratio_tol else "fail"
+    write_metrics_json(
+        [
+            {
+                "name": "output",
+                "max_abs_diff": float(abs_diff.max().item()) if numel else 0.0,
+                "error_ratio": float(error_ratio),
+                "ratio_tol": float(ratio_tol),
+                "status": _status,
+            }
+        ],
+        _status,
+        "./output",
     )
 
     return error_ratio <= ratio_tol

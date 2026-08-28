@@ -17,33 +17,33 @@ examples 的完整编译与运行涉及三类依赖：**系统工具链**、**CA
 
 ### 2.1 系统工具链
 
-| 依赖 | 最低版本 | 用途 | 检查方式 |
-|------|---------|------|---------|
-| cmake | 3.16 | 构建系统（`examples/CMakeLists.txt` 中 `cmake_minimum_required(VERSION 3.16)`） | `cmake --version` |
-| g++ | 默认标准 ≥ C++14 | Host 侧 C++ 编译器（`project(... LANGUAGES CXX)`）| `g++ --version` |
-| bisheng | — | ASC 语言编译器，编译 device 侧 kernel（`find_package(ASC REQUIRED)`） | `bisheng --version` |
-| make | — | 由 cmake 调用的底层构建工具 | `make --version` |
-| python3 | 3.7+ | 驱动 CSV 解析、数据生成、精度验证脚本 | `python3 --version` |
+| 依赖    | 最低版本          | 用途                                                                                | 检查方式              |
+| ------- | ----------------- | ----------------------------------------------------------------------------------- | --------------------- |
+| cmake   | 3.16              | 构建系统（`examples/CMakeLists.txt` 中 `cmake_minimum_required(VERSION 3.16)`） | `cmake --version`   |
+| g++     | 默认标准 ≥ C++14 | Host 侧 C++ 编译器（`project(... LANGUAGES CXX)`）                                | `g++ --version`     |
+| bisheng | —                | ASC 语言编译器，编译 device 侧 kernel（`find_package(ASC REQUIRED)`）             | `bisheng --version` |
+| make    | —                | 由 cmake 调用的底层构建工具                                                         | `make --version`    |
+| python3 | 3.7+              | 驱动 CSV 解析、数据生成、精度验证脚本                                               | `python3 --version` |
 
 > `bisheng` 编译器随 CANN Toolkit 安装，`source set_env.sh` 后自动加入 PATH。
 
 ### 2.2 CANN / 昇腾环境
 
-| 依赖 | 要求 | 说明 |
-|------|------|------|
-| CANN Toolkit | ≥ 9.1.0 | 提供 ACL 运行时、bisheng 编译器、头文件 |
-| NPU 硬件 | Ascend950 | 当前 examples 仅支持 Ascend950 芯片 |
+| 依赖         | 要求      | 说明                                    |
+| ------------ | --------- | --------------------------------------- |
+| CANN Toolkit | ≥ 9.1.0  | 提供 ACL 运行时、bisheng 编译器、头文件 |
+| NPU 硬件     | Ascend950 | 当前 examples 仅支持 Ascend950 芯片     |
 
 ### 2.3 Python 依赖
 
 数据生成和精度验证脚本依赖以下 Python 包：
 
-| 包 | 用途 | 安装命令 |
-|----|------|---------|
-| numpy | 二进制数据读写、数组操作 | `pip install numpy` |
-| ml_dtypes | `float8_e4m3fn` golden 计算 | `pip install ml_dtypes` |
-| en_dtypes | `hifloat8` golden 计算（quant_batch_matmul_cube 样例） | `pip install en-dtypes` |
-| torch | CPU golden 参考计算（`torch.matmul`/`torch.addmm`）、dtype 映射 | `pip install torch` |
+| 包        | 用途                                                                | 安装命令                  |
+| --------- | ------------------------------------------------------------------- | ------------------------- |
+| numpy     | 二进制数据读写、数组操作                                            | `pip install numpy`     |
+| ml_dtypes | `float8_e4m3fn` golden 计算                                       | `pip install ml_dtypes` |
+| en_dtypes | `hifloat8` golden 计算（quant_batch_matmul_cube 样例）            | `pip install en-dtypes` |
+| torch     | CPU golden 参考计算（`torch.matmul`/`torch.addmm`）、dtype 映射 | `pip install torch`     |
 
 ### 2.4 依赖检查清单
 
@@ -97,21 +97,21 @@ examples/
 
 **层级关系**：
 
-| 层级 | 目录 | CMakeLists.txt 职责 |
-|------|------|---------------------|
-| L1 | `examples/` | 编译器发现、链接库配置、`ops_example_add_executable` 宏定义、`add_subdirectory({op})` 加载各算子 |
-| L2 | `examples/{op}/` | 通过 `ops_example_add_executable(name subdir/source.cpp)` 直接注册本算子下所有样例可执行文件 |
+| 层级 | 目录               | CMakeLists.txt 职责                                                                                  |
+| ---- | ------------------ | ---------------------------------------------------------------------------------------------------- |
+| L1   | `examples/`      | 编译器发现、链接库配置、`ops_example_add_executable` 宏定义、`add_subdirectory({op})` 加载各算子 |
+| L2   | `examples/{op}/` | 通过`ops_example_add_executable(name subdir/source.cpp)` 直接注册本算子下所有样例可执行文件        |
 
 **当前算子目录**：
 
-| 算子目录 | 样例 | 说明 |
-|----------|------|------|
-| `mat_mul/` | mat_mul_basic, mat_mul_streamk, mat_mul_a_fullload, mat_mul_b_fullload, mat_mul_fixpipe_opti | 矩阵乘法样例 |
-| `batch_mat_mul/` | mat_mul_bmm_broadcast, mat_mul_iterbatch_broadcast | 批量矩阵乘法样例（bmm/iterbatch 广播） |
-| `transpose_batch_mat_mul/` | transpose_batch_mat_mul_basic | 转置批量矩阵乘法样例 |
-| `quant_batch_matmul/` | quant_batch_matmul_cube, quant_batch_matmul_mx | 量化批量矩阵乘法样例（cube/mx 两种算法） |
-| `weight_quant_batch_matmul_mx/` | weight_quant_batch_matmul_mx_swat | 权重量化批量矩阵乘法样例 |
-| `grouped_matmul/` | quant_grouped_matmul_mx | Grouped MatMul 样例 |
+| 算子目录                          | 样例                                                                                         | 说明                                     |
+| --------------------------------- | -------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| `mat_mul/`                      | mat_mul_basic, mat_mul_streamk, mat_mul_a_fullload, mat_mul_b_fullload, mat_mul_fixpipe_opti | 矩阵乘法样例                             |
+| `batch_mat_mul/`                | mat_mul_bmm_broadcast, mat_mul_iterbatch_broadcast                                           | 批量矩阵乘法样例（bmm/iterbatch 广播）   |
+| `transpose_batch_mat_mul/`      | transpose_batch_mat_mul_basic                                                                | 转置批量矩阵乘法样例                     |
+| `quant_batch_matmul/`           | quant_batch_matmul_cube, quant_batch_matmul_mx                                               | 量化批量矩阵乘法样例（cube/mx 两种算法） |
+| `weight_quant_batch_matmul_mx/` | weight_quant_batch_matmul_mx_swat                                                            | 权重量化批量矩阵乘法样例                 |
+| `grouped_matmul/`               | quant_grouped_matmul_mx                                                                      | Grouped MatMul 样例                      |
 
 ## 4. 执行方法
 
@@ -146,24 +146,24 @@ bash examples/common/run.sh --ops=<names> [--target=<names>] [--case=<path>] [--
 
 **参数说明**：
 
-| 参数 | 说明 |
-|------|------|
-| `--ops=<names>` | 算子目录名，支持逗号分隔多个（如 `mat_mul` 或 `mat_mul,grouped_matmul`） |
-| `--target=<names>` | 样例名，支持逗号分隔多个（如 `mat_mul_basic` 或 `mat_mul_basic,mat_mul_streamk`）。多值时 `--ops` 必须为单个 |
-| `--case=<path>` | CSV 测试用例文件路径。仅支持 `--ops` 和 `--target` 均为单个值时使用 |
-| `--ti=<N>` | 仅运行第 N 条用例（0-based 索引）。仅支持 `--ops` 和 `--target` 均为单个值时使用 |
-| `--ti=<N-M>` | 运行第 N 到第 M 条用例（含两端）。仅支持 `--ops` 和 `--target` 均为单个值时使用 |
-| `--skip-build` | 跳过 CMake 编译阶段 |
-| `--build-only` | 仅编译，不运行和验证 |
+| 参数                 | 说明                                                                                                              |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `--ops=<names>`    | 算子目录名，支持逗号分隔多个（如`mat_mul` 或 `mat_mul,grouped_matmul`）                                       |
+| `--target=<names>` | 样例名，支持逗号分隔多个（如`mat_mul_basic` 或 `mat_mul_basic,mat_mul_streamk`）。多值时 `--ops` 必须为单个 |
+| `--case=<path>`    | CSV 测试用例文件路径。仅支持`--ops` 和 `--target` 均为单个值时使用                                            |
+| `--ti=<N>`         | 仅运行第 N 条用例（0-based 索引）。仅支持`--ops` 和 `--target` 均为单个值时使用                               |
+| `--ti=<N-M>`       | 运行第 N 到第 M 条用例（含两端）。仅支持`--ops` 和 `--target` 均为单个值时使用                                |
+| `--skip-build`     | 跳过 CMake 编译阶段                                                                                               |
+| `--build-only`     | 仅编译，不运行和验证                                                                                              |
 
 **多值约束**：
 
-| 场景 | --ops | --target | --case | --ti |
-|------|-------|----------|--------|------|
-| 单算子单样例 | 单个 | 单个 | 允许 | 允许 |
-| 单算子多样例 | 单个 | 多个 | 禁止 | 禁止 |
-| 多算子 | 多个 | 禁止 | 禁止 | 禁止 |
-| 全部样例 | 不传 | 不传 | 禁止 | 禁止 |
+| 场景         | --ops | --target | --case | --ti |
+| ------------ | ----- | -------- | ------ | ---- |
+| 单算子单样例 | 单个  | 单个     | 允许   | 允许 |
+| 单算子多样例 | 单个  | 多个     | 禁止   | 禁止 |
+| 多算子       | 多个  | 禁止     | 禁止   | 禁止 |
+| 全部样例     | 不传  | 不传     | 禁止   | 禁止 |
 
 **用法示例**：
 
@@ -249,12 +249,12 @@ params=...
 bool_flags=...                 # 可选
 ```
 
-| Section | 用途 |
-|---------|------|
-| `[scripts]` | 指定 gen_data 和 verify 脚本文件名（可选，默认 `gen_data.py` / `verify_result.py`） |
-| `[gen_data]` | 传递给数据生成脚本的参数 |
-| `[kernel]` | 传递给 kernel 执行的参数 |
-| `[verify]` | 传递给精度验证脚本的参数 |
+| Section        | 用途                                                                                   |
+| -------------- | -------------------------------------------------------------------------------------- |
+| `[scripts]`  | 指定 gen_data 和 verify 脚本文件名（可选，默认`gen_data.py` / `verify_result.py`） |
+| `[gen_data]` | 传递给数据生成脚本的参数                                                               |
+| `[kernel]`   | 传递给 kernel 执行的参数                                                               |
+| `[verify]`   | 传递给精度验证脚本的参数                                                               |
 
 ### 4.5 两种执行方式的关联
 

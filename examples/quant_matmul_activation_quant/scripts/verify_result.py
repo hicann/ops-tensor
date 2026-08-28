@@ -18,9 +18,18 @@ Y_scale is always fp8_e8m0.
 """
 
 import argparse
+import os
+import sys
+
+sys.path.insert(
+    0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "common")
+)
+from metrics import write_metrics_json
 
 import ml_dtypes
 import numpy as np
+
+_COLLECTED_METRICS = []
 
 
 FP8_E4M3FN = ml_dtypes.float8_e4m3fn
@@ -81,6 +90,17 @@ def compare(name, golden_path, actual_path, dtype, is_scale=False):
     print(f"  max abs diff: {max_abs_error:.6e}")
     print(f"  error count (atol>{atol}): {error_count}/{n}, ratio={error_ratio:.6f}")
 
+    _status = "pass" if np.all(close) else "fail"
+    _COLLECTED_METRICS.append(
+        {
+            "name": name,
+            "max_abs_diff": float(max_abs_error),
+            "error_ratio": float(error_ratio),
+            "ratio_tol": float(rtol),
+            "status": _status,
+        }
+    )
+
     if not np.all(close):
         index = int(np.flatnonzero(~close)[0])
         raise ValueError(
@@ -88,6 +108,13 @@ def compare(name, golden_path, actual_path, dtype, is_scale=False):
             f"got {actual[index]}, abs_error={abs(float(golden[index]) - float(actual[index]))}"
         )
     print(f"[PASS] {name}")
+
+
+def _write_metrics_json():
+    overall = (
+        "pass" if all(o["status"] == "pass" for o in _COLLECTED_METRICS) else "fail"
+    )
+    write_metrics_json(_COLLECTED_METRICS, overall, "./output")
 
 
 def parse_args():
@@ -120,7 +147,9 @@ def main():
         )
     except (OSError, ValueError) as error:
         print(error)
+        _write_metrics_json()
         return 1
+    _write_metrics_json()
     print("[PASS] NPU results are consistent with golden.")
     return 0
 

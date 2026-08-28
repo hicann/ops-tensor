@@ -12,6 +12,13 @@
 """Compare QGMM MX NPU output with the generated NumPy golden result."""
 
 import argparse
+import os
+import sys
+
+sys.path.insert(
+    0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "common")
+)
+from metrics import write_metrics_json
 
 import numpy as np
 
@@ -43,15 +50,30 @@ def main():
                 )
             )
             print(f"[INFO] group {group_index}: max_abs_error={group_error}")
+    max_error = float(np.max(np.abs(actual - golden))) if actual.size else 0.0
     if not np.all(close):
         mismatch = np.flatnonzero(~close)
         index = int(mismatch[0])
-        max_error = float(np.max(np.abs(actual - golden)))
         raise ValueError(
             f"mismatch at {index}: expected={golden[index]}, actual={actual[index]}, "
             f"mismatches={mismatch.size}/{actual.size}, max_abs_error={max_error}"
         )
-    max_error = float(np.max(np.abs(actual - golden))) if actual.size else 0.0
+    overall_status = "pass" if np.all(close) else "fail"
+    write_metrics_json(
+        [
+            {
+                "name": "output",
+                "max_abs_diff": max_error,
+                "error_ratio": np.flatnonzero(~close).size / actual.size
+                if actual.size
+                else 0.0,
+                "ratio_tol": float(args.rtol),
+                "status": overall_status,
+            }
+        ],
+        overall_status,
+        "./output",
+    )
     print(f"[PASS] {actual.size} FP32 outputs, max_abs_error={max_error}")
 
 

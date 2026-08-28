@@ -81,6 +81,7 @@ __global__ __aicore__ void my_operator_kernel_entry(
 ```
 
 **关键点**：
+
 - 使用 `namespace` 避免符号冲突
 - 移除 `#pragma once`（测试文件直接 include）
 - 统一入口通过 `OP_TYPE` 参数区分不同实现
@@ -109,11 +110,11 @@ __aicore__ inline void MyOperatorBasicWrapper(
     // 调用 Blaze Kernel
     using ProblemShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
     using LayoutX = AscendC::Te::NDExtLayoutPtn;
-    
+
     auto gmX = AscendC::Te::MakeTensor(
         AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(xGM),
         LayoutX{}(tiling.m, tiling.k));
-    
+
     // ... 调用 Kernel
 }
 
@@ -137,7 +138,7 @@ protected:
     GM_ADDR xGM = nullptr;
     GM_ADDR yGM = nullptr;
     GM_ADDR tilingGM = nullptr;
-    
+
     void TearDown() override {
         if (xGM) AscendC::GmFree((void*)xGM);
         if (yGM) AscendC::GmFree((void*)yGM);
@@ -149,17 +150,17 @@ TEST_F(MyOperatorTest, TestBasicFP16) {
     const int64_t M = 16;
     const int64_t N = 16;
     const uint32_t blockNum = 1;
-    
+
     xGM = (GM_ADDR)AscendC::GmAlloc(M * N * sizeof(half));
     yGM = (GM_ADDR)AscendC::GmAlloc(M * N * sizeof(half));
     tilingGM = (GM_ADDR)AscendC::GmAlloc(sizeof(MyOpUT::MyOperatorTilingData));
-    
+
     auto* tiling = reinterpret_cast<MyOpUT::MyOperatorTilingData*>(tilingGM);
     tiling->m = M;
     tiling->n = N;
-    
+
     AscendC::SetKernelMode(KernelMode::MIX_MODE);
-    
+
     auto kernelFunc = my_operator_kernel_entry<OP_TYPE_BASIC, half, half>;
     ASSERT_TRUE(KERNEL_RUN_KF(kernelFunc, blockNum, xGM, yGM, tilingGM))
         << "Kernel execution failed";
@@ -205,11 +206,13 @@ AddOpTestCase(my_operator "ascend950pr_9599" "")
 ### 4. 查看测试结果
 
 成功输出：
+
 ```
 [SUCCESS] Kernel UT all SoC tests passed
 ```
 
 失败输出：
+
 ```
 [ERROR] mat_mul failed (exit code: 1)
 ```
@@ -274,6 +277,7 @@ AscendC::SetKernelMode(KernelMode::MIX_MODE);
 ### 4. 查看临时文件
 
 测试数据通常位于：
+
 ```
 tests/ut/op_kernel/mat_mul/matmul_data/
 ├── input_a.bin
@@ -288,6 +292,7 @@ tests/ut/op_kernel/mat_mul/matmul_data/
 **原因**：多个测试文件 include 同一个入口文件，`enum` 定义冲突。
 
 **解决**：使用 namespace 包裹 enum 定义：
+
 ```cpp
 namespace MyOpUT {
 enum OpType : int { ... };
@@ -303,6 +308,7 @@ enum OpType : int { ... };
 ### Q3: 测试超时
 
 **解决**：增加超时时间：
+
 ```bash
 ./build.sh --opkernel -u --test-timeout=600
 ```
@@ -310,6 +316,7 @@ enum OpType : int { ... };
 ### Q4: 子进程失败无法捕获
 
 **解决**：使用 `KERNEL_RUN_KF` 替代 `ICPU_RUN_KF`：
+
 ```cpp
 ASSERT_TRUE(KERNEL_RUN_KF(kernelFunc, blockNum, args...));
 ```
@@ -321,6 +328,7 @@ ASSERT_TRUE(KERNEL_RUN_KF(kernelFunc, blockNum, args...));
 路径：`tests/ut/op_kernel/mat_mul/`
 
 支持的测试类型：
+
 - FP16 Basic MatMul
 - FP16 StreamK MatMul
 - FP32 MatMul
@@ -330,6 +338,7 @@ ASSERT_TRUE(KERNEL_RUN_KF(kernelFunc, blockNum, args...));
 路径：`tests/ut/op_kernel/quant_batch_matmul/`
 
 支持的测试类型：
+
 - INT8 A8W8 Cube
 - MXFP8 StreamK
 - MXFP4 L0C Pingpong

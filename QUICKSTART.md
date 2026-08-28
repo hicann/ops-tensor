@@ -24,7 +24,6 @@ ops-tensor 支持源码编译，进行源码编译前，请确保如下基础依
    - cmake >= 3.16.0
    - make
    - googletest（仅执行 Kernel UT 时依赖，建议版本 [release-1.11.0](https://github.com/google/googletest/releases/tag/release-1.11.0)）
-
 2. **安装驱动与固件（运行态依赖）**
 
    运行算子时必须安装驱动与固件，若仅编译算子，可跳过本操作。
@@ -65,16 +64,17 @@ chmod +x Ascend-cann-toolkit_${cann_version}_linux-${arch}.run
 安装完 CANN 包或进入 Docker 容器后，需验证环境和驱动是否正常。
 
 - **检查 NPU 设备**（仿真执行，跳过此步骤）：
-    ```bash
-    # 运行 npu-smi，若能正常显示设备信息，则驱动正常
-    npu-smi info
-    ```
 
+  ```bash
+  # 运行 npu-smi，若能正常显示设备信息，则驱动正常
+  npu-smi info
+  ```
 - **检查 CANN 安装**：
-    ```bash
-    # 查看 CANN Toolkit 版本信息（非 root 用户，将 /usr/local 替换为 ${HOME}）
-    cat /usr/local/Ascend/cann/opp/version.info
-    ```
+
+  ```bash
+  # 查看 CANN Toolkit 版本信息（非 root 用户，将 /usr/local 替换为 ${HOME}）
+  cat /usr/local/Ascend/cann/opp/version.info
+  ```
 
 ## 环境变量配置
 
@@ -96,7 +96,7 @@ git clone -b master https://gitcode.com/cann/ops-tensor.git
 cd ops-tensor
 ```
 
-> [!NOTE] 注意
+> [!NOTE] ✏️ 注意
 > gitcode 平台在使用 SSH 协议时，请在本地生成 SSH 公钥进行克隆、推送等操作。
 
 ## 编译执行
@@ -150,6 +150,7 @@ Kernel UT（单元测试）用于验证算子内核的正确性。
 ```
 
 **支持的 Kernel UT 算子**（位于 `tests/ut/op_kernel/`）：
+
 - `mat_mul` - 矩阵乘算子
 - `fused_mat_mul` - 融合矩阵乘算子（MatMul + Scale + Add）
 - `transpose_batch_mat_mul` - 转置批量矩阵乘算子
@@ -162,6 +163,69 @@ Kernel UT（单元测试）用于验证算子内核的正确性。
 ```bash
 [SUCCESS] Kernel UT all SoC tests passed
 ```
+
+### 5. 未联网编译
+
+未联网环境下编译执行 Kernel UT，需提前在联网环境备齐 `cann-cmake`、`gtest`、`tensor_api` 三项依赖并拷贝到离线环境。
+
+#### 1. 准备 cann-cmake
+
+`fetch_cann_cmake.cmake` 优先识别 `third_party/cann-cmake/` 目录，存在则直接使用（否则联网 git clone）。离线环境需手动克隆后整目录拷贝：
+
+```bash
+# 联网环境
+git clone -b master-015 https://gitcode.com/cann/cmake.git cann-cmake
+# 将 cann-cmake/ 整目录拷贝到离线环境 ops-tensor/third_party/cann-cmake/
+```
+
+#### 2. 准备 gtest
+
+`gtest.cmake` 查找顺序：从 `third_party/gtest/googletest-1.14.0.tar.gz` 构建；若仅 `third_party/googletest-1.14.0.tar.gz` 存在则自动移入 `gtest/` 再构建；否则联网下载。离线环境放源码 tarball，首次执行 UT 时自动构建：
+
+```bash
+# 联网环境下载
+wget -O googletest-1.14.0.tar.gz https://cann-3rd.obs.cn-north-4.myhuaweicloud.com/googletest/googletest-1.14.0.tar.gz
+# 拷贝到离线环境 ops-tensor/third_party/googletest-1.14.0.tar.gz
+# 首次执行 UT 时会自动移入 third_party/gtest/ 并完成编译
+```
+
+#### 3. 手动拉取 tensor_api
+
+`tensor_api` 是 `include/tensor_api` 下的 git 子模块，源仓库 `https://gitcode.com/cann/asc-devkit.git`，分支 `feature/tensor_api_from_9.0.0`。离线环境无法 `git submodule update`，需手动拉取：
+
+```bash
+# 联网环境克隆指定分支
+git clone -b feature/tensor_api_from_9.0.0 https://gitcode.com/cann/asc-devkit.git tensor_api
+# 拷贝到离线环境 ops-tensor/include/tensor_api/（注意路径在 include/ 下，非 third_party/）
+```
+
+或在联网环境通过子模块方式拉取后整目录拷贝：
+
+```bash
+cd ops-tensor
+git submodule update --init --recursive include/tensor_api
+# 将 include/tensor_api/ 整目录拷贝到离线环境对应位置
+```
+
+`build.sh`（`--opkernel -u`）执行前会检测 `include/tensor_api/` 是否已存在且非空，**已存在则自动跳过初始化**，手动拉取后即可直接编译。
+
+#### 4. 离线编译执行
+
+```bash
+source /usr/local/Ascend/cann/set_env.sh
+
+./build.sh --opkernel -u
+# 或指定算子
+./build.sh --opkernel -u --ops=mat_mul
+```
+
+> 若第三方依赖未放在默认的 `third_party/` 目录，可通过 `--cann_3rd_lib_path` 指定（`tensor_api` 仍须置于 `include/tensor_api/`）：
+>
+> ```bash
+> ./build.sh --opkernel -u --cann_3rd_lib_path=/path/to/cann_3rd_lib_path
+> ```
+
+成功标志同上文：出现 `[SUCCESS] Kernel UT all SoC tests passed`。
 
 更详细的 Kernel UT 开发流程请参阅 [算子开发指南](./QUICK_OP_INVOCATION.md)。
 
@@ -209,8 +273,27 @@ mat_mul_streamk_fp32,100,8192,100,100,float32,false,false,false,"(ND,ND)"
 [SUCCESS] All examples operations completed!
 ```
 
-更详细的 Samples 使用说明请参阅 [Examples 文档](./examples/README.md)。
+### 5. 未联网编译
 
+未联网环境下编译执行 Samples，仅需手动拉取 `tensor_api` 子模块。
+
+#### 1. 手动拉取 tensor_api
+
+`tensor_api` 的手动拉取步骤与 Kernel UT 一致，详见 [Kernel UT 未联网编译 · 手动拉取 tensor_api](#3-手动拉取-tensor_api)。
+
+#### 2. 离线编译执行
+
+```bash
+source /usr/local/Ascend/cann/set_env.sh
+
+./build.sh --examples
+# 或指定算子/样例
+./build.sh --examples --ops=mat_mul --target=mat_mul_streamk
+```
+
+成功标志同上文：出现 `[SUCCESS] All examples operations completed!`。
+
+更详细的 Samples 使用说明请参阅 [Examples 文档](./examples/README.md)。
 
 ## 相关文档
 
