@@ -44,7 +44,16 @@ public:
     using BType = BType_;
     using CType = CType_;
     using LayoutA = LayoutA_;
-    using LayoutB = LayoutB_;
+    // LayoutB_ supports both legacy B layout input and tuple<LayoutB, LayoutScaleB> input.
+    // The tuple form carries the scaleB GM layout, for example NNLayoutPtn for scale NZ.
+    static constexpr bool isTuple = AscendC::Std::is_tuple_v<LayoutB_>;
+    using LayoutBSelect = AscendC::Std::conditional_t<isTuple, LayoutB_, AscendC::Std::tuple<LayoutB_, LayoutB_>>;
+    using LayoutB = typename AscendC::Std::tuple_element<0, LayoutBSelect>::type;
+    using NDLayoutScaleB = AscendC::Std::conditional_t<IsTrans<LayoutB>::value, AscendC::Te::ScaleBDNLayoutPtn,
+                                                       AscendC::Te::ScaleBNDLayoutPtn>;
+    using LayoutScaleBSelect = AscendC::Std::conditional_t<isTuple, LayoutB_,
+                                                           AscendC::Std::tuple<LayoutB, NDLayoutScaleB>>;
+    using LayoutScaleB = typename AscendC::Std::tuple_element<1, LayoutScaleBSelect>::type;
     using LayoutC = LayoutC_;
     using BiasType = BiasType_;
     using LayoutBias = LayoutBias_;

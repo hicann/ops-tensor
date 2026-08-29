@@ -71,5 +71,23 @@ struct IsWeightNz {
     static constexpr bool value = GetWeightNzValue<LayoutPattern>();
 };
 
+// IsScaleNz
+template <typename LayoutPattern>
+constexpr bool GetScaleNzValue()
+{
+    constexpr bool isScaleNz = AscendC::Std::is_same_v<LayoutPattern, AscendC::Te::NNLayoutPtn>;
+    constexpr bool isScaleNd = AscendC::Std::is_one_of_v<LayoutPattern, AscendC::Te::ScaleBNDLayoutPtn,
+                                                         AscendC::Te::ScaleBDNLayoutPtn>;
+    constexpr bool isKnown = isScaleNz || isScaleNd;
+    static_assert(isKnown, "IsScaleNz is not implemented for this layout");
+
+    return isScaleNz;
+}
+
+template <typename LayoutPattern>
+struct IsScaleNz {
+    static constexpr bool value = GetScaleNzValue<LayoutPattern>();
+};
+
 } // namespace Gemm
 } // namespace Blaze

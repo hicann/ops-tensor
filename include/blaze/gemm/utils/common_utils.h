@@ -224,6 +224,12 @@ __aicore__ inline uint64_t CalWeightNZGmAddrOffset(bool transB, int64_t batchIdx
     }
 }
 
+__aicore__ inline uint64_t CalScaleNZGmAddrOffset(bool transB, int64_t batchIdx, int64_t n, int64_t scaleK)
+{
+    (void)transB;
+    return static_cast<uint64_t>(batchIdx) * static_cast<uint64_t>(scaleK) * Align16(static_cast<uint64_t>(n));
+}
+
 __aicore__ inline void NotifyVector()
 {
     AscendC::CrossCoreSetFlag<QBMM_MIX_SYNC_MODE, PIPE_FIX>(QBMM_MIX_AIC_SYNC_AIV_FLAG);

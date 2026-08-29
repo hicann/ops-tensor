@@ -70,9 +70,11 @@ public:
     using LayoutA = typename BlockMmad::LayoutA;
     using LayoutB = typename BlockMmad::LayoutB;
     using LayoutC = typename BlockMmad::LayoutC;
+    using LayoutScaleB = typename BlockMmad::LayoutScaleB;
     static constexpr bool TRANS_A = IsTrans<LayoutA>::value;
     static constexpr bool TRANS_B = IsTrans<LayoutB>::value;
     static constexpr bool WEIGHT_NZ = IsWeightNz<LayoutB>::value;
+    static constexpr bool SCALE_NZ = IsScaleNz<LayoutScaleB>::value;
 
     using BlockMmadParams = typename BlockMmad::Params;
     using BlockEpilogueParams = typename BlockEpilogue::Params;
@@ -126,9 +128,7 @@ private:
     using MakeLayoutScaleA = AscendC::Std::conditional_t<
         TRANS_A, AscendC::Te::FrameLayoutFormat<AscendC::Te::ScaleADNLayoutPtn, AscendC::Std::Int<SCALE_C0>>,
         AscendC::Te::FrameLayoutFormat<AscendC::Te::ScaleANDLayoutPtn, AscendC::Std::Int<SCALE_C0>>>;
-    using MakeLayoutScaleB = AscendC::Std::conditional_t<
-        TRANS_B, AscendC::Te::FrameLayoutFormat<AscendC::Te::ScaleBDNLayoutPtn, AscendC::Std::Int<SCALE_C0>>,
-        AscendC::Te::FrameLayoutFormat<AscendC::Te::ScaleBNDLayoutPtn, AscendC::Std::Int<SCALE_C0>>>;
+    using MakeLayoutScaleB = AscendC::Te::FrameLayoutFormat<LayoutScaleB, AscendC::Std::Int<SCALE_C0>>;
 
     __aicore__ inline void SetSchedulerTailAlign(BlockScheduler& scheduler)
     {
@@ -357,7 +357,12 @@ private:
                 if constexpr (IsFp4<BType>()) {
                     bOffset_ >>= 1;
                 }
-                scaleBOffset_ = static_cast<int64_t>(groupIdx) * n * scaleK;
+                if constexpr (SCALE_NZ) {
+                    scaleBOffset_ = static_cast<int64_t>(
+                        CalScaleNZGmAddrOffset(TRANS_B, static_cast<int64_t>(groupIdx), n, scaleK));
+                } else {
+                    scaleBOffset_ = static_cast<int64_t>(groupIdx) * n * scaleK;
+                }
             } else {
                 bOffset_ = 0;
                 scaleBOffset_ = 0;
