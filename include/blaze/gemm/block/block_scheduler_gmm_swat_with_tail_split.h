@@ -35,6 +35,40 @@ public:
         BlockCoord blockCoord{};
     };
 
+    struct MxGroupParams {
+        uint32_t groupIdx{0};
+        int64_t groupEndOffset{0};
+        int64_t perGroupBOffset{0};
+        ProblemShape problemShape{};
+        bool singleW{true};
+        bool transA{false};
+        bool fp4A{false};
+        bool fp4B{false};
+    };
+
+    struct MxGroupInfo {
+        int64_t aOffset{0};
+        int64_t bOffset{0};
+        int64_t scaleAOffset{0};
+        int64_t scaleBOffset{0};
+        int64_t biasOffset{0};
+        int64_t outputOffset{0};
+        int64_t outputScaleOffset{0};
+        int64_t inputScaleK{0};
+    };
+
+    struct MxOutputOffsets {
+        int64_t outputOffset{0};
+        int64_t outputScaleOffset{0};
+    };
+
+    struct MxBlockInfo {
+        BlockShape blockShape{};
+        int64_t mOffset{0};
+        int64_t nOffset{0};
+        MxOutputOffsets outputOffsets{};
+    };
+
     struct SwigluGroupParams {
         uint32_t groupIdx{0};
         int64_t groupMEndOffset{0};
@@ -260,6 +294,67 @@ public:
         return true;
     }
 
+    __aicore__ inline void UpdateMxGroup(const MxGroupParams& params)
+    {
+        const int64_t groupIdx = static_cast<int64_t>(params.groupIdx);
+        const int64_t problemM = AscendC::Te::Get<MNK_M>(params.problemShape);
+        const int64_t problemN = AscendC::Te::Get<MNK_N>(params.problemShape);
+        const int64_t problemK = AscendC::Te::Get<MNK_K>(params.problemShape);
+        const int64_t previousSplitOffset = params.groupEndOffset - (params.transA ? problemK : problemM);
+        const int64_t inputScaleK = GetScaleK(problemK);
+        const int64_t outputScaleN = GetScaleK(problemN);
+
+        if (!params.transA) {
+            mxGroupInfo_.aOffset = previousSplitOffset * problemK;
+            if (params.fp4A) {
+                mxGroupInfo_.aOffset >>= 1;
+            }
+            mxGroupInfo_.bOffset = params.singleW ? params.perGroupBOffset * groupIdx : 0;
+            if (params.singleW && params.fp4B) {
+                mxGroupInfo_.bOffset >>= 1;
+            }
+            mxGroupInfo_.scaleAOffset = previousSplitOffset * inputScaleK;
+            mxGroupInfo_.scaleBOffset = params.singleW ? groupIdx * problemN * inputScaleK : 0;
+            mxGroupInfo_.outputOffset = previousSplitOffset * problemN;
+            mxGroupInfo_.outputScaleOffset = previousSplitOffset * outputScaleN;
+        } else {
+            mxGroupInfo_.aOffset = problemM * previousSplitOffset;
+            if (params.fp4A) {
+                mxGroupInfo_.aOffset >>= 1;
+            }
+            mxGroupInfo_.bOffset = problemN * previousSplitOffset;
+            const int64_t scaleGroupOffset = previousSplitOffset >> MXFP_DIVISOR_SHIFT;
+            const int64_t scaleStart = (scaleGroupOffset + groupIdx) << MXFP_MULTI_BASE_SHIFT;
+            mxGroupInfo_.scaleAOffset = problemM * scaleStart;
+            mxGroupInfo_.scaleBOffset = problemN * scaleStart;
+            mxGroupInfo_.outputOffset = groupIdx * problemM * problemN;
+            mxGroupInfo_.outputScaleOffset = groupIdx * problemM * outputScaleN;
+        }
+        mxGroupInfo_.biasOffset = groupIdx * problemN;
+        mxGroupInfo_.inputScaleK = inputScaleK;
+        mxOutputN_ = problemN;
+        mxOutputScaleN_ = outputScaleN;
+    }
+
+    __aicore__ inline const MxGroupInfo& GetMxGroupInfo() const { return mxGroupInfo_; }
+
+    __aicore__ inline bool GetNextMxBlock(MxBlockInfo& mxBlockInfo)
+    {
+        BlockInfo blockInfo;
+        if (!GetNextBlock(blockInfo)) {
+            return false;
+        }
+        mxBlockInfo.blockShape = blockInfo.blockShape;
+        mxBlockInfo.mOffset = AscendC::Te::Get<MNK_M>(blockInfo.blockCoord);
+        mxBlockInfo.nOffset = AscendC::Te::Get<MNK_N>(blockInfo.blockCoord);
+        mxBlockInfo.outputOffsets.outputOffset = mxBlockInfo.mOffset * mxOutputN_ + mxBlockInfo.nOffset;
+        mxBlockInfo.outputOffsets.outputScaleOffset = mxBlockInfo.mOffset * mxOutputScaleN_ +
+                                                      CeilDiv(mxBlockInfo.nOffset,
+                                                              static_cast<int64_t>(MXFP_DIVISOR_SIZE)) *
+                                                          MXFP_MULTI_BASE_SIZE;
+        return true;
+    }
+
     __aicore__ inline void UpdateSwigluGroup(const SwigluGroupParams& params)
     {
         const int64_t groupIdx = static_cast<int64_t>(params.groupIdx);
@@ -318,6 +413,9 @@ private:
     }
 
     SwigluGroupInfo swigluGroupInfo_{};
+    MxGroupInfo mxGroupInfo_{};
+    int64_t mxOutputN_{0};
+    int64_t mxOutputScaleN_{0};
     int64_t swigluOutputN_{0};
     int64_t swigluOutputScaleK_{0};
     int64_t mBlockNums_{0};

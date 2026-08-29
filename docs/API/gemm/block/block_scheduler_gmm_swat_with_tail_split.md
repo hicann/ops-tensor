@@ -3,6 +3,7 @@
 
 ## 功能说明
 Grouped Matmul 的 BlockScheduler 组件，用于 QGMM MX Tensor API kernel。调度器按 group 逐次更新问题规模，在 group 间延续物理核分配位置以均衡负载，并在末组计算量较小时利用空闲核拆分 M/N tail block。
+普通 QGMM 使用通用 block 坐标接口；GMMAQ ActivationQuant 额外使用本文件中的 MX group/block 偏移接口。
 
 **框架参考**：[Block Scheduler 公共框架](./block_scheduler.md)
 
@@ -122,6 +123,18 @@ __aicore__ inline int64_t GetEndBlockIdx() const
 功能：
 - 返回当前 group 分配后的结束物理核索引。
 - kernel 可据此判断末组是否有空闲核可用于 tail split。
+
+### GMMAQ MX 地址接口
+
+`UpdateMxGroup`、`GetMxGroupInfo` 和 `GetNextMxBlock` 仅服务于
+`kernel_qgmm_mx_activation_quant.h`。它们不改变通用 SWAT 分核规则，而是在通用
+Block 坐标之上补充 MX 数据布局所需的地址信息：
+
+- Group 级的 A/B/ScaleA/ScaleB/Bias/Y/YScale 起始偏移。
+- FP4 打包数据的元素到字节偏移换算。
+- 当前 Block 的 M/N 坐标以及 YScale 的 64 元素分组偏移。
+
+普通 QGMM 不调用这些接口，仍使用 `GetNextBlockCoord` 和 `GetBlockShape`。
 
 ## 调度流程
 

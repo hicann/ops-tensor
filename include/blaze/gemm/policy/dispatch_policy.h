@@ -20,31 +20,32 @@ namespace Blaze {
 namespace Gemm {
 
 /* block schedule policies */
-struct KernelMmadWithScaleMx {};                  // Multi-block with Mx scale
-struct KernelGroupedMmadWithScaleMx {};           // Grouped multi-block with Mx scale
-struct KernelMmadWithScaleMxWithoutBatch {};      // Multi-block with Mx scale, without batch broadcast
-struct KernelMmadWithScaleMxActivationQuant {};   // Multi-block with Mx scale, AIC+AIV fusion (gelu + mx quant)
-struct KernelMmadWithScaleFixpipeQuant {};        // Multi-block with fixpipe quant scale (A8W8 fixpipe)
-struct KernelGroupedMmadWithScaleFixpipeQuant {}; // Grouped S8S4 with fixpipe per-channel/per-group scale
-struct KernelMmadWithScaleMix {};                 // Multi-block with fixpipe mix scale (WeightNZ)
-struct KernelMmadWithScaleMixWithoutBatch {};     // Multi-block with fixpipe mix scale (WeightNZ), without batch
-struct KernelMultiBlockStreamK {};                // Multi-tile transfer with K-axis spliting and caching
-struct KernelQbmmMultiBlockStreamK {};            // QBMM MX StreamK schedule
-struct KernelQbmmPertensorMultiBlockStreamK {};   // QBMM per-tensor StreamK schedule
-struct KernelMmadMultiBlockBasic {};              // Multi-tile basic
-struct KernelMmadFmmWithScaleAdd {};              // Fused matmul with scale/add epilogue
-struct KernelIterBatchBroadcast {};               // Multi-tile batchMatmul broadcast + iterbatch
-struct KernelMmadMultiBlockBmmBroadcast {};       // Multi-tile batchMatmul broadcast
-struct KernelMmadMultiBlockAFullLoad {};          // Multi-tile aFullLoad
-struct KernelMmadMultiBlockBFullLoad {};          // Multi-tile fullLoad
-struct KernelMmadMultiBlockFixpipeOpti {};        // Multi-tile FixpipeOpti
-struct KernelMmadMultiBlockTBMM {};               // tbmm schedule
-struct KernelMmadMultiBlockTQBMM {};              // tqbmm schedule
-struct KernelMixWithWeightPrologue {};            // Mix matmul with AIV weight preprocessing
-struct KernelGmmSwiGluMixMx {};                   // MIX AIC+AIV schedule for GroupedMatmul + SwiGLU + MX quant
-struct KernelMatmulEmuSplitWeight {};             // Double bf16 matmul to simulate fp32 (AIC+AIV)
-struct KernelMmadWithScaleMxMix {};               // Multi-block with Mx scale, epilogue after block mmad
-struct KernelGroupedMmadNoQuant {};               // Grouped multi-block without quantization
+struct KernelMmadWithScaleMx {};                       // Multi-block with Mx scale
+struct KernelGroupedMmadWithScaleMx {};                // Grouped multi-block with Mx scale
+struct KernelMmadWithScaleMxWithoutBatch {};           // Multi-block with Mx scale, without batch broadcast
+struct KernelGroupedMmadWithScaleMxActivationQuant {}; // Grouped Mx matmul with AIV activation and quantization
+struct KernelMmadWithScaleMxActivationQuant {};        // Multi-block with Mx scale, AIC+AIV fusion (gelu + mx quant)
+struct KernelMmadWithScaleFixpipeQuant {};             // Multi-block with fixpipe quant scale (A8W8 fixpipe)
+struct KernelGroupedMmadWithScaleFixpipeQuant {};      // Grouped S8S4 with fixpipe per-channel/per-group scale
+struct KernelMmadWithScaleMix {};                      // Multi-block with fixpipe mix scale (WeightNZ)
+struct KernelMmadWithScaleMixWithoutBatch {};          // Multi-block with fixpipe mix scale (WeightNZ), without batch
+struct KernelMultiBlockStreamK {};                     // Multi-tile transfer with K-axis spliting and caching
+struct KernelQbmmMultiBlockStreamK {};                 // QBMM MX StreamK schedule
+struct KernelQbmmPertensorMultiBlockStreamK {};        // QBMM per-tensor StreamK schedule
+struct KernelMmadMultiBlockBasic {};                   // Multi-tile basic
+struct KernelMmadFmmWithScaleAdd {};                   // Fused matmul with scale/add epilogue
+struct KernelIterBatchBroadcast {};                    // Multi-tile batchMatmul broadcast + iterbatch
+struct KernelMmadMultiBlockBmmBroadcast {};            // Multi-tile batchMatmul broadcast
+struct KernelMmadMultiBlockAFullLoad {};               // Multi-tile aFullLoad
+struct KernelMmadMultiBlockBFullLoad {};               // Multi-tile fullLoad
+struct KernelMmadMultiBlockFixpipeOpti {};             // Multi-tile FixpipeOpti
+struct KernelMmadMultiBlockTBMM {};                    // tbmm schedule
+struct KernelMmadMultiBlockTQBMM {};                   // tqbmm schedule
+struct KernelMixWithWeightPrologue {};                 // Mix matmul with AIV weight preprocessing
+struct KernelGmmSwiGluMixMx {};                        // MIX AIC+AIV schedule for GroupedMatmul + SwiGLU + MX quant
+struct KernelMatmulEmuSplitWeight {};                  // Double bf16 matmul to simulate fp32 (AIC+AIV)
+struct KernelMmadWithScaleMxMix {};                    // Multi-block with Mx scale, epilogue after block mmad
+struct KernelGroupedMmadNoQuant {};                    // Grouped multi-block without quantization
 enum class MatmulOutputMode : std::uint8_t { OVERWRITE = 0, INPLACE_ADD = 1 };
 enum class MatMulL0C2Out : std::uint8_t { ON_THE_FLY = 0, ND_FIXPIPE_1_1 = 1, ND_FIXPIPE_1_2 = 2 };
 

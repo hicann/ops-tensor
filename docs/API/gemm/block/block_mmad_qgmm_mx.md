@@ -26,7 +26,8 @@ ScaleA 和 ScaleB 固定使用 `fp8_e8m0_t`。
 仅支持 AIC 模式，不支持 AIV 计算。
 
 ### 输出目标
-结果直接输出到 GM，不依赖 workspace。
+默认将结果直接输出到 GM；当 `TensorC` 位于 UB 时，使用 MIX Split-M copy trait 将 float
+L0C 结果写到双 AIV 可见的 UB，供融合 Epilogue 消费。
 
 ## 特殊静态常量
 
@@ -222,7 +223,7 @@ GM(A/B) + GM(ScaleA/ScaleB) + GM(Bias)
     -> L0A/L0B + Scale Buffer
     -> MmadTraitMX
     -> L0C
-    -> GM(C)
+    -> GM(C) 或 UB(C，MIX Epilogue)
 ```
 
 ## 适用场景
