@@ -311,9 +311,11 @@ __aicore__ inline void BlockEpilogueGeluMxQuant<DataTypeOut_, DataTypeIn_>::Copy
     auto gmLayout = MakeNDExtLayout(static_cast<int64_t>(blockCount), nValid, gmRowPitch);
     auto outUb = AscendC::Te::MakeTensor(
         AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB, int8_t>(quantOutputUbOffset_), ubLayout);
-    if (singleN_ < OUT_ELE_NUM_ONE_BLK) {
-        outUb = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB, int8_t>(geluResUbOffset_),
-                                        ubLayout);
+    if constexpr (AscendC::IsSameType<DataTypeOut, fp4x2_e2m1_t>::value) {
+        if (static_cast<int64_t>(singleN_) % OUT_ELE_NUM_ONE_BLK != 0) {
+            outUb = AscendC::Te::MakeTensor(
+                AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB, int8_t>(geluResUbOffset_), ubLayout);
+        }
     }
     auto outGm = AscendC::Te::MakeTensor(
         AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(quantOutputGmAddr_ + gmOffset), gmLayout);
@@ -1025,30 +1027,34 @@ __aicore__ inline void BlockEpilogueGeluMxQuant<DataTypeOut_, DataTypeIn_>::VFDo
 /**
  * @brief 转换FP4 MX量化输出的数据布局
  *
- * 该函数将FP4量化输出从线性布局(mSize*16)转换为块布局(mSize,32)，
- * 以满足MX量化格式对数据存储的要求。
+ * 该函数将FP4量化输出从线性布局转换为块对齐布局，以满足MTE(Memory Transfer Engine)搬运的对齐要求。
  *
  * 布局转换说明:
- * - 输入: 线性存储，每行数据连续排列，每行占singleN_/2字节(FP4是2个元素打包为1字节)
- * - 输出: 块对齐存储，每行对齐到32字节(AscendC::ONE_BLK_SIZE)，便于DMA传输
+ * - 输入: 线性存储，每行数据连续排列，行间距为Align16(singleN_/2)字节
+ *   (FP4是2个元素打包为1字节，所以每行占singleN_/2字节，16字节对齐)
+ * - 输出: 块对齐存储，每行间距为Align32(singleN_/2)字节(32字节对齐)，便于MTE搬运
  *
  * 算法流程:
- * 1. 计算尾部行间距(tailLineStride): 当singleN_ < 64时需要填充对齐
- * 2. 对每一行数据:
+ * 1. 计算源地址行间距: tailLineStride = Align16(singleN_ / 2)
+ * 2. 计算目标地址行间距: singleNAligned = Align32(singleN_ / 2)
+ * 3. 对每一行数据:
  *    a. 计算有效元素数量: elemNum = singleN_ / 2 (FP4打包后的字节数)
- *    b. 从源地址加载数据到寄存器(支持非对齐加载)
+ *    b. 从源地址加载数据到寄存器(使用DataCopyUnAlign支持非对齐加载)
  *    c. 将数据存储到目标地址，使用DIST_NORM_B8模式进行字节级存储
  *
  * @param mSize 处理的行数
  *
- * 注意: 该函数仅在DataTypeOut为fp4x2_e2m1_t或fp4x2_e1m2_t时被调用
+ * 注意: 该函数仅在DataTypeOut为fp4x2_e2m1_t或fp4x2_e1m2_t且singleN_ < 64时被调用
  */
 template <typename DataTypeOut_, typename DataTypeIn_>
 __aicore__ inline void BlockEpilogueGeluMxQuant<DataTypeOut_, DataTypeIn_>::TransFp4MxOutLayout(uint16_t mSize)
 {
     __ubuf__ int8_t* quantOutputInUbAddr = GetUbAddr<int8_t>(quantOutputUbOffset_);
     __ubuf__ int8_t* quantBlockOutputInUbAddr = GetUbAddr<int8_t>(geluResUbOffset_);
-    // yOut layout: (mSize*16) -> (mSize,32)
+    // 源地址行间距: 16字节对齐的FP4打包数据长度
+    uint32_t tailLineStride = Gemm::Align16(singleN_ / 2);
+    // 目标地址行间距: 32字节对齐，满足MTE搬运要求
+    uint32_t singleNAligned = Gemm::Align32(static_cast<uint32_t>(singleN_ / 2));
     __VEC_SCOPE__
     {
         for (uint16_t mIdx = 0; mIdx < mSize; ++mIdx) {
@@ -1056,10 +1062,10 @@ __aicore__ inline void BlockEpilogueGeluMxQuant<DataTypeOut_, DataTypeIn_>::Tran
             AscendC::Reg::MaskReg maskOutN = AscendC::Reg::UpdateMask<int8_t>(elemNum);
             AscendC::Reg::RegTensor<int8_t> vreg0;
             AscendC::Reg::UnalignReg u0, u1;
-            auto srcUb = quantOutputInUbAddr + mIdx * AscendC::ONE_BLK_SIZE / 2;
+            auto srcUb = quantOutputInUbAddr + mIdx * tailLineStride;
             AscendC::Reg::DataCopyUnAlignPre(u0, srcUb);
             AscendC::Reg::DataCopyUnAlign(vreg0, u0, srcUb);
-            auto dstUb = quantBlockOutputInUbAddr + mIdx * AscendC::ONE_BLK_SIZE;
+            auto dstUb = quantBlockOutputInUbAddr + mIdx * singleNAligned;
             AscendC::Reg::DataCopy<int8_t, AscendC::Reg::StoreDist::DIST_NORM_B8>(dstUb, vreg0, maskOutN);
         }
     }
@@ -1112,8 +1118,11 @@ __aicore__ inline void BlockEpilogueGeluMxQuant<DataTypeOut_, DataTypeIn_>::oper
                       static_cast<int64_t>(subBlockIdx_ * halfSingleM * n_);
     int64_t yScaleOffset = static_cast<int64_t>(AscendC::Te::Get<Y_SCALE_IDX>(blockCoord)) +
                            static_cast<int64_t>(subBlockIdx_ * halfSingleM * scaleNAlign_);
-    if (singleN_ < OUT_ELE_NUM_ONE_BLK) {
-        TransFp4MxOutLayout(singleMInVec);
+    AscendC::PipeBarrier<PIPE_V>();
+    if constexpr (AscendC::IsSameType<DataTypeOut, fp4x2_e2m1_t>::value) {
+        if (static_cast<int64_t>(singleN_) % OUT_ELE_NUM_ONE_BLK != 0) {
+            TransFp4MxOutLayout(singleMInVec);
+        }
     }
     TransMxScaleLayout(singleMInVec);
     AscendC::SetFlag<AscendC::HardEvent::V_MTE3>(0);
