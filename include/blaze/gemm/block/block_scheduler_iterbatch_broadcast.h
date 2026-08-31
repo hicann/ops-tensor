@@ -77,29 +77,59 @@ public:
         cBatchDim1_ = params.cBatchDim1;
         cBatchDim2_ = params.cBatchDim2;
         cBatchDim3_ = params.cBatchDim3;
+        InitBatchUnit();
+    }
+
+    __aicore__ inline void InitBatchUnit()
+    {
+        bool isBroadcastA = broadcastAxisA_ < static_cast<int64_t>(MAX_BATCH_DIM);
+        int64_t bcAxis = isBroadcastA ? broadcastAxisA_ : broadcastAxisB_;
+        const int64_t cBatchDims[MAX_BATCH_DIM] = {cBatchDim0_, cBatchDim1_, cBatchDim2_, cBatchDim3_};
+        if (bcAxis >= static_cast<int64_t>(MAX_BATCH_DIM)) {
+            batchBroadcast_ = 1;
+            innerProduct_ = 1;
+            outerProduct_ = 1;
+            batchUnit_ = b_;
+            batchUnitCnt_ = CeilDiv(b_, iterBatchL1_);
+            return;
+        }
+        batchBroadcast_ = cBatchDims[bcAxis];
+        innerProduct_ = 1;
+        for (int64_t i = bcAxis + 1; i < static_cast<int64_t>(MAX_BATCH_DIM); ++i) {
+            innerProduct_ *= cBatchDims[i];
+        }
+        outerProduct_ = 1;
+        for (int64_t i = 0; i < bcAxis; ++i) {
+            outerProduct_ *= cBatchDims[i];
+        }
+        batchUnit_ = (innerProduct_ == 1) ? batchBroadcast_ : innerProduct_;
+        batchUnitCnt_ = CeilDiv(batchUnit_, iterBatchL1_);
     }
 
     __aicore__ inline int64_t GetBlockNums()
     {
-        return CeilDiv(b_, iterBatchL1_);
+        // tile never crosses batchUnit_ boundary: (b_ / batchUnit_) units, each split into batchUnitCnt_ segments
+        return (b_ / batchUnit_) * batchUnitCnt_;
     }
 
     __aicore__ inline int64_t GetCoreNums(int64_t blockNum)
     {
-        int64_t tileNum = CeilDiv(b_, iterBatchL1_);
+        int64_t tileNum = GetBlockNums();
         return (tileNum < blockNum) ? tileNum : blockNum;
     }
 
     __aicore__ inline BlockShape GetBlockShape(int64_t tileIdx, int64_t tileNum)
     {
-        uint64_t curIterBatchL1 = (static_cast<int64_t>(tileIdx) + 1 == tileNum) ?
-                (b_ - tileIdx * iterBatchL1_) : iterBatchL1_;
+        int64_t segIdx = tileIdx % batchUnitCnt_;
+        uint64_t curIterBatchL1 = (segIdx + 1 == batchUnitCnt_) ? (batchUnit_ - segIdx * iterBatchL1_) : iterBatchL1_;
         return {m_, n_, k_, curIterBatchL1};
     }
 
     __aicore__ inline BlockCoord GetBlockCoord(int64_t tileIdx)
     {
-        return {0, 0, 0, tileIdx * iterBatchL1_};
+        int64_t batchUnitIdx = tileIdx / batchUnitCnt_;
+        int64_t segIdx = tileIdx % batchUnitCnt_;
+        return {0, 0, 0, batchUnitIdx * batchUnit_ + segIdx * iterBatchL1_};
     }
 
     __aicore__ inline int64_t ComputeABroadcastIndex(int64_t cBatchIdx) const
@@ -114,8 +144,7 @@ public:
         int64_t batchA1 = batchC1 % aBatchDim1_;
         int64_t batchA2 = batchC2 % aBatchDim2_;
         int64_t batchA3 = batchC3 % aBatchDim3_;
-        return batchA0 * (aBatchDim1_ * aBatchDim2_ * aBatchDim3_) +
-               batchA1 * (aBatchDim2_ * aBatchDim3_) +
+        return batchA0 * (aBatchDim1_ * aBatchDim2_ * aBatchDim3_) + batchA1 * (aBatchDim2_ * aBatchDim3_) +
                batchA2 * aBatchDim3_ + batchA3;
     }
 
@@ -131,8 +160,7 @@ public:
         int64_t batchB1 = batchC1 % bBatchDim1_;
         int64_t batchB2 = batchC2 % bBatchDim2_;
         int64_t batchB3 = batchC3 % bBatchDim3_;
-        return batchB0 * (bBatchDim1_ * bBatchDim2_ * bBatchDim3_) +
-               batchB1 * (bBatchDim2_ * bBatchDim3_) +
+        return batchB0 * (bBatchDim1_ * bBatchDim2_ * bBatchDim3_) + batchB1 * (bBatchDim2_ * bBatchDim3_) +
                batchB2 * bBatchDim3_ + batchB3;
     }
 
@@ -143,13 +171,7 @@ public:
         if (bcAxis >= static_cast<int64_t>(MAX_BATCH_DIM)) {
             return false;
         }
-        const int64_t aBatchDims[MAX_BATCH_DIM] = {aBatchDim0_, aBatchDim1_, aBatchDim2_, aBatchDim3_};
-        const int64_t bBatchDims[MAX_BATCH_DIM] = {bBatchDim0_, bBatchDim1_, bBatchDim2_, bBatchDim3_};
-        int64_t innerProduct = 1;
-        for (int64_t i = bcAxis + 1; i < static_cast<int64_t>(MAX_BATCH_DIM); ++i) {
-            innerProduct *= isBroadcastA ? aBatchDims[i] : bBatchDims[i];
-        }
-        return innerProduct == 1;
+        return innerProduct_ == 1;
     }
 
 private:
@@ -176,6 +198,11 @@ private:
     int64_t cBatchDim1_{1};
     int64_t cBatchDim2_{1};
     int64_t cBatchDim3_{1};
+    int64_t batchUnit_{1};
+    int64_t batchUnitCnt_{1};
+    int64_t batchBroadcast_{1};
+    int64_t innerProduct_{1};
+    int64_t outerProduct_{1};
 };
 
 } // namespace Block
