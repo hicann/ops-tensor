@@ -26,5 +26,13 @@ struct BlockFlatQuant {
     static constexpr bool ENABLE_INPUT_DATA_LEN_CHECK = false;
 };
 
+// Select the AttentionUniversal specialization that orchestrates BlockAttnResPrepare MM1, AIV epilogue, and MM2.
+struct KernelBlockAttnResPrepareSchedule {};
+
+// Compile-time component contract shared by the Kernel and its BlockEpilogue.
+struct BlockAttnResPreparePolicy {
+    using ScheduleType = KernelBlockAttnResPrepareSchedule;
+};
+
 } // namespace Attention
 } // namespace Blaze

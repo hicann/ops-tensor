@@ -12,13 +12,16 @@
 | [block_epilogue_fmm_with_scale_add](./block/block_epilogue_fmm_with_scale_add.md) | FusedMatMul scale_add 向量后处理，执行 alpha × (x1@x2) + beta × x3 |
 | [block_epilogue_flat_quant](./block/block_epilogue_flat_quant.md) | FlatQuant AIV 侧 MX FP4 量化后处理，bf16→eMax→E8M0 scale→FP4 量化 |
 | [block_epilogue_gelu_tanh_mx_quant](./block/block_epilogue_gelu_tanh_mx_quant.md) | MIX 模板 GeluTanh + MXFP8/MXFP4 在线量化，输出 y 与 E8M0 yScale |
+| [block_epilogue_block_attn_res_prepare](./block/block_epilogue_block_attn_res_prepare.md) | BlockAttnResPrepare AIV 后处理，执行 V 平方和、RMS-softmax、空输入处理和结果搬运 |
+| `tile/{reduce_square,rms_softmax,initialize_empty_softmax}.h` | BlockAttnResPrepare 后处理依赖的 Tensor 级 Vector Tile |
 
 ## 公共框架
 
-所有 BlockEpilogue 组件基于 [block_epilogue.md](./block/block_epilogue.md) 公共框架实现，包含统一的：
+BlockEpilogue 组件遵循公共分层约定，通常包含：
 - 类型别名
 - 数据结构（Params）
-- 核心方法（Init、Run、operator）
+- 与具体计算阶段匹配的核心方法。通用 GEMM 后处理通常提供 `Init`、`Run` 或 `operator()`；
+  BlockAttnResPrepare 后处理提供 `ReduceV`、`FinalizeSoftmax` 和 `ProcessEmptyInput`。
 
 详见：[block_epilogue.md](./block/block_epilogue.md)
 
@@ -46,6 +49,7 @@ BlockEpilogue
 | BlockEpilogueFmmWithScaleAdd | alpha × (x1@x2) + beta × x3 | AIV 核 | 不支持 | 支持 fp32 → bf16/fp16 | 不支持 | FusedMatMul scale_add Kernel |
 | BlockEpilogueFlatQuant | MX FP4 量化：eMax→E8M0 scale→FP4 quant | AIV 核 | 不支持 | 支持 bf16 → FP4(int8) | 不支持 | Attention FlatQuant Kernel |
 | BlockEpilogueGeluTanhMxQuant | GeluTanh + OCP/cuBLAS MXFP8 或 MXFP4 量化 | AIV 核 | 不支持 | float → GeluTanh → FP8/FP4 | GeluTanh | QGMM MX ActivationQuant MIX Kernel |
+| BlockEpilogueBlockAttnResPrepare | V 平方和、RMS-softmax、空输入处理和结果搬运 | AIV 核 | 支持 | FP32 | 不支持 | BlockAttnResPrepare Kernel |
 
 ## 使用流程
 

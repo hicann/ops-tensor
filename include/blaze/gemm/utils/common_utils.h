@@ -143,6 +143,7 @@ enum class QuantMode : uint32_t {
 enum class NoContiguousType : uint64_t {
     NON_CONTIGUOUS_TYPE_SLICE = 1UL,
     NON_CONTIGUOUS_TYPE_PERM_X1 = 2UL,
+    NON_CONTIGUOUS_TYPE_BATCHED_B = 3UL,
 };
 
 template <typename...>

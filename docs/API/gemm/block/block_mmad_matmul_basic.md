@@ -227,7 +227,9 @@ __aicore__ inline void operator()(
 
 执行流程：
 1. **K 轴外层循环**：按 kL1 切分
-2. **搬运 A/B/Bias 到 L1**：根据 l1Stages 决定缓冲数量；slice 非连续场景下 A 矩阵使用 `CopySliceGM2L1`
+2. **搬运 A/B/Bias 到 L1**：根据 l1Stages 决定缓冲数量；slice 非连续 A 使用原有
+   `CopySliceGM2L1`；仅当策略显式指定 `NON_CONTIGUOUS_TYPE_BATCHED_B` 时，batch Layout B 构造与二维 BL1
+   共用地址的 batch 视图，并调用一次标准 batched `CopyGM2L1` 沿 N 拼接；默认策略和普通二维 B 保持原连续搬运
 3. **K 轴内层循环**：按 baseK 切分
 4. **搬运 A/B 到 L0**：双缓冲模式
 5. **Mmad 计算**：首次迭代时加载 Bias

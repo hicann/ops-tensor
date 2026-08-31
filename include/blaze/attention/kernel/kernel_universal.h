@@ -10,7 +10,7 @@
 
 /*!
  * \file kernel_universal.h
- * \brief
+ * \brief Primary template for Attention kernels assembled from block components.
  */
 
 #pragma once
@@ -22,8 +22,8 @@ namespace Attention {
 namespace Kernel {
 
 /**
- * @class GemmUniversal
- * @brief
+ * @class AttentionUniversal
+ * @brief Common compile-time dispatch entry for Attention kernels.
  */
 template <class ProblemShape_, class BlockMmad_, class BlockEpilogue_, class BlockScheduler_, typename Enable_ = void>
 class AttentionUniversal {
@@ -36,3 +36,4 @@ class AttentionUniversal {
 } // namespace Blaze
 
 #include "blaze/attention/kernel/kernel_flat_quant.h"
+#include "blaze/attention/kernel/kernel_block_attn_res_prepare.h"

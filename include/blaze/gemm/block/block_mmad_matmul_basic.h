@@ -217,6 +217,10 @@ private:
     __aicore__ inline auto CopyL1FromGM(const TensorA& tensorA, const TensorB& tensorB, const TensorBias& tensorBias,
                                         const TripleShape& l1Shape, const SlotsTuple& slotsTuple, uint64_t kIdx)
     {
+        constexpr bool IS_SLICE_POLICY = NON_CONTIGUOUS_TYPE ==
+                                         static_cast<uint64_t>(NoContiguousType::NON_CONTIGUOUS_TYPE_SLICE);
+        constexpr bool IS_BATCHED_B_POLICY = NON_CONTIGUOUS_TYPE ==
+                                             static_cast<uint64_t>(NoContiguousType::NON_CONTIGUOUS_TYPE_BATCHED_B);
         uint64_t curML1 = AscendC::Te::Get<MNK_M>(l1Shape);
         uint64_t curNL1 = AscendC::Te::Get<MNK_N>(l1Shape);
         uint64_t curKL1 = AscendC::Te::Get<MNK_K>(l1Shape);
@@ -232,7 +236,7 @@ private:
             AscendC::Te::MakeMemPtr<AscendC::Te::Location::L1, AType>(aL1Slot.Addr()), layoutAL1);
         {
             auto lock = aL1Slot.LockMte2();
-            if constexpr (NON_CONTIGUOUS_TYPE == static_cast<uint64_t>(NoContiguousType::NON_CONTIGUOUS_TYPE_SLICE)) {
+            if constexpr (IS_SLICE_POLICY) {
                 auto layoutGmA = tensorA.Layout();
                 auto sliceM = AscendC::Te::Get<0>(AscendC::Te::Get<1>(layoutGmA.Shape()));
                 auto gmTileASlice = tensorA.Slice(
@@ -251,10 +255,15 @@ private:
         auto layoutBL1 = MakeLayoutBL1{}(curKL1, curNL1);
         auto tensorBL1 = AscendC::Te::MakeTensor(
             AscendC::Te::MakeMemPtr<AscendC::Te::Location::L1, BType>(bL1Slot.Addr()), layoutBL1);
-        auto gmTileB = tensorB.Slice(AscendC::Te::MakeCoord(kIdx * kL1_, 0), AscendC::Te::MakeShape(curKL1, curNL1));
         {
             auto lock = bL1Slot.LockMte2();
-            AscendC::Te::Copy(copyGM2L1, tensorBL1, gmTileB);
+            if constexpr (IS_BATCHED_B_POLICY) {
+                CopyBatchedBToConcatL1(copyGM2L1, tensorBL1, tensorB, bL1Slot.Addr(), curKL1, kIdx);
+            } else {
+                auto gmTileB = tensorB.Slice(AscendC::Te::MakeCoord(kIdx * kL1_, 0),
+                                             AscendC::Te::MakeShape(curKL1, curNL1));
+                AscendC::Te::Copy(copyGM2L1, tensorBL1, gmTileB);
+            }
         }
         // Bias GM->L1
         auto layoutBiasL1 = AscendC::Te::MakeFrameLayout<AscendC::Te::NDExtLayoutPtn>(1UL, curNL1);
@@ -280,6 +289,58 @@ private:
         }
 
         return AscendC::Std::make_tuple(tensorAL1, tensorBL1, tensorBiasL1);
+    }
+
+    template <typename CopyGM2L1, typename TensorBL1, typename TensorB>
+    __aicore__ inline void CopyBatchedBToConcatL1(const CopyGM2L1& copyGM2L1, const TensorBL1& tensorBL1,
+                                                  const TensorB& tensorB, uint64_t bL1Address, uint64_t curKL1,
+                                                  uint64_t kIdx)
+    {
+        using TensorBElementType = AscendC::Te::GetAttributeElementType<typename TensorB::elementType*>;
+        using TensorBLayoutPattern = AscendC::Te::GetLayoutPattern<typename TensorB::layoutType>;
+        using TensorBL1ElementType = AscendC::Te::GetAttributeElementType<typename TensorBL1::elementType*>;
+        using TensorBL1LayoutPattern = AscendC::Te::GetLayoutPattern<typename TensorBL1::layoutType>;
+        using ExpectedBL1LayoutPattern = AscendC::Std::conditional_t<TRANS_B, AscendC::Te::ZNLayoutPtn,
+                                                                     AscendC::Te::NZLayoutPtn>;
+        static_assert(AscendC::Std::is_same_v<TensorBElementType, BType>,
+                      "Batched-B GM tensor element type must match BlockMmad BType.");
+        static_assert(AscendC::Std::is_same_v<TensorBL1ElementType, BType>,
+                      "Batched-B L1 tensor element type must match BlockMmad BType.");
+        static_assert(AscendC::Std::is_same_v<AscendC::Te::GetMemLocation<TensorB>, AscendC::Te::Location::GM>,
+                      "Batched-B source tensor must reside in GM.");
+        static_assert(AscendC::Std::is_same_v<AscendC::Te::GetMemLocation<TensorBL1>, AscendC::Te::Location::L1>,
+                      "Batched-B destination tensor must reside in L1.");
+        static_assert(AscendC::Std::is_same_v<TensorBLayoutPattern, LayoutB>,
+                      "Batched-B GM tensor layout pattern must match BlockMmad LayoutB.");
+        static_assert(AscendC::Std::is_same_v<TensorBL1LayoutPattern, ExpectedBL1LayoutPattern>,
+                      "Batched-B L1 tensor layout must match the BlockMmad transpose mode.");
+        static_assert(TensorB::layoutType::depth == AscendC::Te::FIVE_DIM_DATA,
+                      "Batched-B source tensor must contain an outer batch and a two-dimensional matrix layout.");
+
+        auto gmBLayout = tensorB.Layout();
+        const uint64_t batchCount = static_cast<uint64_t>(AscendC::Te::Get<0>(gmBLayout.Shape()));
+        using GmBLayoutPattern = AscendC::Te::GetLayoutPattern<typename TensorB::layoutType>;
+        using BLayoutTrait = AscendC::Te::LayoutTraitDefault<BType>;
+        auto singleGmBLayout = AscendC::Te::MakePatternLayout<GmBLayoutPattern, BLayoutTrait>(
+            AscendC::Te::Get<1>(gmBLayout.Shape()), AscendC::Te::Get<1>(gmBLayout.Stride()));
+        const uint64_t singleN = AscendC::Te::GetTotalColumnShape(singleGmBLayout);
+        auto gmTileB = tensorB.Slice(AscendC::Te::MakeCoord(0UL, AscendC::Te::MakeCoord(kIdx * kL1_, 0UL)),
+                                     AscendC::Te::MakeShape(batchCount, AscendC::Te::MakeShape(curKL1, singleN)));
+
+        // Re-view the same BL1 storage as a batch so one GM2L1 copy packs the matrices into adjacent N ranges.
+        // The original two-dimensional tensorBL1 remains the compute view used by L1-to-L0 and MMAD.
+        auto concatBL1Layout = tensorBL1.Layout();
+        auto singleBL1 = tensorBL1.Slice(AscendC::Te::MakeCoord(0UL, 0UL), AscendC::Te::MakeShape(curKL1, singleN));
+        auto singleBL1Layout = singleBL1.Layout();
+        const uint64_t batchStride = concatBL1Layout(AscendC::Te::MakeCoord(0UL, singleN));
+        using BL1Layout = typename TensorBL1::layoutType;
+        using BL1LayoutPattern = AscendC::Te::GetLayoutPattern<BL1Layout>;
+        auto batchedBL1Layout = AscendC::Te::MakePatternLayout<BL1LayoutPattern, BLayoutTrait>(
+            AscendC::Te::MakeShape(batchCount, singleBL1Layout.Shape()),
+            AscendC::Te::MakeStride(batchStride, singleBL1Layout.Stride()));
+        auto batchedBL1 = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::L1, BType>(bL1Address),
+                                                  batchedBL1Layout);
+        AscendC::Te::Copy(copyGM2L1, batchedBL1, gmTileB);
     }
 
     template <typename TensorA, typename TensorB, typename TensorBias, typename SlotsTuple>
