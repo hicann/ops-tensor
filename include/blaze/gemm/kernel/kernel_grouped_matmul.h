@@ -221,11 +221,12 @@ private:
             return;
         }
 
-        // Single tensors share the logical shape supplied by tiling; mixed or multi tensors resolve it per group.
-        auto problemM = AscendC::Te::Get<MNK_M>(params.problemShape);
-        auto problemN = AscendC::Te::Get<MNK_N>(params.problemShape);
-        auto problemK = AscendC::Te::Get<MNK_K>(params.problemShape);
-        if (!IsSingleTensor(params.gmmParams)) {
+        // Preserve the shape resolved by previous groups. Mixed or multi tensors resolve it per group.
+        const bool isSingleTensor = IsSingleTensor(params.gmmParams);
+        auto problemM = AscendC::Te::Get<MNK_M>(problemShape_);
+        auto problemN = AscendC::Te::Get<MNK_N>(problemShape_);
+        auto problemK = AscendC::Te::Get<MNK_K>(problemShape_);
+        if (!isSingleTensor) {
             uint64_t xShape[DIM_NUM] = {0, 0};
             uint64_t weightShape[DIM_NUM] = {0, 0};
             GetTensorShape(params.gmmParams.singleX == 0 ? groupIdx : 0, params.mmParams.aGmAddr, xShape, false);
@@ -234,6 +235,11 @@ private:
             problemM = static_cast<int64_t>(TRANS_A ? xShape[1] : xShape[0]);
             problemK = static_cast<int64_t>(TRANS_B ? weightShape[1] : weightShape[0]);
             problemN = static_cast<int64_t>(TRANS_B ? weightShape[0] : weightShape[1]);
+        } else if (params.gmmParams.groupType == GROUP_TYPE_SPLIT_K && groupIdx == 0U) {
+            // For split-K single tensors, derive M from the X descriptor instead of trusting the tiling shape.
+            uint64_t xShape[DIM_NUM] = {0, 0};
+            GetTensorShape(0U, params.mmParams.aGmAddr, xShape, false);
+            problemM = static_cast<int64_t>(TRANS_A ? xShape[1] : xShape[0]);
         }
         if (params.gmmParams.groupType == GROUP_TYPE_SPLIT_M) {
             problemM = splitValue;
