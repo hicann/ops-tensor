@@ -9,11 +9,13 @@
  */
 
 /*!
- * \file initialize_empty_softmax.h
- * \brief Architecture dispatcher for empty-softmax Tensor initialization.
+ * \file compute.h
+ * \brief Architecture dispatcher for Epilogue Tile compute operations.
  */
 #pragma once
 
 #if defined(__NPU_ARCH__) && __NPU_ARCH__ == 3510
 #include "blaze/epilogue/tile/arch35/initialize_empty_softmax.h"
+#include "blaze/epilogue/tile/arch35/reduce_square.h"
+#include "blaze/epilogue/tile/arch35/rms_softmax.h"
 #endif

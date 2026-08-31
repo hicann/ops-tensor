@@ -21,6 +21,6 @@ Epilogue 定义自己的 `Params`，只保存后处理需要的 GM 地址、D �
 - `ProcessEmptyInput(outputTensor, maxTensor, sumTensor)`：写空输入结果。
 
 阶段接口只接收 Tensor。有效形状、stride 和存储位置均由 Tensor Layout 携带，不暴露 UB offset 或长度参数。
-GM/UB 搬运使用标准 Tensor API `MakeCopy + Copy`；寄存器计算使用 Epilogue Tile 层的
-`reduce_square.h`、`rms_softmax.h`、`initialize_empty_softmax.h`，空输入清零复用已有的
+GM/UB 搬运使用标准 Tensor API `MakeCopy + Copy`；寄存器计算统一通过 Epilogue Tile 层的
+`compute.h` 引入对应架构实现，空输入清零复用已有的
 GEMM Tile `fill_ub.h`。

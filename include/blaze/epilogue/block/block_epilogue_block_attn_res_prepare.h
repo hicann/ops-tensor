@@ -17,10 +17,8 @@
 #endif
 
 #include "blaze/attention/policy/dispatch_policy.h"
+#include "blaze/epilogue/tile/compute.h"
 #include "blaze/gemm/tile/fill_ub.h"
-#include "blaze/epilogue/tile/initialize_empty_softmax.h"
-#include "blaze/epilogue/tile/reduce_square.h"
-#include "blaze/epilogue/tile/rms_softmax.h"
 #include "tensor_api/tensor.h"
 
 namespace Blaze {
