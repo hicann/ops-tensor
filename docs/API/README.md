@@ -303,6 +303,7 @@ blaze/
 │       │   ├── kernel_qbmm_mx.h
 │       │   ├── kernel_qbmm_mx_without_batch.h
 │       │   ├── kernel_matmul_mix_weight_prologue.h
+│       │   ├── kernel_wqgmm_mix_weight_prologue.h
 │       │   ├── kernel_qbmm_streamk.h
 │       │   └── kernel_qbmm_pertensor_streamk.h
 │       │

@@ -111,7 +111,7 @@ examples/
 | `transpose_batch_mat_mul/`      | transpose_batch_mat_mul_basic                                                                | 转置批量矩阵乘法样例                     |
 | `quant_batch_matmul/`           | quant_batch_matmul_cube, quant_batch_matmul_mx                                               | 量化批量矩阵乘法样例（cube/mx 两种算法） |
 | `weight_quant_batch_matmul_mx/` | weight_quant_batch_matmul_mx_swat                                                            | 权重量化批量矩阵乘法样例                 |
-| `grouped_matmul/`               | quant_grouped_matmul_mx                                                                      | Grouped MatMul 样例                      |
+| `grouped_matmul/`               | quant_grouped_matmul_mx, [grouped_matmul_mx_a8w4](grouped_matmul/grouped_matmul_mx_a8w4/README.md) | Grouped MatMul 与 MX A8W4 样例      |
 
 ## 4. 执行方法
 

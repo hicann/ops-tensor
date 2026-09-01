@@ -42,6 +42,7 @@ struct KernelMmadMultiBlockFixpipeOpti {};             // Multi-tile FixpipeOpti
 struct KernelMmadMultiBlockTBMM {};                    // tbmm schedule
 struct KernelMmadMultiBlockTQBMM {};                   // tqbmm schedule
 struct KernelMixWithWeightPrologue {};                 // Mix matmul with AIV weight preprocessing
+struct KernelWqgmmMxMix {};                            // Grouped MX mix kernel with AIV weight preprocessing
 struct KernelGmmSwiGluMixMx {};                        // MIX AIC+AIV schedule for GroupedMatmul + SwiGLU + MX quant
 struct KernelMatmulEmuSplitWeight {};                  // Double bf16 matmul to simulate fp32 (AIC+AIV)
 struct KernelMmadWithScaleMxMix {};                    // Multi-block with Mx scale, epilogue after block mmad
@@ -96,6 +97,15 @@ struct MatmulWithScaleMx {
  */
 struct MatmulWithWeightQuantMx {
     using ScheduleType = KernelMixWithWeightPrologue;
+};
+
+/**
+ * @struct GroupedMatmulWithWeightQuantMx
+ * @brief Dispatch policy for grouped MX weight-quant matrix
+ * multiplication.
+ */
+struct GroupedMatmulWithWeightQuantMx {
+    using ScheduleType = KernelWqgmmMxMix;
 };
 
 /**

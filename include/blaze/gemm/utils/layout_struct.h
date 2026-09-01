@@ -49,9 +49,8 @@ struct Weight8BitZnToZnUBLayout {
         int64_t n1 = CeilDiv(nSize, N0);
 
         // Shape: ((C0, k1), (N0, n1))
-        auto shape = AscendC::Te::MakeShape(
-            AscendC::Te::MakeShape(AscendC::Std::Int<C0>{}, k1),
-            AscendC::Te::MakeShape(AscendC::Std::Int<N0>{}, n1));
+        auto shape = AscendC::Te::MakeShape(AscendC::Te::MakeShape(AscendC::Std::Int<C0>{}, k1),
+                                            AscendC::Te::MakeShape(AscendC::Std::Int<N0>{}, n1));
         // Stride: (MakeStride(1, n1 * InnerStride), MakeStride(C0, InnerStride))
         auto stride = AscendC::Te::MakeStride(
             AscendC::Te::MakeStride(AscendC::Std::Int<STRIDE_UNIT>{}, n1 * innerStride),
@@ -74,9 +73,8 @@ struct Weight8BitDnToZnUBLayout {
         static constexpr int64_t EXTRA_N_BLOCK = 1;
         int64_t k1 = CeilDiv(kSize, C0);
         int64_t nStride = static_cast<int64_t>(Align16(static_cast<uint64_t>(nSize))) + EXTRA_N_BLOCK;
-        auto shape = AscendC::Te::MakeShape(
-            AscendC::Te::MakeShape(AscendC::Std::Int<C0>{}, k1),
-            AscendC::Te::MakeShape(AscendC::Std::Int<1>{}, nSize));
+        auto shape = AscendC::Te::MakeShape(AscendC::Te::MakeShape(AscendC::Std::Int<C0>{}, k1),
+                                            AscendC::Te::MakeShape(AscendC::Std::Int<1>{}, nSize));
         auto stride = AscendC::Te::MakeStride(
             AscendC::Te::MakeStride(AscendC::Std::Int<1>{}, nStride * C0),
             AscendC::Te::MakeStride(AscendC::Std::Int<C0>{}, AscendC::Std::Int<C0>{}));

@@ -19,6 +19,7 @@
 | [kernel_qbmm_streamk](./kernel_qbmm_streamk.md) | MX 量化 StreamK Kernel，支持单 Batch MxFP4/MxFP8 workspace 归约 |
 | [kernel_qbmm_pertensor_streamk](./kernel_qbmm_pertensor_streamk.md) | QBMM per-tensor StreamK Kernel，AIC raw partial + AIV 统一反量化 |
 | [kernel_matmul_mix_weight_prologue](./kernel_matmul_mix_weight_prologue.md) | AIV 权重前处理 + AIC MX MMAD 的 Mix Kernel |
+| [kernel_wqgmm_mix_weight_prologue](./kernel_wqgmm_mix_weight_prologue.md) | Grouped MX A8W4 Mix Kernel，支持 E2M1/E1M2、FP16/BF16 输出、可选 Bias 和单/多 Weight |
 | [kernel_matmul_with_scale_add](./kernel_matmul_with_scale_add.md) | FusedMatMul scale_add Kernel，AIC 矩阵乘 + AIV 缩放相加后处理 |
 
 ## 公共框架
@@ -57,6 +58,7 @@ KernelMatmul
 | KernelQbmmStreamK | AIC + AIV 双核 | MX FP4/MX FP8 | ScaleA + ScaleB | BlockEpilogueStreamK（复用） | 需要 | 单 batch | StreamK Scheduler（复用） | 有 | 量化切 K 场景 Matmul |
 | KernelQbmmPertensorStreamK | AIC + AIV 双核 | int8/FP8/HiFloat8 | X2 per-tensor + 可选 X1 scale | BlockEpilogueQbmmPertensorStreamK | 需要 | 单 batch | StreamK Scheduler | 有 | QBMM per-tensor StreamK |
 | GemmUniversal (Weight Prologue) | AIC + AIV 双核 | FP8 激活 + packed FP4 权重 | ScaleA + ScaleB | `void` | 不需要 | 单 batch | Matmul SWAT | 有（ready/free 标志） | MXA8W4 Weight ND/NZ |
+| GmmWeightQuantMxKernel | AIC + AIV 双核 | FP8 激活 + packed FP4 E2M1/E1M2 权重 | ScaleA + ScaleB | `void` | 不需要 | group list | BlockSchedulerWqgmmNResplit | 有（ready/free 标志） | MX A8W4 Grouped Matmul |
 | KernelMatmulWithScaleAdd | AIC + AIV 双核 | 不支持 | alpha + beta | BlockEpilogueFmmWithScaleAdd | 不需要 | 多 batch | MatmulBasic | 有 | FusedMatMul scale_add |
 
 ## 使用流程
