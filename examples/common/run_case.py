@@ -287,7 +287,10 @@ def _load_metrics(output_dir, verify_stdout, rc):
 def _extract_accuracy(metrics):
     if not metrics or not metrics.get("outputs"):
         return ""
-    worst_err = max(o.get("error_ratio", 0.0) for o in metrics["outputs"])
+    err_values = [o.get("error_ratio") for o in metrics["outputs"]]
+    if any(e is None for e in err_values):
+        return ""
+    worst_err = max(err_values)
     return f"{(1.0 - worst_err) * 100:.2f}%"
 
 
@@ -308,6 +311,23 @@ def _format_metrics_json(metrics):
             entry["ratio_tol"] = f"{(1.0 - tol) * 100:.2f}%"
         result["outputs"].append(entry)
     return json.dumps(result, ensure_ascii=False)
+
+
+def _print_metrics(metrics):
+    """Print per-output accuracy/tolerance/max-diff lines (PASS and FAIL paths)."""
+    if not (metrics and metrics.get("outputs")):
+        return
+    for out in metrics["outputs"]:
+        name = out.get("name", "output")
+        parts = []
+        if out.get("error_ratio") is not None:
+            parts.append(f"accuracy={(1.0 - out['error_ratio']) * 100:.2f}%")
+        if out.get("ratio_tol") is not None:
+            parts.append(f"tol {(1.0 - out['ratio_tol']) * 100:.2f}%")
+        if out.get("max_abs_diff") is not None:
+            parts.append(f"max_abs_diff={out['max_abs_diff']:.6e}")
+        if parts:
+            print(f"  {name}: {', '.join(parts)}")
 
 
 # ---------------------------------------------------------------------------
@@ -349,7 +369,7 @@ def run_single_case(
     if rc != 0:
         return "FAIL", "verify", out, metrics
 
-    return "PASS", "verify", "", metrics
+    return "PASS", "verify", "" if metrics else out, metrics
 
 
 # ---------------------------------------------------------------------------
@@ -485,24 +505,7 @@ def main():
         if status == "PASS":
             pass_count += 1
             print(f"[PASS] {casename}")
-            if metrics and metrics.get("outputs"):
-                for out in metrics["outputs"]:
-                    name = out.get("name", "output")
-                    max_diff = out.get("max_abs_diff", 0.0)
-                    err_ratio = out.get("error_ratio", 0.0)
-                    ratio_tol = out.get("ratio_tol")
-                    accuracy = (1.0 - err_ratio) * 100
-                    if ratio_tol is not None:
-                        tol_accuracy = (1.0 - ratio_tol) * 100
-                        print(
-                            f"  {name}: accuracy={accuracy:.2f}% (tol {tol_accuracy:.2f}%), "
-                            f"max_abs_diff={max_diff:.6e}"
-                        )
-                    else:
-                        print(
-                            f"  {name}: accuracy={accuracy:.2f}%, "
-                            f"max_abs_diff={max_diff:.6e}"
-                        )
+            _print_metrics(metrics)
         else:
             fail_count += 1
             print(f"[FAIL] {casename} (stage={stage})")
@@ -511,24 +514,7 @@ def main():
                 if len(message) > 500:
                     preview += "..."
                 print(f"  Error: {preview}")
-            if metrics and metrics.get("outputs"):
-                for out in metrics["outputs"]:
-                    name = out.get("name", "output")
-                    max_diff = out.get("max_abs_diff", 0.0)
-                    err_ratio = out.get("error_ratio", 0.0)
-                    ratio_tol = out.get("ratio_tol")
-                    accuracy = (1.0 - err_ratio) * 100
-                    if ratio_tol is not None:
-                        tol_accuracy = (1.0 - ratio_tol) * 100
-                        print(
-                            f"  {name}: accuracy={accuracy:.2f}% (tol {tol_accuracy:.2f}%), "
-                            f"max_abs_diff={max_diff:.6e}"
-                        )
-                    else:
-                        print(
-                            f"  {name}: accuracy={accuracy:.2f}%, "
-                            f"max_abs_diff={max_diff:.6e}"
-                        )
+            _print_metrics(metrics)
 
         results.append(
             {

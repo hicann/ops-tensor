@@ -319,13 +319,11 @@ static void Run(const CliArgs& args)
     std::vector<uint8_t> hostB(sizeB);
     std::vector<uint8_t> hostC(sizeC, 0);
 
-    std::cout << "[INFO] Reading " << pathA << " (" << sizeA << " bytes)..." << std::endl;
     if (!ReadFile(pathA, hostA.data(), sizeA)) {
         std::cerr << "Failed to read input A" << std::endl;
         return;
     }
 
-    std::cout << "[INFO] Reading " << pathB << " (" << sizeB << " bytes)..." << std::endl;
     if (!ReadFile(pathB, hostB.data(), sizeB)) {
         std::cerr << "Failed to read input B" << std::endl;
         return;
@@ -337,7 +335,6 @@ static void Run(const CliArgs& args)
     if (args.bias > 0) {
         std::string biasPath = inputDir + "/bias.bin";
         if (stat(biasPath.c_str(), &st) == 0) {
-            std::cout << "[INFO] Reading " << biasPath << " (" << sizeBias << " bytes)..." << std::endl;
             if (!ReadFile(biasPath, hostBias.data(), sizeBias)) {
                 std::cerr << "Failed to read bias from " << biasPath << std::endl;
                 return;
@@ -376,8 +373,6 @@ static void Run(const CliArgs& args)
               << std::endl;
     std::cout << "  BlockNum : " << blockNum << std::endl;
     std::cout << "============================================================" << std::endl;
-
-    std::cout << "[INFO] Launching kernel..." << std::endl;
 
     LaunchParams launchParams = {deviceA,  deviceB,    deviceC,     deviceBias,  args.m,           args.n,
                                  args.k,   args.batch, args.batchA, args.batchB, args.iterBatchL1, args.iterBatchL0,
@@ -420,12 +415,9 @@ static void Run(const CliArgs& args)
     ACL_CHECK(aclrtMemcpy(hostC.data(), sizeC, deviceC, sizeC, ACL_MEMCPY_DEVICE_TO_HOST));
 
     std::string outPath = outputDir + "/npu_out.bin";
-    std::cout << "[INFO] Writing " << outPath << " (" << sizeC << " bytes)..." << std::endl;
     if (!WriteFile(outPath, hostC.data(), sizeC)) {
         std::cerr << "Failed to write output" << std::endl;
     }
-
-    std::cout << "[INFO] Kernel execution completed successfully." << std::endl;
 
     ACL_CHECK(aclrtFree(deviceA));
     ACL_CHECK(aclrtFree(deviceB));

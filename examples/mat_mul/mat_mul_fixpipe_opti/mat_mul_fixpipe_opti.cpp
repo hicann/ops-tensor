@@ -375,13 +375,11 @@ static void Run(const CliArgs& args)
     std::vector<uint8_t> hostB(sizeB);
     std::vector<uint8_t> hostC(sizeC, 0);
 
-    std::cout << "[INFO] Reading " << pathA << " (" << sizeA << " bytes)..." << std::endl;
     if (!ReadFile(pathA, hostA.data(), sizeA)) {
         std::cerr << "Failed to read input A" << std::endl;
         return;
     }
 
-    std::cout << "[INFO] Reading " << pathB << " (" << sizeB << " bytes)..." << std::endl;
     if (!ReadFile(pathB, hostB.data(), sizeB)) {
         std::cerr << "Failed to read input B" << std::endl;
         return;
@@ -409,8 +407,6 @@ static void Run(const CliArgs& args)
             ConvertToNZ(reinterpret_cast<half*>(hostBND.data()), reinterpret_cast<half*>(hostBNz.data()), args.k,
                         args.n, args.transB);
         }
-
-        std::cout << "[INFO] Converted B to NZ format: " << sizeB << " bytes" << std::endl;
     }
 
     std::vector<uint8_t> hostBias(sizeBias, 0);
@@ -419,7 +415,6 @@ static void Run(const CliArgs& args)
     if (args.bias > 0) {
         std::string biasPath = inputDir + "/bias.bin";
         if (stat(biasPath.c_str(), &st) == 0) {
-            std::cout << "[INFO] Reading " << biasPath << " (" << sizeBias << " bytes)..." << std::endl;
             if (!ReadFile(biasPath, hostBias.data(), sizeBias)) {
                 std::cerr << "Failed to read bias from " << biasPath << std::endl;
                 return;
@@ -429,7 +424,6 @@ static void Run(const CliArgs& args)
         }
         ACL_CHECK(aclrtMalloc(reinterpret_cast<void**>(&deviceBias), sizeBias, ACL_MEM_MALLOC_HUGE_FIRST));
         ACL_CHECK(aclrtMemcpy(deviceBias, sizeBias, hostBias.data(), sizeBias, ACL_MEMCPY_HOST_TO_DEVICE));
-        std::cout << "[INFO] Loaded bias: " << args.bias << " elements" << std::endl;
     }
 
     uint8_t* deviceA{nullptr};
@@ -468,8 +462,6 @@ static void Run(const CliArgs& args)
     std::cout << "  BlockNum : " << blockNum << std::endl;
     std::cout << "============================================================" << std::endl;
 
-    std::cout << "[INFO] Launching kernel..." << std::endl;
-
     LaunchParams launchParams = {deviceA,  deviceB, deviceC,    deviceBias, args.m,      args.n,      args.k,
                                  blockNum, &tiling, &tilingCfg, stream,     args.transA, args.transB, args.isHf32};
 
@@ -488,12 +480,9 @@ static void Run(const CliArgs& args)
     ACL_CHECK(aclrtMemcpy(hostC.data(), sizeC, deviceC, sizeC, ACL_MEMCPY_DEVICE_TO_HOST));
 
     std::string outPath = outputDir + "/npu_out.bin";
-    std::cout << "[INFO] Writing " << outPath << " (" << sizeC << " bytes)..." << std::endl;
     if (!WriteFile(outPath, hostC.data(), sizeC)) {
         std::cerr << "Failed to write output" << std::endl;
     }
-
-    std::cout << "[INFO] Kernel execution completed successfully." << std::endl;
 
     ACL_CHECK(aclrtFree(deviceA));
     ACL_CHECK(aclrtFree(deviceB));

@@ -401,28 +401,23 @@ static void Run(const CliArgs& args)
     std::vector<uint8_t> hostY(ySize, 0);
     std::vector<uint8_t> hostYScale(yScaleSize, 0);
 
-    std::cout << "[INFO] Reading " << inputDir << "/input_a.bin (" << aSize << " bytes)..." << std::endl;
     if (!ReadFile(inputDir + "/input_a.bin", hostA.data(), aSize)) {
         std::cerr << "Failed to read input A" << std::endl;
         return;
     }
-    std::cout << "[INFO] Reading " << inputDir << "/input_b.bin (" << bSize << " bytes)..." << std::endl;
     if (!ReadFile(inputDir + "/input_b.bin", hostB.data(), bSize)) {
         std::cerr << "Failed to read input B" << std::endl;
         return;
     }
-    std::cout << "[INFO] Reading " << inputDir << "/scale_a.bin (" << scaleASize << " bytes)..." << std::endl;
     if (!ReadFile(inputDir + "/scale_a.bin", hostScaleA.data(), scaleASize)) {
         std::cerr << "Failed to read scale A" << std::endl;
         return;
     }
-    std::cout << "[INFO] Reading " << inputDir << "/scale_b.bin (" << scaleBSize << " bytes)..." << std::endl;
     if (!ReadFile(inputDir + "/scale_b.bin", hostScaleB.data(), scaleBSize)) {
         std::cerr << "Failed to read scale B" << std::endl;
         return;
     }
     if (args.bias > 0) {
-        std::cout << "[INFO] Reading " << inputDir << "/bias.bin (" << biasSize << " bytes)..." << std::endl;
         if (!ReadFile(inputDir + "/bias.bin", hostBias.data(), biasSize)) {
             std::cerr << "Failed to read bias" << std::endl;
             return;
@@ -472,8 +467,6 @@ static void Run(const CliArgs& args)
     std::cout << "  BlockNum : " << blockNum << std::endl;
     std::cout << "============================================================" << std::endl;
 
-    std::cout << "[INFO] Launching kernel..." << std::endl;
-
     LaunchParams launchParams = {deviceA,
                                  deviceB,
                                  deviceBias,
@@ -517,15 +510,12 @@ static void Run(const CliArgs& args)
     // Write outputs
     std::string yPath = outputDir + "/npu_y.bin";
     std::string yScalePath = outputDir + "/npu_y_scale.bin";
-    std::cout << "[INFO] Writing " << yPath << " (" << ySize << " bytes)..." << std::endl;
     if (!WriteFile(yPath, hostY.data(), ySize)) {
         std::cerr << "Failed to write output Y" << std::endl;
     }
-    std::cout << "[INFO] Writing " << yScalePath << " (" << yScaleSize << " bytes)..." << std::endl;
     if (!WriteFile(yScalePath, hostYScale.data(), yScaleSize)) {
         std::cerr << "Failed to write output Y_scale" << std::endl;
     }
-    std::cout << "[INFO] Kernel execution completed successfully." << std::endl;
 
     ACL_CHECK(aclrtFree(deviceA));
     ACL_CHECK(aclrtFree(deviceB));

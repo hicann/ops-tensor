@@ -11,6 +11,7 @@
 #ifndef DATA_UTILS_H
 #define DATA_UTILS_H
 
+#include <cassert>
 #include <cstdint>
 #include <cstdlib>
 #include <fstream>
@@ -78,24 +79,19 @@ private:
  * @param size   Number of bytes to read.
  * @return true on success, false on failure (prints error to stderr)
  */
-inline bool ReadFile(const std::string &path, void *buffer, size_t size) {
+inline bool ReadFile(const std::string& path, void* buffer, size_t size)
+{
     std::ifstream ifs(path, std::ios::binary);
     if (!ifs.is_open()) {
         std::cerr << "ReadFile failed: cannot open " << path << std::endl;
         return false;
     }
-    ifs.read(static_cast<char *>(buffer), size);
-    if (!ifs) {
-        std::cerr << "ReadFile failed: read error on " << path << " (expected " << size << " bytes)" << std::endl;
-        return false;
-    }
-    // Verify actual bytes read
+    ifs.read(static_cast<char*>(buffer), size);
     if (static_cast<size_t>(ifs.gcount()) != size) {
         std::cerr << "ReadFile failed: read " << ifs.gcount() << " bytes, expected " << size << " from " << path
                   << std::endl;
         return false;
     }
-    ifs.close();
     return true;
 }
 
@@ -106,18 +102,18 @@ inline bool ReadFile(const std::string &path, void *buffer, size_t size) {
  * @param size   Number of bytes to write.
  * @return true on success, false on failure (prints error to stderr)
  */
-inline bool WriteFile(const std::string &path, const void *buffer, size_t size) {
+inline bool WriteFile(const std::string& path, const void* buffer, size_t size)
+{
     std::ofstream ofs(path, std::ios::binary);
     if (!ofs.is_open()) {
         std::cerr << "WriteFile failed: cannot open " << path << std::endl;
         return false;
     }
-    ofs.write(static_cast<const char *>(buffer), size);
+    ofs.write(static_cast<const char*>(buffer), size);
     if (!ofs) {
         std::cerr << "WriteFile failed: write error on " << path << " (expected " << size << " bytes)" << std::endl;
         return false;
     }
-    ofs.close();
     return true;
 }
 
@@ -125,15 +121,15 @@ inline bool WriteFile(const std::string &path, const void *buffer, size_t size) 
  * Math Utilities
  *============================================================================*/
 template <typename T>
-inline T CeilDiv(T a, T b) {
-    if (b == 0) {
-        return a;
-    }
+inline T CeilDiv(T a, T b)
+{
+    assert(b != 0);
     return (a + b - 1) / b;
 }
 
 template <typename T>
-inline T CeilAlign(T v, T align) {
+inline T CeilAlign(T v, T align)
+{
     return CeilDiv(v, align) * align;
 }
 
@@ -154,8 +150,9 @@ struct PlatformInfo {
     platform_ascendc::SocVersion socVersion{0};
 };
 
-inline bool InitPlatformInfo(PlatformInfo &info) {
-    auto *platform = platform_ascendc::PlatformAscendCManager::GetInstance();
+inline bool InitPlatformInfo(PlatformInfo& info)
+{
+    auto* platform = platform_ascendc::PlatformAscendCManager::GetInstance();
     if (platform == nullptr) {
         std::cerr << "[WARN] PlatformAscendCManager::GetInstance() returned null" << std::endl;
         return false;
@@ -176,15 +173,16 @@ inline bool InitPlatformInfo(PlatformInfo &info) {
     return true;
 }
 
-inline int64_t GetAicCoreNum() {
+inline int64_t GetAicCoreNum()
+{
     PlatformInfo info;
     if (!InitPlatformInfo(info)) {
-        std::cerr << "[WARN] InitPlatformInfo() failed, fallback to 32" << std::endl;
-        return 32;
+        std::cerr << "InitPlatformInfo() failed, cannot determine AIC core num" << std::endl;
+        std::exit(1);
     }
-    if (info.aicNum <= 0) {
-        std::cerr << "[WARN] GetCoreNumAic() returned " << info.aicNum << ", fallback to 32" << std::endl;
-        return 32;
+    if (info.aicNum == 0) {
+        std::cerr << "GetCoreNumAic() returned 0, cannot determine AIC core num" << std::endl;
+        std::exit(1);
     }
     return static_cast<int64_t>(info.aicNum);
 }

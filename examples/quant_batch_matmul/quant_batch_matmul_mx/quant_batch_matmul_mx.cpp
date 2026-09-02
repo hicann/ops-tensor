@@ -392,34 +392,28 @@ static void Run(const CliArgs& args)
     std::vector<uint8_t> hostScaleA(scaleASize);
     std::vector<uint8_t> hostScaleB(scaleBSize);
 
-    std::cout << "[INFO] Reading " << inputDir << "/input_a.bin (" << aSize << " bytes)..." << std::endl;
     if (!ReadFile(inputDir + "/input_a.bin", hostA.data(), aSize)) {
         std::cerr << "Failed to read input A" << std::endl;
         return;
     }
-    std::cout << "[INFO] Reading " << inputDir << "/input_b.bin (" << bSize << " bytes)..." << std::endl;
     if (!ReadFile(inputDir + "/input_b.bin", hostB.data(), bSize)) {
         std::cerr << "Failed to read input B" << std::endl;
         return;
     }
-    std::cout << "[INFO] Reading " << inputDir << "/scale_a.bin (" << scaleASize << " bytes)..." << std::endl;
     if (!ReadFile(inputDir + "/scale_a.bin", hostScaleA.data(), scaleASize)) {
         std::cerr << "Failed to read scale A" << std::endl;
         return;
     }
-    std::cout << "[INFO] Reading " << inputDir << "/scale_b.bin (" << scaleBSize << " bytes)..." << std::endl;
     if (!ReadFile(inputDir + "/scale_b.bin", hostScaleB.data(), scaleBSize)) {
         std::cerr << "Failed to read scale B" << std::endl;
         return;
     }
     if (args.bias > 0) {
-        std::cout << "[INFO] Reading " << inputDir << "/bias.bin (" << biasSize << " bytes)..." << std::endl;
         if (!ReadFile(inputDir + "/bias.bin", hostBias.data(), biasSize)) {
             std::cerr << "Failed to read bias" << std::endl;
             return;
         }
     }
-    std::cout << "[INFO] Reading " << inputDir << "/initial_c.bin (" << cSize << " bytes)..." << std::endl;
     if (!ReadFile(inputDir + "/initial_c.bin", hostC.data(), cSize)) {
         std::cerr << "Failed to read initial C" << std::endl;
         return;
@@ -468,8 +462,6 @@ static void Run(const CliArgs& args)
     std::cout << "  BlockNum : " << blockNum << std::endl;
     std::cout << "============================================================" << std::endl;
 
-    std::cout << "[INFO] Launching kernel..." << std::endl;
-
     LaunchParams launchParams = {deviceA,
                                  deviceB,
                                  deviceBias,
@@ -515,11 +507,9 @@ static void Run(const CliArgs& args)
 
     // Write output
     std::string outPath = outputDir + "/npu_out.bin";
-    std::cout << "[INFO] Writing " << outPath << " (" << cSize << " bytes)..." << std::endl;
     if (!WriteFile(outPath, hostC.data(), cSize)) {
         std::cerr << "Failed to write output" << std::endl;
     } else {
-        std::cout << "[INFO] Kernel execution completed successfully." << std::endl;
     }
 
     ACL_CHECK(aclrtFree(deviceA));

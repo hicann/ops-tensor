@@ -54,13 +54,8 @@ else()
 endif()
 
 if(BUILD_TESTING)
-    # 引入 GTest
-    add_cann_third_party(gtest)
-    
-    # 查找 ASC 编译器（仅测试需要）
-    find_package(ASC REQUIRED)
-    
-    add_subdirectory(tests)
+    # Kernel UT（gtest + tikicpulib CPU debug，独立子工程，也可单独 cmake 构建）
+    add_subdirectory(tests/ut/op_kernel)
 endif()
 
 ##############################################################################

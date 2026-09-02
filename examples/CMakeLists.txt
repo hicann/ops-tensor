@@ -50,6 +50,10 @@ message(STATUS "Examples CANN arch dir: ${ASCEND_ARCH_DIR}")
 ##############################################################################
 # 4. Public Include Directories
 ##############################################################################
+add_compile_options(
+    $<$<COMPILE_LANGUAGE:ASC>:-iquote${BLAZE_INCLUDE_DIR}/tensor_api/include>
+    $<$<COMPILE_LANGUAGE:ASC>:-iquote${BLAZE_INCLUDE_DIR}/tensor_api>
+)
 
 include_directories(
     ${BLAZE_INCLUDE_DIR}           # Blaze header-only framework
@@ -62,6 +66,8 @@ include_directories(
     ${ASCEND_HOME_PATH}/pkg_inc/op_common/
     ${ASCEND_HOME_PATH}/pkg_inc/base/
     ${ASCEND_HOME_PATH}/pkg_inc/
+    ${ASCEND_HOME_PATH}/${ASCEND_ARCH_DIR}/asc               # compiler internal headers referenced by tensor_api impl (include/utils/base/sys_macros.h etc.),
+    ${ASCEND_HOME_PATH}/${ASCEND_ARCH_DIR}/asc/include       # tensor_api impl dependency headers
     ${ASCEND_HOME_PATH}/${ASCEND_ARCH_DIR}/asc/include/tiling  # platform_ascendc.h
     ${ASCEND_HOME_PATH}/asc/impl/c_api  # instr_impl/ header resolution
     ${ASCEND_HOME_PATH}/asc/impl/utils  # impl/utils header resolution

@@ -24,13 +24,10 @@ Kernel UT 基于 Google Test 框架，用于验证算子 Kernel 实现的编译�
 
 ```
 tests/
-├── CMakeLists.txt                           # L1: 收集 ut/*.cpp 源文件，构建 all_ops_test
-├── test_common.cpp / test_common.h          # 公共测试框架（ACLManager RAII 封装）
-│
 └── ut/
     ├── README.md                             # 本文件
-    └── op_kernel/                            # Kernel UT 入口
-        ├── CMakeLists.txt                    # L2: 注册算子、编译 kernel 可执行文件
+    └── op_kernel/                            # Kernel UT 入口（仓库唯一测试套件）
+        ├── CMakeLists.txt                    # 工程入口：注册算子、编译 kernel 可执行文件
         ├── test_op_kernel_main.cpp           # gtest 主入口（InitGoogleTest + RUN_ALL_TESTS）
         ├── kernel_ut_runner.h               # KERNEL_RUN_KF 宏（stdout 捕获 → 崩溃检测）
         ├── blaze_kernel_stub.h              # __aicore__ / AscendC API CPU stub
@@ -44,13 +41,14 @@ tests/
             └── mat_mul_tiling_data.h         #   Tiling 数据结构定义
 ```
 
-**层级关系**：
+**构建入口**：
 
-| 层级                                       | 文件 | 职责                                                                         |
-| ------------------------------------------ | ---- | ---------------------------------------------------------------------------- |
-| `tests/CMakeLists.txt`                   | L1   | 收集`ut/*.cpp`，构建 `all_ops_test`（普通 gtest 可执行文件）             |
-| `tests/ut/op_kernel/CMakeLists.txt`      | L2   | 按算子 → SoC 维度构建`ops_tensor_kernel_ut_{soc}`（Kernel UT 可执行文件） |
-| `tests/ut/op_kernel/{op}/CMakeLists.txt` | L3   | 调用`AddOpTestCase` 注册算子及其支持的 SoC 版本                            |
+| 入口 | 命令 | 说明 |
+| ---- | ---- | ---- |
+| build.sh（推荐） | `bash build.sh --opkernel -u` | 独立构建目录 `build/kernel_ut/`，自动 submodule → cmake → 编译 → 运行 |
+| build.sh 主路径 | `bash build.sh --run` | `--run`/`-u` 统一委托 Kernel UT 流程（仓库唯一测试套件） |
+| 根 CMake | `cmake -DBUILD_TESTING=ON ..` | 根工程 `BUILD_TESTING` 选项委托 `add_subdirectory(tests/ut/op_kernel)` |
+| 单独 cmake | `cmake -S tests/ut/op_kernel -B build/kernel_ut` | 独立工程，不依赖根 CMake |
 
 **关键组件说明**：
 

@@ -31,13 +31,13 @@
 本样例目录下不包含独立的运行脚本，统一使用 `examples/common/run.sh` 入口执行，自动完成编译、数据生成、kernel 执行和精度验证：
 
 ```bash
-bash examples/common/run.sh --ops=transpose_quant_batch_matmul_mx --target=tqbmm_mx
+bash examples/common/run.sh --ops=transpose_quant_batch_matmul --target=tqbmm_mx
 ```
 
 如需仅运行部分用例，可通过 `--ti` 指定用例索引：
 
 ```bash
-bash examples/common/run.sh --ops=transpose_quant_batch_matmul_mx --target=tqbmm_mx --ti=0-3
+bash examples/common/run.sh --ops=transpose_quant_batch_matmul --target=tqbmm_mx --ti=0-3
 ```
 
 ### 测试用例定义
@@ -52,21 +52,21 @@ tqbmm_mx_64_1024_256_2_fp4_f16,64,1024,256,2,fp4_e2m1,fp4_e2m1,float16,false,fal
 
 **列说明**：
 
-| 列                     | 说明                                      |
-| ---------------------- | ----------------------------------------- |
-| casename               | 用例名称                                  |
-| m, k, n                | 矩阵维度                                  |
-| batch                  | batch 维度                                |
-| a_dtype, b_dtype       | A/B 量化 dtype（必须相同）                |
-| c_dtype                | 输出 dtype                                |
-| transA, transB         | A/B 矩阵是否转置                          |
-| format                 | 输入格式: (ND,ND)                         |
-| base_m, base_n, base_k | L0 tile shape                             |
-| tile_k_l1              | L1 K 方向 tile 大小                       |
-| scale_k_l1             | L1 scaleK 方向 tile 大小                  |
-| l1_buffers             | L1 buffer 数                              |
-| db_l0c                 | L0C double buffer 开关（1=关，2=开）      |
-| a_full_load            | A 全载到 L1（true/false）                 |
+| 列                     | 说明                                 |
+| ---------------------- | ------------------------------------ |
+| casename               | 用例名称                             |
+| m, k, n                | 矩阵维度                             |
+| batch                  | batch 维度                           |
+| a_dtype, b_dtype       | A/B 量化 dtype（必须相同）           |
+| c_dtype                | 输出 dtype                           |
+| transA, transB         | A/B 矩阵是否转置                     |
+| format                 | 输入格式: (ND,ND)                    |
+| base_m, base_n, base_k | L0 tile shape                        |
+| tile_k_l1              | L1 K 方向 tile 大小                  |
+| scale_k_l1             | L1 scaleK 方向 tile 大小             |
+| l1_buffers             | L1 buffer 数                         |
+| db_l0c                 | L0C double buffer 开关（1=关，2=开） |
+| a_full_load            | A 全载到 L1（true/false）            |
 
 ### 结果输出
 
@@ -76,7 +76,7 @@ tqbmm_mx_64_1024_256_2_fp4_f16,64,1024,256,2,fp4_e2m1,fp4_e2m1,float16,false,fal
 
 ### 输入数据
 
-由 `examples/transpose_quant_batch_matmul_mx/scripts/gen_data.py` 生成：
+由 `examples/transpose_quant_batch_matmul/scripts/gen_data.py` 生成：
 
 - `input/input_a.bin`: A 矩阵（FP8 或打包 FP4）
 - `input/input_b.bin`: B 矩阵（FP8 或打包 FP4）
@@ -90,15 +90,15 @@ tqbmm_mx_64_1024_256_2_fp4_f16,64,1024,256,2,fp4_e2m1,fp4_e2m1,float16,false,fal
 
 ### 验证标准
 
-由 `examples/transpose_quant_batch_matmul_mx/scripts/verify_result.py` 执行，支持 float16/bfloat16 两种输出 dtype 的尺寸与结构校验。
+由 `examples/transpose_quant_batch_matmul/scripts/verify_result.py` 执行，支持 float16/bfloat16 两种输出 dtype 的尺寸与结构校验。
 
 ## 覆盖的场景
 
-| 场景维度     | 用例                           |
-| ------------ | ------------------------------ |
-| A/B dtype    | mxFP8(fp8_e4m3), mxFP4(fp4_e2m1) |
-| C dtype      | float16, bfloat16             |
-| Batch        | 2, 4, 8, 16                    |
+| 场景维度  | 用例                             |
+| --------- | -------------------------------- |
+| A/B dtype | mxFP8(fp8_e4m3), mxFP4(fp4_e2m1) |
+| C dtype   | float16, bfloat16                |
+| Batch     | 2, 4, 8, 16                      |
 
 ## 代码结构
 
@@ -110,7 +110,7 @@ tqbmm_mx/
 └── README.md          # 本文档
 ```
 
-构建配置在 op 层 `examples/transpose_quant_batch_matmul_mx/CMakeLists.txt` 中统一管理；运行统一通过 `examples/common/run.sh` 调度（本目录下不含独立运行脚本）。数据生成和精度校验由 `examples/transpose_quant_batch_matmul_mx/scripts/` 下的 `gen_data.py` 和 `verify_result.py` 执行。
+构建配置在 op 层 `examples/transpose_quant_batch_matmul/CMakeLists.txt` 中统一管理；运行统一通过 `examples/common/run.sh` 调度（本目录下不含独立运行脚本）。数据生成和精度校验由 `examples/transpose_quant_batch_matmul/scripts/` 下的 `gen_data.py` 和 `verify_result.py` 执行。
 
 ## Blaze 组件
 
@@ -118,7 +118,7 @@ tqbmm_mx/
 
 | 组件            | 头文件                                          | 职责                            |
 | --------------- | ----------------------------------------------- | ------------------------------- |
-| Kernel          | `blaze/gemm/kernel/kernel_tqbmm_mx.h`          | Transpose MX quant batch matmul |
+| Kernel          | `blaze/gemm/kernel/kernel_tqbmm_mx.h`         | Transpose MX quant batch matmul |
 | Block MMAD      | `blaze/gemm/block/block_mmad_qbmm_mx.h`       | Block 级 MX 矩阵乘              |
 | Block Scheduler | `blaze/gemm/block/block_scheduler_qbmm.h`     | QBMM V3 调度器                  |
 | Epilogue        | `blaze/epilogue/block/block_epilogue_empty.h` | 空 epilogue                     |

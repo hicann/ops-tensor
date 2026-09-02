@@ -22,6 +22,8 @@
 #   --soc=SOC           指定目标 SoC 型号 (当前仅支持: Ascend950, 支持小写输入)
 #   -j[N]               编译线程数，默认为 8，例如: -j16
 #   --test-timeout=N    测试超时时间（秒），默认为 300
+#   --force-submodule   强制更新 tensor_api submodule 至 superproject 记录的 pinned commit
+#                       （默认已初始化时跳过；配合 --opkernel -u / --examples 使用）
 #   -h, --help          显示帮助信息
 #
 # 行为说明:
@@ -77,6 +79,7 @@ CORE_NUMS=$(cat /proc/cpuinfo | grep "processor" | wc -l 2>/dev/null || sysctl -
 TEST_TIMEOUT=300  # 默认测试超时时间（秒）
 BUILD_OUT_DIR=build_out
 VERBOSE=""
+FORCE_SUBMODULE=false  # 强制更新 tensor_api submodule 至 pinned commit
 CANN_3RD_LIB_PATH="${SCRIPT_DIR}/third_party"
 OP_KERNEL_MODE=false
 EXAMPLES_MODE=false
@@ -213,6 +216,9 @@ Options:
   --soc=SOC           Target SoC model (default: Ascend950, case-insensitive)
   -j[N]               Number of compile threads (default: 8), e.g., -j16
   --test-timeout=N    Test timeout in seconds (default: 300)
+  --force-submodule   Force update tensor_api submodule to the pinned commit
+                      recorded in the superproject (instead of skipping when
+                      already initialized). Used with --opkernel -u / --examples.
   -h, --help          Show this help message
   -v, --verbose       Verbose output
   --make_clean        Clean build artifacts"
@@ -373,15 +379,6 @@ build_project() {
         log_info "All operators enabled"
     fi
 
-    # 如果需要运行测试，启用测试编译
-    if [ "$RUN_TESTS" = true ]; then
-        cmake_args+=(-DBUILD_TESTING=ON)
-        log_info "Test compilation: ENABLED"
-    else
-        cmake_args+=(-DBUILD_TESTING=OFF)
-        log_info "Test compilation: DISABLED"
-    fi
-
     # 如果需要打包，启用打包
     if [ "$ENABLE_PACKAGE" = true ]; then
         cmake_args+=(-DENABLE_PACKAGE=ON)
@@ -484,40 +481,10 @@ EOF
 }
 
 # 运行测试
+# 仓库唯一的测试套件是 Kernel UT（tests/ut/op_kernel），
+# 统一委托 build_kernel_ut 完成构建与执行（RUN_TESTS=true 时自动运行）
 run_tests() {
-    log_info "Running tests (timeout: ${TEST_TIMEOUT}s)..."
-
-    cd "$BUILD_DIR" || {
-        log_error "Build directory not found: $BUILD_DIR"
-        exit 1
-    }
-
-    # 检查测试可执行文件
-    if [ ! -f "./tests/all_ops_test" ]; then
-        log_error "Test executable not found: ./tests/all_ops_test"
-        log_error "Please build the project first with: ./build.sh --run"
-        exit 1
-    fi
-
-    log_info "Found test executable, starting..."
-
-    # 临时禁用 set -e，手动处理错误
-    set +e
-    timeout -k 1s ${TEST_TIMEOUT}s ./tests/all_ops_test 2>&1
-    test_result=$?
-    set -e
-
-    cd "$SCRIPT_DIR"
-
-    if [ $test_result -ge 124 ]; then
-        log_error "Test timeout (${TEST_TIMEOUT}s exceeded)"
-        exit 1
-    elif [ $test_result -ne 0 ]; then
-        log_error "Some tests failed (exit code: $test_result)"
-        exit 1
-    else
-        log_success "All tests passed"
-    fi
+    build_kernel_ut
 }
 
 collect_coverage() {
@@ -613,51 +580,13 @@ run_kernel_ut() {
     fi
 }
 
-# 初始化 tensor_api submodule（Kernel UT / Examples 编译依赖）
-# 使用 superproject 记录的 pinned commit，不更新到分支最新
-update_tensor_api_submodule() {
-    local _submod_dir="${SCRIPT_DIR}/include/tensor_api"
-    local _repo_url="https://gitcode.com/cann/asc-devkit.git"
-    local _repo_branch="feature/tensor_api_from_9.0.0"
-
-    if [ -d "$_submod_dir" ] && [ -n "$(ls -A "$_submod_dir" 2>/dev/null)" ]; then
-        log_info "tensor_api already exists, skip init"
-        return 0
-    fi
-
-    log_info "Initializing tensor_api submodule..."
-
-    local _fail_msg=""
-    if ! command -v git &> /dev/null; then
-        _fail_msg="git is not installed"
-    elif ! (cd "${SCRIPT_DIR}" && git rev-parse --is-inside-work-tree &> /dev/null); then
-        _fail_msg="not a git repository: ${SCRIPT_DIR}"
-    else
-        set +e
-        (cd "${SCRIPT_DIR}" && git submodule update --init --recursive include/tensor_api 2>&1)
-        local _rc=$?
-        set -e
-        if [ ${_rc} -ne 0 ]; then
-            _fail_msg="git submodule update failed (exit code: ${_rc})"
-        elif [ -z "$(ls -A "${_submod_dir}" 2>/dev/null)" ]; then
-            _fail_msg="tensor_api directory is empty after init"
-        fi
-    fi
-
-    if [ -n "$_fail_msg" ]; then
-        log_error "${_fail_msg}"
-        log_error "Manually download and place at: ${_submod_dir}"
-        log_error "Repo: ${_repo_url} (branch: ${_repo_branch})"
-        exit 1
-    fi
-
-    log_success "tensor_api submodule initialized"
-}
+# tensor_api submodule 公共工具（Kernel UT / Examples 共用，定义 ensure_tensor_api_submodule）
+source "${SCRIPT_DIR}/scripts/submodule_utils.sh"
 
 build_kernel_ut() {
     log_info "Starting Kernel UT build..."
 
-    update_tensor_api_submodule
+    ensure_tensor_api_submodule "${SCRIPT_DIR}" "${FORCE_SUBMODULE}" || exit 1
 
     local KERNEL_UT_SRC="${SCRIPT_DIR}/tests/ut/op_kernel"
     local KERNEL_UT_BUILD="${SCRIPT_DIR}/build/kernel_ut"
@@ -733,7 +662,7 @@ build_examples() {
     # 初始化 tensor_api submodule（Examples 编译依赖）
     # examples/CMakeLists.txt 的 include 路径指向 ${OPS_TENSOR_ROOT}/include/tensor_api/
     # 若 submodule 未初始化，编译会失败（不会回退到 CANN 环境）
-    update_tensor_api_submodule
+    ensure_tensor_api_submodule "${SCRIPT_DIR}" "${FORCE_SUBMODULE}" || exit 1
 
     # 1. Validate parameters
     if [ -n "$EXAMPLE_TARGET" ] && [ "$BUILD_OPERATORS" = "all" ]; then
@@ -749,6 +678,9 @@ build_examples() {
     fi
     if [ -n "$EXAMPLE_TARGET" ]; then
         run_args+=("--target=${EXAMPLE_TARGET}")
+    fi
+    if [ "$FORCE_SUBMODULE" = true ]; then
+        run_args+=("--force-submodule")
     fi
     bash "$common_run" "${run_args[@]}"
 }
@@ -836,6 +768,10 @@ parse_arguments() {
                 ;;
             --examples)
                 EXAMPLES_MODE=true
+                shift
+                ;;
+            --force-submodule)
+                FORCE_SUBMODULE=true
                 shift
                 ;;
             --target=*)

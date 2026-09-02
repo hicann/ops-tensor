@@ -34,8 +34,6 @@ def main():
     out_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), args.output)
     if not os.path.exists(out_path):
         print(f"FAIL: output file not found: {out_path}")
-        print("max abs diff: 0.0")
-        print("error ratio: 1.0")
         exit(1)
 
     dtype_map = {"float16": np.float16, "bfloat16": np.uint16}
@@ -44,22 +42,16 @@ def main():
         print(
             f"FAIL: unsupported dtype '{args.dtype}', supported: {list(dtype_map.keys())}"
         )
-        print("max abs diff: 0.0")
-        print("error ratio: 1.0")
         exit(1)
     expected_size = args.M * args.Batch * args.N * np.dtype(np_dtype).itemsize
     actual_size = os.path.getsize(out_path)
 
     if actual_size != expected_size:
         print(f"FAIL: size mismatch expected={expected_size} actual={actual_size}")
-        print("max abs diff: 0.0")
-        print("error ratio: 1.0")
         exit(1)
 
     result = np.fromfile(out_path, dtype=np_dtype)
     print(f"PASS: output size={actual_size} bytes, elements={len(result)}")
-    print("max abs diff: 0.0")
-    print("error ratio: 0.0")
 
 
 if __name__ == "__main__":

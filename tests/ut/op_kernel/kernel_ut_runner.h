@@ -60,7 +60,7 @@ namespace KernelUT {
  *    - Read and parse capture file for [SUCCESS]/[FAILED]/[ERROR] markers
  * 5. Return true only if [SUCCESS] present AND no [FAILED]/[ERROR] found
  */
-template<typename Func, typename... Args>
+template <typename Func, typename... Args>
 bool RunAndCheck(Func func, unsigned numBlocks, Args... args)
 {
     fflush(stdout);
@@ -73,9 +73,9 @@ bool RunAndCheck(Func func, unsigned numBlocks, Args... args)
     char tmpPath[] = "/tmp/kernel_ut_XXXXXX";
     int captureFd = mkstemp(tmpPath);
     if (captureFd < 0) {
-        std::cerr << "[KERNEL_UT] mkstemp failed, falling back to plain ICPU_RUN_KF" << std::endl;
-        ICPU_RUN_KF(func, numBlocks, args...);
-        return true;
+        // fail-closed：捕获失败即无法判定子进程成败，禁止降级为直接执行
+        std::cerr << "[KERNEL_UT] mkstemp failed, cannot verify kernel result" << std::endl;
+        return false;
     }
 
     dup2(captureFd, STDOUT_FILENO);
@@ -108,8 +108,8 @@ bool RunAndCheck(Func func, unsigned numBlocks, Args... args)
     }
 
     bool hasSuccess = captured.find("[SUCCESS]") != std::string::npos;
-    bool hasError   = captured.find("[ERROR]")   != std::string::npos;
-    bool hasFailed  = captured.find("[FAILED]")  != std::string::npos;
+    bool hasError = captured.find("[ERROR]") != std::string::npos;
+    bool hasFailed = captured.find("[FAILED]") != std::string::npos;
 
     return hasSuccess && !hasError && !hasFailed;
 }

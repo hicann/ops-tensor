@@ -66,13 +66,14 @@ def _parse_output_block(name, content, status):
     if max_abs_diff is None and error_ratio is None:
         return None
     ratio_tol = _parse_ratio_tol(content)
-    return {
-        "name": name,
-        "max_abs_diff": max_abs_diff if max_abs_diff is not None else 0.0,
-        "error_ratio": error_ratio if error_ratio is not None else 0.0,
-        "ratio_tol": ratio_tol,
-        "status": status,
-    }
+    result = {"name": name, "status": status}
+    if max_abs_diff is not None:
+        result["max_abs_diff"] = max_abs_diff
+    if error_ratio is not None:
+        result["error_ratio"] = error_ratio
+    if ratio_tol is not None:
+        result["ratio_tol"] = ratio_tol
+    return result
 
 
 def parse_stdout_metrics(stdout, rc):
@@ -113,5 +114,4 @@ def parse_stdout_metrics(stdout, rc):
 
     if not outputs:
         return None
-    overall = "pass" if status == "pass" else "fail"
-    return {"outputs": outputs, "overall_status": overall}
+    return {"outputs": outputs, "overall_status": status}

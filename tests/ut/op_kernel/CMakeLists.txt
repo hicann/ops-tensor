@@ -81,13 +81,10 @@ if(ENABLE_GCOV)
     message(STATUS "Kernel UT code coverage: ENABLED")
 endif()
 
-include_directories(${GTEST_INCLUDE})
-set(KERNEL_UT_GTEST_DEP third_party_gtest)
-
 set_property(GLOBAL PROPERTY KERNEL_UT_REG_NAMES "")
 
 function(AddOpTestCase opName supportedSocVersions extraCompileOptions)
-    file(GLOB _test_srcs ${CMAKE_CURRENT_SOURCE_DIR}/test_*.cpp)
+    file(GLOB _test_srcs CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/test_*.cpp)
     if(NOT _test_srcs)
         message(WARNING "  [opkernel] ${opName}: no test_*.cpp found, skipping")
         return()
@@ -112,7 +109,7 @@ if(OP_KERNEL_OPS)
         endif()
     endforeach()
 else()
-    file(GLOB OP_SUBDIRS RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/*)
+    file(GLOB OP_SUBDIRS CONFIGURE_DEPENDS RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/*)
     foreach(OP_DIR ${OP_SUBDIRS})
         if(IS_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/${OP_DIR} AND
            EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/${OP_DIR}/CMakeLists.txt)
@@ -161,16 +158,11 @@ foreach(_soc_short ${KERNEL_UT_SOC_LIST})
             -DBLAZE_UT=1
             -DASCENDC_CPU_DEBUG=1
             -DUT_KERNEL_SRC_DIR="${UT_KERNEL_INC}"
+            -D_GLIBCXX_USE_CXX11_ABI=0
             -fPIC
             -std=c++17
             ${_op_flags}
         )
-
-        if(ENABLE_GCOV)
-            target_link_libraries(${_tgt} PRIVATE tikicpulib::${_soc_long} kernel_ut_gcov)
-        else()
-            target_link_libraries(${_tgt} PRIVATE tikicpulib::${_soc_long})
-        endif()
 
         target_include_directories(${_tgt} PRIVATE
             ${OPS_TENSOR_ROOT}/include
@@ -190,12 +182,13 @@ foreach(_soc_short ${KERNEL_UT_SOC_LIST})
             ${_op_dir}
         )
 
+        # GTest::gtest 自带 include 目录与 third_party_gtest 构建依赖
         target_link_libraries(${_tgt} PRIVATE
             tikicpulib::${_soc_long}
+            GTest::gtest
         )
-
-        if(KERNEL_UT_GTEST_DEP AND TARGET ${KERNEL_UT_GTEST_DEP})
-            add_dependencies(${_tgt} ${KERNEL_UT_GTEST_DEP})
+        if(ENABLE_GCOV)
+            target_link_libraries(${_tgt} PRIVATE kernel_ut_gcov)
         endif()
 
         list(APPEND _obj_targets "$<TARGET_OBJECTS:${_tgt}>")
@@ -210,21 +203,14 @@ foreach(_soc_short ${KERNEL_UT_SOC_LIST})
 
     target_compile_options(${_exe} PRIVATE -D_GLIBCXX_USE_CXX11_ABI=0)
 
+    target_link_libraries(${_exe} PRIVATE
+        GTest::gtest
+        GTest::gtest_main
+        tikicpulib::${_soc_long}
+        pthread
+    )
     if(ENABLE_GCOV)
-        target_link_libraries(${_exe} PRIVATE
-            GTest::gtest
-            GTest::gtest_main
-            tikicpulib::${_soc_long}
-            pthread
-            kernel_ut_gcov
-        )
-    else()
-        target_link_libraries(${_exe} PRIVATE
-            GTest::gtest
-            GTest::gtest_main
-            tikicpulib::${_soc_long}
-            pthread
-        )
+        target_link_libraries(${_exe} PRIVATE kernel_ut_gcov)
     endif()
 
     target_include_directories(${_exe} PRIVATE
@@ -250,7 +236,6 @@ if(NOT BUILT_SOC_LIST)
 endif()
 
 message(STATUS "ops_tensor Kernel UT configured: SoCs=[${BUILT_SOC_LIST}]")
-message(STATUS "ops_tensor Kernel UT configuration completed")
 
 # ============================================================================
 # 代码覆盖率收集 target

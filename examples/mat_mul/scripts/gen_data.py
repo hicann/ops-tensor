@@ -87,14 +87,7 @@ def gen_golden_data(
     else:
         out = torch.matmul(a_cpu_t.float(), b_cpu_t.float()).to(dtype)
 
-    current_dir = os.getcwd()
-    write_artifacts(current_dir, a_cpu, b_cpu, out, dtype)
-
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    if os.path.normcase(os.path.abspath(script_dir)) != os.path.normcase(
-        os.path.abspath(current_dir)
-    ):
-        write_artifacts(script_dir, a_cpu, b_cpu, out, dtype)
+    write_artifacts(os.getcwd(), a_cpu, b_cpu, out, dtype)
 
     print("Data generated successfully!")
 

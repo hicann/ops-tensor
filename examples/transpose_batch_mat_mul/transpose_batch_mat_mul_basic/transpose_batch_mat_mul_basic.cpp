@@ -237,14 +237,12 @@ static void Run(const CliArgs& args)
     std::vector<uint8_t> hostB(sizeB);
     std::vector<uint8_t> hostC(sizeC, 0);
 
-    std::cout << "[INFO] Reading " << pathA << " (" << sizeA << " bytes)..." << std::endl;
     if (!ReadFile(pathA, hostA.data(), sizeA)) {
         std::cerr << "Failed to read input A" << std::endl;
         return;
     }
 
     std::string pathB = inputDir + "/input_b.bin";
-    std::cout << "[INFO] Reading " << pathB << " (" << sizeB << " bytes)..." << std::endl;
     if (!ReadFile(pathB, hostB.data(), sizeB)) {
         std::cerr << "Failed to read input B" << std::endl;
         return;
@@ -288,8 +286,6 @@ static void Run(const CliArgs& args)
               << std::endl;
     std::cout << "============================================================" << std::endl;
 
-    std::cout << "[INFO] Launching kernel..." << std::endl;
-
     if (args.dtype == "float32") {
         if (args.transBatchA) {
             LaunchKernel<float, float, float, float, true>(args.m, args.n, args.k, args.batch, deviceA, deviceB,
@@ -329,12 +325,9 @@ static void Run(const CliArgs& args)
 
     // Write output
     std::string outPath = outputDir + "/npu_out.bin";
-    std::cout << "[INFO] Writing " << outPath << " (" << sizeC << " bytes)..." << std::endl;
     if (!WriteFile(outPath, hostC.data(), sizeC)) {
         std::cerr << "Failed to write output" << std::endl;
     }
-
-    std::cout << "[INFO] Kernel execution completed successfully." << std::endl;
 
     // Cleanup
     ACL_CHECK(aclrtFree(deviceA));

@@ -79,7 +79,6 @@ examples/
 │   ├── run.sh                  #   统一执行入口（编译 + 运行 + 验证）
 │   ├── run_case.py             #   通用批跑引擎（CSV 解析 → gen_data → kernel → verify）
 │   ├── CONF_FORMAT.md          #   .conf 文件格式规范
-│   ├── submodule_utils.sh      #   子模块管理工具
 │   └── data_utils.h            #   ACL_CHECK 宏、文件读写工具
 │
 └── {op}/                       # 算子级目录，如 mat_mul、batch_mat_mul、grouped_matmul
@@ -104,14 +103,16 @@ examples/
 
 **当前算子目录**：
 
-| 算子目录                          | 样例                                                                                         | 说明                                     |
-| --------------------------------- | -------------------------------------------------------------------------------------------- | ---------------------------------------- |
-| `mat_mul/`                      | mat_mul_basic, mat_mul_streamk, mat_mul_a_fullload, mat_mul_b_fullload, mat_mul_fixpipe_opti | 矩阵乘法样例                             |
-| `batch_mat_mul/`                | mat_mul_bmm_broadcast, mat_mul_iterbatch_broadcast                                           | 批量矩阵乘法样例（bmm/iterbatch 广播）   |
-| `transpose_batch_mat_mul/`      | transpose_batch_mat_mul_basic                                                                | 转置批量矩阵乘法样例                     |
-| `quant_batch_matmul/`           | quant_batch_matmul_cube, quant_batch_matmul_mx                                               | 量化批量矩阵乘法样例（cube/mx 两种算法） |
-| `weight_quant_batch_matmul_mx/` | weight_quant_batch_matmul_mx_swat                                                            | 权重量化批量矩阵乘法样例                 |
-| `grouped_matmul/`               | quant_grouped_matmul_mx, [grouped_matmul_mx_a8w4](grouped_matmul/grouped_matmul_mx_a8w4/README.md) | Grouped MatMul 与 MX A8W4 样例      |
+| 算子目录                           | 样例                                                                                         | 说明                                     |
+| ---------------------------------- | -------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| `mat_mul/`                       | mat_mul_basic, mat_mul_streamk, mat_mul_a_fullload, mat_mul_b_fullload, mat_mul_fixpipe_opti | 矩阵乘法样例                             |
+| `batch_mat_mul/`                 | mat_mul_bmm_broadcast, mat_mul_iterbatch_broadcast                                           | 批量矩阵乘法样例（bmm/iterbatch 广播）   |
+| `transpose_batch_mat_mul/`       | transpose_batch_mat_mul_basic                                                                | 转置批量矩阵乘法样例                     |
+| `quant_batch_matmul/`            | quant_batch_matmul_cube, quant_batch_matmul_mx                                               | 量化批量矩阵乘法样例（cube/mx 两种算法） |
+| `weight_quant_batch_matmul_mx/`  | weight_quant_batch_matmul_mx_swat                                                            | 权重量化批量矩阵乘法样例                 |
+| `grouped_matmul/`                | quant_grouped_matmul_mx, [grouped_matmul_mx_a8w4](grouped_matmul/grouped_matmul_mx_a8w4/README.md) | Grouped MatMul 与 MX A8W4 样例      |
+| `quant_matmul_activation_quant/` | quant_matmul_activation_quant                                                                | 量化矩阵乘激活融合样例                   |
+| `transpose_quant_batch_matmul/`  | tqbmm_mx                                                                                     | 转置量化批量矩阵乘法样例                 |
 
 ## 4. 执行方法
 

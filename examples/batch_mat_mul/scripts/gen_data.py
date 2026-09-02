@@ -84,14 +84,7 @@ def gen_batch_data(
     b_flat = b_cpu.reshape(-1)
     out_flat = out.reshape(-1)
 
-    current_dir = os.getcwd()
-    write_artifacts(current_dir, a_flat, b_flat, out_flat, dtype)
-
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    if os.path.normcase(os.path.abspath(script_dir)) != os.path.normcase(
-        os.path.abspath(current_dir)
-    ):
-        write_artifacts(script_dir, a_flat, b_flat, out_flat, dtype)
+    write_artifacts(os.getcwd(), a_flat, b_flat, out_flat, dtype)
 
     print("Batch data generated successfully!")
     print(f"  A: batch={batch_a}, shape={tuple(a_cpu.shape)}")

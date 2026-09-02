@@ -76,14 +76,7 @@ def gen_golden_data(cfg: GemmGenConfig):
     else:
         a_stored = a_logical  # [batch, m, k]
 
-    current_dir = os.getcwd()
-    write_artifacts(current_dir, a_stored, b, out_stored, cfg.dtype)
-
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    if os.path.normcase(os.path.abspath(script_dir)) != os.path.normcase(
-        os.path.abspath(current_dir)
-    ):
-        write_artifacts(script_dir, a_stored, b, out_stored, cfg.dtype)
+    write_artifacts(os.getcwd(), a_stored, b, out_stored, cfg.dtype)
 
     print("Data generated successfully!")
 

@@ -33,7 +33,8 @@ NC='\033[0m'
 log_info()    { echo -e "${BLUE}[INFO]${NC} $*"; }
 log_success() { echo -e "${GREEN}[SUCCESS]${NC} $*"; }
 log_warning() { echo -e "${YELLOW}[WARNING]${NC} $*"; }
-log_error()   { echo -e "${RED}[ERROR]${NC} $*"; }
+# stderr：discover_examples 在 $(...) 中调用，stdout 会被吞掉，错误必须走 stderr 才可见
+log_error()   { echo -e "${RED}[ERROR]${NC} $*" >&2; }
 
 # ── CLI State ────────────────────────────────────────────────────────────────
 OPS_NAME=""
@@ -42,6 +43,7 @@ CASE_FILE=""
 TI_ARG=""
 SKIP_BUILD=false
 BUILD_ONLY=false
+FORCE_SUBMODULE=false
 
 # ── Usage ────────────────────────────────────────────────────────────────────
 usage() {
@@ -64,6 +66,10 @@ Options:
                       Only allowed with single --ops and single --target.
   --skip-build       Skip the CMake build stage.
   --build-only       Only build; do not run or verify.
+  --force-submodule  Force update the tensor_api submodule to the pinned commit
+                     recorded in the superproject (instead of skipping when
+                     already initialized). Applied once before running, also
+                     effective with --skip-build / --build-only.
   -h, --help          Show this help message and exit.
 
 Discovery rules:
@@ -116,6 +122,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --build-only)
             BUILD_ONLY=true
+            shift
+            ;;
+        --force-submodule)
+            FORCE_SUBMODULE=true
             shift
             ;;
         -h|--help)
@@ -238,104 +248,80 @@ discover_examples() {
     local ops_filter="$1"
     local target_filter="$2"
 
-    # Case 1: single ops + single target
-    if [[ -n "$ops_filter" && -n "$target_filter" && "$ops_filter" != *","* && "$target_filter" != *","* ]]; then
-        local example_dir="${EXAMPLES_DIR}/${ops_filter}/${target_filter}"
-        if [[ ! -d "$example_dir" ]]; then
-            log_error "Example directory not found: ${example_dir}"
-            exit 1
-        fi
-        echo "${ops_filter}/${target_filter}"
-        return
-    fi
-
-    # Case 2: single ops + multiple targets (comma-separated)
-    if [[ -n "$ops_filter" && -n "$target_filter" && "$target_filter" == *","* ]]; then
-        IFS=',' read -ra _targets <<< "$target_filter"
-        for _t in "${_targets[@]}"; do
-            _t="${_t## }"
-            _t="${_t%% }"
-            local example_dir="${EXAMPLES_DIR}/${ops_filter}/${_t}"
-            if [[ ! -d "$example_dir" ]]; then
-                log_error "Example directory not found: ${example_dir}"
-                exit 1
-            fi
-            echo "${ops_filter}/${_t}"
-        done
-        return
-    fi
-
-    # Case 3: multiple ops (comma-separated), no target
-    if [[ -n "$ops_filter" && "$ops_filter" == *","* ]]; then
-        IFS=',' read -ra _ops <<< "$ops_filter"
-        for _op in "${_ops[@]}"; do
+    local -a ops_list=()
+    local _op
+    if [[ -n "$ops_filter" ]]; then
+        IFS=',' read -ra ops_list <<< "$ops_filter"
+        for _op in "${ops_list[@]}"; do
             _op="${_op## }"
             _op="${_op%% }"
-            local op_dir="${EXAMPLES_DIR}/${_op}"
-            if [[ ! -d "$op_dir" ]]; then
-                log_error "Operator directory not found: ${op_dir}"
+            if [[ ! -d "${EXAMPLES_DIR}/${_op}" ]]; then
+                log_error "Operator directory not found: ${EXAMPLES_DIR}/${_op}"
                 exit 1
             fi
-            _discover_op_examples "$_op"
         done
-        return
+    else
+        local op_dir op_name
+        for op_dir in "${EXAMPLES_DIR}"/*/; do
+            [[ -d "$op_dir" ]] || continue
+            op_name="$(basename "$op_dir")"
+            [[ "$op_name" == "common" || "$op_name" == "scripts" || "$op_name" == "build" ]] && continue
+            ops_list+=("$op_name")
+        done
     fi
 
-    # Case 4: single ops, no target
-    if [[ -n "$ops_filter" ]]; then
-        local op_dir="${EXAMPLES_DIR}/${ops_filter}"
-        if [[ ! -d "$op_dir" ]]; then
-            log_error "Operator directory not found: ${op_dir}"
-            exit 1
+    local -a targets_list=()
+    if [[ -n "$target_filter" ]]; then
+        IFS=',' read -ra targets_list <<< "$target_filter"
+    fi
+
+    local _t
+    for _op in "${ops_list[@]}"; do
+        if [[ ${#targets_list[@]} -eq 0 ]]; then
+            _discover_op_examples "$_op"
+        else
+            for _t in "${targets_list[@]}"; do
+                _t="${_t## }"
+                _t="${_t%% }"
+                if [[ ! -d "${EXAMPLES_DIR}/${_op}/${_t}" ]]; then
+                    log_error "Example directory not found: ${EXAMPLES_DIR}/${_op}/${_t}"
+                    exit 1
+                fi
+                echo "${_op}/${_t}"
+            done
         fi
-        _discover_op_examples "$ops_filter"
-        return
-    fi
-
-    # Case 5: no filter, all operators
-    for op_dir in "${EXAMPLES_DIR}"/*/; do
-        [[ -d "$op_dir" ]] || continue
-        local op_name
-        op_name="$(basename "$op_dir")"
-        [[ "$op_name" == "common" ]] && continue
-        [[ "$op_name" == "scripts" ]] && continue
-        [[ "$op_name" == "build" ]] && continue
-        _discover_op_examples "$op_name"
     done
 }
 
 _discover_op_examples() {
     local op_name="$1"
     local op_dir="${EXAMPLES_DIR}/${op_name}"
+    local example_dir example_name
     for example_dir in "${op_dir}"/*/; do
         [[ -d "$example_dir" ]] || continue
-        local example_name
         example_name="$(basename "$example_dir")"
-        [[ "$example_name" == "common" ]] && continue
-        [[ "$example_name" == "scripts" ]] && continue
-        [[ "$example_name" == "build" ]] && continue
+        [[ "$example_name" == "common" || "$example_name" == "scripts" || "$example_name" == "build" ]] && continue
         echo "${op_name}/${example_name}"
     done
 }
 
 # ── Build ────────────────────────────────────────────────────────────────────
-source "${SCRIPT_DIR}/submodule_utils.sh"
+source "${REPO_ROOT}/scripts/submodule_utils.sh"
 
-do_build() {
-    local target="$1"
-
+configure_build() {
     if ! ensure_tensor_api_submodule "${REPO_ROOT}"; then
         log_error "Failed to initialize tensor_api submodule"
         return 1
     fi
 
     log_info "Configuring CMake (build dir: ${BUILD_DIR})..."
-    if ! cmake -B "${BUILD_DIR}" \
+    cmake -B "${BUILD_DIR}" \
         -DASCEND_HOME_PATH="${ASCEND_HOME_PATH}" \
-        "${EXAMPLES_DIR}"; then
-        log_error "CMake configuration failed"
-        return 1
-    fi
+        "${EXAMPLES_DIR}"
+}
+
+build_target() {
+    local target="$1"
 
     log_info "Building target: ${target}"
     if ! cmake --build "${BUILD_DIR}" --target "${target}" -j"$(nproc)"; then
@@ -373,15 +359,12 @@ run_example() {
 
     # ── Build (unless skipped) ───────────────────────────────────────────
     if [[ "$SKIP_BUILD" != true ]]; then
-        if ! do_build "$example_name"; then
+        if ! build_target "$example_name"; then
             return 1
         fi
-    else
-        log_info "Skipping build (--skip-build)"
     fi
 
     if [[ "$BUILD_ONLY" == true ]]; then
-        log_info "Build-only mode, skipping run"
         return 0
     fi
 
@@ -435,6 +418,15 @@ main() {
 
     preflight
 
+    # ── Force submodule sync (once, independent of --skip-build) ────────
+    if [[ "$FORCE_SUBMODULE" == true ]]; then
+        if ! ensure_tensor_api_submodule "${REPO_ROOT}" true; then
+            log_error "Failed to force-update tensor_api submodule"
+            exit 1
+        fi
+        FORCE_SUBMODULE=false
+    fi
+
     # ── Discover examples ───────────────────────────────────────────────
     local examples
     examples="$(discover_examples "$OPS_NAME" "$TARGET")"
@@ -446,9 +438,20 @@ main() {
 
     local example_count
     example_count="$(echo "$examples" | wc -l)"
-    log_info "Discovered ${example_count} example(s):"
-    echo "$examples" | while read -r s; do echo "  - $s"; done
-    echo ""
+    log_info "Discovered ${example_count} example(s)"
+
+    # ── Configure once for all examples ─────────────────────────────────
+    if [[ "$SKIP_BUILD" == true ]]; then
+        log_info "Skipping build (--skip-build)"
+    else
+        if ! configure_build; then
+            log_error "CMake configuration failed"
+            exit 1
+        fi
+    fi
+    if [[ "$BUILD_ONLY" == true ]]; then
+        log_info "Build-only mode: no execution after build"
+    fi
 
     # ── Run each example ────────────────────────────────────────────────
     local total_pass=0
@@ -461,10 +464,7 @@ main() {
         local example_name
         example_name="$(echo "$example_path" | cut -d'/' -f2)"
 
-        echo ""
-        echo "========================================================================"
-        echo "  example: ${ops_name}/${example_name}"
-        echo "========================================================================"
+        log_info "Running ${ops_name}/${example_name}"
 
         set +e
         run_example "$ops_name" "$example_name"
