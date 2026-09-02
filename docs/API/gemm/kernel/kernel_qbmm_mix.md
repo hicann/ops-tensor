@@ -170,6 +170,6 @@ AIV:  UB(int32) × x2Scale [× x1Scale] + bias --VF dequant--> GM(bf16/fp16/fp32
 - 多 Batch + 尾块场景依赖 needUpdateTail_ latch + restBatch，勿单独裁剪。
 
 ## 适用场景
-- arch35（Ascend910D）int8 量化 Batch Matmul（per-token / per-channel / per-tensor）。
+- int8 量化 Batch Matmul（per-token / per-channel / per-tensor）。
 - WeightNz（FRACTAL_NZ）权重布局下的量化 MatMul。
 - 带 bias（bf16/fp16/fp32）的量化推理。

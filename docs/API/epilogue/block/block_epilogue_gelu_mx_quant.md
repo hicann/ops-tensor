@@ -232,4 +232,4 @@ UB(fp32/bf16) ─Cast→ fp32 ─[gelu] ─Cast→ bf16 ─[mx quant] ─Cast→
 - 与上游 [block_mmad_qbmm_mx](../../gemm/block/block_mmad_qbmm_mx.md) 分工：AIC完成自身计算后执行 L0C→UB，AIV 独占gelu激活及动态MX量化，避免cube上做向量后处理。
 - m×n = 256×256为cube计算效率最优的解决方案。
 ## 适用场景
-- arch35（Ascend910D）kernel执行cube计算后， 执行gelu激活加动态MX量化的后处理，试图通过cube流水掩盖vector流水达成性能优化。
+- kernel执行cube计算后， 执行gelu激活加动态MX量化的后处理，试图通过cube流水掩盖vector流水达成性能优化。

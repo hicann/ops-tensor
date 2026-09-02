@@ -104,8 +104,7 @@ UB(int32或fp32) ─Cast→ fp32 ─× x2Scale ─[× x1Scale] ─[+ bias(按 bi
 
 ## 设计说明
 - 与上游 [block_mmad_a8w8_mix](../../gemm/block/block_mmad_a8w8_mix.md) 分工：AIC 只做 int32或fp32 累加 + L0C→UB，AIV 独占 dequant，避免 cube 上做向量后处理。
-- bias 按运行时 dtype 解释是本组件的关键修复点，详见上文「bias 的 dtype 处理」。
 
 ## 适用场景
-- arch35（Ascend910D）int8（per-token / per-channel / per-tensor）量化矩阵乘的反量化后处理。
+- int8（per-token / per-channel / per-tensor）量化矩阵乘的反量化后处理。
 - 支持带 bias（bf16/fp16/fp32）输出 bf16/fp16/fp32。

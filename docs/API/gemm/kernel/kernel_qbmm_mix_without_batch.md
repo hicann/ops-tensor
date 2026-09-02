@@ -80,5 +80,5 @@ qbmm(params);
 ```
 
 ## 适用场景
-- arch35（Ascend910D）单 Batch int8 量化 Matmul。
+- 单 Batch int8 量化 Matmul。
 - 无需 Batch 广播、追求更轻调度路径的量化推理与 WeightNz 场景。

@@ -101,5 +101,5 @@ GM(int8 B) ─┴→ L1(NZ/ZN) → L0A/L0B → L0C(int32 累加) ─fixpipe NoQu
 - `dbL0C`：启用 L0C 双缓冲，重叠 AIC 累加与 AIV 后处理。
 
 ## 适用场景
-- arch35（Ascend910D）int8 量化矩阵乘的 AIC 计算层。
+- int8 量化矩阵乘的 AIC 计算层。
 - ND / WeightNz（FRACTAL_NZ）布局；配合 MIX Kernel + dequant epilogue 使用。
