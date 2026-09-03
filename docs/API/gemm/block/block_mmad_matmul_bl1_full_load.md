@@ -86,7 +86,7 @@ struct Params {
 | 参数 | 适用模式 | 说明 |
 |------|---------|------|
 | `splitM` | Fixpipe fp32 | 启用 M 方向分半处理，分两半写入 UB |
-| `ubDB` | Fixpipe | 值为 1 时 ping-pong 禁用；>1 时 nL1 多轮迭代间启用 UB ping-pong |
+| `ubDB` | Fixpipe | 值为 1 时 ping-pong 禁用；>1 时启用 UB ping-pong，跨 tile 交替使用 slot 0/1 实现 loc2ub 与 ub2gm 并行 |
 | `l1Stages` | 通用 | A 矩阵 L1 缓冲数；B 矩阵固定 1 stage |
 
 ## 核心方法

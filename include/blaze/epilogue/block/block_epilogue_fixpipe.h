@@ -76,7 +76,6 @@ public:
     __aicore__ inline void Run(BlockShape const& blockShape, int64_t dstOffset, bool splitM, int64_t baseM,
                                int64_t baseN, uint64_t ubDB = 1)
     {
-        cvPingPong_ = 0;
         int64_t mL1 = AscendC::Te::Get<Gemm::MNK_M>(blockShape);
         int64_t curM = mL1;
         if (baseM != 0) {
@@ -95,7 +94,7 @@ public:
         constexpr int64_t c0Size = static_cast<int64_t>(AscendC::Te::C0_ELEMENT<DataTypeOut>);
         constexpr int64_t ubHalfElems = static_cast<int64_t>(AscendC::TOTAL_UB_SIZE / sizeof(DataTypeIn) /
                                                              Gemm::DOUBLE_BUFFER_COUNT);
-        bool enablePp = (ubDB > 1) && (nL1Iter > 1);
+        bool enablePp = (ubDB > 1);
 
         for (int64_t nIdx = 0; nIdx < nL1Iter; ++nIdx) {
             int64_t tileN = (nIdx + 1 == nL1Iter) ? (nL1 - curBaseN * nIdx) : curBaseN;

@@ -124,8 +124,10 @@ static FixpipeTiling ComputeTiling(TilingConfig& cfg, int64_t m, int64_t k, int6
 {
     FixpipeTiling tiling;
 
-    cfg.baseN = n;
     cfg.nL1 = n;
+    if (n < cfg.baseN) {
+        cfg.baseN = n;
+    }
 
     int64_t mCnt = CeilDiv(m, cfg.baseM);
 
@@ -286,12 +288,18 @@ __global__ __aicore__ void matmul_fixpipe_kernel(GM_ADDR aGM, GM_ADDR bGM, GM_AD
     using MatmulKernel = Blaze::Gemm::Kernel::GemmUniversal<ProblemShape, BlockMmad, BlockEpilogue, BlockScheduler>;
 
     using Params = typename MatmulKernel::Params;
+    // fp32 elements are 4 bytes, so a UB half buffer (TOTAL_UB / sizeof(C_TYPE) / 2) holds only
+    // half the elements of fp16 and a large tile cannot fit into a single AIV sub-block's UB half.
+    // enableSplitM therefore splits the tile along M: each of the two AIV sub-blocks copies out
+    // and writes back half of the M rows. Note the real UB double-buffer switch is ubDB below.
+    constexpr bool enableSplitM = AscendC::IsSameType<C_TYPE, float>::value;
+    constexpr uint8_t ubDB = 2;
     Params params = {
         {m, n, k, 1},
         {aGM, bGM, cGM, biasGM, nullptr, nullptr, static_cast<uint64_t>(k), static_cast<uint64_t>(mL1),
          static_cast<uint64_t>(nL1), static_cast<uint64_t>(kL1), static_cast<uint32_t>(baseM),
          static_cast<uint32_t>(baseN), static_cast<uint32_t>(baseK), TilingConfig::L1_BUFFER_NUM, TilingConfig::L0C_DB,
-         0, 1},
+         enableSplitM, ubDB},
         {cGM},
         {static_cast<uint32_t>(baseM), static_cast<uint32_t>(nL1), static_cast<uint32_t>(kL1),
          static_cast<uint32_t>(baseM), static_cast<uint32_t>(baseN), static_cast<uint32_t>(baseK), mTailCnt, nTailCnt,

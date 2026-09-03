@@ -66,7 +66,7 @@ if ASCEND_IS_AIC {
 ```cpp
 struct Params {
     ProblemShape problemShape;          // (m, n, k, batch)
-    BlockMmadParams mmadParams;         // BlockMmad 参数（含 enable2UB/splitM、ubDB）
+    BlockMmadParams mmadParams;         // BlockMmad 参数（含 splitM、ubDB）
     BlockEpilogueParams epilogueParams; // BlockEpilogueFixpipe 参数 {cGM}
     BlockSchedulerParams schParams;     // BlockScheduler 参数
 };

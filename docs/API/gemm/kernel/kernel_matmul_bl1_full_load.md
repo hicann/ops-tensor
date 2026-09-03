@@ -88,7 +88,7 @@ struct Params {
 | mL0 / nL0 / kL0 | uint32_t | L0 tile 尺寸 |
 | l1Stages | uint32_t | A 矩阵 L1 缓冲级数 |
 | l0cStages | uint16_t | L0C 缓冲级数 |
-| splitM | uint64_t | fp32 fixpipe 时启用 splitM（=1） |
+| splitM | uint64_t | fp32 时启用（=1）|
 | ubDB | uint8_t | UB double buffer 开关 |
 
 ### BlockEpilogueParams
@@ -120,10 +120,13 @@ using BlockMmad = BlockMmad<DispatchPolicy, ...>;
 using BlockEpilogue = BlockEpilogueFixpipe<OutType, OutType, DispatchPolicy>;
 using MatmulKernel = GemmUniversal<..., BlockMmad, BlockEpilogue, BlockScheduler>;
 
-static constexpr bool enable2UB = IsSameType<OutType, float>::value;
+// fp32 元素为 4 字节，UB 半区容量（TOTAL_UB / sizeof(OutType) / 2）只有 fp16 的一半，
+// 大 tile 无法放进单个 AIV 子块的 UB 半区，因此启用 splitM 沿 M 拆分，
+// 两个 AIV 子块各拷出并写回一半 M 行。真正的 UB 双缓冲开关是 ubDB。
+static constexpr bool enableSplitM = IsSameType<OutType, float>::value;
 Params params = {
     {m, n, k, batch},     // ProblemShape
-    {aGM, bGM, cGM, ..., enable2UB, ubDB}, // BlockMmadParams（含 splitM/ubDB）
+    {aGM, bGM, cGM, ..., enableSplitM, ubDB}, // BlockMmadParams（含 splitM/ubDB）
     {cGM},                 // BlockEpilogueParams（传入 cGM 供 epilogue 写回）
     {...}                  // BlockSchedulerParams
 };

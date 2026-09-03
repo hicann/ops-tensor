@@ -141,7 +141,6 @@ public:
     __aicore__ inline void operator()(TensorA& gmA, TensorB& gmB, TensorBias& gmBias, TensorC& tensorC,
                                       TupleShape& tileShape)
     {
-        cvPingPong_ = 0;
         uint64_t curM = AscendC::Te::Get<MNK_M>(tileShape);
         uint64_t curN = AscendC::Te::Get<MNK_N>(tileShape);
         uint64_t curK = AscendC::Te::Get<MNK_K>(tileShape);
@@ -193,6 +192,7 @@ public:
 
                     {
                         auto l0Lock = l0Slot.LockM();
+                        auto btLock = btSlot.LockM();
                         bool initCmatrix = iter0 == 0 && iter1 == 0 && !isBias_;
                         uint8_t unitFlag = ((iter0 + 1 == kL1Iter_ && iter1 + 1 == kL0Iter) ? FINAL_ACCUMULATION :
                                                                                               NON_FINAL_ACCUMULATION);
@@ -320,7 +320,7 @@ private:
     {
         AscendC::Te::FixpipeParams fixpParams{FINAL_ACCUMULATION};
         if constexpr (DispatchPolicy::L0C2OUT_MODEL != ON_THE_FLY) {
-            uint16_t slot = ((ubDB_ > 1) && (nL1Iter_ > 1)) ? static_cast<uint16_t>(cvPingPong_ & 0x1) : 0U;
+            uint16_t slot = (ubDB_ > 1) ? static_cast<uint16_t>(cvPingPong_ & 0x1) : 0U;
             AscendC::CrossCoreWaitFlag<AIC_SYNC_AIV_MODE_4, PIPE_FIX>(AIV_SYNC_AIC_FLAG + slot);
             if (splitM_) {
                 AscendC::CrossCoreWaitFlag<AIC_SYNC_AIV_MODE_4, PIPE_FIX>(AIV_SYNC_AIC_FLAG + slot + FLAG_ID_MAX);
