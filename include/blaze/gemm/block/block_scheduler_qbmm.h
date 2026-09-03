@@ -10,7 +10,11 @@
 
 /*!
  * \file block_scheduler_qbmm.h
- * \brief
+ * \brief Block scheduler for QBMM with SWAT windowing and tail tile splitting.
+ *
+ * Maps logical M/N block coordinates to physical cores using an adaptive sliding
+ * window traversal for L2 cache locality. Splits the tail M/N block across idle cores
+ * via UpdateTailTile, and supports A_FULL_LOAD_MODE scheduling variant.
  */
 
 #pragma once
