@@ -80,6 +80,7 @@ static constexpr AscendC::Reg::CastTrait GELU_MX_CAST_FP32_TO_BF16 = {
 template <typename DataTypeOut_, typename DataTypeIn_ = float>
 class BlockEpilogueGeluTanhMxQuant {
 public:
+    static constexpr uint32_t EPILOGUE_UB_DB_COUNT = 2;
     using DataTypeOut = DataTypeOut_;
     using DataTypeIn = DataTypeIn_;
     using BlockShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
@@ -97,6 +98,16 @@ public:
                       AscendC::IsSameType<DataTypeOut, fp4x2_e2m1_t>::value ||
                       AscendC::IsSameType<DataTypeOut, fp4x2_e1m2_t>::value,
                   "BlockEpilogueGeluTanhMxQuant only supports FP8 or FP4 output.");
+
+    __aicore__ inline BlockEpilogueGeluTanhMxQuant() {}
+
+    __aicore__ inline ~BlockEpilogueGeluTanhMxQuant()
+    {
+        AscendC::WaitFlag<AscendC::HardEvent::MTE3_V>(0);
+        if (bufferCount_ == EPILOGUE_UB_DB_COUNT) {
+            AscendC::WaitFlag<AscendC::HardEvent::MTE3_V>(1);
+        }
+    }
 
     struct Params {
         GM_ADDR yGmAddr{nullptr};
@@ -137,26 +148,43 @@ public:
         addValueBits_ = params_->dstTypeMax == GELU_MX_FP4_E2M1_SPECIAL_DST_TYPE_MAX ? GELU_MX_BF16_ADD_VALUE_MAN2 :
                                                                                        GELU_MX_BF16_ADD_VALUE_MAN1;
 
-        constexpr uint32_t afterIn = GELU_MX_MAX_SINGLE_MN * sizeof(DataTypeIn);
-        quantOutput_ = AscendC::LocalTensor<int8_t>(AscendC::TPosition::VECOUT, afterIn, GELU_MX_MAX_SINGLE_MN);
-        constexpr uint32_t afterOutput = afterIn + GELU_MX_MAX_SINGLE_MN * sizeof(int8_t);
-        constexpr uint32_t maxScaleCount = GELU_MX_MAX_SINGLE_MN / AscendC::ONE_BLK_SIZE;
-        quantScaleOutput_ = AscendC::LocalTensor<int8_t>(AscendC::TPosition::VECOUT, afterOutput, maxScaleCount);
-        constexpr uint32_t afterIo = afterOutput + maxScaleCount * sizeof(int8_t);
-        activationResult_ = AscendC::LocalTensor<bfloat16_t>(AscendC::TPosition::VECCALC, afterIo,
-                                                             GELU_MX_MAX_SINGLE_MN);
-        constexpr uint32_t afterActivation = afterIo + GELU_MX_MAX_SINGLE_MN * sizeof(bfloat16_t);
-        maxExp_ = AscendC::LocalTensor<uint16_t>(AscendC::TPosition::VECCALC, afterActivation, maxScaleCount);
-        constexpr uint32_t afterMaxExp = afterActivation + maxScaleCount * sizeof(uint16_t);
-        halfScale_ = AscendC::LocalTensor<uint16_t>(AscendC::TPosition::VECCALC, afterMaxExp, maxScaleCount);
-        constexpr uint32_t scaleBlockOffset = afterMaxExp + maxScaleCount * sizeof(uint16_t);
         const uint64_t mPerVector = Gemm::CeilDiv(static_cast<uint64_t>(params.baseM),
                                                   static_cast<uint64_t>(Gemm::DOUBLE_BUFFER_COUNT));
-        quantScaleBlockOutput_ = AscendC::LocalTensor<int8_t>(AscendC::TPosition::VECOUT, scaleBlockOffset,
-                                                              mPerVector * AscendC::ONE_BLK_SIZE);
+        const uint64_t maxBlockCount = mPerVector * params.baseN;
+        const uint64_t maxScaleCount = Gemm::CeilDiv(maxBlockCount, static_cast<uint64_t>(AscendC::ONE_BLK_SIZE));
+        const uint64_t afterIn = maxBlockCount * sizeof(DataTypeIn);
+        const uint64_t scaleBlockBytes = mPerVector * AscendC::ONE_BLK_SIZE * sizeof(int8_t);
+        const uint64_t singleBufferBytes = afterIn + maxBlockCount * sizeof(int8_t) + maxScaleCount * sizeof(int8_t) +
+                                           maxBlockCount * sizeof(bfloat16_t) + maxScaleCount * sizeof(uint16_t) * 2 +
+                                           scaleBlockBytes;
+        const uint64_t doubleBufferBytes = singleBufferBytes + maxBlockCount * sizeof(int8_t) + scaleBlockBytes;
+        bufferCount_ = doubleBufferBytes <= AscendC::TOTAL_UB_SIZE ? EPILOGUE_UB_DB_COUNT : 1U;
+
+        for (uint32_t slot = 0; slot < bufferCount_; ++slot) {
+            quantOutput_[slot] = AscendC::LocalTensor<int8_t>(
+                AscendC::TPosition::VECOUT, afterIn + slot * maxBlockCount * sizeof(int8_t), maxBlockCount);
+        }
+        const uint64_t afterOutput = afterIn + bufferCount_ * maxBlockCount * sizeof(int8_t);
+        quantScaleOutput_ = AscendC::LocalTensor<int8_t>(AscendC::TPosition::VECOUT, afterOutput, maxScaleCount);
+        const uint64_t afterIo = afterOutput + maxScaleCount * sizeof(int8_t);
+        activationResult_ = AscendC::LocalTensor<bfloat16_t>(AscendC::TPosition::VECCALC, afterIo, maxBlockCount);
+        const uint64_t afterActivation = afterIo + maxBlockCount * sizeof(bfloat16_t);
+        maxExp_ = AscendC::LocalTensor<uint16_t>(AscendC::TPosition::VECCALC, afterActivation, maxScaleCount);
+        const uint64_t afterMaxExp = afterActivation + maxScaleCount * sizeof(uint16_t);
+        halfScale_ = AscendC::LocalTensor<uint16_t>(AscendC::TPosition::VECCALC, afterMaxExp, maxScaleCount);
+        const uint64_t scaleBlockOffset = afterMaxExp + maxScaleCount * sizeof(uint16_t);
+        for (uint32_t slot = 0; slot < bufferCount_; ++slot) {
+            quantScaleBlockOutput_[slot] = AscendC::LocalTensor<int8_t>(AscendC::TPosition::VECOUT,
+                                                                        scaleBlockOffset + slot * scaleBlockBytes,
+                                                                        mPerVector * AscendC::ONE_BLK_SIZE);
+        }
 
         quantOutputGlobal_.SetGlobalBuffer(reinterpret_cast<__gm__ int8_t*>(params.yGmAddr));
         quantScaleGlobal_.SetGlobalBuffer(reinterpret_cast<__gm__ int8_t*>(params.yScaleGmAddr));
+        AscendC::SetFlag<AscendC::HardEvent::MTE3_V>(0);
+        if (bufferCount_ == EPILOGUE_UB_DB_COUNT) {
+            AscendC::SetFlag<AscendC::HardEvent::MTE3_V>(1);
+        }
     }
 
     __aicore__ inline void UpdateGlobalAddr(const OutputOffsets& baseOffsets)
@@ -196,20 +224,24 @@ public:
         vlForHalfNumber_ = AscendC::VECTOR_REG_WIDTH / sizeof(bfloat16_t);
         elementAfterReduce_ = AscendC::VECTOR_REG_WIDTH / GELU_MX_BLOCK_SIZE;
 
-        DoActivationAndQuant(singleMInVector);
+        const uint32_t slot = bufferCount_ == EPILOGUE_UB_DB_COUNT ? pingPongId_ : 0U;
+        AscendC::WaitFlag<AscendC::HardEvent::MTE3_V>(slot);
+        DoActivationAndQuant(singleMInVector, slot);
         const int64_t yOffset = outputOffsets.yOffset + static_cast<int64_t>(mOffset) * n_;
         const int64_t yScaleOffset = outputOffsets.yScaleOffset + static_cast<int64_t>(mOffset) * scaleN_;
-        TransScaleLayout(singleMInVector);
-        AscendC::SetFlag<AscendC::HardEvent::V_MTE3>(0);
-        AscendC::WaitFlag<AscendC::HardEvent::V_MTE3>(0);
-        CopyOutputToGm(singleMInVector, yOffset);
-        CopyScaleToGm(singleMInVector, yScaleOffset);
-        AscendC::SetFlag<AscendC::HardEvent::MTE3_V>(0);
-        AscendC::WaitFlag<AscendC::HardEvent::MTE3_V>(0);
+        TransScaleLayout(singleMInVector, slot);
+        AscendC::SetFlag<AscendC::HardEvent::V_MTE3>(slot);
+        AscendC::WaitFlag<AscendC::HardEvent::V_MTE3>(slot);
+        CopyOutputToGm(singleMInVector, yOffset, slot);
+        CopyScaleToGm(singleMInVector, yScaleOffset, slot);
+        AscendC::SetFlag<AscendC::HardEvent::MTE3_V>(slot);
+        if (bufferCount_ == EPILOGUE_UB_DB_COUNT) {
+            pingPongId_ ^= 1U;
+        }
     }
 
 private:
-    __aicore__ inline void CopyOutputToGm(uint64_t blockCount, int64_t offset)
+    __aicore__ inline void CopyOutputToGm(uint64_t blockCount, int64_t offset, uint32_t slot)
     {
         AscendC::DataCopyExtParams params{1, 0, 0, 0, 0};
         params.blockCount = blockCount;
@@ -221,16 +253,16 @@ private:
             params.dstStride >>= 1;
             offset >>= 1;
         }
-        AscendC::DataCopyPad(quantOutputGlobal_[offset], quantOutput_, params);
+        AscendC::DataCopyPad(quantOutputGlobal_[offset], quantOutput_[slot], params);
     }
 
-    __aicore__ inline void CopyScaleToGm(uint64_t blockCount, int64_t offset)
+    __aicore__ inline void CopyScaleToGm(uint64_t blockCount, int64_t offset, uint32_t slot)
     {
         AscendC::DataCopyExtParams params{1, 0, 0, 0, 0};
         params.blockCount = blockCount;
         params.blockLen = scaleBlockN_ * sizeof(int8_t);
         params.dstStride = (scaleN_ - scaleBlockN_) * sizeof(int8_t);
-        AscendC::DataCopyPad(quantScaleGlobal_[offset], quantScaleBlockOutput_, params);
+        AscendC::DataCopyPad(quantScaleGlobal_[offset], quantScaleBlockOutput_[slot], params);
     }
 
     __aicore__ inline void ComputeMaxExpOcp(__ubuf__ bfloat16_t* src, __ubuf__ uint16_t* maxExp, uint32_t totalCount,
@@ -694,9 +726,9 @@ private:
         }
     }
 
-    __aicore__ inline void DoActivationAndQuant(uint16_t mSize)
+    __aicore__ inline void DoActivationAndQuant(uint16_t mSize, uint32_t slot)
     {
-        __ubuf__ int8_t* quantOutput = reinterpret_cast<__ubuf__ int8_t*>(quantOutput_.GetPhyAddr());
+        __ubuf__ int8_t* quantOutput = reinterpret_cast<__ubuf__ int8_t*>(quantOutput_[slot].GetPhyAddr());
         __ubuf__ uint16_t* quantScale = reinterpret_cast<__ubuf__ uint16_t*>(quantScaleOutput_.GetPhyAddr());
         __ubuf__ DataTypeIn* l0cOutput = reinterpret_cast<__ubuf__ DataTypeIn*>(l0cOutputUb_.GetPhyAddr());
         __ubuf__ bfloat16_t* activation = reinterpret_cast<__ubuf__ bfloat16_t*>(activationResult_.GetPhyAddr());
@@ -733,11 +765,11 @@ private:
         }
     }
 
-    __aicore__ inline void TransScaleLayout(uint16_t mSize)
+    __aicore__ inline void TransScaleLayout(uint16_t mSize, uint32_t slot)
     {
         __ubuf__ int8_t* source = reinterpret_cast<__ubuf__ int8_t*>(quantScaleOutput_.GetPhyAddr());
-        __ubuf__ int8_t* destination = reinterpret_cast<__ubuf__ int8_t*>(quantScaleBlockOutput_.GetPhyAddr());
-        AscendC::Duplicate<int8_t>(quantScaleBlockOutput_, 0, mSize * AscendC::ONE_BLK_SIZE);
+        __ubuf__ int8_t* destination = reinterpret_cast<__ubuf__ int8_t*>(quantScaleBlockOutput_[slot].GetPhyAddr());
+        AscendC::Duplicate<int8_t>(quantScaleBlockOutput_[slot], 0, mSize * AscendC::ONE_BLK_SIZE);
         // The source contains ceil(N / 32) valid scales, while yScale reserves ceil(N / 64) * 2 slots.
         const uint32_t validScaleBlockN = Gemm::CeilDiv(static_cast<uint64_t>(singleN_),
                                                         static_cast<uint64_t>(GELU_MX_BLOCK_SIZE));
@@ -762,9 +794,9 @@ private:
     AscendC::GlobalTensor<int8_t> quantScaleGlobal_;
 
     AscendC::LocalTensor<DataTypeIn> l0cOutputUb_{AscendC::TPosition::VECIN, 0, GELU_MX_MAX_SINGLE_MN};
-    AscendC::LocalTensor<int8_t> quantOutput_;
+    AscendC::LocalTensor<int8_t> quantOutput_[EPILOGUE_UB_DB_COUNT];
     AscendC::LocalTensor<int8_t> quantScaleOutput_;
-    AscendC::LocalTensor<int8_t> quantScaleBlockOutput_;
+    AscendC::LocalTensor<int8_t> quantScaleBlockOutput_[EPILOGUE_UB_DB_COUNT];
     AscendC::LocalTensor<bfloat16_t> activationResult_;
     AscendC::LocalTensor<uint16_t> maxExp_;
     AscendC::LocalTensor<uint16_t> halfScale_;
@@ -781,6 +813,8 @@ private:
     uint16_t fpEmax_{0};
     float invDstTypeMax_{GELU_MX_SCALAR_ONE / GELU_MX_FP4_E2M1_DST_TYPE_MAX};
     uint16_t addValueBits_{GELU_MX_BF16_ADD_VALUE_MAN1};
+    uint32_t pingPongId_{0};
+    uint32_t bufferCount_{1};
 };
 
 } // namespace Block
