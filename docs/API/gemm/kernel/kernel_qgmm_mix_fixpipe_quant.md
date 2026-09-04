@@ -56,8 +56,14 @@ K 轴按照 `quantGroupSize` 切分，每个 K-group 对应一个长度为 N 的
 
 ## 使用约束
 
-- A/B 的 Cube 输入类型为 `int8_t`。
-- Fixpipe scale 类型为 `uint64_t`。
+- Kernel 编译期通过 `static_assert` 校验模板组合。
+- `AType` / `BType` 仅支持 `int8_t`。
+- Fixpipe scale 类型仅支持 `uint64_t`。
+- `CType` 仅支持 `half`，`BiasType` 仅支持 `int32_t`。
+- `LayoutA` 仅支持 `NDExtLayoutPtn`。
+- `LayoutB` 仅支持 `NDExtLayoutPtn`、`DNExtLayoutPtn`、`NZLayoutPtn`、`ZNLayoutPtn`。
+- `LayoutC` / `LayoutBias` 支持 ND 类布局，不支持 `NZLayoutPtn`、`ZNLayoutPtn`。
+- `BlockEpilogue::FixpipeType` 需与 `CType` 一致。
 - `quantMode` 仅使用 `PERCHANNEL_MODE` 或 `PERGROUP_MODE`。
 - per-group 模式下，算子侧应保证 `quantGroupSize` 和 scale 的 group 维度与 K 轴切分一致。
 - 当前 GMM 组合不在 Cube MMAD 中处理 API bias。

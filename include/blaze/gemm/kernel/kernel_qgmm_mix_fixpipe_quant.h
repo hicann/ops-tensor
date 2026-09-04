@@ -65,16 +65,28 @@ public:
     using LayoutA = typename BlockMmad::LayoutA;
     using LayoutB = typename BlockMmad::LayoutB;
     using LayoutC = typename BlockMmad::LayoutC;
+    using LayoutBias = typename BlockMmad::LayoutBias;
     using BlockMmadParams = typename BlockMmad::Params;
     using BlockEpilogueParams = typename BlockEpilogue::Params;
     using SchedulerProblemShape = typename BlockScheduler::ProblemShape;
     using SchedulerBlockInfo = typename BlockScheduler::BlockInfo;
     using BlockShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
-    static_assert(AscendC::IsSameType<AType, int8_t>::value);
-    static_assert(AscendC::IsSameType<BType, int8_t>::value);
-    static_assert(AscendC::IsSameType<ScaleType, uint64_t>::value);
-    static_assert(AscendC::IsSameType<CType, half>::value);
-    static_assert(AscendC::IsSameType<typename BlockEpilogue::FixpipeType, CType>::value);
+    static_assert(AscendC::IsSameType<AType, int8_t>::value && AscendC::IsSameType<BType, int8_t>::value,
+                  "GMM Fixpipe Quant only supports int8_t AType and BType.");
+    static_assert(AscendC::IsSameType<ScaleType, uint64_t>::value,
+                  "GMM Fixpipe Quant only supports uint64_t scale type.");
+    static_assert(AscendC::IsSameType<CType, half>::value && AscendC::IsSameType<BiasType, int32_t>::value,
+                  "GMM Fixpipe Quant only supports half CType and int32_t BiasType.");
+    static_assert(AscendC::Std::is_same_v<LayoutA, AscendC::Te::NDExtLayoutPtn>,
+                  "GMM Fixpipe Quant only supports ND LayoutA.");
+    static_assert(AscendC::Std::is_one_of_v<LayoutB, AscendC::Te::NDExtLayoutPtn, AscendC::Te::DNExtLayoutPtn,
+                                            AscendC::Te::NZLayoutPtn, AscendC::Te::ZNLayoutPtn>,
+                  "GMM Fixpipe Quant only supports ND/DN/NZ/ZN LayoutB.");
+    static_assert(!AscendC::Std::is_one_of_v<LayoutC, AscendC::Te::NZLayoutPtn, AscendC::Te::ZNLayoutPtn> &&
+                      !AscendC::Std::is_one_of_v<LayoutBias, AscendC::Te::NZLayoutPtn, AscendC::Te::ZNLayoutPtn>,
+                  "GMM Fixpipe Quant does not support NZ/ZN LayoutC or LayoutBias.");
+    static_assert(AscendC::IsSameType<typename BlockEpilogue::FixpipeType, CType>::value,
+                  "GMM Fixpipe Quant requires BlockEpilogue FixpipeType to match CType.");
 
     struct GMMTiling {
         uint32_t groupNum{0};

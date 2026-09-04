@@ -55,6 +55,18 @@ public:
     using BiasType = typename BlockMmad::BiasType;
     using LayoutA = typename BlockMmad::LayoutA;
     using LayoutB = typename BlockMmad::LayoutB;
+    using LayoutC = typename BlockMmad::LayoutC;
+    using LayoutBias = typename BlockMmad::LayoutBias;
+    static_assert(IsFp8<AType>() && IsFp8<BType>(), "QGMM SwiGLU MX only supports MXFP8 AType and BType.");
+    static_assert(AscendC::Std::is_same_v<CType, float> && AscendC::Std::is_same_v<BiasType, float>,
+                  "QGMM SwiGLU MX only supports float CType and BiasType.");
+    static_assert(AscendC::Std::is_same_v<LayoutA, AscendC::Te::NDExtLayoutPtn>,
+                  "QGMM SwiGLU MX only supports ND LayoutA.");
+    static_assert(AscendC::Std::is_one_of_v<LayoutB, AscendC::Te::NDExtLayoutPtn, AscendC::Te::DNExtLayoutPtn>,
+                  "QGMM SwiGLU MX only supports ND/DN LayoutB.");
+    static_assert(!AscendC::Std::is_one_of_v<LayoutC, AscendC::Te::NZLayoutPtn, AscendC::Te::ZNLayoutPtn> &&
+                      !AscendC::Std::is_one_of_v<LayoutBias, AscendC::Te::NZLayoutPtn, AscendC::Te::ZNLayoutPtn>,
+                  "QGMM SwiGLU MX does not support NZ/ZN LayoutC or LayoutBias.");
     static_assert(AscendC::IsSameType<CType, typename BlockEpilogue::DataTypeIn>::value,
                   "BlockMmad UB output type must match BlockEpilogue input type.");
     static constexpr bool TRANS_A = IsTrans<LayoutA>::value;

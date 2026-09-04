@@ -29,6 +29,24 @@ ActivationQuant 标签保持原融合核语义，不对最后一组启用 tail s
 ### Scale 类型
 ScaleA 和 ScaleB 固定按 `fp8_e8m0_t` 解释。
 
+### Dtype / Format 静态校验
+Kernel 编译期通过 `static_assert` 校验模板组合：
+
+- `AType` / `BType` 仅支持同 bit-width 的 MXFP8 组合（`fp8_e4m3fn_t`、`fp8_e5m2_t`）或 MXFP4 组合（`fp4x2_e2m1_t`、`fp4x2_e1m2_t`）。
+- `CType` 支持 `half`、`bfloat16_t`、`float`；`BiasType` 仅支持 `float`。
+- `LayoutA` 仅支持 `NDExtLayoutPtn`、`DNExtLayoutPtn`。
+- `LayoutB` 仅支持 `NDExtLayoutPtn`、`DNExtLayoutPtn`、`NZLayoutPtn`、`ZNLayoutPtn`。
+- `LayoutC` / `LayoutBias` 支持 ND 类布局，不支持 `NZLayoutPtn`、`ZNLayoutPtn`。
+
+### SwiGLU MX 融合路径约束
+`KernelGmmSwiGluMixMx` 路径复用 QGMM MX 的 Cube 计算并在 AIV 侧完成 SwiGLU 与 MX 输出量化。当前该路径仅支持 MXFP8 输入：
+
+- `AType` / `BType` 仅支持 MXFP8（`fp8_e4m3fn_t`、`fp8_e5m2_t`）。
+- `CType` / `BiasType` 仅支持 `float`。
+- `LayoutA` 仅支持 `NDExtLayoutPtn`。
+- `LayoutB` 仅支持 `NDExtLayoutPtn`、`DNExtLayoutPtn`。
+- `LayoutC` / `LayoutBias` 支持 ND 类布局，不支持 `NZLayoutPtn`、`ZNLayoutPtn`。
+
 ## 特殊类型别名
 
 | 别名 | 含义 |

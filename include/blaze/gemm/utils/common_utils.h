@@ -159,6 +159,12 @@ __aicore__ inline constexpr bool IsFp4()
 }
 
 template <typename T>
+__aicore__ inline constexpr bool IsFp8()
+{
+    return AscendC::IsSameType<T, fp8_e4m3fn_t>::value || AscendC::IsSameType<T, fp8_e5m2_t>::value;
+}
+
+template <typename T>
 __aicore__ inline T CeilDiv(T a, T b)
 {
     if (b == 0) {

@@ -71,6 +71,20 @@ public:
     using LayoutB = typename BlockMmad::LayoutB;
     using LayoutC = typename BlockMmad::LayoutC;
     using LayoutScaleB = typename BlockMmad::LayoutScaleB;
+    using LayoutBias = typename BlockMmad::LayoutBias;
+    static_assert((IsFp4<AType>() && IsFp4<BType>()) || (IsFp8<AType>() && IsFp8<BType>()),
+                  "QGMM MX only supports same bit-width MXFP4/MXFP8 AType and BType.");
+    static_assert(AscendC::Std::is_one_of_v<CType, half, bfloat16_t, float>,
+                  "QGMM MX only supports half/bfloat16_t/float CType.");
+    static_assert(AscendC::Std::is_same_v<BiasType, float>, "QGMM MX only supports float BiasType.");
+    static_assert(AscendC::Std::is_one_of_v<LayoutA, AscendC::Te::NDExtLayoutPtn, AscendC::Te::DNExtLayoutPtn>,
+                  "QGMM MX only supports ND/DN LayoutA.");
+    static_assert(AscendC::Std::is_one_of_v<LayoutB, AscendC::Te::NDExtLayoutPtn, AscendC::Te::DNExtLayoutPtn,
+                                            AscendC::Te::NZLayoutPtn, AscendC::Te::ZNLayoutPtn>,
+                  "QGMM MX only supports ND/DN/NZ/ZN LayoutB.");
+    static_assert(!AscendC::Std::is_one_of_v<LayoutC, AscendC::Te::NZLayoutPtn, AscendC::Te::ZNLayoutPtn> &&
+                      !AscendC::Std::is_one_of_v<LayoutBias, AscendC::Te::NZLayoutPtn, AscendC::Te::ZNLayoutPtn>,
+                  "QGMM MX does not support NZ/ZN LayoutC or LayoutBias.");
     static constexpr bool TRANS_A = IsTrans<LayoutA>::value;
     static constexpr bool TRANS_B = IsTrans<LayoutB>::value;
     static constexpr bool WEIGHT_NZ = IsWeightNz<LayoutB>::value;
