@@ -23,12 +23,20 @@ namespace Block {
  * @class BlockMmad
  * @brief Block matrix multiplication class for performing block matrix multiplication operations
  */
-template <
-    class DispatchPolicy_, class AType_, class LayoutA_, class BType_, class LayoutB_, class CType_, class LayoutC_,
-    class BiasType_, class LayoutBias_>
+template <class DispatchPolicy_, class AType_, class LayoutA_, class BType_, class LayoutB_, class CType_,
+          class LayoutC_, class BiasType_, class LayoutBias_>
 class BlockMmad {
     static_assert(Blaze::Gemm::always_false_v<DispatchPolicy_>, "BlockMmad is not implemented for this DispatchPolicy");
 };
 } // namespace Block
 } // namespace Gemm
 } // namespace Blaze
+#include "blaze/gemm/block/block_mmad_iterbatch_broadcast.h"
+#include "blaze/gemm/block/block_mmad_matmul_al1_full_load.h"
+#include "blaze/gemm/block/block_mmad_matmul_basic_split_k.h"
+#include "blaze/gemm/block/block_mmad_matmul_basic.h"
+#include "blaze/gemm/block/block_mmad_matmul_bl1_full_load.h"
+#include "blaze/gemm/block/block_mmad_matmul_fixpipe_opti.h"
+#include "blaze/gemm/block/block_mmad_matmul_streamk_split_k.h"
+#include "blaze/gemm/block/block_mmad_matmul_streamk.h"
+#include "blaze/gemm/block/block_mmad_qbmm_mx.h"

@@ -27,11 +27,20 @@ namespace Kernel {
  */
 template <class ProblemShape_, class BlockMmad_, class BlockEpilogue_, class BlockScheduler_, typename Enable_ = void>
 class GemmUniversal {
-    static_assert(
-        always_false_v<BlockEpilogue_> && always_false_v<BlockMmad_>,
-        "KernelStreamk is not implemented for this BlockEpilogue or BlockMmad");
+    static_assert(always_false_v<BlockEpilogue_> && always_false_v<BlockMmad_>,
+                  "KernelStreamk is not implemented for this BlockEpilogue or BlockMmad");
 };
 
 } // namespace Kernel
 } // namespace Gemm
 } // namespace Blaze
+#include "blaze/gemm/kernel/kernel_batch_matmul_broadcast.h"
+#include "blaze/gemm/kernel/kernel_batch_matmul_iterbatch_broadcast.h"
+#include "blaze/gemm/kernel/kernel_matmul_basic.h"
+#include "blaze/gemm/kernel/kernel_matmul_al1_full_load.h"
+#include "blaze/gemm/kernel/kernel_matmul_bl1_full_load.h"
+#include "blaze/gemm/kernel/kernel_matmul_fixpipe_opti.h"
+#include "blaze/gemm/kernel/kernel_matmul_streamk.h"
+#include "blaze/gemm/kernel/kernel_matmul_with_scale_add.h"
+#include "blaze/gemm/kernel/kernel_tqbmm_mx.h"
+#include "blaze/gemm/kernel/kernel_tbmm_basic.h"

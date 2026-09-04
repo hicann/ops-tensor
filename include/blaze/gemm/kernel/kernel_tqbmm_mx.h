@@ -57,12 +57,12 @@ public:
     using BlockCoord = AscendC::Te::Coord<int64_t, int64_t, int64_t, int64_t>;
     using BlockSchedulerParams = typename BlockScheduler::Params;
 
-    static_assert(
-        AscendC::Std::is_one_of_v<
-            AscendC::Std::tuple<AType, BType, CType>, AscendC::Std::tuple<__fp8e4m3, __fp8e4m3, bfloat16_t>,
-            AscendC::Std::tuple<__fp8e4m3, __fp8e4m3, half>, AscendC::Std::tuple<__fp4e2m1x2, __fp4e2m1x2, bfloat16_t>,
-            AscendC::Std::tuple<__fp4e2m1x2, __fp4e2m1x2, half>>,
-        "Unsupported (AType, BType, CType, BiasType) combination");
+    static_assert(AscendC::Std::is_one_of_v<AscendC::Std::tuple<AType, BType, CType>,
+                                            AscendC::Std::tuple<fp8_e4m3fn_t, fp8_e4m3fn_t, bfloat16_t>,
+                                            AscendC::Std::tuple<fp8_e4m3fn_t, fp8_e4m3fn_t, half>,
+                                            AscendC::Std::tuple<fp4x2_e2m1_t, fp4x2_e2m1_t, bfloat16_t>,
+                                            AscendC::Std::tuple<fp4x2_e2m1_t, fp4x2_e2m1_t, half>>,
+                  "Unsupported (AType, BType, CType, BiasType) combination");
     static_assert(!AscendC::Std::is_one_of_v<LayoutA, AscendC::Te::NZLayoutPtn, AscendC::Te::ZNLayoutPtn> &&
                       !AscendC::Std::is_one_of_v<LayoutC, AscendC::Te::NZLayoutPtn, AscendC::Te::ZNLayoutPtn>,
                   "LayoutA and LayoutC cannot be NZLayoutPtn or ZNLayoutPtn");
