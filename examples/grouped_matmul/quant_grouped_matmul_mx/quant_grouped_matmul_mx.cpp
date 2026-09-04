@@ -15,7 +15,7 @@
 
 /**
  * @file quant_grouped_matmul_mx.cpp
- * @brief QGMM MX grouped-matmul example covering MXFP4/MXFP8 and ND/NZ weights.
+ * @brief Quant Grouped MatMul MX example covering MXFP4/MXFP8 and ND/NZ weight.
  */
 #ifndef K_MAX_SHAPE_DIM
 #define K_MAX_SHAPE_DIM 0
@@ -45,7 +45,7 @@ using NdLayout = AscendC::Te::NDExtLayoutPtn;
 template <typename T>
 inline constexpr bool IS_FP4_TYPE = std::is_same_v<T, fp4x2_e2m1_t> || std::is_same_v<T, fp4x2_e1m2_t>;
 
-template <typename AType, typename BType, typename LayoutA, typename LayoutB, uint64_t FullLoadMode>
+template <typename AType, typename BType, typename CType, typename LayoutA, typename LayoutB, uint64_t FullLoadMode>
 __global__ __aicore__ void qgmm_mx_kernel(GM_ADDR a, GM_ADDR b, GM_ADDR scaleA, GM_ADDR scaleB, GM_ADDR c, GM_ADDR bias,
                                           GM_ADDR groupList, uint32_t groupNum, int64_t m, int64_t n, int64_t k,
                                           uint32_t baseM, uint32_t baseN, uint32_t baseK, uint32_t kAL1, uint32_t kBL1,
@@ -57,7 +57,7 @@ __global__ __aicore__ void qgmm_mx_kernel(GM_ADDR a, GM_ADDR b, GM_ADDR scaleA, 
     AscendC::InitSocState();
     using ProblemShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
     using Policy = Blaze::Gemm::GroupedMatmulWithScaleMx<FullLoadMode>;
-    using Mmad = Blaze::Gemm::Block::BlockMmad<Policy, AType, LayoutA, BType, LayoutB, float, NdLayout, float,
+    using Mmad = Blaze::Gemm::Block::BlockMmad<Policy, AType, LayoutA, BType, LayoutB, CType, NdLayout, float,
                                                NdLayout>;
     using Kernel = Blaze::Gemm::Kernel::GemmUniversal<ProblemShape, Mmad, Blaze::Gemm::Block::BlockEpilogueEmpty,
                                                       Blaze::Gemm::Block::BlockSchedulerGmmSwatWithTailSplit>;
@@ -224,32 +224,33 @@ void CopyCommonInputs(DeviceBuffers& device, const CaseBytes& bytes, size_t bias
     ACL_CHECK(aclrtMemset(device.c, bytes.c, 0, bytes.c));
 }
 
-void WriteOutput(const std::string& outputPath, const std::vector<float>& output)
+void WriteOutput(const std::string& outputPath, const std::vector<uint8_t>& output)
 {
     std::ofstream stream(outputPath, std::ios::binary);
     if (!stream.is_open()) {
         throw std::runtime_error("failed to open output file: " + outputPath);
     }
-    stream.write(reinterpret_cast<const char*>(output.data()),
-                 static_cast<std::streamsize>(output.size() * sizeof(float)));
+    stream.write(reinterpret_cast<const char*>(output.data()), static_cast<std::streamsize>(output.size()));
     if (!stream) {
         throw std::runtime_error("failed to write output file: " + outputPath);
     }
 }
 
-template <typename AType, typename BType, typename LayoutA, typename LayoutB, bool MultiTensor, uint64_t FullLoadMode>
+template <typename AType, typename BType, typename CType, typename LayoutA, typename LayoutB, bool MultiTensor,
+          uint64_t FullLoadMode>
 void LaunchKernel(DeviceBuffers& device, const CaseBytes& bytes, const QgmmTilingData& tiling,
                   const std::string& outputPath)
 {
     aclrtStream stream = nullptr;
     ACL_CHECK(aclrtCreateStream(&stream));
-    qgmm_mx_kernel<AType, BType, LayoutA, LayoutB, FullLoadMode><<<static_cast<uint32_t>(GetAicCoreNum()), 0, stream>>>(
-        device.a, device.b, device.scaleA, device.scaleB, device.c, device.bias, device.groupList, tiling.groupNum,
-        tiling.m, tiling.n, tiling.k, tiling.baseM, tiling.baseN, tiling.baseK, tiling.kAL1, tiling.kBL1,
-        tiling.scaleKAL1, tiling.scaleKBL1, tiling.isBias, tiling.dbL0C, tiling.l1BufferStage, tiling.groupType,
-        tiling.groupListType, tiling.singleW);
+    qgmm_mx_kernel<AType, BType, CType, LayoutA, LayoutB, FullLoadMode>
+        <<<static_cast<uint32_t>(GetAicCoreNum()), 0, stream>>>(
+            device.a, device.b, device.scaleA, device.scaleB, device.c, device.bias, device.groupList, tiling.groupNum,
+            tiling.m, tiling.n, tiling.k, tiling.baseM, tiling.baseN, tiling.baseK, tiling.kAL1, tiling.kBL1,
+            tiling.scaleKAL1, tiling.scaleKBL1, tiling.isBias, tiling.dbL0C, tiling.l1BufferStage, tiling.groupType,
+            tiling.groupListType, tiling.singleW);
     ACL_CHECK(aclrtSynchronizeStream(stream));
-    std::vector<float> output(bytes.c / sizeof(float), -1.0f);
+    std::vector<uint8_t> output(bytes.c);
     ACL_CHECK(aclrtMemcpy(output.data(), bytes.c, device.c, bytes.c, ACL_MEMCPY_DEVICE_TO_HOST));
     ACL_CHECK(aclrtDestroyStream(stream));
     WriteOutput(outputPath, output);
@@ -268,7 +269,8 @@ std::vector<int64_t> MakeGroupList(uint32_t groupNum, int64_t splitValue, uint8_
     return groupList;
 }
 
-template <typename AType, typename BType, typename LayoutA, typename LayoutB, bool MultiTensor, uint64_t FullLoadMode>
+template <typename AType, typename BType, typename CType, typename LayoutA, typename LayoutB, bool MultiTensor,
+          uint64_t FullLoadMode>
 int RunCase(const QgmmTilingData& tiling, const std::string& dataDir, const std::string& outputPath)
 {
     const bool kGrouped = tiling.groupType == 2;
@@ -291,7 +293,7 @@ int RunCase(const QgmmTilingData& tiling, const std::string& dataDir, const std:
                                              static_cast<size_t>(tiling.n) * scaleK;
     const CaseBytes bytes = {MxBytes<AType>(aElements), MxBytes<BType>(bElements), scaleAElements * sizeof(ScaleType),
                              scaleBElements * sizeof(ScaleType),
-                             static_cast<size_t>(tiling.groupNum) * tiling.m * tiling.n * sizeof(float)};
+                             static_cast<size_t>(tiling.groupNum) * tiling.m * tiling.n * sizeof(CType)};
     const std::vector<int64_t> groupList = MakeGroupList(tiling.groupNum, kGrouped ? tiling.k : tiling.m,
                                                          tiling.groupListType);
     DeviceBuffers device(tiling.groupNum);
@@ -300,44 +302,47 @@ int RunCase(const QgmmTilingData& tiling, const std::string& dataDir, const std:
     PrepareWeightBuffers<MultiTensor>(device, bytes, tiling.groupNum, kGrouped, dataDir);
     CopyCommonInputs(device, bytes, static_cast<size_t>(tiling.groupNum) * tiling.n * sizeof(float),
                      groupList.size() * sizeof(int64_t), dataDir);
-    LaunchKernel<AType, BType, LayoutA, LayoutB, MultiTensor, FullLoadMode>(device, bytes, tiling, outputPath);
+    LaunchKernel<AType, BType, CType, LayoutA, LayoutB, MultiTensor, FullLoadMode>(device, bytes, tiling, outputPath);
     return 0;
 }
 
-template <typename T, typename LayoutA, typename LayoutB, uint64_t FullLoadMode>
+template <typename T, typename CType, typename LayoutA, typename LayoutB, uint64_t FullLoadMode>
 int DispatchSingleW(const QgmmTilingData& tiling, const std::string& dataDir, const std::string& outputPath)
 {
-    return tiling.singleW == 0 ? RunCase<T, T, LayoutA, LayoutB, true, FullLoadMode>(tiling, dataDir, outputPath) :
-                                 RunCase<T, T, LayoutA, LayoutB, false, FullLoadMode>(tiling, dataDir, outputPath);
+    return tiling.singleW == 0 ?
+               RunCase<T, T, CType, LayoutA, LayoutB, true, FullLoadMode>(tiling, dataDir, outputPath) :
+               RunCase<T, T, CType, LayoutA, LayoutB, false, FullLoadMode>(tiling, dataDir, outputPath);
 }
 
-template <typename T, typename LayoutA, uint64_t FullLoadMode>
+template <typename T, typename CType, typename LayoutA, uint64_t FullLoadMode>
 int DispatchLayoutB(const std::string& layoutB, const QgmmTilingData& tiling, const std::string& dataDir,
                     const std::string& outputPath)
 {
     if (layoutB == "nd")
-        return DispatchSingleW<T, LayoutA, NdLayout, FullLoadMode>(tiling, dataDir, outputPath);
+        return DispatchSingleW<T, CType, LayoutA, NdLayout, FullLoadMode>(tiling, dataDir, outputPath);
     if (layoutB == "dn")
-        return DispatchSingleW<T, LayoutA, AscendC::Te::DNExtLayoutPtn, FullLoadMode>(tiling, dataDir, outputPath);
+        return DispatchSingleW<T, CType, LayoutA, AscendC::Te::DNExtLayoutPtn, FullLoadMode>(tiling, dataDir,
+                                                                                             outputPath);
     if (layoutB == "nz")
-        return DispatchSingleW<T, LayoutA, AscendC::Te::NZLayoutPtn, FullLoadMode>(tiling, dataDir, outputPath);
+        return DispatchSingleW<T, CType, LayoutA, AscendC::Te::NZLayoutPtn, FullLoadMode>(tiling, dataDir, outputPath);
     if (layoutB == "zn")
-        return DispatchSingleW<T, LayoutA, AscendC::Te::ZNLayoutPtn, FullLoadMode>(tiling, dataDir, outputPath);
+        return DispatchSingleW<T, CType, LayoutA, AscendC::Te::ZNLayoutPtn, FullLoadMode>(tiling, dataDir, outputPath);
     return 2;
 }
 
-template <typename T, uint64_t FullLoadMode>
+template <typename T, typename CType, uint64_t FullLoadMode>
 int DispatchLayoutA(const std::string& layoutA, const std::string& layoutB, const QgmmTilingData& tiling,
                     const std::string& dataDir, const std::string& outputPath)
 {
-    return layoutA == "dn" ?
-               DispatchLayoutB<T, AscendC::Te::DNExtLayoutPtn, FullLoadMode>(layoutB, tiling, dataDir, outputPath) :
-               DispatchLayoutB<T, NdLayout, FullLoadMode>(layoutB, tiling, dataDir, outputPath);
+    return layoutA == "dn" ? DispatchLayoutB<T, CType, AscendC::Te::DNExtLayoutPtn, FullLoadMode>(layoutB, tiling,
+                                                                                                  dataDir, outputPath) :
+                             DispatchLayoutB<T, CType, NdLayout, FullLoadMode>(layoutB, tiling, dataDir, outputPath);
 }
 
 struct QgmmCaseConfig {
     QgmmTilingData tiling;
     std::string dtype;
+    std::string outputDtype;
     std::string layoutA;
     std::string layoutB;
     bool aFullLoad;
@@ -350,13 +355,27 @@ void PrintUsage()
     std::cerr << "Usage: quant_grouped_matmul_mx <groupNum> <m> <n> <k> <baseM> <baseN> <baseK> "
                  "<kAL1> <kBL1> <scaleKAL1> <scaleKBL1> <isBias> <dbL0C> <l1BufferStage> <groupType> "
                  "<groupListType> <singleW> <mxfp4_e2m1|mxfp4_e1m2|mxfp8_e4m3|mxfp8_e5m2> "
-                 "<nd|dn> <nd|dn|nz|zn> <aFullLoad> "
+                 "<output dtype:float16|bfloat16|float32> "
+                 "<layoutA:nd|dn> <weight layoutB:nd|dn|nz|zn> <aFullLoad> "
                  "<dataDir> <outputPath>"
               << std::endl;
 }
 
-QgmmCaseConfig ParseConfig(char** argv)
+bool ParseFlagArg(const char* arg, const std::string& name)
 {
+    const auto value = std::stoul(arg);
+    if (value > 1U) {
+        throw std::invalid_argument(name + " must be 0 or 1");
+    }
+    return value == 1U;
+}
+
+QgmmCaseConfig ParseConfig(int argc, char** argv)
+{
+    if (argc != 25) {
+        PrintUsage();
+        throw std::invalid_argument("argument count must be 24");
+    }
     QgmmCaseConfig config{};
     config.tiling.groupNum = static_cast<uint32_t>(std::stoul(argv[1]));
     config.tiling.m = std::stoll(argv[2]);
@@ -376,55 +395,154 @@ QgmmCaseConfig ParseConfig(char** argv)
     config.tiling.groupListType = static_cast<uint8_t>(std::stoul(argv[16]));
     config.tiling.singleW = static_cast<uint8_t>(std::stoul(argv[17]));
     config.dtype = argv[18];
-    config.layoutA = argv[19];
-    config.layoutB = argv[20];
-    config.aFullLoad = std::stoul(argv[21]) != 0;
-    config.dataDir = argv[22];
-    config.outputPath = argv[23];
+    config.outputDtype = argv[19];
+    config.layoutA = argv[20];
+    config.layoutB = argv[21];
+    config.aFullLoad = ParseFlagArg(argv[22], "aFullLoad");
+    config.dataDir = argv[23];
+    config.outputPath = argv[24];
     return config;
 }
 
-bool IsValidConfig(const QgmmCaseConfig& config)
+bool IsWeightNz(const std::string& layoutB) { return layoutB == "nz" || layoutB == "zn"; }
+
+bool IsFp4Type(const std::string& dtype) { return dtype == "mxfp4_e2m1" || dtype == "mxfp4_e1m2"; }
+
+bool CheckBasicConfig(const QgmmCaseConfig& config, std::string& reason)
 {
-    const bool validShape = config.tiling.groupNum > 0 && config.tiling.m > 0 && config.tiling.n > 0 &&
-                            config.tiling.k > 0;
-    const bool validTiling = config.tiling.baseM > 0 && config.tiling.baseN > 0 && config.tiling.baseK > 0 &&
-                             config.tiling.kAL1 > 0 && config.tiling.kBL1 > 0 && config.tiling.scaleKAL1 > 0 &&
-                             config.tiling.scaleKBL1 > 0 && config.tiling.isBias <= 1 && config.tiling.dbL0C >= 1 &&
-                             config.tiling.dbL0C <= 2 && config.tiling.groupListType <= 2 &&
-                             config.tiling.singleW <= 1 &&
-                             (config.tiling.l1BufferStage == 2 || config.tiling.l1BufferStage == 3) &&
-                             (config.tiling.groupType == 0 || config.tiling.groupType == 2);
-    const bool validLayoutA = (config.layoutA == "nd" && config.tiling.groupType == 0) ||
-                              (config.layoutA == "dn" && config.tiling.groupType == 2);
-    const bool validLayoutB = config.layoutB == "nd" || config.layoutB == "dn" || config.layoutB == "nz" ||
-                              config.layoutB == "zn";
-    return validShape && validTiling && validLayoutA && validLayoutB;
+    if (config.tiling.groupNum == 0 || config.tiling.m <= 0 || config.tiling.n <= 0 || config.tiling.k <= 0) {
+        reason = "groupNum, m, n and k must be positive";
+        return false;
+    }
+    if (config.tiling.baseM == 0 || config.tiling.baseN == 0 || config.tiling.baseK == 0 || config.tiling.kAL1 == 0 ||
+        config.tiling.kBL1 == 0 || config.tiling.scaleKAL1 == 0 || config.tiling.scaleKBL1 == 0) {
+        reason = "tiling block parameters must be positive";
+        return false;
+    }
+    if (config.tiling.isBias > 1 || config.tiling.singleW > 1) {
+        reason = "isBias and singleW must be 0 or 1";
+        return false;
+    }
+    if (config.tiling.dbL0C < 1 || config.tiling.dbL0C > 2) {
+        reason = "dbL0C must be 1 or 2";
+        return false;
+    }
+    if (config.tiling.l1BufferStage != 2 && config.tiling.l1BufferStage != 3) {
+        reason = "l1BufferStage must be 2 or 3";
+        return false;
+    }
+    if (config.tiling.groupType != 0 && config.tiling.groupType != 2) {
+        reason = "groupType must be 0 or 2";
+        return false;
+    }
+    if (config.tiling.groupListType > 2) {
+        reason = "groupListType must be 0, 1 or 2";
+        return false;
+    }
+    return true;
 }
 
-template <typename T, uint64_t FullLoadMode>
+bool CheckLayoutConfig(const QgmmCaseConfig& config, std::string& reason)
+{
+    if ((config.layoutA != "nd" && config.layoutA != "dn") ||
+        (config.layoutB != "nd" && config.layoutB != "dn" && config.layoutB != "nz" && config.layoutB != "zn")) {
+        reason = "layoutA must be nd or dn, weight layoutB must be nd, dn, nz or zn";
+        return false;
+    }
+    if ((config.layoutA == "dn") != (config.tiling.groupType == 2)) {
+        reason = "current example uses layoutA=dn for K-axis grouping and layoutA=nd for M-axis grouping";
+        return false;
+    }
+    if (IsWeightNz(config.layoutB) && (config.tiling.k == 1 || config.tiling.n == 1)) {
+        reason = "weight NZ/ZN requires k and n to be greater than 1";
+        return false;
+    }
+    return true;
+}
+
+bool CheckDtypeConfig(const QgmmCaseConfig& config, std::string& reason)
+{
+    const bool validDtype = config.dtype == "mxfp8_e4m3" || config.dtype == "mxfp8_e5m2" ||
+                            config.dtype == "mxfp4_e2m1" || config.dtype == "mxfp4_e1m2";
+    if (!validDtype) {
+        reason = "dtype must be mxfp8_e4m3, mxfp8_e5m2, mxfp4_e2m1 or mxfp4_e1m2";
+        return false;
+    }
+    if (config.outputDtype != "float16" && config.outputDtype != "bfloat16" && config.outputDtype != "float32") {
+        reason = "output dtype must be float16, bfloat16 or float32";
+        return false;
+    }
+    if (config.dtype == "mxfp4_e1m2" && !IsWeightNz(config.layoutB)) {
+        reason = "mxfp4_e1m2 is supported only with weight NZ/ZN in this example";
+        return false;
+    }
+    if (IsFp4Type(config.dtype)) {
+        if (config.tiling.k % 2 != 0 || config.tiling.k == 2) {
+            reason = "mxfp4 requires k to be even and not equal to 2";
+            return false;
+        }
+        if ((config.layoutB == "nd" || config.layoutB == "nz") && config.tiling.n % 2 != 0) {
+            reason = "mxfp4 with non-transposed weight ND/NZ requires n to be even";
+            return false;
+        }
+    }
+    return true;
+}
+
+bool CheckKGroupedConfig(const QgmmCaseConfig& config, std::string& reason)
+{
+    if (config.tiling.groupType != 2) {
+        return true;
+    }
+    if (IsFp4Type(config.dtype) || config.layoutB != "nd" || config.tiling.singleW != 1 || config.tiling.isBias != 0 ||
+        config.tiling.groupListType == 2) {
+        reason = "K-axis grouping supports MXFP8, single weight ND, no bias and Length/Offset Group List";
+        return false;
+    }
+    return true;
+}
+
+bool IsValidConfig(const QgmmCaseConfig& config, std::string& reason)
+{
+    return CheckBasicConfig(config, reason) && CheckLayoutConfig(config, reason) && CheckDtypeConfig(config, reason) &&
+           CheckKGroupedConfig(config, reason);
+}
+
+template <typename T, typename CType, uint64_t FullLoadMode>
 int DispatchConfig(const QgmmCaseConfig& config)
 {
-    return DispatchLayoutA<T, FullLoadMode>(config.layoutA, config.layoutB, config.tiling, config.dataDir,
-                                            config.outputPath);
+    return DispatchLayoutA<T, CType, FullLoadMode>(config.layoutA, config.layoutB, config.tiling, config.dataDir,
+                                                   config.outputPath);
+}
+
+template <typename T, typename CType>
+int DispatchFullLoad(const QgmmCaseConfig& config)
+{
+    return config.aFullLoad ? DispatchConfig<T, CType, 1>(config) : DispatchConfig<T, CType, 0>(config);
 }
 
 template <typename T>
-int DispatchFullLoad(const QgmmCaseConfig& config)
+int DispatchOutputDtype(const QgmmCaseConfig& config)
 {
-    return config.aFullLoad ? DispatchConfig<T, 1>(config) : DispatchConfig<T, 0>(config);
+    if (config.outputDtype == "float32")
+        return DispatchFullLoad<T, float>(config);
+    if (config.outputDtype == "float16")
+        return DispatchFullLoad<T, half>(config);
+    if (config.outputDtype == "bfloat16")
+        return DispatchFullLoad<T, bfloat16_t>(config);
+    return 2;
 }
 
 int RunConfiguredCase(const QgmmCaseConfig& config)
 {
     if (config.dtype == "mxfp8_e4m3")
-        return DispatchFullLoad<fp8_e4m3fn_t>(config);
+        return DispatchOutputDtype<fp8_e4m3fn_t>(config);
     if (config.dtype == "mxfp8_e5m2")
-        return DispatchFullLoad<fp8_e5m2_t>(config);
+        return DispatchOutputDtype<fp8_e5m2_t>(config);
     if (config.dtype == "mxfp4_e2m1")
-        return DispatchFullLoad<fp4x2_e2m1_t>(config);
+        return DispatchOutputDtype<fp4x2_e2m1_t>(config);
     if (config.dtype == "mxfp4_e1m2")
-        return DispatchFullLoad<fp4x2_e1m2_t>(config);
+        return DispatchOutputDtype<fp4x2_e1m2_t>(config);
     return 2;
 }
 
@@ -436,19 +554,23 @@ void PrintResult(int ret, const QgmmCaseConfig& config)
         std::cerr << "QGMM MX example FAILED: kernel execution failed" << std::endl;
     } else {
         std::cerr << "QGMM MX example FAILED: unsupported argument combination, dtype=" << config.dtype
-                  << ", layoutA=" << config.layoutA << ", layoutB=" << config.layoutB << std::endl;
+                  << ", outputDtype=" << config.outputDtype << ", layoutA=" << config.layoutA
+                  << ", weight layoutB=" << config.layoutB << std::endl;
     }
 }
 
 int main(int argc, char** argv)
 {
-    if (argc != 24) {
-        PrintUsage();
+    QgmmCaseConfig config{};
+    try {
+        config = ParseConfig(argc, argv);
+    } catch (const std::exception& error) {
+        std::cerr << "invalid QGMM MX case argument: " << error.what() << std::endl;
         return 2;
     }
-    const QgmmCaseConfig config = ParseConfig(argv);
-    if (!IsValidConfig(config)) {
-        std::cerr << "invalid QGMM MX case configuration" << std::endl;
+    std::string reason;
+    if (!IsValidConfig(config, reason)) {
+        std::cerr << "invalid QGMM MX case configuration: " << reason << std::endl;
         return 2;
     }
     ACL_CHECK(aclInit(nullptr));

@@ -14,6 +14,7 @@
 import argparse
 import os
 
+import ml_dtypes
 import numpy as np
 
 
@@ -39,6 +40,11 @@ TYPE_INFO = {
         np.array([0x2, 0xA, 0x4, 0xC], np.uint8),
         64,
     ),
+}
+OUTPUT_DTYPE_MAP = {
+    "float16": np.float16,
+    "bfloat16": ml_dtypes.bfloat16,
+    "float32": np.float32,
 }
 
 
@@ -123,7 +129,37 @@ def _write_weights(output_dir, encoded, scales, single_w):
     np.concatenate(scales).tofile(os.path.join(output_dir, "scale_b.bin"))
 
 
+def _validate_args(args):
+    if args.group_num <= 0 or args.m <= 0 or args.n <= 0 or args.k <= 0:
+        raise ValueError("group-num, m, n and k must be positive")
+    weight_nz = args.layout_b in ("nz", "zn")
+    if weight_nz and (args.k == 1 or args.n == 1):
+        raise ValueError("weight NZ/ZN requires k and n to be greater than 1")
+    if args.dtype == "mxfp4_e1m2" and not weight_nz:
+        raise ValueError("mxfp4_e1m2 is supported only with weight NZ/ZN")
+    if args.dtype.startswith("mxfp4"):
+        if args.k % 2 or args.k == 2:
+            raise ValueError("mxfp4 requires k to be even and not equal to 2")
+        if args.layout_b in ("nd", "nz") and args.n % 2:
+            raise ValueError(
+                "mxfp4 with non-transposed weight ND/NZ requires n to be even"
+            )
+    if args.group_type != 2:
+        return
+    if (
+        args.dtype.startswith("mxfp4")
+        or args.layout_b != "nd"
+        or args.single_w != 1
+        or args.is_bias != 0
+        or args.group_list_type == 2
+    ):
+        raise ValueError(
+            "K-axis grouping supports MXFP8, single weight ND, no bias and Length/Offset Group List"
+        )
+
+
 def generate(args):
+    _validate_args(args)
     os.makedirs(args.output_dir, exist_ok=True)
     values, codes, c0 = TYPE_INFO[args.dtype]
     rng = np.random.default_rng(args.seed)
@@ -224,7 +260,9 @@ def generate(args):
     bias.tofile(os.path.join(args.output_dir, "bias.bin"))
     group_list.tofile(os.path.join(args.output_dir, "group_list.bin"))
     _write_weights(args.output_dir, encoded_b, scale_b, args.single_w)
-    golden.astype(np.float32).tofile(os.path.join(args.output_dir, "golden_c.bin"))
+    golden.astype(OUTPUT_DTYPE_MAP[args.output_dtype]).tofile(
+        os.path.join(args.output_dir, "golden_c.bin")
+    )
 
 
 def main():
@@ -234,6 +272,9 @@ def main():
     parser.add_argument("--n", type=int, required=True)
     parser.add_argument("--k", type=int, required=True)
     parser.add_argument("--dtype", choices=tuple(TYPE_INFO), required=True)
+    parser.add_argument(
+        "--output-dtype", choices=tuple(OUTPUT_DTYPE_MAP), required=True
+    )
     parser.add_argument("--layout-b", choices=("nd", "dn", "nz", "zn"), required=True)
     parser.add_argument("--group-list-type", type=int, choices=(0, 1, 2), required=True)
     parser.add_argument("--group-type", type=int, choices=(0, 2), required=True)
