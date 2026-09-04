@@ -72,11 +72,70 @@ __aicore__ inline void Run(const Params& params, BlockScheduler& bs)
 同 [kernel_qbmm_mix](./kernel_qbmm_mix.md)：NotifyVector / WaitForVector（PIPE_FIX，flag 0 与 0+16），NotifyCube / WaitForCube（PIPE_V，flag 0）。
 
 ## 调用示例
-```
+
+完整可编译、可运行并带 golden 校验的示例见
+[quant_batch_matmul_kernel_api](../../../../examples/quant_batch_matmul/quant_batch_matmul_kernel_api/README.md)，
+对应 CSV 场景为 `qbmm_mix_without_batch`。
+
+以下示例与带 Batch 版本使用相同的 MMAD、Scheduler 和 Epilogue 组件，但通过
+`KernelMmadWithScaleMixWithoutBatch` 选择单 Batch 特化，并省略所有 Batch 广播参数。
+
+```cpp
+using AType = int8_t;
+using BType = int8_t;
+using OutType = bfloat16_t;
+using BiasType = int32_t;
+using LayoutA = AscendC::Te::NDExtLayoutPtn;
+using LayoutB = AscendC::Te::NDExtLayoutPtn;
+using LayoutC = AscendC::Te::NDExtLayoutPtn;
+using LayoutBias = AscendC::Te::NDExtLayoutPtn;
+using ProblemShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
+using BTypeTuple = AscendC::Std::tuple<BType, uint64_t>;
+
+constexpr uint64_t FULL_LOAD_MODE = Blaze::Gemm::NONE_FULL_LOAD_MODE;
+using DispatchPolicy = Blaze::Gemm::MatmulWithScaleMix<
+    FULL_LOAD_MODE, false, Blaze::Gemm::KernelMmadWithScaleMixWithoutBatch>;
+using BlockMmad = Blaze::Gemm::Block::BlockMmad<
+    DispatchPolicy, AType, LayoutA, BTypeTuple, LayoutB,
+    int32_t, LayoutC, BiasType, LayoutBias>;
+using BlockEpilogue = Blaze::Epilogue::Block::BlockEpilogueDequant<
+    OutType, BiasType, float, float, int32_t>;
+using BlockScheduler = Blaze::Gemm::Block::BlockSchedulerQuantBatchMatmulV3<
+    ProblemShape, FULL_LOAD_MODE, LayoutA, LayoutB, AType>;
 using QBMMKernel = Blaze::Gemm::Kernel::GemmUniversal<
     ProblemShape, BlockMmad, BlockEpilogue, BlockScheduler>;
-QBMMKernel qbmm;
-qbmm(params);
+
+QBMMKernel::Params params{};
+params.problemShape = {m, n, k, 1};
+
+params.mmParams.aGmAddr = x1GM;
+params.mmParams.bGmAddr = x2GM;
+params.mmParams.problemShape = params.problemShape;
+params.mmParams.l0TileShape = {baseM, baseN, baseK, 0};
+params.mmParams.kAL1 = kAL1;
+params.mmParams.kBL1 = kBL1;
+params.mmParams.l1BufferNum = nBufferNum;
+params.mmParams.enableL0CPingPong = dbL0C > 1U;
+
+params.schParams = {baseM, baseN, mTailTile, nTailTile,
+                    mBaseTailSplitCnt, nBaseTailSplitCnt, mTailMain, nTailMain};
+params.qbmmParams.bMustHitL2 = bMustHitL2;
+
+params.epilogueParams.x2ScaleGmAddr = scaleGM;
+params.epilogueParams.x1ScaleGmAddr = perTokenScaleGM;
+params.epilogueParams.biasGmAddr = biasGM;
+params.epilogueParams.outGmAddr = yGM;
+params.epilogueParams.m = m;
+params.epilogueParams.n = n;
+params.epilogueParams.baseM = baseM;
+params.epilogueParams.baseN = baseN;
+params.epilogueParams.x1QuantMode = x1QuantMode;
+params.epilogueParams.x2QuantMode = x2QuantMode;
+params.epilogueParams.isBias = isBias != 0U;
+params.epilogueParams.biasDtype = biasDtype;
+
+QBMMKernel kernel;
+kernel(params);
 ```
 
 ## 适用场景

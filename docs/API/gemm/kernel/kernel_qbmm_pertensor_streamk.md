@@ -166,7 +166,16 @@ all-SK 约束。候选调度一旦包含 DP block，就回退非 StreamK MIX，�
 
 ## 组件组装示例
 
+完整可编译、可运行并带 golden 校验的示例见
+[quant_batch_matmul_kernel_api](../../../../examples/quant_batch_matmul/quant_batch_matmul_kernel_api/README.md)，
+对应 CSV 场景为 `qbmm_pertensor_streamk`。
+
 ```cpp
+using AType = int8_t;
+using BType = int8_t;
+using X2ScaleType = float;
+using CType = half;
+using BiasType = int32_t;
 using ProblemShape =
     AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
 using Layout = AscendC::Te::NDExtLayoutPtn;
@@ -177,24 +186,54 @@ using BlockScheduler =
     Blaze::Gemm::Block::BlockSchedulerMatmulStreamK<ProblemShape>;
 using BlockMmad = Blaze::Gemm::Block::BlockMmad<
     DispatchPolicy,
-    int8_t,
+    AType,
     Layout,
-    AscendC::Std::tuple<int8_t, float>,
+    AscendC::Std::tuple<BType, X2ScaleType>,
     Layout,
-    half,
+    CType,
     Layout,
-    int32_t,
+    BiasType,
     Layout>;
 using BlockEpilogue =
     Blaze::Epilogue::Block::BlockEpilogueQbmmPertensorStreamK<
         typename BlockMmad::WorkspaceType,
-        half,
+        CType,
         DispatchPolicy,
-        float,
+        X2ScaleType,
         float>;
 using Kernel = Blaze::Gemm::Kernel::GemmUniversal<
     ProblemShape, BlockMmad, BlockEpilogue, BlockScheduler>;
 ```
+
+### 参数准备与 Kernel 执行
+
+```cpp
+const bool hasBias = biasGM != nullptr;
+const GM_ADDR biasMmadGM = hasBias && BlockMmad::BIAS_IN_MMAD ? biasGM : nullptr;
+const GM_ADDR biasEpilogueGM = hasBias && !BlockMmad::BIAS_IN_MMAD ? biasGM : nullptr;
+
+Kernel::Params params{};
+params.problemShape = {m, n, k, 1};
+params.blockMmadParams = {x1GM, x2GM, yGM, biasMmadGM, perTokenScaleGM, scaleGM};
+params.epilogueParams = {
+    yGM, workspaceGM, scaleGM, perTokenScaleGM, biasEpilogueGM,
+    biasEpilogueGM != nullptr, biasDtype};
+params.schParams.usedCoreNum = usedCoreNum;
+params.schParams.baseM = baseM;
+params.schParams.baseN = baseN;
+params.schParams.baseK = baseK;
+params.schParams.singleCoreK = singleCoreK;
+params.schParams.kL1 = kL1;
+params.schParams.isHf32 = isHf32;
+params.schParams.l2CacheMode = l2CacheMode;
+
+Kernel kernel;
+kernel(params);
+```
+
+`perTokenScaleGM == nullptr` 表示仅使用 X2 per-tensor scale；非空时该地址表示可选的
+X1 per-tensor 标量，而不是 shape 为 `{M}` 的 per-token scale。Bias 必须根据
+`BlockMmad::BIAS_IN_MMAD` 只传给 MMAD 或 AIV Epilogue 中的一侧。
 
 ## 数据流
 

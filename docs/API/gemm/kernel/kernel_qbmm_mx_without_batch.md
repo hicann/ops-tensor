@@ -125,28 +125,46 @@ __aicore__ inline void SetBL2Cache(
 
 ## 调用示例
 
-```cpp
-using DispatchPolicy = Blaze::Gemm::MatmulWithScaleMx<
-    A_FULL_LOAD_MODE, false, Blaze::Gemm::KernelMmadWithScaleMxWithoutBatch>;
+完整可编译、可运行并带 golden 校验的示例见
+[quant_batch_matmul_kernel_api](../../../../examples/quant_batch_matmul/quant_batch_matmul_kernel_api/README.md)，
+对应 CSV 场景为 `qbmm_mx_without_batch`。
 
+```cpp
+using AType = fp8_e4m3fn_t;
+using BType = fp8_e5m2_t;
+using CType = float;
+using BiasType = float;
+using LayoutA = AscendC::Te::NDExtLayoutPtn;
+using LayoutB = AscendC::Te::NDExtLayoutPtn;
+using LayoutC = AscendC::Te::NDExtLayoutPtn;
+using LayoutBias = AscendC::Te::NDExtLayoutPtn;
+using ProblemShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
+
+constexpr uint64_t FULL_LOAD_MODE = Blaze::Gemm::NONE_FULL_LOAD_MODE;
+using DispatchPolicy = Blaze::Gemm::MatmulWithScaleMx<
+    FULL_LOAD_MODE, false, Blaze::Gemm::KernelMmadWithScaleMxWithoutBatch>;
 using BlockMmad = Blaze::Gemm::Block::BlockMmad<
     DispatchPolicy, AType, LayoutA, BType, LayoutB, CType, LayoutC, BiasType, LayoutBias>;
-
+using BlockEpilogue = Blaze::Gemm::Block::BlockEpilogueEmpty;
+using BlockScheduler = Blaze::Gemm::Block::BlockSchedulerQuantBatchMatmulV3<
+    ProblemShape, FULL_LOAD_MODE, LayoutA, LayoutB, AType>;
 using QBMMKernel = Blaze::Gemm::Kernel::GemmUniversal<
-    ProblemShape, BlockMmad, void, BlockScheduler>;
+    ProblemShape, BlockMmad, BlockEpilogue, BlockScheduler>;
 
-using Params = typename QBMMKernel::Params;
-Params params = {
-    {m, n, k, 1},                         // problem shape
-    {aGM, bGM, cGM, biasGM, scaleAGM, scaleBGM},
-    {kL1, scaleKL1, l1BufNum},
-    {baseM, baseN, mTailTile, nTailTile, mBaseTailSplitCnt, nBaseTailSplitCnt, mTailMain, nTailMain},
-    {baseM, baseN, baseK, isBias, dbL0C, bMustHitL2}
-};
+QBMMKernel::Params params{};
+params.problemShape = {m, n, k, 1};
+params.mmadParams = {x1GM, x2GM, yGM, biasGM, perTokenScaleGM, scaleGM};
+params.l1Params = {kL1, scaleKL1, l1BufNum};
+params.schParams = {baseM, baseN, mTailTile, nTailTile,
+                    mBaseTailSplitCnt, nBaseTailSplitCnt, mTailMain, nTailMain};
+params.qbmmParams = {baseM, baseN, baseK, isBias, dbL0C, bMustHitL2};
 
 QBMMKernel kernel;
 kernel(params);
 ```
+
+其中 `problemShape` 的 Batch 必须为 1；`perTokenScaleGM` 和 `scaleGM` 分别指向
+`fp8_e8m0_t` 的 A per-token scale 与 B per-group scale。
 
 ## 适用场景
 

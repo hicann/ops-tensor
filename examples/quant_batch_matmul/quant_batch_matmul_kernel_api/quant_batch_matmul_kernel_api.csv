@@ -1,0 +1,6 @@
+casename,variant,m,k,n,output_dtype
+qbmm_mix,mix,16,64,16,float16
+qbmm_mix_without_batch,mix_without_batch,16,64,16,float16
+qbmm_mx_without_batch,mx_without_batch,16,128,16,float16
+qbmm_mx_streamk,mx_streamk,16,128,16,float16
+qbmm_pertensor_streamk,pertensor_streamk,16,128,16,float16

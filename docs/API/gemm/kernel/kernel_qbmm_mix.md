@@ -139,21 +139,101 @@ __aicore__ inline void ProcessSingleBatch(
 
 ## 调用示例
 
+完整可编译、可运行并带 golden 校验的示例见
+[quant_batch_matmul_kernel_api](../../../../examples/quant_batch_matmul/quant_batch_matmul_kernel_api/README.md)，
+对应 CSV 场景为 `qbmm_mix`。
+
+以下示例以单路 `int8` 输入、`bfloat16_t` 输出为例。GM 地址和切分参数由上层 host tiling
+计算后传入 Kernel；示例显式填写全部组件参数，便于区分 MMAD、Scheduler、QBMM 和 Epilogue
+各自负责的字段。
+
 ### 组件组装
-```
-using DispatchPolicy = Blaze::Gemm::MatmulWithScaleMix<A_FULL_LOAD_MODE>;
+
+```cpp
+using AType = int8_t;
+using BType = int8_t;
+using OutType = bfloat16_t;
+using BiasType = int32_t;
+using X2ScaleType = float;
+using X1ScaleType = float;
+using LayoutA = AscendC::Te::NDExtLayoutPtn;
+using LayoutB = AscendC::Te::NDExtLayoutPtn;
+using LayoutC = AscendC::Te::NDExtLayoutPtn;
+using LayoutBias = AscendC::Te::NDExtLayoutPtn;
+using ProblemShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
+using BTypeTuple = AscendC::Std::tuple<BType, uint64_t>;
+
+constexpr uint64_t FULL_LOAD_MODE = Blaze::Gemm::NONE_FULL_LOAD_MODE;
+using DispatchPolicy = Blaze::Gemm::MatmulWithScaleMix<FULL_LOAD_MODE, false>;
 using BlockMmad = Blaze::Gemm::Block::BlockMmad<
-    DispatchPolicy, int8_t, LayoutA, BTypeTuple, LayoutB, CType, LayoutC, BiasType, LayoutBias>;
-using BlockEpilogue = Blaze::Epilogue::Block::BlockEpilogueDequant<OutType, BiasType, X2ScaleType, float, int32_t>;
-using BlockScheduler = Blaze::Gemm::Block::BlockSchedulerQbmm<ProblemShape>;
+    DispatchPolicy, AType, LayoutA, BTypeTuple, LayoutB,
+    int32_t, LayoutC, BiasType, LayoutBias>;
+using BlockEpilogue = Blaze::Epilogue::Block::BlockEpilogueDequant<
+    OutType, BiasType, X2ScaleType, X1ScaleType, int32_t>;
+using BlockScheduler = Blaze::Gemm::Block::BlockSchedulerQuantBatchMatmulV3<
+    ProblemShape, FULL_LOAD_MODE, LayoutA, LayoutB, AType>;
 using QBMMKernel = Blaze::Gemm::Kernel::GemmUniversal<
     ProblemShape, BlockMmad, BlockEpilogue, BlockScheduler>;
 ```
 
-### Kernel 执行
-```
-QBMMKernel qbmm;
-qbmm(params);  // 或 qbmm.Run(params);
+### 参数准备与 Kernel 执行
+
+```cpp
+QBMMKernel::Params params{};
+params.problemShape = {m, n, k, batch};
+
+params.mmadParams.aGmAddr = x1GM;
+params.mmadParams.bGmAddr = x2GM;
+params.mmadParams.problemShape = params.problemShape;
+params.mmadParams.l0TileShape = {baseM, baseN, baseK, 0};
+params.mmadParams.kAL1 = kAL1;
+params.mmadParams.kBL1 = kBL1;
+params.mmadParams.l1BufferNum = nBufferNum;
+params.mmadParams.enableL0CPingPong = dbL0C > 1U;
+
+params.schParams = {baseM, baseN, mTailTile, nTailTile,
+                    mBaseTailSplitCnt, nBaseTailSplitCnt, mTailMain, nTailMain};
+
+params.qbmmParams.batchA1 = batchA1;
+params.qbmmParams.batchA2 = batchA2;
+params.qbmmParams.batchA3 = batchA3;
+params.qbmmParams.batchA4 = batchA4;
+params.qbmmParams.batchB1 = batchB1;
+params.qbmmParams.batchB2 = batchB2;
+params.qbmmParams.batchB3 = batchB3;
+params.qbmmParams.batchB4 = batchB4;
+params.qbmmParams.batchC1 = batchC1;
+params.qbmmParams.batchC2 = batchC2;
+params.qbmmParams.batchC3 = batchC3;
+params.qbmmParams.batchC4 = batchC4;
+params.qbmmParams.biasThreeDim = biasThreeDim;
+params.qbmmParams.x1QuantMode = x1QuantMode;
+params.qbmmParams.x2QuantMode = x2QuantMode;
+params.qbmmParams.kAL1 = kAL1;
+params.qbmmParams.kBL1 = kBL1;
+params.qbmmParams.nBufferNum = nBufferNum;
+params.qbmmParams.baseM = baseM;
+params.qbmmParams.baseN = baseN;
+params.qbmmParams.baseK = baseK;
+params.qbmmParams.isBias = isBias;
+params.qbmmParams.dbL0C = dbL0C;
+params.qbmmParams.bMustHitL2 = bMustHitL2;
+
+params.epilogueParams.x2ScaleGmAddr = scaleGM;
+params.epilogueParams.x1ScaleGmAddr = perTokenScaleGM;
+params.epilogueParams.biasGmAddr = biasGM;
+params.epilogueParams.outGmAddr = yGM;
+params.epilogueParams.m = m;
+params.epilogueParams.n = n;
+params.epilogueParams.baseM = baseM;
+params.epilogueParams.baseN = baseN;
+params.epilogueParams.x1QuantMode = x1QuantMode;
+params.epilogueParams.x2QuantMode = x2QuantMode;
+params.epilogueParams.isBias = isBias != 0U;
+params.epilogueParams.biasDtype = biasDtype;
+
+QBMMKernel kernel;
+kernel(params);
 ```
 
 ## 数据流

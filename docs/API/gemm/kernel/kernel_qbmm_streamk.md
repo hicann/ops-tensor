@@ -208,6 +208,10 @@ tileNum = (mTileNum * nTileNum - tailMNTileNum) + tailMNTileNum * skKTileNum;
 
 ## 调用示例
 
+完整可编译、可运行并带 golden 校验的示例见
+[quant_batch_matmul_kernel_api](../../../../examples/quant_batch_matmul/quant_batch_matmul_kernel_api/README.md)，
+对应 CSV 场景为 `qbmm_mx_streamk`。
+
 ### 组件组装
 
 ```cpp
@@ -217,13 +221,16 @@ using OutType = half;
 using BiasType = float;
 using WorkspaceType = float;
 
+using LayoutA = AscendC::Te::NDExtLayoutPtn;
+using LayoutB = AscendC::Te::NDExtLayoutPtn;
+using LayoutC = AscendC::Te::NDExtLayoutPtn;
 using ProblemShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
 using DispatchPolicy = Blaze::Gemm::MatmulWithScaleMx<0, false, Blaze::Gemm::KernelQbmmMultiBlockStreamK>;
 using EpilogueDispatchPolicy = Blaze::Gemm::MatmulMultiBlockWithStreamK<>;
 
 using BlockMmad = Blaze::Gemm::Block::BlockMmad<
     DispatchPolicy, AType, LayoutA, BType, LayoutB, OutType, LayoutC, BiasType, LayoutC>;
-using BlockEpilogue = Blaze::Gemm::Block::BlockEpilogueMatmulStreamK<
+using BlockEpilogue = Blaze::Epilogue::Block::BlockEpilogueMatmulStreamK<
     WorkspaceType, OutType, EpilogueDispatchPolicy>;
 using BlockScheduler = Blaze::Gemm::Block::BlockSchedulerMatmulStreamK<ProblemShape>;
 using QbmmStreamKKernel = Blaze::Gemm::Kernel::GemmUniversal<
@@ -233,15 +240,24 @@ using QbmmStreamKKernel = Blaze::Gemm::Kernel::GemmUniversal<
 ### 参数准备
 
 ```cpp
-using Params = typename QbmmStreamKKernel::Params;
-Params params{
-    {m, n, k, 1},                         // problem shape，batch 固定为 1
-    {aGM, bGM, cGM, biasGM, scaleAGM, scaleBGM},
-    {cGM, workspaceGM},
-    {usedCoreNum, baseM, baseN, baseK, singleCoreK, kL1},
-    {scaleKL1, dbL0C, bMustHitL2}         // scaleKL1 >= kL1 and scaleKL1 % kL1 == 0
-};
+QbmmStreamKKernel::Params params{};
+params.problemShape = {m, n, k, 1};
+params.mmadParams = {x1GM, x2GM, yGM, biasGM, perTokenScaleGM, scaleGM};
+params.epilogueParams = {yGM, workspaceGM};
+params.schParams.usedCoreNum = usedCoreNum;
+params.schParams.baseM = baseM;
+params.schParams.baseN = baseN;
+params.schParams.baseK = baseK;
+params.schParams.singleCoreK = singleCoreK;
+params.schParams.kL1 = kL1;
+params.schParams.isHf32 = isHf32;
+params.schParams.l2CacheMode = l2CacheMode;
+params.qbmmParams = {scaleKL1, dbL0C, bMustHitL2};
 ```
+
+`scaleKL1` 必须满足 `scaleKL1 >= kL1` 且 `scaleKL1 % kL1 == 0`；
+`singleCoreK` 必须按 64 个原始 K 元素对齐。`perTokenScaleGM` 和 `scaleGM` 分别指向
+A per-token scale 与 B per-group scale。
 
 ### Kernel 执行
 
