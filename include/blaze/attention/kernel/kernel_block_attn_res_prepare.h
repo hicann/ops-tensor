@@ -14,6 +14,7 @@
 #include "blaze/epilogue/block/block_epilogue_block_attn_res_prepare.h"
 #include "blaze/gemm/block/block_mmad_matmul_basic.h"
 #include "blaze/gemm/policy/dispatch_policy.h"
+#include "blaze/gemm/utils/layout_utils.h"
 
 namespace Blaze {
 namespace Attention {
@@ -55,17 +56,6 @@ struct TypedGmParams {
     __gm__ float* softmaxSum{nullptr};
     __gm__ float* workspace{nullptr};
 };
-
-template <typename T>
-__aicore__ inline auto MakeNDExtLayout(int64_t rows, int64_t columns, int64_t rowPitch)
-{
-    auto shape = AscendC::Te::MakeShape(AscendC::Te::MakeShape(AscendC::Std::Int<1>{}, rows),
-                                        AscendC::Te::MakeShape(AscendC::Std::Int<1>{}, columns));
-    auto stride = AscendC::Te::MakeStride(AscendC::Te::MakeStride(AscendC::Std::Int<0>{}, rowPitch),
-                                          AscendC::Te::MakeStride(AscendC::Std::Int<0>{}, AscendC::Std::Int<1>{}));
-    return AscendC::Te::MakePatternLayout<AscendC::Te::NDExtLayoutPtn, AscendC::Te::LayoutTraitDefault<T>>(shape,
-                                                                                                           stride);
-}
 
 template <typename T>
 __aicore__ inline auto MakeBatchedDNExtLayout(int64_t batchCount, int64_t rows, int64_t columns, int64_t batchStride,
@@ -205,7 +195,7 @@ private:
     __aicore__ inline int64_t ReadValidBlocks() const
     {
         auto tensor = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(gm_.validBlocks),
-                                              BlockAttnResPrepareDetail::MakeNDExtLayout<int64_t>(1, 1, 1));
+                                              Gemm::MakeNDExtLayout<int64_t>(1, 1, 1));
         return tensor[AscendC::Te::MakeCoord(static_cast<int64_t>(0), static_cast<int64_t>(0))];
     }
 
@@ -352,7 +342,7 @@ private:
     __aicore__ inline static auto MakeGmTensor(__gm__ T* address, int64_t rows, int64_t columns, int64_t rowPitch)
     {
         return AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(address),
-                                       BlockAttnResPrepareDetail::MakeNDExtLayout<T>(rows, columns, rowPitch));
+                                       Gemm::MakeNDExtLayout<T>(rows, columns, rowPitch));
     }
 
     __aicore__ inline auto MakeCoreWorkspaceTensor(uint32_t coreIndex) const

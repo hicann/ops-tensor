@@ -24,7 +24,9 @@
 #include "interface/reg_compute/kernel_reg_compute_utils.h"
 
 #include "blaze/gemm/utils/common_utils.h"
+#include "blaze/gemm/utils/layout_utils.h"
 #include "tensor_api/tensor.h"
+#include "blaze/epilogue/tile/compute.h"
 
 namespace Blaze {
 namespace Epilogue {
@@ -54,8 +56,6 @@ constexpr uint32_t GELU_MX_FP32_EXP_BIAS_CUBLAS = 0x00007f00;
 constexpr uint32_t GELU_MX_NUMBER_ZERO = 0x00000000;
 constexpr uint32_t GELU_MX_NUMBER_TWO_FIVE_FOUR = 0x000000fe;
 constexpr uint32_t GELU_MX_NUMBER_HALF = 0x00400000;
-constexpr float GELU_MX_NEG_SQRT_EIGHT_OVER_PI = -1.595769121f * 0.044715f;
-constexpr float GELU_MX_TANH_APPROX_FACTOR = 1.0f / 0.044715f;
 constexpr uint32_t GELU_MX_INTERLEAVED_REG_FACTOR = 2;
 constexpr uint32_t GELU_MX_HALF_REG_FACTOR = 2;
 constexpr uint32_t GELU_MX_SCALE_ALG_OCP = 0;
@@ -67,15 +67,6 @@ constexpr float GELU_MX_FP4_E2M1_DST_TYPE_MAX = 6.0f;
 constexpr float GELU_MX_FP4_E2M1_SPECIAL_DST_TYPE_MAX = 7.0f;
 constexpr float GELU_MX_SCALAR_ONE = 1.0f;
 } // namespace
-
-static constexpr AscendC::Reg::DivSpecificMode GELU_MX_DIV_MODE = {
-    AscendC::Reg::MaskMergeMode::ZEROING,
-    true,
-};
-
-static constexpr AscendC::Reg::CastTrait GELU_MX_CAST_FP32_TO_BF16 = {
-    AscendC::Reg::RegLayout::ZERO, AscendC::Reg::SatMode::NO_SAT, AscendC::Reg::MaskMergeMode::ZEROING,
-    AscendC::RoundMode::CAST_RINT};
 
 template <typename DataTypeOut_, typename DataTypeIn_ = float>
 class BlockEpilogueGeluTanhMxQuant {
@@ -687,52 +678,22 @@ private:
         }
     }
 
-    __aicore__ inline void GeluTanh(__ubuf__ bfloat16_t* output, __ubuf__ DataTypeIn* input, uint16_t mSize,
-                                    uint16_t nSize)
-    {
-        constexpr uint16_t elementsPerRepeat = AscendC::VECTOR_REG_WIDTH / sizeof(DataTypeIn);
-        const uint16_t repeatsPerRow = Gemm::CeilDiv(static_cast<uint64_t>(nSize),
-                                                     static_cast<uint64_t>(elementsPerRepeat));
-        const uint32_t sourceRowStride = Gemm::CeilAlign(
-            static_cast<uint32_t>(nSize), static_cast<uint32_t>(AscendC::ONE_BLK_SIZE / sizeof(DataTypeIn)));
-        const uint32_t outputRowStride = Gemm::CeilAlign(static_cast<uint32_t>(nSize),
-                                                         static_cast<uint32_t>(AscendC::ONE_BLK_SIZE));
-        __VEC_SCOPE__
-        {
-            for (uint16_t row = 0; row < mSize; ++row) {
-                uint32_t remaining = nSize;
-                for (uint16_t repeat = 0; repeat < repeatsPerRow; ++repeat) {
-                    AscendC::Reg::RegTensor<bfloat16_t> outputBf16;
-                    AscendC::Reg::RegTensor<float> value;
-                    AscendC::Reg::RegTensor<float> square;
-                    AscendC::Reg::RegTensor<float> cubic;
-                    AscendC::Reg::RegTensor<float> result;
-                    AscendC::Reg::MaskReg mask = AscendC::Reg::UpdateMask<DataTypeIn>(remaining);
-                    const uint32_t sourceOffset = row * sourceRowStride + repeat * elementsPerRepeat;
-                    AscendC::Reg::DataCopy(value, input + sourceOffset);
-                    AscendC::Reg::Mul(square, value, value, mask);
-                    AscendC::Reg::Mul(cubic, square, value, mask);
-                    AscendC::Reg::Axpy(cubic, value, GELU_MX_TANH_APPROX_FACTOR, mask);
-                    AscendC::Reg::Muls(cubic, cubic, GELU_MX_NEG_SQRT_EIGHT_OVER_PI, mask);
-                    AscendC::Reg::Exp(cubic, cubic, mask);
-                    AscendC::Reg::Adds(cubic, cubic, GELU_MX_SCALAR_ONE, mask);
-                    AscendC::Reg::Div<float, &GELU_MX_DIV_MODE>(result, value, cubic, mask);
-                    AscendC::Reg::Cast<bfloat16_t, float, GELU_MX_CAST_FP32_TO_BF16>(outputBf16, result, mask);
-                    const uint32_t outputOffset = row * outputRowStride + repeat * elementsPerRepeat;
-                    AscendC::Reg::DataCopy<bfloat16_t, AscendC::Reg::StoreDist::DIST_PACK_B32>(output + outputOffset,
-                                                                                               outputBf16, mask);
-                }
-            }
-        }
-    }
-
     __aicore__ inline void DoActivationAndQuant(uint16_t mSize, uint32_t slot)
     {
         __ubuf__ int8_t* quantOutput = reinterpret_cast<__ubuf__ int8_t*>(quantOutput_[slot].GetPhyAddr());
         __ubuf__ uint16_t* quantScale = reinterpret_cast<__ubuf__ uint16_t*>(quantScaleOutput_.GetPhyAddr());
-        __ubuf__ DataTypeIn* l0cOutput = reinterpret_cast<__ubuf__ DataTypeIn*>(l0cOutputUb_.GetPhyAddr());
         __ubuf__ bfloat16_t* activation = reinterpret_cast<__ubuf__ bfloat16_t*>(activationResult_.GetPhyAddr());
-        GeluTanh(activation, l0cOutput, mSize, singleN_);
+        const uint32_t nAligned = Gemm::Align32(static_cast<uint32_t>(singleN_));
+        const uint32_t activationUbOffset = static_cast<uint32_t>(
+            reinterpret_cast<uintptr_t>(activationResult_.GetPhyAddr()) - asc_get_phy_buf_addr(0));
+        auto layout = Gemm::MakeNDExtLayout(static_cast<int64_t>(mSize), static_cast<int64_t>(singleN_),
+                                            static_cast<int64_t>(nAligned));
+        auto srcTensor = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB, DataTypeIn>(0),
+                                                 layout);
+        auto dstTensor = AscendC::Te::MakeTensor(
+            AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB, bfloat16_t>(activationUbOffset), layout);
+        Gelu<bfloat16_t, DataTypeIn> gelu;
+        gelu.GeluTanh(srcTensor, dstTensor, mSize, static_cast<uint16_t>(singleN_));
 
         const uint32_t alignedN = Gemm::CeilAlign(static_cast<uint32_t>(singleN_),
                                                   static_cast<uint32_t>(AscendC::ONE_BLK_SIZE));

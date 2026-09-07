@@ -13,7 +13,7 @@
 | [block_epilogue_flat_quant](./block/block_epilogue_flat_quant.md) | FlatQuant AIV 侧 MX FP4 量化后处理，bf16→eMax→E8M0 scale→FP4 量化 |
 | [block_epilogue_gelu_tanh_mx_quant](./block/block_epilogue_gelu_tanh_mx_quant.md) | MIX 模板 GeluTanh + MXFP8/MXFP4 在线量化，输出 y 与 E8M0 yScale |
 | [block_epilogue_block_attn_res_prepare](./block/block_epilogue_block_attn_res_prepare.md) | BlockAttnResPrepare AIV 后处理，执行 V 平方和、RMS-softmax、空输入处理和结果搬运 |
-| `tile/{reduce_square,rms_softmax,initialize_empty_softmax}.h` | BlockAttnResPrepare 后处理依赖的 Tensor 级 Vector Tile |
+| [tile](./tile/README.md) | Tile 级可复用计算组件（compute.h 架构派发 + arch35 实现：Gelu、RmsSoftmax 等） |
 
 ## 公共框架
 

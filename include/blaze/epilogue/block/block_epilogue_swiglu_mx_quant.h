@@ -22,6 +22,7 @@
 #endif
 
 #include "blaze/gemm/utils/common_utils.h"
+#include "blaze/gemm/utils/layout_utils.h"
 #include "tensor_api/tensor.h"
 
 namespace Blaze {
@@ -148,16 +149,6 @@ public:
     __aicore__ inline void UpdateGlobalAddr(const OutputOffsets& baseOffsets);
 
 private:
-    __aicore__ inline static auto MakeNDExtLayout(int64_t rows, int64_t cols, int64_t rowPitch)
-    {
-        auto shape = AscendC::Te::MakeShape(AscendC::Te::MakeShape(AscendC::Std::Int<1>{}, rows),
-                                            AscendC::Te::MakeShape(AscendC::Std::Int<1>{}, cols));
-        auto stride = AscendC::Te::MakeStride(AscendC::Te::MakeStride(AscendC::Std::Int<0>{}, rowPitch),
-                                              AscendC::Te::MakeStride(AscendC::Std::Int<0>{}, AscendC::Std::Int<1>{}));
-        return AscendC::Te::MakePatternLayout<AscendC::Te::NDExtLayoutPtn, AscendC::Te::LayoutTraitDefault<float>>(
-            shape, stride);
-    }
-
     template <class T>
     __aicore__ inline static __ubuf__ T* GetUbAddr(uint64_t byteOffset)
     {
@@ -320,8 +311,8 @@ __aicore__ inline void BlockEpilogueSwigluMxQuant<DataTypeOut_, DataTypeIn_, Dat
     nUbAligned = static_cast<int64_t>(Blaze::Gemm::Align64(static_cast<uint64_t>(singleN_)));
     gmRowPitch = n_;
 
-    auto ubLayout = MakeNDExtLayout(static_cast<int64_t>(blockCount), nValid, nUbAligned);
-    auto gmLayout = MakeNDExtLayout(static_cast<int64_t>(blockCount), nValid, gmRowPitch);
+    auto ubLayout = Gemm::MakeNDExtLayout(static_cast<int64_t>(blockCount), nValid, nUbAligned);
+    auto gmLayout = Gemm::MakeNDExtLayout(static_cast<int64_t>(blockCount), nValid, gmRowPitch);
     auto outUb = AscendC::Te::MakeTensor(
         AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB, int8_t>(quantOutputUbOffset_), ubLayout);
     auto outGm = AscendC::Te::MakeTensor(
@@ -339,9 +330,9 @@ __aicore__ inline void BlockEpilogueSwigluMxQuant<DataTypeOut_, DataTypeIn_, Dat
         Blaze::Gemm::CeilDiv(static_cast<uint64_t>(singleN_), Blaze::Gemm::MXFP_DIVISOR_SIZE) *
         Blaze::Gemm::MXFP_MULTI_BASE_SIZE);
 
-    auto ubLayout = MakeNDExtLayout(static_cast<int64_t>(blockCount), blockScaleN,
-                                    static_cast<int64_t>(AscendC::ONE_BLK_SIZE));
-    auto gmLayout = MakeNDExtLayout(static_cast<int64_t>(blockCount), blockScaleN, scaleN_);
+    auto ubLayout = Gemm::MakeNDExtLayout(static_cast<int64_t>(blockCount), blockScaleN,
+                                          static_cast<int64_t>(AscendC::ONE_BLK_SIZE));
+    auto gmLayout = Gemm::MakeNDExtLayout(static_cast<int64_t>(blockCount), blockScaleN, scaleN_);
     auto outUb = AscendC::Te::MakeTensor(
         AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB, int8_t>(quantScaleBlockOutputUbOffset_), ubLayout);
     auto outGm = AscendC::Te::MakeTensor(

@@ -89,5 +89,18 @@ struct IsScaleNz {
     static constexpr bool value = GetScaleNzValue<LayoutPattern>();
 };
 
+// Build a row-major hierarchical ND (NDExtLayoutPtn) layout with an explicit row pitch.
+// Shape = ((1, rows), (1, cols)); Stride = ((0, rowPitch), (0, 1)).
+template <typename T = float>
+__aicore__ inline auto MakeNDExtLayout(int64_t rows, int64_t cols, int64_t rowPitch)
+{
+    auto shape = AscendC::Te::MakeShape(AscendC::Te::MakeShape(AscendC::Std::Int<1>{}, rows),
+                                        AscendC::Te::MakeShape(AscendC::Std::Int<1>{}, cols));
+    auto stride = AscendC::Te::MakeStride(AscendC::Te::MakeStride(AscendC::Std::Int<0>{}, rowPitch),
+                                          AscendC::Te::MakeStride(AscendC::Std::Int<0>{}, AscendC::Std::Int<1>{}));
+    return AscendC::Te::MakePatternLayout<AscendC::Te::NDExtLayoutPtn, AscendC::Te::LayoutTraitDefault<T>>(shape,
+                                                                                                           stride);
+}
+
 } // namespace Gemm
 } // namespace Blaze

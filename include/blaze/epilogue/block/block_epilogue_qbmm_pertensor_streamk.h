@@ -20,6 +20,7 @@
 #include "kernel_operator.h"
 #endif
 #include "blaze/gemm/utils/common_utils.h"
+#include "blaze/gemm/utils/layout_utils.h"
 #include "blaze/gemm/policy/dispatch_policy.h"
 #include "tensor_api/tensor.h"
 
@@ -345,23 +346,13 @@ private:
         dequantPongOffset_ = CeilAlign(offset, static_cast<uint64_t>(AscendC::GetVecLen()));
     }
 
-    __aicore__ inline static auto MakeNDExtLayout(int64_t rows, int64_t cols, int64_t rowPitch)
-    {
-        auto shape = AscendC::Te::MakeShape(AscendC::Te::MakeShape(AscendC::Std::Int<1>{}, rows),
-                                            AscendC::Te::MakeShape(AscendC::Std::Int<1>{}, cols));
-        auto stride = AscendC::Te::MakeStride(AscendC::Te::MakeStride(AscendC::Std::Int<0>{}, rowPitch),
-                                              AscendC::Te::MakeStride(AscendC::Std::Int<0>{}, AscendC::Std::Int<1>{}));
-        return AscendC::Te::MakePatternLayout<AscendC::Te::NDExtLayoutPtn, AscendC::Te::LayoutTraitDefault<float>>(
-            shape, stride);
-    }
-
     __aicore__ inline void CopyWorkspaceToUb()
     {
         const int64_t rows = static_cast<int64_t>(kCnt_);
         const int64_t cols = static_cast<int64_t>(reductionTileParams_.packedElements);
         // Each split-K partial occupies one fixed-size GM tile; pack its valid prefix contiguously in UB.
-        auto ubLayout = MakeNDExtLayout(rows, cols, cols);
-        auto gmLayout = MakeNDExtLayout(rows, cols, static_cast<int64_t>(BLOCK_BASE_M * BLOCK_BASE_N));
+        auto ubLayout = Gemm::MakeNDExtLayout(rows, cols, cols);
+        auto gmLayout = Gemm::MakeNDExtLayout(rows, cols, static_cast<int64_t>(BLOCK_BASE_M * BLOCK_BASE_N));
         auto workspaceUb = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB, WorkspaceType>(0),
                                                    ubLayout);
         auto workspaceGm = AscendC::Te::MakeTensor(
@@ -422,8 +413,8 @@ private:
     __aicore__ inline void CopyBiasToUbTyped(int64_t localN, int64_t offsetBias)
     {
         auto copyGM2UB = AscendC::Te::MakeCopy(AscendC::Te::CopyGM2UB{});
-        auto ubLayout = MakeNDExtLayout(1, localN, AlignedUbPitch<ActualBiasType>(localN));
-        auto gmLayout = MakeNDExtLayout(1, localN, localN);
+        auto ubLayout = Gemm::MakeNDExtLayout(1, localN, AlignedUbPitch<ActualBiasType>(localN));
+        auto gmLayout = Gemm::MakeNDExtLayout(1, localN, localN);
         auto biasUb = AscendC::Te::MakeTensor(
             AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB, ActualBiasType>(biasUbOffset_), ubLayout);
         auto biasGm = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(
@@ -579,8 +570,8 @@ private:
     {
         uint64_t dequantOffset = pingPongId_ == 0U ? dequantPingOffset_ : dequantPongOffset_;
         uint64_t nDstAligned = CeilAlign(static_cast<uint64_t>(localN), static_cast<uint64_t>(OUT_ALIGN));
-        auto ubLayout = MakeNDExtLayout(mSize, localN, static_cast<int64_t>(nDstAligned));
-        auto gmLayout = MakeNDExtLayout(mSize, localN, static_cast<int64_t>(n_));
+        auto ubLayout = Gemm::MakeNDExtLayout(mSize, localN, static_cast<int64_t>(nDstAligned));
+        auto gmLayout = Gemm::MakeNDExtLayout(mSize, localN, static_cast<int64_t>(n_));
         auto outUb = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB, OutType>(dequantOffset),
                                              ubLayout);
         auto outGm = AscendC::Te::MakeTensor(

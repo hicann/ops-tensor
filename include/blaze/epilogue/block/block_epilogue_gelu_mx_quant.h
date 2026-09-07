@@ -21,7 +21,9 @@
 #include "kernel_operator.h"
 #endif
 #include "blaze/gemm/utils/common_utils.h"
+#include "blaze/gemm/utils/layout_utils.h"
 #include "tensor_api/tensor.h"
+#include "blaze/epilogue/tile/compute.h"
 
 namespace Blaze {
 namespace Epilogue {
@@ -49,9 +51,6 @@ constexpr uint32_t Y_IDX = 0;
 constexpr uint32_t Y_SCALE_IDX = 1;
 constexpr uint32_t BLOCK_SIZE = 32;
 constexpr int64_t MX_SCALE_ALIGN_SIZE = 2;
-constexpr float TANH_APPROX_FACTOR = 1.0f / 0.044715f;
-constexpr float NEG_SQRT_EIGHT_OVER_PI = -1.595769121f * 0.044715f;
-constexpr float ONE_OVER_SQRT_TWO = 0.707106781f;
 
 constexpr uint32_t MAX_SINGLE_MN = 128 * 256;
 constexpr uint32_t MAX_SINGLE_SCALE_NUM = MAX_SINGLE_MN / AscendC::ONE_BLK_SIZE;
@@ -120,16 +119,6 @@ public:
     __aicore__ inline void UpdateNextProblem(const ProblemShape& problemShape);
 
 private:
-    __aicore__ inline static auto MakeNDExtLayout(int64_t rows, int64_t cols, int64_t rowPitch)
-    {
-        auto shape = AscendC::Te::MakeShape(AscendC::Te::MakeShape(AscendC::Std::Int<1>{}, rows),
-                                            AscendC::Te::MakeShape(AscendC::Std::Int<1>{}, cols));
-        auto stride = AscendC::Te::MakeStride(AscendC::Te::MakeStride(AscendC::Std::Int<0>{}, rowPitch),
-                                              AscendC::Te::MakeStride(AscendC::Std::Int<0>{}, AscendC::Std::Int<1>{}));
-        return AscendC::Te::MakePatternLayout<AscendC::Te::NDExtLayoutPtn, AscendC::Te::LayoutTraitDefault<float>>(
-            shape, stride);
-    }
-
     template <class T>
     __aicore__ inline static __ubuf__ T* GetUbAddr(uint64_t byteOffset)
     {
@@ -143,9 +132,6 @@ private:
     __aicore__ inline void TransFp4MxOutLayout(uint16_t mSize);
     __aicore__ inline void VFDoGeluAndQuantForMX(__ubuf__ int8_t* outputDst, __ubuf__ uint16_t* scaleDst,
                                                  uint16_t mSize, uint16_t nSize);
-    __aicore__ inline void GeluTanh(__ubuf__ bfloat16_t* geluResAddr, uint16_t mSize, uint16_t nSize,
-                                    uint32_t nAligned);
-    __aicore__ inline void GeluErf(__ubuf__ bfloat16_t* geluResAddr, uint16_t mSize, uint16_t nSize, uint32_t nAligned);
     __aicore__ inline void ComputeScaleOCP(__ubuf__ uint16_t* maxExpAddr, __ubuf__ uint16_t* mxScaleLocalAddr,
                                            __ubuf__ uint16_t* halfScaleLocalAddr, uint32_t totalScaleInUB,
                                            uint16_t loopNumScale);
@@ -307,8 +293,8 @@ __aicore__ inline void BlockEpilogueGeluMxQuant<DataTypeOut_, DataTypeIn_>::Copy
     }
     int64_t nUbAligned = static_cast<int64_t>(Gemm::Align32(static_cast<uint64_t>(nValid)));
 
-    auto ubLayout = MakeNDExtLayout(static_cast<int64_t>(blockCount), nValid, nUbAligned);
-    auto gmLayout = MakeNDExtLayout(static_cast<int64_t>(blockCount), nValid, gmRowPitch);
+    auto ubLayout = Gemm::MakeNDExtLayout(static_cast<int64_t>(blockCount), nValid, nUbAligned);
+    auto gmLayout = Gemm::MakeNDExtLayout(static_cast<int64_t>(blockCount), nValid, gmRowPitch);
     auto outUb = AscendC::Te::MakeTensor(
         AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB, int8_t>(quantOutputUbOffset_), ubLayout);
     if constexpr (AscendC::IsSameType<DataTypeOut, fp4x2_e2m1_t>::value) {
@@ -332,8 +318,8 @@ __aicore__ inline void BlockEpilogueGeluMxQuant<DataTypeOut_, DataTypeIn_>::Copy
     int64_t nUbAligned = static_cast<int64_t>(AscendC::ONE_BLK_SIZE);
     int64_t gmRowPitch = scaleNAlign_;
 
-    auto ubLayout = MakeNDExtLayout(static_cast<int64_t>(blockCount), nValid, nUbAligned);
-    auto gmLayout = MakeNDExtLayout(static_cast<int64_t>(blockCount), nValid, gmRowPitch);
+    auto ubLayout = Gemm::MakeNDExtLayout(static_cast<int64_t>(blockCount), nValid, nUbAligned);
+    auto gmLayout = Gemm::MakeNDExtLayout(static_cast<int64_t>(blockCount), nValid, gmRowPitch);
     auto outUb = AscendC::Te::MakeTensor(
         AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB, int8_t>(quantScaleBlockOutputUbOffset_), ubLayout);
     auto outGm = AscendC::Te::MakeTensor(
@@ -784,159 +770,6 @@ __aicore__ inline void BlockEpilogueGeluMxQuant<DataTypeOut_, DataTypeIn_>::Comp
 }
 
 template <typename DataTypeOut_, typename DataTypeIn_>
-__aicore__ inline void BlockEpilogueGeluMxQuant<DataTypeOut_, DataTypeIn_>::GeluTanh(__ubuf__ bfloat16_t* geluResAddr,
-                                                                                     uint16_t mSize, uint16_t nSize,
-                                                                                     uint32_t nAligned)
-{
-    constexpr uint16_t sizePerRepeat = AscendC::VECTOR_REG_WIDTH / sizeof(float); // 需要转换成float32计算
-    uint16_t OneRowRepeatTimes = Gemm::CeilDiv(nSize, sizePerRepeat);             // 计算为64位对齐
-
-    __ubuf__ DataTypeIn* src = GetUbAddr<DataTypeIn>(0);
-    AscendC::Reg::RegTensor<float, AscendC::Reg::RegTraitNumOne> vregInput;
-    AscendC::Reg::RegTensor<float, AscendC::Reg::RegTraitNumOne> vregInputSqr;
-    AscendC::Reg::RegTensor<float, AscendC::Reg::RegTraitNumOne> vregInputCub;
-    AscendC::Reg::RegTensor<float, AscendC::Reg::RegTraitNumOne> vregOutput;
-    AscendC::Reg::RegTensor<bfloat16_t, AscendC::Reg::RegTraitNumOne> vregOutput16; // gelu总是输出bfloat16
-    static constexpr AscendC::Reg::CastTrait ctHalf2Fp32Zero = {
-        AscendC::Reg::RegLayout::ZERO, AscendC::Reg::SatMode::UNKNOWN, AscendC::Reg::MaskMergeMode::ZEROING,
-        AscendC::RoundMode::UNKNOWN};
-    static constexpr AscendC::Reg::CastTrait ctFp32toBf16 = {
-        AscendC::Reg::RegLayout::ZERO, AscendC::Reg::SatMode::NO_SAT, AscendC::Reg::MaskMergeMode::ZEROING,
-        AscendC::RoundMode::CAST_RINT};
-    AscendC::Reg::MaskReg mask;
-    if constexpr (AscendC::IsSameType<DataTypeIn, float>::value) {
-        __VEC_SCOPE__
-        {
-            // 每行计算一次
-            for (uint16_t mIdx = 0; mIdx < mSize; mIdx++) {
-                uint32_t count = nSize;
-                for (uint16_t vfBlockIdx = 0; vfBlockIdx < OneRowRepeatTimes; vfBlockIdx++) {
-                    mask = AscendC::Reg::UpdateMask<float>(count);
-                    uint32_t offset = mIdx * nAligned + vfBlockIdx * sizePerRepeat;
-                    AscendC::Reg::DataCopy(vregInput, src + offset);
-                    AscendC::Reg::Mul(vregInputSqr, vregInput, vregInput, mask);
-                    AscendC::Reg::Mul(vregInputCub, vregInputSqr, vregInput, mask);
-                    AscendC::Reg::Axpy(vregInputCub, vregInput, TANH_APPROX_FACTOR, mask);
-                    AscendC::Reg::Muls(vregInputCub, vregInputCub, NEG_SQRT_EIGHT_OVER_PI, mask);
-                    AscendC::Reg::Exp(vregInputCub, vregInputCub, mask);
-                    AscendC::Reg::Adds(vregInputCub, vregInputCub, 1.0f, mask);
-                    AscendC::Reg::Div(vregOutput, vregInput, vregInputCub, mask);
-                    AscendC::Reg::Cast<bfloat16_t, float, ctFp32toBf16>(vregOutput16, vregOutput, mask);
-                    AscendC::Reg::DataCopy<bfloat16_t, AscendC::Reg::StoreDist::DIST_PACK_B32>(geluResAddr + offset,
-                                                                                               vregOutput16, mask);
-                }
-            }
-        }
-    } else {
-        AscendC::Reg::RegTensor<DataTypeIn, AscendC::Reg::RegTraitNumOne> vregInput16;
-        __VEC_SCOPE__
-        {
-            for (uint16_t mIdx = 0; mIdx < mSize; mIdx++) { // 需要计算m次
-                uint32_t count = nSize;
-                for (uint16_t vfBlockIdx = 0; vfBlockIdx < OneRowRepeatTimes; vfBlockIdx++) {
-                    mask = AscendC::Reg::UpdateMask<float>(count);
-                    uint32_t offset = mIdx * nAligned + vfBlockIdx * sizePerRepeat;
-                    AscendC::Reg::DataCopy<DataTypeIn, AscendC::Reg::LoadDist::DIST_UNPACK_B16>(vregInput16,
-                                                                                                src + offset);
-                    AscendC::Reg::Cast<float, DataTypeIn, ctHalf2Fp32Zero>(vregInput, vregInput16, mask);
-                    AscendC::Reg::Mul(vregInputSqr, vregInput, vregInput, mask);
-                    AscendC::Reg::Mul(vregInputCub, vregInputSqr, vregInput, mask);
-                    AscendC::Reg::Axpy(vregInputCub, vregInput, TANH_APPROX_FACTOR, mask);
-                    AscendC::Reg::Muls(vregInputCub, vregInputCub, NEG_SQRT_EIGHT_OVER_PI, mask);
-                    AscendC::Reg::Exp(vregInputCub, vregInputCub, mask);
-                    AscendC::Reg::Adds(vregInputCub, vregInputCub, 1.0f, mask);
-                    AscendC::Reg::Div(vregOutput, vregInput, vregInputCub, mask);
-                    AscendC::Reg::Cast<bfloat16_t, float, ctFp32toBf16>(vregOutput16, vregOutput, mask);
-                    AscendC::Reg::DataCopy<bfloat16_t, AscendC::Reg::StoreDist::DIST_PACK_B32>(geluResAddr + offset,
-                                                                                               vregOutput16, mask);
-                }
-            }
-        }
-    }
-}
-
-template <typename DataTypeOut_, typename DataTypeIn_>
-__aicore__ inline void BlockEpilogueGeluMxQuant<DataTypeOut_, DataTypeIn_>::GeluErf(__ubuf__ bfloat16_t* geluResAddr,
-                                                                                    uint16_t mSize, uint16_t nSize,
-                                                                                    uint32_t nAligned)
-{
-    // 0.5*x*(1+erf(x/√2)
-    constexpr uint16_t sizePerRepeat = AscendC::VECTOR_REG_WIDTH / sizeof(float);
-    uint16_t OneRowRepeatTimes = Gemm::CeilDiv(nSize, sizePerRepeat); // 计算为64位对齐
-
-    AscendC::Reg::RegTensor<float, AscendC::Reg::RegTraitNumOne> vregInput1;
-    AscendC::Reg::RegTensor<float, AscendC::Reg::RegTraitNumOne> vregInput2;
-    AscendC::Reg::RegTensor<float, AscendC::Reg::RegTraitNumOne> vregInputAdds;
-    AscendC::Reg::RegTensor<float, AscendC::Reg::RegTraitNumOne> vregInputMuls;
-    AscendC::Reg::RegTensor<float, AscendC::Reg::RegTraitNumOne> vregOutput;
-    AscendC::Reg::RegTensor<bfloat16_t, AscendC::Reg::RegTraitNumOne> vregOutput16; // gelu总是输出bfloat16
-    AscendC::Reg::MaskReg mask;
-    static constexpr AscendC::Reg::CastTrait ctFp32toBf16 = {
-        AscendC::Reg::RegLayout::ZERO, AscendC::Reg::SatMode::NO_SAT, AscendC::Reg::MaskMergeMode::ZEROING,
-        AscendC::RoundMode::CAST_RINT};
-    static constexpr AscendC::ErfConfig erfConfig = {AscendC::ErfAlgo::SUBSECTION_POLYNOMIAL_APPROXIMATION};
-
-    __ubuf__ DataTypeIn* srcInput = GetUbAddr<DataTypeIn>(0);
-    __ubuf__ float* erfAddr = GetUbAddr<float>(erfTmpUbOffset_);
-    __ubuf__ float* fp32Addr = GetUbAddr<float>(fp32TmpUbOffset_);
-
-    AscendC::LocalTensor<DataTypeIn> srcLocal{AscendC::TPosition::VECIN, 0, MAX_SINGLE_MN};
-    AscendC::LocalTensor<float> erfLocal{AscendC::TPosition::VECCALC, static_cast<uint32_t>(erfTmpUbOffset_),
-                                         params_->baseN};
-    AscendC::LocalTensor<float> geluFp32Local{AscendC::TPosition::VECCALC, static_cast<uint32_t>(geluFp32TmpUbOffset_),
-                                              params_->baseN};
-    AscendC::LocalTensor<float> fp32Local{AscendC::TPosition::VECCALC, static_cast<uint32_t>(fp32TmpUbOffset_),
-                                          params_->baseN};
-
-    if constexpr (AscendC::IsSameType<DataTypeIn, float>::value) {
-        __ubuf__ float* src = (__ubuf__ float*)srcInput;
-        for (uint32_t mIdx = 0; mIdx < mSize; mIdx++) {
-            AscendC::Muls(geluFp32Local, srcLocal[mIdx * nAligned], ONE_OVER_SQRT_TWO, nSize);
-            AscendC::Erf<float, false, erfConfig>(erfLocal, geluFp32Local, nSize);
-            uint32_t count = nSize;
-            __VEC_SCOPE__
-            {
-                for (uint16_t vfBlockIdx = 0; vfBlockIdx < OneRowRepeatTimes; vfBlockIdx++) {
-                    mask = AscendC::Reg::UpdateMask<float>(count);
-                    uint32_t mnOffset = mIdx * nAligned + vfBlockIdx * sizePerRepeat;
-                    AscendC::Reg::DataCopy(vregInput1, (__ubuf__ float*)(erfAddr + vfBlockIdx * sizePerRepeat));
-                    AscendC::Reg::DataCopy(vregInput2, (__ubuf__ float*)(src + mnOffset));
-                    AscendC::Reg::Adds(vregInputAdds, vregInput1, (float)1.0, mask);
-                    AscendC::Reg::Muls(vregInputMuls, vregInput2, (float)0.5, mask);
-                    AscendC::Reg::Mul(vregOutput, vregInputAdds, vregInputMuls, mask);
-                    AscendC::Reg::Cast<bfloat16_t, float, ctFp32toBf16>(vregOutput16, vregOutput, mask);
-                    AscendC::Reg::DataCopy<bfloat16_t, AscendC::Reg::StoreDist::DIST_PACK_B32>(geluResAddr + mnOffset,
-                                                                                               vregOutput16, mask);
-                }
-            }
-        }
-    } else {
-        for (uint32_t mIdx = 0; mIdx < mSize; mIdx++) {
-            AscendC::Cast(fp32Local, srcLocal[mIdx * nAligned], AscendC::RoundMode::CAST_NONE, nSize);
-            AscendC::Muls(geluFp32Local, fp32Local, ONE_OVER_SQRT_TWO, nSize);
-            AscendC::Erf<float, false, erfConfig>(erfLocal, geluFp32Local, nSize);
-            uint32_t count = nSize;
-            __VEC_SCOPE__
-            {
-                for (uint16_t vfBlockIdx = 0; vfBlockIdx < OneRowRepeatTimes; vfBlockIdx++) {
-                    mask = AscendC::Reg::UpdateMask<float>(count);
-                    uint32_t nOffset = vfBlockIdx * sizePerRepeat;
-                    uint32_t mnOffset = mIdx * nAligned + nOffset;
-                    AscendC::Reg::DataCopy(vregInput1, (__ubuf__ float*)(erfAddr + nOffset));
-                    AscendC::Reg::DataCopy(vregInput2, (__ubuf__ float*)(fp32Addr + nOffset));
-                    AscendC::Reg::Adds(vregInputAdds, vregInput1, (float)1.0, mask);
-                    AscendC::Reg::Muls(vregInputMuls, vregInput2, (float)0.5, mask);
-                    AscendC::Reg::Mul(vregOutput, vregInputAdds, vregInputMuls, mask);
-                    AscendC::Reg::Cast<bfloat16_t, float, ctFp32toBf16>(vregOutput16, vregOutput, mask);
-                    AscendC::Reg::DataCopy<bfloat16_t, AscendC::Reg::StoreDist::DIST_PACK_B32>(geluResAddr + mnOffset,
-                                                                                               vregOutput16, mask);
-                }
-            }
-        }
-    }
-}
-
-template <typename DataTypeOut_, typename DataTypeIn_>
 __aicore__ inline void BlockEpilogueGeluMxQuant<DataTypeOut_, DataTypeIn_>::VFDoGeluAndQuantForMX(
     __ubuf__ int8_t* outputDst, __ubuf__ uint16_t* scaleDst, uint16_t mSize, uint16_t nSize)
 {
@@ -958,10 +791,22 @@ __aicore__ inline void BlockEpilogueGeluMxQuant<DataTypeOut_, DataTypeIn_>::VFDo
             }
         }
     }
+    auto layout = Gemm::MakeNDExtLayout(static_cast<int64_t>(mSize), static_cast<int64_t>(nSize),
+                                        static_cast<int64_t>(nAligned));
+    auto srcTensor = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB, DataTypeIn>(0), layout);
+    auto dstTensor = AscendC::Te::MakeTensor(
+        AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB, bfloat16_t>(geluResUbOffset_), layout);
+    Gelu<bfloat16_t, DataTypeIn> gelu;
     if (params_->geluAlg == GeluAlg::ERF) {
-        GeluErf(geluResAddr, mSize, nSize, nAligned);
+        auto erfTensor = AscendC::Te::MakeTensor(
+            AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB, float>(erfTmpUbOffset_), layout);
+        auto fp32Tensor = AscendC::Te::MakeTensor(
+            AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB, float>(fp32TmpUbOffset_), layout);
+        auto geluFp32Tensor = AscendC::Te::MakeTensor(
+            AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB, float>(geluFp32TmpUbOffset_), layout);
+        gelu.GeluErf(srcTensor, dstTensor, erfTensor, fp32Tensor, geluFp32Tensor, mSize, nSize);
     } else {
-        GeluTanh(geluResAddr, mSize, nSize, nAligned);
+        gelu.GeluTanh(srcTensor, dstTensor, mSize, nSize);
     }
 
     uint32_t totalDataInUb = mSize * nAligned;
