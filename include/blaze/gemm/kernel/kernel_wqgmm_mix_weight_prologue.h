@@ -373,7 +373,7 @@ __aicore__ inline WQGMM_MX_PROLOGUE_CLASS::GroupedWeightPrologueMx(bool hasBias)
         SetFlag<HardEvent::MTE3_V>(VEC_EVENT_ID_TRANS_SCALE_MTE3_TO_V + idx);
     }
 
-    auto transIdLayout = AscendC::Te::MakeFrameLayout<AscendC::Te::NDExtLayoutPtn>(1, 128);
+    auto transIdLayout = AscendC::Te::MakeFrameLayout<AscendC::Te::NDExtLayoutPtn>(1, Tile::MX_SCALE_TRANS_ID_SIZE);
     auto transIdGm = AscendC::Te::MakeTensor(
         AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>((__gm__ uint16_t*)Tile::MX_SCALE_TRANS_ID), transIdLayout);
     auto transIdUb = AscendC::Te::MakeTensor(
@@ -491,29 +491,30 @@ __aicore__ inline void WQGMM_MX_PROLOGUE_CLASS::HandleMxScale(const WeightProlog
         AscendC::Te::MakeShape(scaleKReal, vecNSize));
 
     WaitVectorToMTE2();
-    auto scaleInputLayout = AscendC::Te::MakeFrameLayout<AscendC::Te::NDExtLayoutPtn>(1,
-                                                                                      WEIGHT_4BIT_SINGLE_BUFFER_SIZE);
-    auto scaleInput = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB, uint8_t>(
-                                                  WEIGHT_4BIT_OFFSETS[ubMte2LoopIdx_ & (UB_MTE2_BUFFER_NUM - 1)]),
-                                              scaleInputLayout);
-    Tile::CopyMxScaleGmToUb(gmScaleSlice, (__ubuf__ uint8_t*)scaleInput.Data().Get(), vecNSize, scaleKReal);
+    // Keep the 160-byte physical row stride while slicing to the active K/N.
+    auto scaleInputLayout = AscendC::Te::MakeFrameLayout<AscendC::Te::ScaleBDNLayoutPtn>(
+        AscendC::Std::Int<Tile::MX_SCALE_INPUT_ROW_STRIDE>{}, vecNSize);
+    auto scaleInputBase = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB, fp8_e8m0_t>(
+                                                      WEIGHT_4BIT_OFFSETS[ubMte2LoopIdx_ & (UB_MTE2_BUFFER_NUM - 1)]),
+                                                  scaleInputLayout);
+    auto scaleInput = scaleInputBase.Slice(AscendC::Te::MakeCoord(0, 0), AscendC::Te::MakeShape(scaleKReal, vecNSize));
+    auto copyGM2UBMxScale = AscendC::Te::MakeCopy(Tile::CopyGM2UBMxScale{});
+    AscendC::Te::Copy(copyGM2UBMxScale, scaleInput, gmScaleSlice);
     SetFlag<HardEvent::MTE2_V>(EVENT_ID_MTE2_TO_V);
     WaitFlag<HardEvent::MTE2_V>(EVENT_ID_MTE2_TO_V);
 
     uint64_t scaleOutputBuf = scaleComputeLoopIdx_ & (MX_SCALE_OUTPUT_BUFFER_NUM - 1);
     WaitFlag<HardEvent::MTE3_V>(VEC_EVENT_ID_TRANS_SCALE_MTE3_TO_V + scaleOutputBuf);
-    auto scaleOutputLayout = AscendC::Te::MakeFrameLayout<AscendC::Te::NDExtLayoutPtn>(
-        1, MX_SCALE_OUTPUT_SINGLE_BUFFER_SIZE / sizeof(uint16_t));
+    auto scaleOutputLayout = AscendC::Te::MakeFrameLayout<AscendC::Te::NNLayoutPtn, AscendC::Std::Int<SCALE_C0>>(
+        scaleKReal, vecNSize);
     auto scaleOutput = AscendC::Te::MakeTensor(
-        AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB, uint16_t>(
+        AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB, fp8_e8m0_t>(
             MX_SCALE_OUTPUT_OFFSET + scaleOutputBuf * MX_SCALE_OUTPUT_SINGLE_BUFFER_SIZE),
         scaleOutputLayout);
-    auto transIdLayout = AscendC::Te::MakeFrameLayout<AscendC::Te::NDExtLayoutPtn>(1, 128);
+    auto transIdLayout = AscendC::Te::MakeFrameLayout<AscendC::Te::NDExtLayoutPtn>(1, Tile::MX_SCALE_TRANS_ID_SIZE);
     auto transId = AscendC::Te::MakeTensor(
         AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB, uint16_t>(MX_SCALE_TRANS_ID_OFFSET), transIdLayout);
-    Tile::MxScaleTranspose::Transpose((__ubuf__ uint16_t*)scaleInput.Data().Get(),
-                                      (__ubuf__ uint16_t*)scaleOutput.Data().Get(),
-                                      (__ubuf__ uint16_t*)transId.Data().Get(), vecNSize, scaleKReal);
+    Tile::MxScaleTranspose::Transpose(scaleOutput, scaleInput, transId);
     SetFlag<HardEvent::V_MTE3>(0);
     WaitFlag<HardEvent::V_MTE3>(0);
 
@@ -528,9 +529,8 @@ __aicore__ inline void WQGMM_MX_PROLOGUE_CLASS::HandleMxScale(const WeightProlog
                                            scaleL1Layout);
     auto scaleL1Slice = scaleL1.Slice(AscendC::Te::MakeCoord(0, vecNOffset),
                                       AscendC::Te::MakeShape(scaleKReal, vecNSize));
-    uint32_t copySize = static_cast<uint32_t>(CeilAlign(vecNSize, static_cast<uint64_t>(BLOCK_CUBE)) * scaleKReal);
-    Tile::CopyMxScaleUbToL1((__cbuf__ void*)scaleL1Slice.Data().Get(), (__ubuf__ void*)scaleOutput.Data().Get(),
-                            copySize);
+    auto copyUB2L1MxScale = AscendC::Te::MakeCopy(Tile::CopyUB2L1MxScale{});
+    AscendC::Te::Copy(copyUB2L1MxScale, scaleL1Slice, scaleOutput);
 
     SetFlag<HardEvent::MTE3_V>(VEC_EVENT_ID_TRANS_SCALE_MTE3_TO_V + scaleOutputBuf);
     SetVectorToMTE2();
