@@ -13,7 +13,7 @@ Attention Block 层矩阵乘计算组件的基础框架。与 Gemm 模块的 `Bl
 
 ```cpp
 template <class DispatchPolicy_, class QType_, class LayoutQ_, class KType_, class LayoutK_, class VType_,
-           class LayoutV_, class OutType_, class LayoutOut_>
+           class LayoutV_, class OutType_, class LayoutOut_, class... ExtArgs_>
 class BlockMmad;
 ```
 
@@ -30,6 +30,7 @@ class BlockMmad;
 | LayoutV_ | V 矩阵布局类型 |
 | OutType_ | Out 矩阵（输出）数据类型 |
 | LayoutOut_ | Out 矩阵布局类型 |
+| ExtArgs_ | 可变模板参数，供后续 `DispatchPolicy` 特化扩展携带额外类型参数，不影响原有 9 个参数的顺序与语义 |
 
 ### SFINAE 分发机制
 
@@ -37,7 +38,7 @@ class BlockMmad;
 
 ```cpp
 template <class DispatchPolicy_, class QType_, class LayoutQ_, class KType_, class LayoutK_, class VType_,
-           class LayoutV_, class OutType_, class LayoutOut_>
+           class LayoutV_, class OutType_, class LayoutOut_, class... ExtArgs_>
 class BlockMmad {
     static_assert(Blaze::Gemm::always_false_v<DispatchPolicy_>,
                   "BlockMmad is not implemented for this DispatchPolicy");

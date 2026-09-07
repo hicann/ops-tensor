@@ -322,9 +322,12 @@ blaze/
 │       │
 │       ├── tile/                # Tile 层组件
 │       │   ├── tile_mmad_mx.h
+│       │   ├── datamove.h       # 数据搬运原语聚合头
+│       │   ├── compute.h        # 计算原语聚合头
 │       │   ├── pad_mx_kl1.h
+│       │   ├── copy_gm_to_l1.h
 │       │   ├── copy_gm_to_ub.h
-│       │   ├── scale_mx_bias.h
+│       │   ├── copy_weight_ub_to_l1.h
 │       │   └── shift_w4_to_w8.h
 │       │
 │       ├── policy/              # Policy 层

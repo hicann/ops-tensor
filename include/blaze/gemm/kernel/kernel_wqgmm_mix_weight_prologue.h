@@ -27,11 +27,8 @@
 
 #include "blaze/gemm/block/block_mmad_wqgmm_mx_mix.h"
 #include "blaze/gemm/policy/dispatch_policy.h"
-#include "blaze/gemm/tile/copy_gm_to_ub.h"
-#include "blaze/gemm/tile/copy_mx_scale.h"
-#include "blaze/gemm/tile/copy_weight_ub_to_l1.h"
-#include "blaze/gemm/tile/scale_mx_bias.h"
-#include "blaze/gemm/tile/shift_w4_to_w8.h"
+#include "blaze/gemm/tile/compute.h"
+#include "blaze/gemm/tile/datamove.h"
 #include "blaze/gemm/utils/common_utils.h"
 #include "blaze/gemm/utils/layout_struct.h"
 
@@ -638,13 +635,7 @@ __aicore__ inline void WQGMM_MX_PROLOGUE_CLASS::WeightAntiQuantComputeNzNk(
 {
     WaitFlag<HardEvent::MTE3_V>(VEC_EVENT_ID_MTE3_TO_V + (ubComputeLoopIdx_ & (WEIGHT_8BIT_BUFFER_NUM - 1)));
 
-    if (processBias) {
-        Tile::ShiftW4ToW8AndScaleBias<true, OutType, InType, BiasType>(weight4BitTensor, weight8BitTensor, biasInTensor,
-                                                                       biasOutTensor);
-    } else {
-        Tile::ShiftW4ToW8AndScaleBias<false, OutType, InType, BiasType>(weight4BitTensor, weight8BitTensor,
-                                                                        biasInTensor, biasOutTensor);
-    }
+    Tile::ShiftW4ToW8<OutType, InType>(weight4BitTensor, weight8BitTensor, biasInTensor, biasOutTensor, processBias);
 
     // Set/Wait flags AFTER compute
     SetFlag<HardEvent::V_MTE3>(0);

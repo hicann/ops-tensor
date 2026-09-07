@@ -14,6 +14,4 @@
  */
 #pragma once
 
-#if (defined(__NPU_ARCH__) && __NPU_ARCH__ == 3510)
-#include "blaze/gemm/tile/arch35/copy_gm_to_ub.h"
-#endif
+#include "blaze/gemm/tile/datamove.h"

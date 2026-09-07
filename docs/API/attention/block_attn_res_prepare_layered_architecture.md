@@ -42,7 +42,7 @@ gemm -X-> attention
 | Scheduler | `include/blaze/attention/block/block_scheduler_block_attn_res_prepare.h` | T/S block 调度 |
 | Epilogue | `include/blaze/epilogue/block/block_epilogue_block_attn_res_prepare.h` | AIV 后处理 |
 | Epilogue Tile | `include/blaze/epilogue/tile/{reduce_square,rms_softmax,initialize_empty_softmax}.h` | 后处理 Tensor 级向量原语和架构分发 |
-| GEMM Tile | `include/blaze/gemm/tile/fill_ub.h` | 通用 UB 清零原语 |
+| GEMM Tile | `include/blaze/gemm/tile/compute.h` | 计算原语聚合头，提供通用 UB 清零（`FillUb`）等原语 |
 | UT | `tests/ut/op_kernel/block_attn_res_prepare/` | 参数契约、Scheduler 和数值验证 |
 
 没有独立的 `kernel_block_attn_res_prepare_params.h`。每个组件在自己的头文件内定义 `Params`，顶层 Kernel

@@ -14,6 +14,4 @@
  */
 #pragma once
 
-#if (defined(__NPU_ARCH__) && __NPU_ARCH__ == 3510)
-#include "blaze/gemm/tile/arch35/shift_w4_to_w8.h"
-#endif
+#include "blaze/gemm/tile/compute.h"

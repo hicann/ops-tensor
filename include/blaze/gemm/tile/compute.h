@@ -9,11 +9,14 @@
  */
 
 /*!
- * \file fill_ub.h
- * \brief Architecture-specific tile primitive for filling a contiguous UB tensor with a provided value.
+ * \file compute.h
+ * \brief Architecture-specific compute and transform primitives for tile-level tensors.
  */
 #pragma once
 
 #if (defined(__NPU_ARCH__) && __NPU_ARCH__ == 3510)
 #include "blaze/gemm/tile/arch35/fill_ub.h"
+#include "blaze/gemm/tile/arch35/pad_mx_kl1.h"
+#include "blaze/gemm/tile/arch35/scale_mx_bias.h"
+#include "blaze/gemm/tile/arch35/shift_w4_to_w8.h"
 #endif

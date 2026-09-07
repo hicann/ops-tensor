@@ -1,9 +1,7 @@
 # Tile Weight Quant MX Preprocess
 > 相关头文件：
-> [GM→UB](../../../../include/blaze/gemm/tile/copy_gm_to_ub.h) ·
-> [FP4→FP8](../../../../include/blaze/gemm/tile/shift_w4_to_w8.h) ·
-> [UB→L1](../../../../include/blaze/gemm/tile/copy_weight_ub_to_l1.h) ·
-> [Bias 缩放](../../../../include/blaze/gemm/tile/scale_mx_bias.h)
+> [数据搬运聚合头 datamove.h](../../../../include/blaze/gemm/tile/datamove.h)（含 GM→UB、UB→L1） ·
+> [计算原语聚合头 compute.h](../../../../include/blaze/gemm/tile/compute.h)（含 FP4→FP8、Bias 缩放）
 
 ## 功能说明
 
@@ -44,10 +42,18 @@ AscendC::Te::Copy(copy, weightUbTensor, weightGmSlice);
 Blaze::Gemm::Tile::ShiftW4ToW8<fp8_e4m3fn_t, fp4x2_e2m1_t>(weight4Ub, weight8Ub);
 ```
 
-源为 Weight NZ 对应的 `ZNLayoutPtn` 时执行 ZN interleave 转换并生成
+以类构造函数形式发起转换。源为 Weight NZ 对应的 `ZNLayoutPtn` 时执行 ZN interleave 转换并生成
 `Weight8BitZnToZnUbLayoutPtn`；源为 `DNExtLayoutPtn` 时按 N 行读取并执行 DN→ZN-like 的
 `DATA_BLOCK_COPY` 输出，生成 `Weight8BitDnToZnUbLayoutPtn`。两条路径都由输入 format 对应的
 layout 在编译期选择。
+
+MX GMM 融合路径将 bias 预缩放合并到同一条 VF 命令，`processBias` 在编译期分派，
+steady-state K 迭代中不含 bias 分支或额外 VF 入口：
+
+```cpp
+Blaze::Gemm::Tile::ShiftW4ToW8<fp8_e4m3fn_t, fp4x2_e2m1_t>(
+    weight4Ub, weight8Ub, biasInUb, biasOutUb, /*processBias=*/true);
+```
 
 ### `CopyUB2L1Weight8Bit`
 
@@ -68,7 +74,7 @@ AscendC::Te::Copy(copy, weightL1Tensor, weight8UbTensor);
 Blaze::Gemm::Tile::ScaleMxBias<BiasType>(biasInUbTensor, biasOutUbTensor);
 ```
 
-该 Tile 将 bias 乘以 MX MMAD 所需的 `1/64`。它以 256B 为一轮并使用整向量 mask，**输入和输出
+以类构造函数形式发起计算。该 Tile 将 bias 乘以 MX MMAD 所需的 `1/64`。它以 256B 为一轮并使用整向量 mask，**输入和输出
 UB backing storage 均至少需要 `CeilAlign(N, 256 / sizeof(BiasType))` 个元素**；Tensor 的有效列数可为
 `Align16(N)`。
 
@@ -97,7 +103,8 @@ UB packed FP4 ── ShiftW4ToW8 ──► UB FP8（ZN 或 DN→ZN pitched layou
 UB bias ── ScaleMxBias ──► UB bias(1/64) ── Tensor API CopyUB2L1 ──► L1 bias
 ```
 
-调用方应包含本页列出的 public wrapper，不应直接包含 `tile/arch35` 实现文件。
+调用方应包含聚合头 `blaze/gemm/tile/datamove.h`（数据搬运原语）和
+`blaze/gemm/tile/compute.h`（计算原语），不应直接包含 `tile/arch35` 实现文件。
 
 ## 使用场景
 

@@ -9,6 +9,18 @@
 | [copy_gm_to_l1](./copy_gm_to_l1.md) | A 矩阵 ND slice 非连续场景的 GM->L1 搬运 |
 | [tile_weight_quant_mx_preprocess](./tile_weight_quant_mx_preprocess.md) | packed FP4 ND/NZ 转换、bias 预缩放和 UB/L1 布局契约 |
 
+## 聚合头
+
+Tile 层原语按功能聚合为两个 public 入口头，均按架构宏分发到 `arch35/` 实现：
+
+- **`blaze/gemm/tile/datamove.h`**：数据搬运原语，聚合
+  `copy_gm_to_l1` / `copy_gm_to_ub` / `copy_mx_scale` / `copy_weight_ub_to_l1`
+- **`blaze/gemm/tile/compute.h`**：计算与变换原语，聚合
+  `fill_ub` / `pad_mx_kl1` / `scale_mx_bias` / `shift_w4_to_w8`
+
+调用方推荐直接包含聚合头；单原语转发头（如 `copy_gm_to_l1.h`、`shift_w4_to_w8.h`）
+保留仅为兼容既有引用，同样转发到上述聚合头。
+
 ## 核心组件关系
 
 ```

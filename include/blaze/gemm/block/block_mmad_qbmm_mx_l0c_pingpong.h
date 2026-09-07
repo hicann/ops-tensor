@@ -32,8 +32,8 @@
 #include "blaze/gemm/policy/dispatch_policy.h"
 #include "block_mmad.h"
 #include "tensor_api/tensor.h"
+#include "blaze/gemm/tile/compute.h"
 #include "blaze/gemm/tile/tile_trait.h"
-#include "blaze/gemm/tile/pad_mx_kl1.h"
 
 namespace Blaze {
 namespace Gemm {

@@ -1,6 +1,8 @@
 # Pad MX K L1
 > [代码位置](../../../../include/blaze/gemm/tile/pad_mx_kl1.h)
 
+说明：调用方应包含聚合头 `tile/compute.h`（`tile/pad_mx_kl1.h` 为兼容保留的转发入口）。
+
 ## 功能说明
 MX 量化 K 轴 Padding Tile，用于 L1 缓冲区的 K 轴尾部补零对齐。支持 NZ/ZN 布局，确保 K 轴对齐到 C0_SIZE。
 

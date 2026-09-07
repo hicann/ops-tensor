@@ -12,7 +12,8 @@ A 矩阵 ND slice 非连续场景的 GM->L1 搬运 Tile，配合 `MatmulMultiBlo
 仅用于 A 矩阵 ND slice 非连续输入。普通连续输入继续使用默认 `CopyGM2L1`。
 
 ### 架构支持
-当前实现位于 `tile/arch35/copy_gm_to_l1.h`，仅在 `__NPU_ARCH__ == 3510` 时引入。
+当前实现位于 `tile/arch35/copy_gm_to_l1.h`，仅在 `__NPU_ARCH__ == 3510` 时引入。调用方应包含聚合头
+`tile/datamove.h`；本头文件为兼容保留的转发入口。
 
 ### 数据类型
 支持 `half` 和 `float` 数据类型。

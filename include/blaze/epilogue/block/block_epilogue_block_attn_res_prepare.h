@@ -18,7 +18,7 @@
 
 #include "blaze/attention/policy/dispatch_policy.h"
 #include "blaze/epilogue/tile/compute.h"
-#include "blaze/gemm/tile/fill_ub.h"
+#include "blaze/gemm/tile/compute.h"
 #include "tensor_api/tensor.h"
 
 namespace Blaze {
