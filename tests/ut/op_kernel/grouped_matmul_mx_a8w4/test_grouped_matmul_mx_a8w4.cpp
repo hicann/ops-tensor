@@ -226,11 +226,11 @@ TEST(GroupedMatmulMxA8W4KernelTest, Weight8BitZnToZnUbLayoutKeepsPhysicalFractal
     const auto groupedLayoutN9 = Blaze::Gemm::Weight8BitZnToZnUBLayout<fp8_e4m3fn_t>{}(
         32, static_cast<int64_t>(Blaze::Gemm::Align16(9U)), INNER_STRIDE);
 
-    EXPECT_EQ(static_cast<int64_t>(AscendC::Std::get<1>(AscendC::Std::get<1>(layoutN8.Shape()))), 1);
-    EXPECT_EQ(static_cast<int64_t>(AscendC::Std::get<1>(AscendC::Std::get<1>(layoutN9.Shape()))), 2);
-    EXPECT_EQ(static_cast<int64_t>(AscendC::Std::get<1>(AscendC::Std::get<1>(layoutN16.Shape()))), 2);
-    EXPECT_EQ(static_cast<int64_t>(AscendC::Std::get<1>(AscendC::Std::get<1>(groupedLayoutN8.Shape()))), 2);
-    EXPECT_EQ(static_cast<int64_t>(AscendC::Std::get<1>(AscendC::Std::get<1>(groupedLayoutN9.Shape()))), 2);
+    EXPECT_EQ(static_cast<int64_t>(AscendC::Std::get<1>(AscendC::Std::get<1>(layoutN8.shape()))), 1);
+    EXPECT_EQ(static_cast<int64_t>(AscendC::Std::get<1>(AscendC::Std::get<1>(layoutN9.shape()))), 2);
+    EXPECT_EQ(static_cast<int64_t>(AscendC::Std::get<1>(AscendC::Std::get<1>(layoutN16.shape()))), 2);
+    EXPECT_EQ(static_cast<int64_t>(AscendC::Std::get<1>(AscendC::Std::get<1>(groupedLayoutN8.shape()))), 2);
+    EXPECT_EQ(static_cast<int64_t>(AscendC::Std::get<1>(AscendC::Std::get<1>(groupedLayoutN9.shape()))), 2);
 }
 
 TEST(GroupedMatmulMxA8W4KernelTest, E2M1OffsetContiguousBiasBf16)

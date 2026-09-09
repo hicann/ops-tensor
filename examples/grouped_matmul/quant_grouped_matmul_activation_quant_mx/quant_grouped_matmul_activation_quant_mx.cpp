@@ -38,9 +38,9 @@
 #include "data_utils.h"
 #include "platform/platform_ascendc.h"
 
-using ProblemShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
-using NdLayout = AscendC::Te::NDExtLayoutPtn;
-using NzLayout = AscendC::Te::NZLayoutPtn;
+using ProblemShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
+using NdLayout = asc::te::nd_ext_layout_ptn;
+using NzLayout = asc::te::nz_layout_ptn;
 
 static constexpr uint32_t GROUP_LIST_TYPE_LENGTH = 1;
 static constexpr uint32_t GROUP_TYPE_M = 0;

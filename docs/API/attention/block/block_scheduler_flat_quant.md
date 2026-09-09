@@ -156,7 +156,7 @@ Block 3: round 0 → iterBatch=2 (batch 6-7), round 1 → mainTailBatch-1=0 (跳
 
 ### 组件组装
 ```cpp
-using ProblemShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
+using ProblemShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
 using BlockScheduler = Blaze::Attention::Block::BlockSchedulerFlatQuant<ProblemShape>;
 ```
 

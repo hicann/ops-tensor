@@ -66,12 +66,12 @@ struct QgmmTilingData {
 #pragma pack(pop)
 
 template <typename AType, typename BType, typename CType, typename BiasType,
-          typename LayoutA = AscendC::Te::NDExtLayoutPtn, typename LayoutB = AscendC::Te::NDExtLayoutPtn>
+          typename LayoutA = asc::te::nd_ext_layout_ptn, typename LayoutB = asc::te::nd_ext_layout_ptn>
 __aicore__ inline void RunQgmmMx(GM_ADDR a, GM_ADDR b, GM_ADDR scaleA, GM_ADDR scaleB, GM_ADDR bias, GM_ADDR c,
                                  GM_ADDR groupList, const QgmmTilingData& t)
 {
-    using Layout = AscendC::Te::NDExtLayoutPtn;
-    using ProblemShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
+    using Layout = asc::te::nd_ext_layout_ptn;
+    using ProblemShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
     using Policy = Blaze::Gemm::GroupedMatmulWithScaleMx<0>;
     using Mmad = Blaze::Gemm::Block::BlockMmad<Policy, AType, LayoutA, BType, LayoutB, CType, Layout, BiasType, Layout>;
     using Epilogue = Blaze::Gemm::Block::BlockEpilogueEmpty;
@@ -95,7 +95,7 @@ __aicore__ inline void RunQgmmMx(GM_ADDR a, GM_ADDR b, GM_ADDR scaleA, GM_ADDR s
 } // namespace QGMMUT
 
 template <typename AType, typename BType, typename CType, typename BiasType,
-          typename LayoutA = AscendC::Te::NDExtLayoutPtn, typename LayoutB = AscendC::Te::NDExtLayoutPtn>
+          typename LayoutA = asc::te::nd_ext_layout_ptn, typename LayoutB = asc::te::nd_ext_layout_ptn>
 __global__ __aicore__ void qgmm_mx_kernel_entry(GM_ADDR a, GM_ADDR b, GM_ADDR scaleA, GM_ADDR scaleB, GM_ADDR bias,
                                                 GM_ADDR c, GM_ADDR groupList, GM_ADDR tiling)
 {

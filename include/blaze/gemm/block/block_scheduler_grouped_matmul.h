@@ -24,10 +24,10 @@ namespace Block {
 
 class BlockSchedulerGmmNoQuant {
 public:
-    using ProblemShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
-    using BlockShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
-    using BlockCoord = AscendC::Te::Coord<int64_t, int64_t, int64_t, int64_t>;
-    using GroupCoord = AscendC::Te::Coord<int64_t, int64_t, int64_t, int64_t>;
+    using ProblemShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
+    using BlockShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
+    using BlockCoord = asc::te::coord<int64_t, int64_t, int64_t, int64_t>;
+    using GroupCoord = asc::te::coord<int64_t, int64_t, int64_t, int64_t>;
 
     struct Params {
         int32_t baseM{0};
@@ -107,7 +107,7 @@ public:
     {
         // Offset state and block scheduling state advance together, including groups without valid tiles.
         auto groupCoord = UpdateGroupOffset(problemShape);
-        UpdateNextProblem(problemShape, NeedTailSplit(AscendC::Te::Get<MNK_M>(problemShape)));
+        UpdateNextProblem(problemShape, NeedTailSplit(asc::te::get<MNK_M>(problemShape)));
         return groupCoord;
     }
 
@@ -135,9 +135,9 @@ private:
 
     __aicore__ inline GroupCoord UpdateGroupOffset(const ProblemShape& problemShape)
     {
-        const int64_t problemM = Max(AscendC::Te::Get<MNK_M>(problemShape), static_cast<int64_t>(0));
-        const int64_t problemN = Max(AscendC::Te::Get<MNK_N>(problemShape), static_cast<int64_t>(0));
-        const int64_t problemK = Max(AscendC::Te::Get<MNK_K>(problemShape), static_cast<int64_t>(0));
+        const int64_t problemM = Max(asc::te::get<MNK_M>(problemShape), static_cast<int64_t>(0));
+        const int64_t problemN = Max(asc::te::get<MNK_N>(problemShape), static_cast<int64_t>(0));
+        const int64_t problemK = Max(asc::te::get<MNK_K>(problemShape), static_cast<int64_t>(0));
 
         auto groupCoord = GroupCoord{singleX_ ? nextAOffset_ : 0, singleWeight_ ? nextBOffset_ : 0,
                                      singleWeight_ ? nextBiasOffset_ : 0, singleY_ ? nextCOffset_ : 0};
@@ -170,9 +170,9 @@ private:
         nTailCnt_ = Max(nTailCnt_, static_cast<uint64_t>(1));
         mTailAlign_ = Max(mTailAlign_, static_cast<uint32_t>(1));
         nTailAlign_ = Max(nTailAlign_, static_cast<uint32_t>(1));
-        m_ = AscendC::Te::Get<MNK_M>(problemShape);
-        n_ = AscendC::Te::Get<MNK_N>(problemShape);
-        k_ = AscendC::Te::Get<MNK_K>(problemShape);
+        m_ = asc::te::get<MNK_M>(problemShape);
+        n_ = asc::te::get<MNK_N>(problemShape);
+        k_ = asc::te::get<MNK_K>(problemShape);
         mTileNum_ = 0;
         nTileNum_ = 0;
         logicalTileNum_ = 0;
@@ -224,8 +224,8 @@ private:
         const TaskInfo taskInfo = GetTaskInfo(blockIdx - groupStartBlock_);
         const BlockCoord tileCoord = GetTileCoord(taskInfo.tileIndex);
         const SplitBlockInfo splitBlock = GetSplitBlockInfo(tileCoord, taskInfo);
-        const int64_t mOffset = AscendC::Te::Get<MNK_M>(tileCoord) * baseM_ + splitBlock.mOffset;
-        const int64_t nOffset = AscendC::Te::Get<MNK_N>(tileCoord) * baseN_ + splitBlock.nOffset;
+        const int64_t mOffset = asc::te::get<MNK_M>(tileCoord) * baseM_ + splitBlock.mOffset;
+        const int64_t nOffset = asc::te::get<MNK_N>(tileCoord) * baseN_ + splitBlock.nOffset;
         blockShape_ = BlockShape{splitBlock.blockM, splitBlock.blockN, k_, 1};
         blockCoord_ = BlockCoord{mOffset, nOffset, 0, 0};
     }
@@ -263,8 +263,8 @@ private:
 
     __aicore__ inline SplitBlockInfo GetSplitBlockInfo(const BlockCoord& tileCoord, const TaskInfo& taskInfo) const
     {
-        const int64_t mTileIdx = AscendC::Te::Get<MNK_M>(tileCoord);
-        const int64_t nTileIdx = AscendC::Te::Get<MNK_N>(tileCoord);
+        const int64_t mTileIdx = asc::te::get<MNK_M>(tileCoord);
+        const int64_t nTileIdx = asc::te::get<MNK_N>(tileCoord);
         int64_t blockM = mTileIdx == mTileNum_ - 1 ? m_ - (mTileNum_ - 1) * baseM_ : baseM_;
         int64_t blockN = nTileIdx == nTileNum_ - 1 ? n_ - (nTileNum_ - 1) * baseN_ : baseN_;
         if (!taskInfo.isTailSplit) {

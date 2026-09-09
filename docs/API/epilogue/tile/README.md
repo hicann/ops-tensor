@@ -27,7 +27,7 @@ BlockEpilogue（Block 层）
 1. **选择 Tile**：在 `blaze/epilogue/tile/arch35/` 下找到所需的计算组件（如 `Gelu`）
 2. **经由 compute.h 引入**：Block 层只 `#include "blaze/epilogue/tile/compute.h"`，禁止直接
    include arch35 头文件
-3. **构造 Tensor**：使用 `AscendC::Te::MakeTensor` + `Gemm::MakeNDExtLayout` 构造 UB 侧
+3. **构造 Tensor**：使用 `asc::te::make_tensor` + `Gemm::MakeNDExtLayout` 构造 UB 侧
    NDExt 张量
 4. **调用 Tile**：实例化 Tile 类并调用公共方法（`__aicore__` 入口自带 static_assert
    类型/排布门禁与 AIC 早退）

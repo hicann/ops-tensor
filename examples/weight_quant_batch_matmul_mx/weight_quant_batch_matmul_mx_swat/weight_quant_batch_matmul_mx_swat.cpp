@@ -196,12 +196,12 @@ __global__ __aicore__ void QuantBatchMatmulMxKernel(GM_ADDR aGm, GM_ADDR bGm, GM
     using ScaleType = AscendC::fp8_e8m0_t;
     using CType = half;
     using BiasType = half;
-    using LayoutA = AscendC::Te::NDExtLayoutPtn;
-    using LayoutB = AscendC::Std::conditional_t<WeightNz, AscendC::Te::ZNLayoutPtn, AscendC::Te::DNExtLayoutPtn>;
-    using LayoutC = AscendC::Te::NDExtLayoutPtn;
-    using LayoutScaleA = AscendC::Te::ScaleANDLayoutPtn;
-    using LayoutScaleB = AscendC::Te::ScaleBDNLayoutPtn;
-    using ProblemShape = AscendC::Te::Shape<int64_t, int64_t, int64_t>;
+    using LayoutA = asc::te::nd_ext_layout_ptn;
+    using LayoutB = AscendC::Std::conditional_t<WeightNz, asc::te::zn_layout_ptn, asc::te::dn_ext_layout_ptn>;
+    using LayoutC = asc::te::nd_ext_layout_ptn;
+    using LayoutScaleA = asc::te::scalea_nd_layout_ptn;
+    using LayoutScaleB = asc::te::scaleb_dn_layout_ptn;
+    using ProblemShape = asc::te::shape<int64_t, int64_t, int64_t>;
     using DispatchPolicy = Blaze::Gemm::MatmulWithWeightQuantMx;
     using BlockMmad = Blaze::Gemm::Block::BlockMmad<
         DispatchPolicy, AscendC::Std::tuple<AType, ScaleType>, AscendC::Std::tuple<LayoutA, LayoutScaleA>,
@@ -211,11 +211,11 @@ __global__ __aicore__ void QuantBatchMatmulMxKernel(GM_ADDR aGm, GM_ADDR bGm, GM
     using Kernel = Blaze::Gemm::Kernel::GemmUniversal<ProblemShape, BlockMmad, void, BlockScheduler>;
 
     typename Kernel::Params params{
-        AscendC::Te::MakeShape(m, n, k),
+        asc::te::make_shape(m, n, k),
         {aGm, scaleAGm, scaleBGm, cGm,
-         AscendC::Te::MakeShape(static_cast<int64_t>(baseM), static_cast<int64_t>(baseN),
-                                static_cast<int64_t>(tileShapeKL1), static_cast<int64_t>(tileShapeScaleKL1)),
-         AscendC::Te::MakeShape(static_cast<int64_t>(baseM), static_cast<int64_t>(baseN), static_cast<int64_t>(baseK)),
+         asc::te::make_shape(static_cast<int64_t>(baseM), static_cast<int64_t>(baseN),
+                             static_cast<int64_t>(tileShapeKL1), static_cast<int64_t>(tileShapeScaleKL1)),
+         asc::te::make_shape(static_cast<int64_t>(baseM), static_cast<int64_t>(baseN), static_cast<int64_t>(baseK)),
          l1BufferNum, biasElements != 0U},
         {bGm, biasGm, kBubSize, nBubSize},
         {baseM, baseN, 1U, 1U, 1U, 1U, 0U, 0U}};

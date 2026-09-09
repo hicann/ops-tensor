@@ -13,8 +13,8 @@
  * \brief Tile-level GELU epilogue: Tanh approximation and Erf exact.
  *
  * Design:
- *   - Public  (__aicore__): accepts MakeTensor-created UB tensors, extracts
- *     raw __ubuf__ pointers via .Data().Get(), and delegates to Vf.
+ *   - Public  (__aicore__): accepts make_tensor-created UB tensors, extracts
+ *     raw __ubuf__ pointers via .data().get(), and delegates to Vf.
  *     For GeluErf, also constructs LocalTensor from byte offsets for
  *     high-level AscendC API calls (Erf, Muls, Cast).
  *   - Private (__simd_vf__): Reg API register-level computation.
@@ -50,7 +50,7 @@ public:
     /*!
      * Tanh-approximation GELU: 0.5*x*(1+tanh(sqrt(2/pi)*(x+0.044715*x^3)))
      * Equivalent sigmoid form: x / (1 + exp(-2*sqrt(2/pi)*(x+0.044715*x^3)))
-     * Accepts MakeTensor-created UB tensors, extracts __ubuf__ for Vf.
+     * Accepts make_tensor-created UB tensors, extracts __ubuf__ for Vf.
      */
     template <typename SrcTensor, typename DstTensor>
     __aicore__ inline void GeluTanh(const SrcTensor& srcTensor, const DstTensor& dstTensor, uint16_t mSize,
@@ -58,7 +58,7 @@ public:
 
     /*!
      * Erf-based GELU: 0.5*x*(1+erf(x/sqrt(2)))
-     * Accepts MakeTensor-created UB tensors for src/dst and temp buffers.
+     * Accepts make_tensor-created UB tensors for src/dst and temp buffers.
      * High-level: per-row AscendC::Erf (polynomial approximation) via LocalTensor.
      * Reg API  : per-row vfBlock assembly of (1+erf)*(0.5*x) -> DataTypeOut.
      */
@@ -234,12 +234,12 @@ private:
     }
 
     /*!
-     * Resolve UB byte offset from a MakeTensor-created tensor's raw pointer.
+     * Resolve UB byte offset from a make_tensor-created tensor's raw pointer.
      */
     template <typename Tensor>
     __aicore__ inline static uint32_t GetUbByteOffset(const Tensor& tensor)
     {
-        return static_cast<uint32_t>(reinterpret_cast<uintptr_t>(tensor.Data().Get()) - asc_get_phy_buf_addr(0));
+        return static_cast<uint32_t>(reinterpret_cast<uintptr_t>(tensor.data().get()) - asc_get_phy_buf_addr(0));
     }
 };
 
@@ -251,10 +251,10 @@ template <typename SrcTensor, typename DstTensor>
 __aicore__ inline void Gelu<DataTypeOut_, DataTypeIn_>::GeluTanh(const SrcTensor& srcTensor, const DstTensor& dstTensor,
                                                                  uint16_t mSize, uint16_t nSize)
 {
-    using SrcElementType = AscendC::Te::GetAttributeElementType<typename SrcTensor::elementType*>;
-    using DstElementType = AscendC::Te::GetAttributeElementType<typename DstTensor::elementType*>;
-    using SrcLayoutPattern = AscendC::Te::GetLayoutPattern<typename SrcTensor::layoutType>;
-    using DstLayoutPattern = AscendC::Te::GetLayoutPattern<typename DstTensor::layoutType>;
+    using SrcElementType = asc::te::get_attribute_element_type<typename SrcTensor::element_type*>;
+    using DstElementType = asc::te::get_attribute_element_type<typename DstTensor::element_type*>;
+    using SrcLayoutPattern = asc::te::get_layout_pattern<typename SrcTensor::layout_type>;
+    using DstLayoutPattern = asc::te::get_layout_pattern<typename DstTensor::layout_type>;
     static_assert(AscendC::Std::is_same_v<DataTypeIn, float> || AscendC::Std::is_same_v<DataTypeIn, bfloat16_t> ||
                       AscendC::Std::is_same_v<DataTypeIn, half>,
                   "GeluTanh input must be float, bfloat16_t or half.");
@@ -264,11 +264,11 @@ __aicore__ inline void Gelu<DataTypeOut_, DataTypeIn_>::GeluTanh(const SrcTensor
     static_assert(
         AscendC::Std::is_same_v<SrcElementType, DataTypeIn> && AscendC::Std::is_same_v<DstElementType, DataTypeOut>,
         "GeluTanh tensor element types must match DataTypeIn/DataTypeOut.");
-    static_assert(AscendC::Std::is_same_v<AscendC::Te::GetMemLocation<SrcTensor>, AscendC::Te::Location::UB> &&
-                      AscendC::Std::is_same_v<AscendC::Te::GetMemLocation<DstTensor>, AscendC::Te::Location::UB>,
+    static_assert(AscendC::Std::is_same_v<asc::te::get_mem_location<SrcTensor>, asc::te::location::ub> &&
+                      AscendC::Std::is_same_v<asc::te::get_mem_location<DstTensor>, asc::te::location::ub>,
                   "GeluTanh only supports UB tensors.");
-    static_assert(AscendC::Std::is_same_v<SrcLayoutPattern, AscendC::Te::NDExtLayoutPtn> &&
-                      AscendC::Std::is_same_v<DstLayoutPattern, AscendC::Te::NDExtLayoutPtn>,
+    static_assert(AscendC::Std::is_same_v<SrcLayoutPattern, asc::te::nd_ext_layout_ptn> &&
+                      AscendC::Std::is_same_v<DstLayoutPattern, asc::te::nd_ext_layout_ptn>,
                   "GeluTanh only supports NDExt tensor layouts.");
     if ASCEND_IS_AIC {
         return;
@@ -276,8 +276,8 @@ __aicore__ inline void Gelu<DataTypeOut_, DataTypeIn_>::GeluTanh(const SrcTensor
     uint16_t sizePerRepeat = static_cast<uint16_t>(AscendC::VECTOR_REG_WIDTH / sizeof(float));
     uint16_t oneRowRepeatTimes = Gemm::CeilDiv(static_cast<uint32_t>(nSize), static_cast<uint32_t>(sizePerRepeat));
     uint32_t nAligned = Gemm::Align32(static_cast<uint32_t>(nSize));
-    GeluTanhVfParams<DataTypeOut, DataTypeIn> params{reinterpret_cast<__ubuf__ DataTypeOut*>(dstTensor.Data().Get()),
-                                                     reinterpret_cast<__ubuf__ DataTypeIn*>(srcTensor.Data().Get()),
+    GeluTanhVfParams<DataTypeOut, DataTypeIn> params{reinterpret_cast<__ubuf__ DataTypeOut*>(dstTensor.data().get()),
+                                                     reinterpret_cast<__ubuf__ DataTypeIn*>(srcTensor.data().get()),
                                                      mSize,
                                                      nSize,
                                                      sizePerRepeat,
@@ -301,16 +301,16 @@ __aicore__ inline void Gelu<DataTypeOut_, DataTypeIn_>::GeluErf(const SrcTensor&
                                                                 const GeluFp32Tensor& geluFp32Tensor, uint16_t mSize,
                                                                 uint16_t nSize)
 {
-    using SrcElementType = AscendC::Te::GetAttributeElementType<typename SrcTensor::elementType*>;
-    using DstElementType = AscendC::Te::GetAttributeElementType<typename DstTensor::elementType*>;
-    using ErfElementType = AscendC::Te::GetAttributeElementType<typename ErfTensor::elementType*>;
-    using Fp32ElementType = AscendC::Te::GetAttributeElementType<typename Fp32Tensor::elementType*>;
-    using GeluFp32ElementType = AscendC::Te::GetAttributeElementType<typename GeluFp32Tensor::elementType*>;
-    using SrcLayoutPattern = AscendC::Te::GetLayoutPattern<typename SrcTensor::layoutType>;
-    using DstLayoutPattern = AscendC::Te::GetLayoutPattern<typename DstTensor::layoutType>;
-    using ErfLayoutPattern = AscendC::Te::GetLayoutPattern<typename ErfTensor::layoutType>;
-    using Fp32LayoutPattern = AscendC::Te::GetLayoutPattern<typename Fp32Tensor::layoutType>;
-    using GeluFp32LayoutPattern = AscendC::Te::GetLayoutPattern<typename GeluFp32Tensor::layoutType>;
+    using SrcElementType = asc::te::get_attribute_element_type<typename SrcTensor::element_type*>;
+    using DstElementType = asc::te::get_attribute_element_type<typename DstTensor::element_type*>;
+    using ErfElementType = asc::te::get_attribute_element_type<typename ErfTensor::element_type*>;
+    using Fp32ElementType = asc::te::get_attribute_element_type<typename Fp32Tensor::element_type*>;
+    using GeluFp32ElementType = asc::te::get_attribute_element_type<typename GeluFp32Tensor::element_type*>;
+    using SrcLayoutPattern = asc::te::get_layout_pattern<typename SrcTensor::layout_type>;
+    using DstLayoutPattern = asc::te::get_layout_pattern<typename DstTensor::layout_type>;
+    using ErfLayoutPattern = asc::te::get_layout_pattern<typename ErfTensor::layout_type>;
+    using Fp32LayoutPattern = asc::te::get_layout_pattern<typename Fp32Tensor::layout_type>;
+    using GeluFp32LayoutPattern = asc::te::get_layout_pattern<typename GeluFp32Tensor::layout_type>;
     static_assert(AscendC::Std::is_same_v<DataTypeIn, float> || AscendC::Std::is_same_v<DataTypeIn, bfloat16_t> ||
                       AscendC::Std::is_same_v<DataTypeIn, half>,
                   "GeluErf input must be float, bfloat16_t or half.");
@@ -322,17 +322,17 @@ __aicore__ inline void Gelu<DataTypeOut_, DataTypeIn_>::GeluErf(const SrcTensor&
             AscendC::Std::is_same_v<ErfElementType, float> && AscendC::Std::is_same_v<Fp32ElementType, float> &&
             AscendC::Std::is_same_v<GeluFp32ElementType, float>,
         "GeluErf tensor element types must match DataTypeIn/DataTypeOut (temp buffers must be float).");
-    static_assert(AscendC::Std::is_same_v<AscendC::Te::GetMemLocation<SrcTensor>, AscendC::Te::Location::UB> &&
-                      AscendC::Std::is_same_v<AscendC::Te::GetMemLocation<DstTensor>, AscendC::Te::Location::UB> &&
-                      AscendC::Std::is_same_v<AscendC::Te::GetMemLocation<ErfTensor>, AscendC::Te::Location::UB> &&
-                      AscendC::Std::is_same_v<AscendC::Te::GetMemLocation<Fp32Tensor>, AscendC::Te::Location::UB> &&
-                      AscendC::Std::is_same_v<AscendC::Te::GetMemLocation<GeluFp32Tensor>, AscendC::Te::Location::UB>,
+    static_assert(AscendC::Std::is_same_v<asc::te::get_mem_location<SrcTensor>, asc::te::location::ub> &&
+                      AscendC::Std::is_same_v<asc::te::get_mem_location<DstTensor>, asc::te::location::ub> &&
+                      AscendC::Std::is_same_v<asc::te::get_mem_location<ErfTensor>, asc::te::location::ub> &&
+                      AscendC::Std::is_same_v<asc::te::get_mem_location<Fp32Tensor>, asc::te::location::ub> &&
+                      AscendC::Std::is_same_v<asc::te::get_mem_location<GeluFp32Tensor>, asc::te::location::ub>,
                   "GeluErf only supports UB tensors.");
-    static_assert(AscendC::Std::is_same_v<SrcLayoutPattern, AscendC::Te::NDExtLayoutPtn> &&
-                      AscendC::Std::is_same_v<DstLayoutPattern, AscendC::Te::NDExtLayoutPtn> &&
-                      AscendC::Std::is_same_v<ErfLayoutPattern, AscendC::Te::NDExtLayoutPtn> &&
-                      AscendC::Std::is_same_v<Fp32LayoutPattern, AscendC::Te::NDExtLayoutPtn> &&
-                      AscendC::Std::is_same_v<GeluFp32LayoutPattern, AscendC::Te::NDExtLayoutPtn>,
+    static_assert(AscendC::Std::is_same_v<SrcLayoutPattern, asc::te::nd_ext_layout_ptn> &&
+                      AscendC::Std::is_same_v<DstLayoutPattern, asc::te::nd_ext_layout_ptn> &&
+                      AscendC::Std::is_same_v<ErfLayoutPattern, asc::te::nd_ext_layout_ptn> &&
+                      AscendC::Std::is_same_v<Fp32LayoutPattern, asc::te::nd_ext_layout_ptn> &&
+                      AscendC::Std::is_same_v<GeluFp32LayoutPattern, asc::te::nd_ext_layout_ptn>,
                   "GeluErf only supports NDExt tensor layouts.");
     if ASCEND_IS_AIC {
         return;
@@ -352,11 +352,11 @@ __aicore__ inline void Gelu<DataTypeOut_, DataTypeIn_>::GeluErf(const SrcTensor&
     AscendC::LocalTensor<float> geluFp32Local{AscendC::TPosition::VECCALC, geluFp32UbOffset, nAligned};
     AscendC::LocalTensor<float> fp32Local{AscendC::TPosition::VECCALC, fp32UbOffset, nAligned};
 
-    __ubuf__ float* erfAddr = reinterpret_cast<__ubuf__ float*>(erfTensor.Data().Get());
-    __ubuf__ DataTypeOut* dstAddr = reinterpret_cast<__ubuf__ DataTypeOut*>(dstTensor.Data().Get());
+    __ubuf__ float* erfAddr = reinterpret_cast<__ubuf__ float*>(erfTensor.data().get());
+    __ubuf__ DataTypeOut* dstAddr = reinterpret_cast<__ubuf__ DataTypeOut*>(dstTensor.data().get());
 
     if constexpr (AscendC::IsSameType<DataTypeIn, float>::value) {
-        __ubuf__ float* src = reinterpret_cast<__ubuf__ float*>(srcTensor.Data().Get());
+        __ubuf__ float* src = reinterpret_cast<__ubuf__ float*>(srcTensor.data().get());
         for (uint32_t mIdx = 0; mIdx < mSize; mIdx++) {
             AscendC::Muls(geluFp32Local, srcLocal[mIdx * nAligned], ONE_OVER_SQRT_TWO, nSize);
             AscendC::Erf<float, false, GELU_ERF_CONFIG>(erfLocal, geluFp32Local, nSize);
@@ -366,7 +366,7 @@ __aicore__ inline void Gelu<DataTypeOut_, DataTypeIn_>::GeluErf(const SrcTensor&
             asc_vf_call<GeluErfVf>(params);
         }
     } else {
-        __ubuf__ float* fp32Addr = reinterpret_cast<__ubuf__ float*>(fp32Tensor.Data().Get());
+        __ubuf__ float* fp32Addr = reinterpret_cast<__ubuf__ float*>(fp32Tensor.data().get());
         for (uint32_t mIdx = 0; mIdx < mSize; mIdx++) {
             AscendC::Cast(fp32Local, srcLocal[mIdx * nAligned], AscendC::RoundMode::CAST_NONE, nSize);
             AscendC::Muls(geluFp32Local, fp32Local, ONE_OVER_SQRT_TWO, nSize);

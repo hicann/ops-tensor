@@ -45,14 +45,14 @@ template <typename T>
 __aicore__ inline __gm__ T* GetTensorAddrFromTensorList(uint32_t index, __gm__ T* tensorPtr)
 {
     const auto tensorListAddr = reinterpret_cast<__gm__ uint64_t*>(tensorPtr);
-    const auto tensorListHeader = AscendC::Te::MakeTensor(
-        AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(tensorListAddr),
-        AscendC::Te::MakeLayout(AscendC::Te::MakeShape(1L), AscendC::Te::MakeStride(1L)));
+    const auto tensorListHeader = asc::te::make_tensor(
+        asc::te::make_mem_ptr<asc::te::location::gm>(tensorListAddr),
+        asc::te::make_layout(asc::te::make_shape(1L), asc::te::make_stride(1L)));
     const uint64_t tensorPtrOffset = tensorListHeader[0];
-    const auto tensorList = AscendC::Te::MakeTensor(
-        AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(tensorListAddr +
-                                                           (tensorPtrOffset >> TENSOR_LIST_BYTE_OFFSET_TO_INDEX_SHIFT)),
-        AscendC::Te::MakeLayout(AscendC::Te::MakeShape(static_cast<int64_t>(index) + 1), AscendC::Te::MakeStride(1L)));
+    const auto tensorList = asc::te::make_tensor(
+        asc::te::make_mem_ptr<asc::te::location::gm>(tensorListAddr +
+                                                     (tensorPtrOffset >> TENSOR_LIST_BYTE_OFFSET_TO_INDEX_SHIFT)),
+        asc::te::make_layout(asc::te::make_shape(static_cast<int64_t>(index) + 1), asc::te::make_stride(1L)));
     const uint64_t tensorAddr = tensorList[index];
     return reinterpret_cast<__gm__ T*>(tensorAddr);
 }
@@ -77,13 +77,13 @@ public:
     static_assert(AscendC::Std::is_one_of_v<CType, half, bfloat16_t, float>,
                   "QGMM MX only supports half/bfloat16_t/float CType.");
     static_assert(AscendC::Std::is_same_v<BiasType, float>, "QGMM MX only supports float BiasType.");
-    static_assert(AscendC::Std::is_one_of_v<LayoutA, AscendC::Te::NDExtLayoutPtn, AscendC::Te::DNExtLayoutPtn>,
+    static_assert(AscendC::Std::is_one_of_v<LayoutA, asc::te::nd_ext_layout_ptn, asc::te::dn_ext_layout_ptn>,
                   "QGMM MX only supports ND/DN LayoutA.");
-    static_assert(AscendC::Std::is_one_of_v<LayoutB, AscendC::Te::NDExtLayoutPtn, AscendC::Te::DNExtLayoutPtn,
-                                            AscendC::Te::NZLayoutPtn, AscendC::Te::ZNLayoutPtn>,
+    static_assert(AscendC::Std::is_one_of_v<LayoutB, asc::te::nd_ext_layout_ptn, asc::te::dn_ext_layout_ptn,
+                                            asc::te::nz_layout_ptn, asc::te::zn_layout_ptn>,
                   "QGMM MX only supports ND/DN/NZ/ZN LayoutB.");
-    static_assert(!AscendC::Std::is_one_of_v<LayoutC, AscendC::Te::NZLayoutPtn, AscendC::Te::ZNLayoutPtn> &&
-                      !AscendC::Std::is_one_of_v<LayoutBias, AscendC::Te::NZLayoutPtn, AscendC::Te::ZNLayoutPtn>,
+    static_assert(!AscendC::Std::is_one_of_v<LayoutC, asc::te::nz_layout_ptn, asc::te::zn_layout_ptn> &&
+                      !AscendC::Std::is_one_of_v<LayoutBias, asc::te::nz_layout_ptn, asc::te::zn_layout_ptn>,
                   "QGMM MX does not support NZ/ZN LayoutC or LayoutBias.");
     static constexpr bool TRANS_A = IsTrans<LayoutA>::value;
     static constexpr bool TRANS_B = IsTrans<LayoutB>::value;
@@ -97,7 +97,7 @@ public:
     using BlockShape = typename BlockMmad::BlockShape;
     using SchedulerProblemShape = typename BlockScheduler::ProblemShape;
     using SchedulerBlockShape = typename BlockScheduler::BlockShape;
-    using BlockCoord = AscendC::Te::Coord<int64_t, int64_t, int64_t, int64_t>;
+    using BlockCoord = asc::te::coord<int64_t, int64_t, int64_t, int64_t>;
 
     struct GMMTiling {
         uint32_t groupNum;
@@ -136,13 +136,13 @@ public:
 
 private:
     static constexpr uint32_t C0_SIZE = IsFp4<AType>() ? C0_SIZE_B4 : C0_SIZE_B8;
-    using MakeLayoutA = AscendC::Te::FrameLayoutFormat<LayoutA, AscendC::Std::Int<C0_SIZE>>;
-    using MakeLayoutB = AscendC::Te::FrameLayoutFormat<LayoutB, AscendC::Std::Int<C0_SIZE>>;
-    using MakeLayoutC = AscendC::Te::FrameLayoutFormat<LayoutC, AscendC::Std::Int<AscendC::Te::C0_ELEMENT<CType>>>;
+    using MakeLayoutA = asc::te::frame_layout_format<LayoutA, AscendC::Std::Int<C0_SIZE>>;
+    using MakeLayoutB = asc::te::frame_layout_format<LayoutB, AscendC::Std::Int<C0_SIZE>>;
+    using MakeLayoutC = asc::te::frame_layout_format<LayoutC, AscendC::Std::Int<asc::te::c0_element<CType>>>;
     using MakeLayoutScaleA = AscendC::Std::conditional_t<
-        TRANS_A, AscendC::Te::FrameLayoutFormat<AscendC::Te::ScaleADNLayoutPtn, AscendC::Std::Int<SCALE_C0>>,
-        AscendC::Te::FrameLayoutFormat<AscendC::Te::ScaleANDLayoutPtn, AscendC::Std::Int<SCALE_C0>>>;
-    using MakeLayoutScaleB = AscendC::Te::FrameLayoutFormat<LayoutScaleB, AscendC::Std::Int<SCALE_C0>>;
+        TRANS_A, asc::te::frame_layout_format<asc::te::scalea_dn_layout_ptn, AscendC::Std::Int<SCALE_C0>>,
+        asc::te::frame_layout_format<asc::te::scalea_nd_layout_ptn, AscendC::Std::Int<SCALE_C0>>>;
+    using MakeLayoutScaleB = asc::te::frame_layout_format<LayoutScaleB, AscendC::Std::Int<SCALE_C0>>;
 
     __aicore__ inline void SetSchedulerTailAlign(BlockScheduler& scheduler)
     {
@@ -163,32 +163,32 @@ private:
     __aicore__ inline void SetL2CacheHint(TensorB& gmB, TensorScaleB& gmScaleB, int64_t mSize, int64_t curBaseM,
                                           int64_t baseN)
     {
-        const int64_t problemN = AscendC::Te::Get<MNK_N>(problemShape_);
-        const int64_t problemK = AscendC::Te::Get<MNK_K>(problemShape_);
+        const int64_t problemN = asc::te::get<MNK_N>(problemShape_);
+        const int64_t problemK = asc::te::get<MNK_K>(problemShape_);
         if constexpr (WEIGHT_NZ) {
             if (curBaseM >= mSize) {
-                gmB.SetL2CacheHint(AscendC::Te::CacheMode::CACHE_MODE_DISABLE);
-                gmScaleB.SetL2CacheHint(AscendC::Te::CacheMode::CACHE_MODE_DISABLE);
+                gmB.set_l2_cache_hint(asc::te::cache_mode::disable);
+                gmScaleB.set_l2_cache_hint(asc::te::cache_mode::disable);
             } else {
-                gmB.SetL2CacheHint(AscendC::Te::CacheMode::CACHE_MODE_NORMAL);
-                gmScaleB.SetL2CacheHint(AscendC::Te::CacheMode::CACHE_MODE_NORMAL);
+                gmB.set_l2_cache_hint(asc::te::cache_mode::normal);
+                gmScaleB.set_l2_cache_hint(asc::te::cache_mode::normal);
             }
         } else {
             if constexpr (TRANS_B) {
                 if (curBaseM >= mSize && (problemK & SCALE_CACHE_MASK) == 0) {
-                    gmB.SetL2CacheHint(AscendC::Te::CacheMode::CACHE_MODE_DISABLE);
-                    gmScaleB.SetL2CacheHint(AscendC::Te::CacheMode::CACHE_MODE_DISABLE);
+                    gmB.set_l2_cache_hint(asc::te::cache_mode::disable);
+                    gmScaleB.set_l2_cache_hint(asc::te::cache_mode::disable);
                 } else {
-                    gmB.SetL2CacheHint(AscendC::Te::CacheMode::CACHE_MODE_NORMAL);
-                    gmScaleB.SetL2CacheHint(AscendC::Te::CacheMode::CACHE_MODE_NORMAL);
+                    gmB.set_l2_cache_hint(asc::te::cache_mode::normal);
+                    gmScaleB.set_l2_cache_hint(asc::te::cache_mode::normal);
                 }
             } else {
                 if (curBaseM >= mSize && (problemN & SCALE_CACHE_MASK) == 0 && (baseN & SCALE_CACHE_MASK) == 0) {
-                    gmB.SetL2CacheHint(AscendC::Te::CacheMode::CACHE_MODE_DISABLE);
-                    gmScaleB.SetL2CacheHint(AscendC::Te::CacheMode::CACHE_MODE_DISABLE);
+                    gmB.set_l2_cache_hint(asc::te::cache_mode::disable);
+                    gmScaleB.set_l2_cache_hint(asc::te::cache_mode::disable);
                 } else {
-                    gmB.SetL2CacheHint(AscendC::Te::CacheMode::CACHE_MODE_NORMAL);
-                    gmScaleB.SetL2CacheHint(AscendC::Te::CacheMode::CACHE_MODE_NORMAL);
+                    gmB.set_l2_cache_hint(asc::te::cache_mode::normal);
+                    gmScaleB.set_l2_cache_hint(asc::te::cache_mode::normal);
                 }
             }
         }
@@ -205,11 +205,10 @@ private:
         }
         const int64_t groupListSize = static_cast<int64_t>(groupNum_) *
                                       (groupListType_ == GROUP_LIST_TYPE_SPARSE ? SPARSE_GROUP_LIST_ITEM_STRIDE : 1UL);
-        const auto groupListLayout = AscendC::Te::MakeLayout(AscendC::Te::MakeShape(groupListSize),
-                                                             AscendC::Te::MakeStride(1L));
-        const auto gmGroupList = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(
-                                                             reinterpret_cast<__gm__ int64_t*>(params.groupListGmAddr)),
-                                                         groupListLayout);
+        const auto groupListLayout = asc::te::make_layout(asc::te::make_shape(groupListSize), asc::te::make_stride(1L));
+        const auto gmGroupList = asc::te::make_tensor(
+            asc::te::make_mem_ptr<asc::te::location::gm>(reinterpret_cast<__gm__ int64_t*>(params.groupListGmAddr)),
+            groupListLayout);
         const auto& gmmParams = params.gmmParams;
         BlockScheduler scheduler(gmmParams.baseM, gmmParams.baseN, gmmParams.baseK);
         SetSchedulerTailAlign(scheduler);
@@ -220,9 +219,9 @@ private:
                 groupIdx = static_cast<uint32_t>(gmGroupList[loopIdx * SPARSE_GROUP_LIST_ITEM_STRIDE]);
             }
             SetMNK(gmGroupList, loopIdx);
-            const int64_t problemM = AscendC::Te::Get<MNK_M>(problemShape_);
-            const int64_t problemN = AscendC::Te::Get<MNK_N>(problemShape_);
-            const int64_t problemK = AscendC::Te::Get<MNK_K>(problemShape_);
+            const int64_t problemM = asc::te::get<MNK_M>(problemShape_);
+            const int64_t problemN = asc::te::get<MNK_N>(problemShape_);
+            const int64_t problemK = asc::te::get<MNK_K>(problemShape_);
             if (problemM <= 0 || problemN <= 0 || problemK <= 0) {
                 if (groupListType_ == GROUP_LIST_TYPE_SPARSE && problemM <= 0) {
                     break;
@@ -239,9 +238,9 @@ private:
             groupIdx = static_cast<uint32_t>(gmGroupList[lastGroupIdx * SPARSE_GROUP_LIST_ITEM_STRIDE]);
         }
         SetMNK(gmGroupList, lastGroupIdx);
-        const int64_t problemM = AscendC::Te::Get<MNK_M>(problemShape_);
-        const int64_t problemN = AscendC::Te::Get<MNK_N>(problemShape_);
-        const int64_t problemK = AscendC::Te::Get<MNK_K>(problemShape_);
+        const int64_t problemM = asc::te::get<MNK_M>(problemShape_);
+        const int64_t problemN = asc::te::get<MNK_N>(problemShape_);
+        const int64_t problemK = asc::te::get<MNK_K>(problemShape_);
         if (problemM > 0 && problemN > 0 && problemK > 0) {
             BaseMBalance(scheduler, problemM, gmmParams.baseM);
             scheduler.UpdateNextProblem(SchedulerProblemShape{problemM, problemN, problemK, 0});
@@ -323,12 +322,12 @@ private:
     __aicore__ inline void SetMNK(const GroupListTensor& gmGroupList, uint32_t groupIdx)
     {
         const int64_t splitValue = GetSplitValueFromGroupList(gmGroupList, groupIdx);
-        const int64_t n = AscendC::Te::Get<MNK_N>(problemShape_);
+        const int64_t n = asc::te::get<MNK_N>(problemShape_);
         // Current MX scalar path selects the split axis from LayoutA, not from GMMTiling::groupType.
         if constexpr (!TRANS_A) {
-            problemShape_ = ProblemShape{splitValue, n, AscendC::Te::Get<MNK_K>(problemShape_), 0};
+            problemShape_ = ProblemShape{splitValue, n, asc::te::get<MNK_K>(problemShape_), 0};
         } else {
-            problemShape_ = ProblemShape{AscendC::Te::Get<MNK_M>(problemShape_), n, splitValue, 0};
+            problemShape_ = ProblemShape{asc::te::get<MNK_M>(problemShape_), n, splitValue, 0};
         }
     }
 
@@ -358,9 +357,9 @@ private:
             return;
         }
 
-        const int64_t m = AscendC::Te::Get<MNK_M>(problemShape_);
-        const int64_t n = AscendC::Te::Get<MNK_N>(problemShape_);
-        const int64_t k = AscendC::Te::Get<MNK_K>(problemShape_);
+        const int64_t m = asc::te::get<MNK_M>(problemShape_);
+        const int64_t n = asc::te::get<MNK_N>(problemShape_);
+        const int64_t k = asc::te::get<MNK_K>(problemShape_);
         // The previous split offset follows the same current-scenario binding as SetMNK.
         const int64_t prevSplitOffset = preOffset_ - (TRANS_A ? k : m);
         if constexpr (!TRANS_A) {
@@ -414,9 +413,9 @@ private:
         // across groups and only refresh the problem shape.
         mmadOp_.UpdateParamsForNextProblem(problemShape_);
 
-        const int64_t problemM = AscendC::Te::Get<MNK_M>(problemShape_);
-        const int64_t problemN = AscendC::Te::Get<MNK_N>(problemShape_);
-        const int64_t problemK = AscendC::Te::Get<MNK_K>(problemShape_);
+        const int64_t problemM = asc::te::get<MNK_M>(problemShape_);
+        const int64_t problemN = asc::te::get<MNK_N>(problemShape_);
+        const int64_t problemK = asc::te::get<MNK_K>(problemShape_);
         const int64_t scaleK = GetScaleK(problemK);
         const int64_t baseN = static_cast<int64_t>(baseN_);
         auto layoutA = MakeLayoutA{}(problemM, problemK);
@@ -424,23 +423,21 @@ private:
         auto layoutB = MakeLayoutB{}(problemK, problemN);
         auto layoutScaleB = MakeLayoutScaleB{}(scaleK, problemN);
         auto layoutC = MakeLayoutC{}(problemM, problemN);
-        auto gmA = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(aBasePtr_ + aOffset_),
-                                           layoutA);
-        auto gmScaleA = AscendC::Te::MakeTensor(
-            AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(scaleABasePtr_ + scaleAOffset_), layoutScaleA);
-        auto gmB = AscendC::Te::MakeTensor(
-            AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(
+        auto gmA = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::gm>(aBasePtr_ + aOffset_), layoutA);
+        auto gmScaleA = asc::te::make_tensor(
+            asc::te::make_mem_ptr<asc::te::location::gm>(scaleABasePtr_ + scaleAOffset_), layoutScaleA);
+        auto gmB = asc::te::make_tensor(
+            asc::te::make_mem_ptr<asc::te::location::gm>(
                 (singleW_ ? bBasePtr_ : GetTensorAddrFromTensorList(groupIdx, bBasePtr_)) + bOffset_),
             layoutB);
-        auto gmScaleB = AscendC::Te::MakeTensor(
-            AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(
+        auto gmScaleB = asc::te::make_tensor(
+            asc::te::make_mem_ptr<asc::te::location::gm>(
                 (singleW_ ? scaleBBasePtr_ : GetTensorAddrFromTensorList(groupIdx, scaleBBasePtr_)) + scaleBOffset_),
             layoutScaleB);
-        auto gmC = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(cBasePtr_ + cOffset_),
-                                           layoutC);
+        auto gmC = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::gm>(cBasePtr_ + cOffset_), layoutC);
         auto biasPtr = isBias_ ? (biasBasePtr_ + biasOffset_) : nullptr;
-        auto layoutBias = AscendC::Te::MakeFrameLayout<AscendC::Te::NDExtLayoutPtn>(static_cast<int64_t>(1), problemN);
-        auto gmBias = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(biasPtr), layoutBias);
+        auto layoutBias = asc::te::make_frame_layout<asc::te::nd_ext_layout_ptn>(static_cast<int64_t>(1), problemN);
+        auto gmBias = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::gm>(biasPtr), layoutBias);
 
         if constexpr (!isLastGroupAndNeedSplit) {
             SetL2CacheHint(gmB, gmScaleB, problemM, static_cast<int64_t>(curBaseM_), static_cast<int64_t>(baseN_));
@@ -448,31 +445,31 @@ private:
 
         do {
             const SchedulerBlockShape schedulerBlockShape = scheduler.GetBlockShape(blockCoord);
-            const int64_t blockM = AscendC::Te::Get<MNK_M>(schedulerBlockShape);
-            const int64_t blockN = AscendC::Te::Get<MNK_N>(schedulerBlockShape);
+            const int64_t blockM = asc::te::get<MNK_M>(schedulerBlockShape);
+            const int64_t blockN = asc::te::get<MNK_N>(schedulerBlockShape);
             if (blockM <= 0 || blockN <= 0) {
                 continue;
             }
-            const int64_t mSplitOffset = AscendC::Te::Get<MNK_K>(schedulerBlockShape);
-            const int64_t nSplitOffset = AscendC::Te::Get<MNK_B>(schedulerBlockShape);
-            const int64_t mBlockIdx = AscendC::Te::Get<MNK_M>(blockCoord);
-            const int64_t nBlockIdx = AscendC::Te::Get<MNK_N>(blockCoord);
+            const int64_t mSplitOffset = asc::te::get<MNK_K>(schedulerBlockShape);
+            const int64_t nSplitOffset = asc::te::get<MNK_B>(schedulerBlockShape);
+            const int64_t mBlockIdx = asc::te::get<MNK_M>(blockCoord);
+            const int64_t nBlockIdx = asc::te::get<MNK_N>(blockCoord);
             const int64_t blockK = problemK;
             BlockShape blockShape{blockM, blockN, blockK, 0};
             const int64_t mPos = mBlockIdx * curBaseM_ + mSplitOffset;
             const int64_t nPos = nBlockIdx * baseN + nSplitOffset;
 
-            auto gmBlockA = gmA.Slice(AscendC::Te::MakeCoord(mPos, static_cast<int64_t>(0)),
-                                      AscendC::Te::MakeShape(blockM, blockK));
-            auto gmBlockScaleA = gmScaleA.Slice(AscendC::Te::MakeCoord(mPos, static_cast<int64_t>(0)),
-                                                AscendC::Te::MakeShape(blockM, scaleK));
-            auto gmBlockB = gmB.Slice(AscendC::Te::MakeCoord(static_cast<int64_t>(0), nPos),
-                                      AscendC::Te::MakeShape(blockK, blockN));
-            auto gmBlockScaleB = gmScaleB.Slice(AscendC::Te::MakeCoord(static_cast<int64_t>(0), nPos),
-                                                AscendC::Te::MakeShape(scaleK, blockN));
-            auto gmBlockBias = gmBias.Slice(AscendC::Te::MakeCoord(static_cast<int64_t>(0), nPos),
-                                            AscendC::Te::MakeShape(static_cast<int64_t>(1), blockN));
-            auto gmBlockC = gmC.Slice(AscendC::Te::MakeCoord(mPos, nPos), AscendC::Te::MakeShape(blockM, blockN));
+            auto gmBlockA = gmA.slice(asc::te::make_coord(mPos, static_cast<int64_t>(0)),
+                                      asc::te::make_shape(blockM, blockK));
+            auto gmBlockScaleA = gmScaleA.slice(asc::te::make_coord(mPos, static_cast<int64_t>(0)),
+                                                asc::te::make_shape(blockM, scaleK));
+            auto gmBlockB = gmB.slice(asc::te::make_coord(static_cast<int64_t>(0), nPos),
+                                      asc::te::make_shape(blockK, blockN));
+            auto gmBlockScaleB = gmScaleB.slice(asc::te::make_coord(static_cast<int64_t>(0), nPos),
+                                                asc::te::make_shape(scaleK, blockN));
+            auto gmBlockBias = gmBias.slice(asc::te::make_coord(static_cast<int64_t>(0), nPos),
+                                            asc::te::make_shape(static_cast<int64_t>(1), blockN));
+            auto gmBlockC = gmC.slice(asc::te::make_coord(mPos, nPos), asc::te::make_shape(blockM, blockN));
             mmadOp_(gmBlockA, gmBlockB, gmBlockScaleA, gmBlockScaleB, gmBlockBias, gmBlockC, blockShape);
         } while (scheduler.GetNextBlockCoord(blockCoord));
     }

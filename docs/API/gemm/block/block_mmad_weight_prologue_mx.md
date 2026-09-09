@@ -23,8 +23,8 @@ B/Bias Tensor，也不执行 B GM→L1 搬运。
 - `ATypeTuple`、`LayoutATuple`、`BTypeTuple`、`LayoutBTuple` 必须都是二元 tuple。
 - Block 的静态约束要求 A 类型占 1 字节；当前配套 prologue/算子组装固定为 `fp8_e4m3fn_t`。
 - B 类型必须为 packed FP4，ScaleA/ScaleB 必须为 `fp8_e8m0_t`。
-- `LayoutB` 必须是转置布局：NZ 使用 `ZNLayoutPtn`，ND 使用 `DNExtLayoutPtn`。
-- 当前算子组装中 `LayoutC`/`LayoutBias` 均为 `NDExtLayoutPtn`；bias 可选，有 bias 时
+- `LayoutB` 必须是转置布局：NZ 使用 `zn_layout_ptn`，ND 使用 `dn_ext_layout_ptn`。
+- 当前算子组装中 `LayoutC`/`LayoutBias` 均为 `nd_ext_layout_ptn`；bias 可选，有 bias 时
   `BiasType` 与 `CType` 一致。
 
 ### 缓冲和同步

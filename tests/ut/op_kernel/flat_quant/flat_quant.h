@@ -86,8 +86,8 @@ public:
     using DataTypeOut = DataTypeOut_;
     using DataTypeIn = DataTypeIn_;
     using DataTypeScale = DataTypeScale_;
-    using BlockShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t, int64_t, int64_t>;
-    using ProblemShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
+    using BlockShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t, int64_t, int64_t>;
+    using ProblemShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
 
     struct Params {
         GM_ADDR outGmAddr{nullptr};
@@ -118,14 +118,14 @@ struct FlatQuantBlazeTypes {
     using BiasMatmulType = UtMatmulType<BiasType>;
 
     using BlockScheduler = Blaze::Attention::Block::BlockSchedulerFlatQuant<
-        AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>>;
+        asc::te::shape<int64_t, int64_t, int64_t, int64_t>>;
     using DispatchPolicy = Blaze::Attention::BlockFlatQuant<Blaze::Attention::KernelFlatQuant>;
     using BlockMmad = Blaze::Attention::Block::BlockMmad<DispatchPolicy, AMatmulType, LayoutA, BMatmulType, LayoutB,
                                                          BiasMatmulType, LayoutC, CMatmulType, LayoutC>;
     using BlockEpilogue = Blaze::Epilogue::Block::BlockEpilogueFlatQuant<AType, OutType, BiasType>;
     using FusionOp = Blaze::Epilogue::Fusion::DefaultFusion<OutType, AType>;
 
-    using ProblemShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
+    using ProblemShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
     using MatmulKernel = Blaze::Attention::Kernel::AttentionUniversal<ProblemShape, BlockMmad, BlockEpilogue,
                                                                       BlockScheduler>;
 };
@@ -174,7 +174,7 @@ __aicore__ inline void RunFlatQuantBlaze(GM_ADDR aGM, GM_ADDR p1GM, GM_ADDR p2GM
 }
 } // namespace FlatQuantUT
 
-template <typename X_TYPE, typename Y_TYPE, typename SCALE_TYPE, typename C_LAYOUT = AscendC::Te::NDExtLayoutPtn>
+template <typename X_TYPE, typename Y_TYPE, typename SCALE_TYPE, typename C_LAYOUT = asc::te::nd_ext_layout_ptn>
 __global__ __aicore__ void FlatQuantKernelEntry(GM_ADDR x, GM_ADDR p1, GM_ADDR p2, GM_ADDR out, GM_ADDR quant_scale,
                                                 GM_ADDR workspace, GM_ADDR tiling)
 {

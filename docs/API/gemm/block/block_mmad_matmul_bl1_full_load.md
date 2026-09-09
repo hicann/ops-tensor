@@ -126,7 +126,7 @@ template <typename TensorUB, typename TensorL0C>
 __aicore__ inline void CopyOutFromL0C2UB(TensorUB& tensorC, TensorL0C& tensorL0C,
                                          uint64_t tileN, uint64_t curM, uint16_t slotIdx)
 ```
-L0C→UB 拷贝，对齐到 `C0_ELEMENT`。splitM 时使用 `CopyL0C2UBTraitSplitM`。
+L0C→UB 拷贝，对齐到 `c0_element`。splitM 时使用 `CopyL0C2UBTraitSplitM`。
 
 ## 使用示例
 

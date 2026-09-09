@@ -124,12 +124,12 @@ def _transpose_quantized(raw, dtype, rows, cols):
 
 
 def format_scale_a(scale_a, m):
-    """Format ScaleA for ScaleANDLayoutPtn (no transA): (M, sk) row-major."""
+    """Format ScaleA for scalea_nd_layout_ptn (no transA): (M, sk) row-major."""
     return scale_a
 
 
 def format_scale_a_trans(scale_a, m):
-    """Format ScaleA for ScaleADNLayoutPtn (transA=true)."""
+    """Format ScaleA for scalea_dn_layout_ptn (transA=true)."""
     scale_k = scale_a.shape[1]
     scale_k_aligned = align(scale_k, 2)
     sa = np.zeros((m, scale_k_aligned), dtype=FP8_E8M0)
@@ -138,7 +138,7 @@ def format_scale_a_trans(scale_a, m):
 
 
 def format_scale_b(scale_b, n):
-    """Format ScaleB for ScaleBNDLayoutPtn (no transB): C0=2 interleave along N."""
+    """Format ScaleB for scaleb_nd_layout_ptn (no transB): C0=2 interleave along N."""
     scale_k = scale_b.shape[0]
     scale_k_aligned = align(scale_k, 2)
     sb = np.zeros((scale_k_aligned, n), dtype=FP8_E8M0)
@@ -147,7 +147,7 @@ def format_scale_b(scale_b, n):
 
 
 def format_scale_b_trans(scale_b, n):
-    """Format ScaleB for ScaleBDNLayoutPtn (transB=true): (N, sk) row-major = transpose."""
+    """Format ScaleB for scaleb_dn_layout_ptn (transB=true): (N, sk) row-major = transpose."""
     return scale_b.T.copy()
 
 

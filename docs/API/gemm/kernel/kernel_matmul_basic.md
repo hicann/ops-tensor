@@ -138,14 +138,14 @@ using AType = half;                              // A 矩阵数据类型
 using BType = half;                              // B 矩阵数据类型
 using CType = half;                              // C 矩阵输出类型
 using BiasType = half;                           // Bias 数据类型（可选）
-using LayoutA = AscendC::Te::NZLayoutPtn;        // A 矩阵布局（NZ/ND）
-using LayoutB = AscendC::Te::NZLayoutPtn;        // B 矩阵布局（NZ/ND）
-using LayoutC = AscendC::Te::NDLayoutPtn;        // C 矩阵布局（ND）
+using LayoutA = asc::te::nz_layout_ptn;        // A 矩阵布局（NZ/ND）
+using LayoutB = asc::te::nz_layout_ptn;        // B 矩阵布局（NZ/ND）
+using LayoutC = asc::te::nd_layout_ptn;        // C 矩阵布局（ND）
 using LayoutBias = LayoutC;                      // Bias 布局
 
 // ============== 2. ProblemShape 定义 ==============
 // 形状：(m, n, k, batch)，batch=0 或 1 表示单 batch
-using ProblemShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
+using ProblemShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
 
 // ============== 3. BlockScheduler 组装 ==============
 // FullLoadMode: 0=非全载（默认）, 1=A全载, 2=B全载

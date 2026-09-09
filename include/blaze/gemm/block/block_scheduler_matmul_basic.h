@@ -25,8 +25,8 @@ namespace Block {
 template <class ProblemShape_, int64_t FullLoadMode_ = 0, bool IsFp32_ = false, bool IsNdFormat_ = true>
 class BlockSchedulerMatmulBasic {
 public:
-    using BlockShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
-    using BlockCoord = AscendC::Te::Coord<int64_t, int64_t, int64_t, int64_t>;
+    using BlockShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
+    using BlockCoord = asc::te::coord<int64_t, int64_t, int64_t, int64_t>;
     using ProblemShape = ProblemShape_;
 
     struct Params {
@@ -52,15 +52,15 @@ public:
 public:
     __aicore__ inline BlockSchedulerMatmulBasic(const ProblemShape& shape, const Params& params)
     {
-        k_ = AscendC::Te::Get<MNK_K>(shape);
-        batch_ = AscendC::Std::max(AscendC::Te::Get<MNK_B>(shape), 1L);
+        k_ = asc::te::get<MNK_K>(shape);
+        batch_ = AscendC::Std::max(asc::te::get<MNK_B>(shape), 1L);
         innerBatch_ = params.innerBatch;
         mL1_ = params.mL1;
         nL1_ = params.nL1;
         kL1_ = params.kL1;
         isHf32_ = params.isHf32;
-        int64_t m = AscendC::Te::Get<MNK_M>(shape);
-        int64_t n = AscendC::Te::Get<MNK_N>(shape);
+        int64_t m = asc::te::get<MNK_M>(shape);
+        int64_t n = asc::te::get<MNK_N>(shape);
         mBlockNums_ = CeilDiv(static_cast<uint32_t>(m), params.mL1);
         nBlockNums_ = CeilDiv(static_cast<uint32_t>(n), params.nL1);
         blockNum_ = AscendC::GetBlockNum();

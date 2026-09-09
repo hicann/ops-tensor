@@ -11,7 +11,7 @@
 ### 模板参数
 | 参数 | 说明 |
 |------|------|
-| ProblemShape_ | 问题形状类型，通常为 `AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>` (m, n, k, batch) |
+| ProblemShape_ | 问题形状类型，通常为 `asc::te::shape<int64_t, int64_t, int64_t, int64_t>` (m, n, k, batch) |
 | BlockMmad_ | BlockMmad 类，矩阵乘计算组件 |
 | BlockEpilogue_ | BlockEpilogue 类，后处理组件 |
 | BlockScheduler_ | BlockScheduler 类，任务调度组件 |
@@ -39,15 +39,15 @@
 | LayoutB | B 矩阵布局类型（继承自 BlockMmad） |
 | LayoutC | C 矩阵布局类型（继承自 BlockMmad） |
 | LayoutBias | Bias 布局类型（继承自 BlockMmad） |
-| TupleShape / TileShape | Tile 形状类型 `AscendC::Te::Shape<...>` |
+| TupleShape / TileShape | Tile 形状类型 `asc::te::shape<...>` |
 
 ### Layout 构建类型
 | 类型 | 说明 |
 |------|------|
-| MakeLayoutA | A 矩阵 Layout 构建器 `FrameLayoutFormat<LayoutA, ...>` |
-| MakeLayoutB | B 矩阵 Layout 构建器 `FrameLayoutFormat<LayoutB, ...>` |
-| MakeLayoutC | C 矩阵 Layout 构建器 `FrameLayoutFormat<LayoutC, ...>` |
-| MakeLayoutBias | Bias Layout 构建器 `FrameLayoutFormat<LayoutBias, ...>` |
+| MakeLayoutA | A 矩阵 Layout 构建器 `frame_layout_format<LayoutA, ...>` |
+| MakeLayoutB | B 矩阵 Layout 构建器 `frame_layout_format<LayoutB, ...>` |
+| MakeLayoutC | C 矩阵 Layout 构建器 `frame_layout_format<LayoutC, ...>` |
+| MakeLayoutBias | Bias Layout 构建器 `frame_layout_format<LayoutBias, ...>` |
 
 ### 核心数据结构
 
@@ -127,16 +127,16 @@ HF32模式设置（可选）
 BlockMmad初始化
     ↓
 创建GM Tensor（使用Tensor API）
-    ├── Layout构建：FrameLayoutFormat<LayoutPattern, C0_ELEMENT>
-    ├── MemPtr创建：MakeMemPtr<Location::GM>
-    └── Tensor创建：MakeTensor(memPtr, layout)
+    ├── Layout构建：frame_layout_format<LayoutPattern, c0_element>
+    ├── MemPtr创建：make_mem_ptr<asc::te::location::gm>
+    └── Tensor创建：make_tensor(memPtr, layout)
     ↓
 L2 Cache配置（可选）
     ↓
 Tile循环处理
     ├── GetBlockShape：获取当前tile形状
     ├── GetBlockCoord：获取当前tile坐标
-    ├── Slice Tensor：gmA.Slice(coord, shape)
+    ├── Slice Tensor：gmA.slice(coord, shape)
     └── BlockMmad执行
     ↓
 清理：关闭HF32模式
@@ -144,14 +144,14 @@ Tile循环处理
 
 ### Tensor API使用示例
 ```cpp
-// Layout构建（使用FrameLayoutFormat和LayoutPattern）
-using LayoutA = AscendC::Te::NZLayoutPtn;      // NZ格式布局
-using LayoutB = AscendC::Te::NDLayoutPtn;      // ND格式布局
-using LayoutC = AscendC::Te::NDExtLayoutPtn;   // ND扩展布局
+// Layout构建（使用frame_layout_format和LayoutPattern）
+using LayoutA = asc::te::nz_layout_ptn;      // NZ格式布局
+using LayoutB = asc::te::nd_layout_ptn;      // ND格式布局
+using LayoutC = asc::te::nd_ext_layout_ptn;   // ND扩展布局
 
-using MakeLayoutA = AscendC::Te::FrameLayoutFormat<LayoutA, AscendC::Std::Int<C0_ELEMENT<AType>>>;
-using MakeLayoutB = AscendC::Te::FrameLayoutFormat<LayoutB, AscendC::Std::Int<C0_ELEMENT<BType>>>;
-using MakeLayoutC = AscendC::Te::FrameLayoutFormat<LayoutC, AscendC::Std::Int<C0_ELEMENT<CType>>>;
+using MakeLayoutA = asc::te::frame_layout_format<LayoutA, AscendC::Std::Int<asc::te::c0_element<AType>>>;
+using MakeLayoutB = asc::te::frame_layout_format<LayoutB, AscendC::Std::Int<asc::te::c0_element<BType>>>;
+using MakeLayoutC = asc::te::frame_layout_format<LayoutC, AscendC::Std::Int<asc::te::c0_element<CType>>>;
 
 // Layout实例化
 auto layoutA = MakeLayoutA{}(m_, k_);  // 创建A矩阵layout (m, k)
@@ -159,25 +159,25 @@ auto layoutB = MakeLayoutB{}(k_, n_);  // 创建B矩阵layout (k, n)
 auto layoutC = MakeLayoutC{}(m_, n_);  // 创建C矩阵layout (m, n)
 
 // GM Tensor创建（使用Tensor API）
-auto gmA = AscendC::Te::MakeTensor(
-    AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(aGmAddr_), 
+auto gmA = asc::te::make_tensor(
+    asc::te::make_mem_ptr<asc::te::location::gm>(aGmAddr_),
     layoutA);
-auto gmB = AscendC::Te::MakeTensor(
-    AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(bGmAddr_), 
+auto gmB = asc::te::make_tensor(
+    asc::te::make_mem_ptr<asc::te::location::gm>(bGmAddr_),
     layoutB);
-auto gmC = AscendC::Te::MakeTensor(
-    AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(cGmAddr_), 
+auto gmC = asc::te::make_tensor(
+    asc::te::make_mem_ptr<asc::te::location::gm>(cGmAddr_),
     layoutC);
 
 // Tensor Slice操作（获取当前tile的数据）
-auto gmBlockA = gmA.Slice(
+auto gmBlockA = gmA.slice(
     AscendC::MakeCoord(coordM, 0L),          // 起始坐标
     AscendC::MakeShape(shapeM, shapeK));     // 形状
-auto gmBlockB = gmB.Slice(
-    AscendC::MakeCoord(0L, coordN), 
+auto gmBlockB = gmB.slice(
+    AscendC::MakeCoord(0L, coordN),
     AscendC::MakeShape(shapeK, shapeN));
-auto gmBlockC = gmC.Slice(
-    AscendC::MakeCoord(coordM, coordN), 
+auto gmBlockC = gmC.slice(
+    AscendC::MakeCoord(coordM, coordN),
     AscendC::MakeShape(shapeM, shapeN));
 ```
 
@@ -214,13 +214,13 @@ using AType = half;
 using BType = half;
 using CType = float;
 using BiasType = float;
-using LayoutA = AscendC::Te::NDExtLayoutPtn;
-using LayoutB = AscendC::Te::NDExtLayoutPtn;
-using LayoutC = AscendC::Te::NDExtLayoutPtn;
+using LayoutA = asc::te::nd_ext_layout_ptn;
+using LayoutB = asc::te::nd_ext_layout_ptn;
+using LayoutC = asc::te::nd_ext_layout_ptn;
 using LayoutBias = LayoutC;
 
 // 定义问题 shape
-using ProblemShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
+using ProblemShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
 
 // 定义 BlockScheduler
 using BlockScheduler = Blaze::Gemm::Block::BlockSchedulerMatmulBasic<ProblemShape, FULL_LOAD_MODE>;
@@ -250,7 +250,7 @@ mm(params);
 ## 公共约束
 
 1. **模板参数要求**：
-   - ProblemShape 必须为 `AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>` 类型, 分别表示 **m n k b** 维度大小。 
+   - ProblemShape 必须为 `asc::te::shape<int64_t, int64_t, int64_t, int64_t>` 类型, 分别表示 **m n k b** 维度大小。
    - BlockMmad 必须继承自相应的 BlockMmad 基类
    - BlockEpilogue 必须与 Kernel 类型匹配
    - BlockScheduler 必须提供 tile 切分和调度功能
@@ -261,7 +261,7 @@ mm(params);
 
 3. **Bias 支持**：可选 bias 输入，通过 `biasGmAddr` 是否为 nullptr 判断
 
-4. **Layout 构建**：使用 `FrameLayoutFormat` 根据数据类型自动适配 layout
+4. **Layout 构建**：使用 `frame_layout_format` 根据数据类型自动适配 layout
 
 ## 性能优化建议（公共）
 

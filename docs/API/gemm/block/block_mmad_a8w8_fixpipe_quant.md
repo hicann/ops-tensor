@@ -34,10 +34,10 @@ Fixpipe 量化矩阵乘 Block，基于 Tensor API 实现，仅支持 AIC 计算�
 ### 量化数据类型支持
 | 数据类型 | 说明 | C0_SIZE |
 |---------|------|---------|
-| int8_t | A8W8 量化输入 | 由 `C0_ELEMENT<AType>` 决定，通常为 32 |
-| hifloat8_t | HiFloat8 量化输入 | 由 `C0_ELEMENT<AType>` 决定，通常为 32 |
-| fp8_e5m2_t | FP8 E5M2 量化输入 | 由 `C0_ELEMENT<AType>` 决定，通常为 32 |
-| fp8_e4m3fn_t | FP8 E4M3FN 量化输入 | 由 `C0_ELEMENT<AType>` 决定，通常为 32 |
+| int8_t | A8W8 量化输入 | 由 `c0_element<AType>` 决定，通常为 32 |
+| hifloat8_t | HiFloat8 量化输入 | 由 `c0_element<AType>` 决定，通常为 32 |
+| fp8_e5m2_t | FP8 E5M2 量化输入 | 由 `c0_element<AType>` 决定，通常为 32 |
+| fp8_e4m3fn_t | FP8 E4M3FN 量化输入 | 由 `c0_element<AType>` 决定，通常为 32 |
 
 说明：
 - A 矩阵类型由 `AType` 指定。
@@ -77,12 +77,12 @@ StreamK SK block 输出到 workspace GM：
 ### Mmad 计算模式
 使用默认 Mmad trait，执行量化 A/B Cube Mmad：
 ```
-using MmadAtomT = AscendC::Te::MmadAtom<
-    AscendC::Te::MmadTraits<
-        AscendC::Te::MmadOperation,
-        AscendC::Te::MmadTraitDefault>>;
+using MmadAtomT = asc::te::mmad_atom<
+    asc::te::mmad_traits<
+        asc::te::mmad_operation,
+        asc::te::mmad_trait_default>>;
 
-AscendC::Te::Mmad(MmadAtomT{}.with(mmadParams), c1Local, l0aLocal, l0bLocal);
+asc::te::mmad(MmadAtomT{}.with(mmadParams), c1Local, l0aLocal, l0bLocal);
 ```
 
 Bias 仅在首个 K-L1/L0 迭代搬入 BT 并参与 Mmad。StreamK SK block 还要求 `kCntIndex == 0`，确保反量化前 bias 在多个 K 分片中只累加一次。需要在反量化后处理的 bias 不应传给本 Block；包含 DP block 的上层通路应在 tiling 阶段拒绝此类组合。
@@ -94,7 +94,7 @@ Bias 仅在首个 K-L1/L0 迭代搬入 BT 并参与 Mmad。StreamK SK block 还�
 | WEIGHT_NZ | B 矩阵是否为 NZ 格式 |
 | TRANS_A | A 矩阵是否转置 |
 | TRANS_B | B 矩阵是否转置 |
-| C0_SIZE | A/B C0 对齐大小，由 `AscendC::Te::C0_ELEMENT<AType>` 推导 |
+| C0_SIZE | A/B C0 对齐大小，由 `asc::te::c0_element<AType>` 推导 |
 | C0_SIZE_L0C | L0C C0 对齐大小，固定为 16，定义于 `common_utils.h` |
 | SCALE_BUFFER_NUM | X2 scale L1 缓冲数量，固定为 2，定义于 `common_utils.h` |
 | DOUBLE_BUFFER_COUNT | A/B L1 双缓冲数量，固定为 2，定义于 `common_utils.h` |
@@ -271,10 +271,10 @@ using CType = bfloat16_t;
 using BiasType = int32_t;
 using X2ScaleType = uint64_t;
 
-using LayoutA = AscendC::Te::NDExtLayoutPtn;
-using LayoutB = AscendC::Te::NDExtLayoutPtn;
-using LayoutC = AscendC::Te::NDExtLayoutPtn;
-using LayoutBias = AscendC::Te::NDExtLayoutPtn;
+using LayoutA = asc::te::nd_ext_layout_ptn;
+using LayoutB = asc::te::nd_ext_layout_ptn;
+using LayoutC = asc::te::nd_ext_layout_ptn;
+using LayoutBias = asc::te::nd_ext_layout_ptn;
 
 using BTypeTuple = AscendC::Std::tuple<BType, X2ScaleType>;
 using DispatchPolicy = Blaze::Gemm::MatmulWithScaleFixpipeQuant<0, false>;
@@ -303,10 +303,10 @@ blockMmad.Init(params);
 
 ### 组件执行
 ```
-auto gmBlockA = gmA.Slice(...);
-auto gmBlockB = gmB.Slice(...);
-auto gmBlockBias = gmBias.Slice(...);
-auto gmBlockC = gmC.Slice(...);
+auto gmBlockA = gmA.slice(...);
+auto gmBlockB = gmB.slice(...);
+auto gmBlockBias = gmBias.slice(...);
+auto gmBlockC = gmC.slice(...);
 
 uint64_t scalarScale = ...;
 BlockMmad::BlockShape singleShape{curM, curN, k, 0};

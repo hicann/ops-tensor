@@ -62,12 +62,11 @@ public:
     using LayoutB = typename BlockMmad::LayoutB;
     using LayoutC = typename BlockMmad::LayoutC;
     using LayoutBias = typename BlockMmad::LayoutBias;
-    using TupleShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
-    using MakeLayoutA = AscendC::Te::FrameLayoutFormat<LayoutA, AscendC::Std::Int<AscendC::Te::C0_ELEMENT<AType>>>;
-    using MakeLayoutB = AscendC::Te::FrameLayoutFormat<LayoutB, AscendC::Std::Int<AscendC::Te::C0_ELEMENT<BType>>>;
-    using MakeLayoutC = AscendC::Te::FrameLayoutFormat<LayoutC, AscendC::Std::Int<AscendC::Te::C0_ELEMENT<CType>>>;
-    using MakeLayoutBias = AscendC::Te::FrameLayoutFormat<LayoutBias,
-                                                          AscendC::Std::Int<AscendC::Te::C0_ELEMENT<BiasType>>>;
+    using TupleShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
+    using MakeLayoutA = asc::te::frame_layout_format<LayoutA, AscendC::Std::Int<asc::te::c0_element<AType>>>;
+    using MakeLayoutB = asc::te::frame_layout_format<LayoutB, AscendC::Std::Int<asc::te::c0_element<BType>>>;
+    using MakeLayoutC = asc::te::frame_layout_format<LayoutC, AscendC::Std::Int<asc::te::c0_element<CType>>>;
+    using MakeLayoutBias = asc::te::frame_layout_format<LayoutBias, AscendC::Std::Int<asc::te::c0_element<BiasType>>>;
     using BlockSchedulerParams = typename Block::BlockSchedulerIterBatchBroadcast<ProblemShape>::Params;
     struct Params {
         ProblemShape problemShape;
@@ -79,9 +78,9 @@ public:
 
     __aicore__ inline void Init(Params const& params)
     {
-        m_ = static_cast<uint64_t>(AscendC::Te::Get<MNK_M>(params.problemShape));
-        n_ = static_cast<uint64_t>(AscendC::Te::Get<MNK_N>(params.problemShape));
-        k_ = static_cast<uint64_t>(AscendC::Te::Get<MNK_K>(params.problemShape));
+        m_ = static_cast<uint64_t>(asc::te::get<MNK_M>(params.problemShape));
+        n_ = static_cast<uint64_t>(asc::te::get<MNK_N>(params.problemShape));
+        k_ = static_cast<uint64_t>(asc::te::get<MNK_K>(params.problemShape));
         b_ = static_cast<uint64_t>(params.schedulerParams.cBatchDim0) *
              static_cast<uint64_t>(params.schedulerParams.cBatchDim1) *
              static_cast<uint64_t>(params.schedulerParams.cBatchDim2) *
@@ -129,32 +128,31 @@ public:
             params.schedulerParams.cBatchDim0 * params.schedulerParams.cBatchDim1 * params.schedulerParams.cBatchDim2 *
             params.schedulerParams.cBatchDim3);
 
-        auto layoutA3D = AscendC::Te::MakeFrameLayout<LayoutA>(totalABatches, m_, k_);
-        auto layoutB3D = AscendC::Te::MakeFrameLayout<LayoutB>(totalBBatches, k_, n_);
-        auto layoutC3D = AscendC::Te::MakeFrameLayout<AscendC::Te::NDExtLayoutPtn>(totalCBatches, m_, n_);
+        auto layoutA3D = asc::te::make_frame_layout<LayoutA>(totalABatches, m_, k_);
+        auto layoutB3D = asc::te::make_frame_layout<LayoutB>(totalBBatches, k_, n_);
+        auto layoutC3D = asc::te::make_frame_layout<asc::te::nd_ext_layout_ptn>(totalCBatches, m_, n_);
         auto layoutBias = MakeLayoutBias{}(1L, n_);
-        auto gmA = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(aGmAddr_), layoutA3D);
-        auto gmB = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(bGmAddr_), layoutB3D);
-        auto gmC = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(cGmAddr_), layoutC3D);
-        auto gmBias = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(biasGmAddr_),
-                                              layoutBias);
+        auto gmA = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::gm>(aGmAddr_), layoutA3D);
+        auto gmB = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::gm>(bGmAddr_), layoutB3D);
+        auto gmC = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::gm>(cGmAddr_), layoutC3D);
+        auto gmBias = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::gm>(biasGmAddr_), layoutBias);
         for (int64_t blockIdx = curBlockIdx; blockIdx < blockNums; blockIdx += coreNums) {
             auto blockShape = bs.GetBlockShape(blockIdx, blockNums);
             auto blockCoord = bs.GetBlockCoord(blockIdx);
-            uint64_t startBatchIdx = static_cast<uint64_t>(AscendC::Te::Get<MNK_B>(blockCoord));
-            uint64_t curIterBatchL1 = static_cast<uint64_t>(AscendC::Te::Get<MNK_B>(blockShape));
+            uint64_t startBatchIdx = static_cast<uint64_t>(asc::te::get<MNK_B>(blockCoord));
+            uint64_t curIterBatchL1 = static_cast<uint64_t>(asc::te::get<MNK_B>(blockShape));
             uint64_t aGmStartBatch = static_cast<uint64_t>(bs.ComputeABroadcastIndex(startBatchIdx));
             uint64_t bGmStartBatch = static_cast<uint64_t>(bs.ComputeBBroadcastIndex(startBatchIdx));
             uint64_t al1Count = aSingleBatch ? 1UL : curIterBatchL1;
             uint64_t bl1Count = bSingleBatch ? 1UL : curIterBatchL1;
             uint64_t agmStart = A_BROADCAST ? aGmStartBatch : startBatchIdx;
             uint64_t bgmStart = B_BROADCAST ? bGmStartBatch : startBatchIdx;
-            auto gmASlice = gmA.Slice(AscendC::Te::MakeCoord(agmStart, AscendC::Te::MakeCoord(0, 0)),
-                                      AscendC::Te::MakeShape(al1Count, AscendC::Te::MakeShape(m_, k_)));
-            auto gmBSlice = gmB.Slice(AscendC::Te::MakeCoord(bgmStart, AscendC::Te::MakeCoord(0, 0)),
-                                      AscendC::Te::MakeShape(bl1Count, AscendC::Te::MakeShape(k_, n_)));
-            auto gmCSlice = gmC.Slice(AscendC::Te::MakeCoord(startBatchIdx, AscendC::Te::MakeCoord(0, 0)),
-                                      AscendC::Te::MakeShape(curIterBatchL1, AscendC::Te::MakeShape(m_, n_)));
+            auto gmASlice = gmA.slice(asc::te::make_coord(agmStart, asc::te::make_coord(0, 0)),
+                                      asc::te::make_shape(al1Count, asc::te::make_shape(m_, k_)));
+            auto gmBSlice = gmB.slice(asc::te::make_coord(bgmStart, asc::te::make_coord(0, 0)),
+                                      asc::te::make_shape(bl1Count, asc::te::make_shape(k_, n_)));
+            auto gmCSlice = gmC.slice(asc::te::make_coord(startBatchIdx, asc::te::make_coord(0, 0)),
+                                      asc::te::make_shape(curIterBatchL1, asc::te::make_shape(m_, n_)));
             blockMmad(gmASlice, gmBSlice, gmBias, gmCSlice, curIterBatchL1);
         }
         Blaze::Gemm::UnsetHF32(params.schedulerParams.isHf32);

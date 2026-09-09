@@ -26,17 +26,17 @@ public:
     template <typename Tensor>
     __aicore__ inline static void FillWithValue(const Tensor& dstTensor, T fillValue)
     {
-        using TensorElementType = AscendC::Te::GetAttributeElementType<typename Tensor::elementType*>;
-        using LayoutPattern = AscendC::Te::GetLayoutPattern<typename Tensor::layoutType>;
+        using TensorElementType = asc::te::get_attribute_element_type<typename Tensor::element_type*>;
+        using LayoutPattern = asc::te::get_layout_pattern<typename Tensor::layout_type>;
         static_assert(AscendC::Std::is_same_v<TensorElementType, T>,
                       "FillUb requires the tensor element type to match the fill value type");
-        static_assert(AscendC::Std::is_same_v<AscendC::Te::GetMemLocation<Tensor>, AscendC::Te::Location::UB>,
+        static_assert(AscendC::Std::is_same_v<asc::te::get_mem_location<Tensor>, asc::te::location::ub>,
                       "FillUb only supports UB tensors");
-        static_assert(AscendC::Std::is_same_v<LayoutPattern, AscendC::Te::NDExtLayoutPtn>,
+        static_assert(AscendC::Std::is_same_v<LayoutPattern, asc::te::nd_ext_layout_ptn>,
                       "FillUb requires a contiguous NDExt UB tensor");
 
-        auto rowCount = static_cast<uint64_t>(AscendC::Te::GetTotalRowShape(dstTensor.Layout()));
-        auto columnCount = static_cast<uint64_t>(AscendC::Te::GetTotalColumnShape(dstTensor.Layout()));
+        auto rowCount = static_cast<uint64_t>(asc::te::get_total_row_shape(dstTensor.layout()));
+        auto columnCount = static_cast<uint64_t>(asc::te::get_total_column_shape(dstTensor.layout()));
         auto elementCount = rowCount * columnCount;
         if (elementCount == 0) {
             return;
@@ -44,7 +44,7 @@ public:
 
         constexpr uint32_t elementsPerRepeat = AscendC::VECTOR_REG_WIDTH / sizeof(T);
         auto repeatTimes = CeilDiv(elementCount, static_cast<uint64_t>(elementsPerRepeat));
-        asc_vf_call<FillWithValueVf>((__ubuf__ T*)dstTensor.Data().Get(), fillValue,
+        asc_vf_call<FillWithValueVf>((__ubuf__ T*)dstTensor.data().get(), fillValue,
                                      static_cast<uint32_t>(elementCount), static_cast<uint16_t>(repeatTimes));
     }
 

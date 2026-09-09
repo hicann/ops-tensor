@@ -177,8 +177,8 @@ using X2ScaleType = float;
 using CType = half;
 using BiasType = int32_t;
 using ProblemShape =
-    AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
-using Layout = AscendC::Te::NDExtLayoutPtn;
+    asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
+using Layout = asc::te::nd_ext_layout_ptn;
 using DispatchPolicy =
     Blaze::Gemm::MatmulWithScaleFixpipeQuant<
         0, false, Blaze::Gemm::KernelQbmmPertensorMultiBlockStreamK>;

@@ -20,8 +20,8 @@ buffer 生命周期。Kernel 负责同步和存储管理，Tile 负责 Tensor la
 
 | Tile | 输入 layout | 输出 layout | 说明 |
 | :--- | :--- | :--- | :--- |
-| `CopyGM2UBWeight` | `ZNLayoutPtn` / `DNExtLayoutPtn` | 带显式 stride 的 `ZNLayoutPtn` / packed `DNExtLayoutPtn` | 根据 Weight NZ/ND layout 选择搬运路径 |
-| `ShiftW4ToW8` | `ZNLayoutPtn` / `DNExtLayoutPtn` | `Weight8BitZnToZnUbLayoutPtn` / `Weight8BitDnToZnUbLayoutPtn` | 根据输入 format 选择 VF 路径 |
+| `CopyGM2UBWeight` | `zn_layout_ptn` / `dn_ext_layout_ptn` | 带显式 stride 的 `zn_layout_ptn` / packed `dn_ext_layout_ptn` | 根据 Weight NZ/ND layout 选择搬运路径 |
+| `ShiftW4ToW8` | `zn_layout_ptn` / `dn_ext_layout_ptn` | `Weight8BitZnToZnUbLayoutPtn` / `Weight8BitDnToZnUbLayoutPtn` | 根据输入 format 选择 VF 路径 |
 | `CopyUB2L1Weight8Bit` | `Weight8BitZnToZnUbLayoutPtn` / `Weight8BitDnToZnUbLayoutPtn` | L1 ZN | ZN 直接压实，DN→ZN 剥离 gap |
 
 ## 使用方式
@@ -29,11 +29,11 @@ buffer 生命周期。Kernel 负责同步和存储管理，Tile 负责 Tensor la
 ### `CopyGM2UBWeight`
 
 ```cpp
-auto copy = AscendC::Te::MakeCopy(Blaze::Gemm::Tile::CopyGM2UBWeight{});
-AscendC::Te::Copy(copy, weightUbTensor, weightGmSlice);
+auto copy = asc::te::make_copy(Blaze::Gemm::Tile::CopyGM2UBWeight{});
+asc::te::copy(copy, weightUbTensor, weightGmSlice);
 ```
 
-仅接受 `ZNLayoutPtn` 或 `DNExtLayoutPtn` 的源 Tensor。packed FP4 的 K 方向按两个 4-bit
+仅接受 `zn_layout_ptn` 或 `dn_ext_layout_ptn` 的源 Tensor。packed FP4 的 K 方向按两个 4-bit
 元素一个字节处理，GM/UB 步长（stride）由 Tensor layout 提供。
 
 ### `ShiftW4ToW8`
@@ -42,8 +42,8 @@ AscendC::Te::Copy(copy, weightUbTensor, weightGmSlice);
 Blaze::Gemm::Tile::ShiftW4ToW8<fp8_e4m3fn_t, fp4x2_e2m1_t>(weight4Ub, weight8Ub);
 ```
 
-以类构造函数形式发起转换。源为 Weight NZ 对应的 `ZNLayoutPtn` 时执行 ZN interleave 转换并生成
-`Weight8BitZnToZnUbLayoutPtn`；源为 `DNExtLayoutPtn` 时按 N 行读取并执行 DN→ZN-like 的
+以类构造函数形式发起转换。源为 Weight NZ 对应的 `zn_layout_ptn` 时执行 ZN interleave 转换并生成
+`Weight8BitZnToZnUbLayoutPtn`；源为 `dn_ext_layout_ptn` 时按 N 行读取并执行 DN→ZN-like 的
 `DATA_BLOCK_COPY` 输出，生成 `Weight8BitDnToZnUbLayoutPtn`。两条路径都由输入 format 对应的
 layout 在编译期选择。
 
@@ -58,8 +58,8 @@ Blaze::Gemm::Tile::ShiftW4ToW8<fp8_e4m3fn_t, fp4x2_e2m1_t>(
 ### `CopyUB2L1Weight8Bit`
 
 ```cpp
-auto copy = AscendC::Te::MakeCopy(Blaze::Gemm::Tile::CopyUB2L1Weight8Bit{});
-AscendC::Te::Copy(copy, weightL1Tensor, weight8UbTensor);
+auto copy = asc::te::make_copy(Blaze::Gemm::Tile::CopyUB2L1Weight8Bit{});
+asc::te::copy(copy, weightL1Tensor, weight8UbTensor);
 ```
 
 `Weight8BitUBLayout` 的原有两参数调用现在返回 `Weight8BitZnToZnUbLayoutPtn`，并委托到
@@ -80,13 +80,13 @@ UB backing storage 均至少需要 `CeilAlign(N, 256 / sizeof(BiasType))` 个元
 
 ## 布局契约
 
-- 算子 ND 格式的 B 是转置权重；Blaze 使用 `DNExtLayoutPtn`，Tensor 坐标顺序为 `(K, N)`，
+- 算子 ND 格式的 B 是转置权重；Blaze 使用 `dn_ext_layout_ptn`，Tensor 坐标顺序为 `(K, N)`，
   GM 物理数据按 `(N, K)` 行主序存放。
 - DN→ZN 转换后的临时 UB layout 使用 `Weight8BitDnToZnUbLayoutPtn`，逻辑 shape 仍为 K×N，
   每个 K32 slab 的物理 N span 为 `(Align16(N) + 1) * 32B`。额外的 `+1` 表示一个 32B data
   block，用于打散相邻 K32 slab 的 UB bank 映射，并不是对 GM 逻辑 N 轴增加有效元素。
 - UB→L1 时，`CopyUB2L1Weight8Bit` 根据 layout stride 计算并剥离该 UB-only gap，L1 保持标准 ZN。
-- Weight NZ 转换后的 UB 使用标准 `ZNLayoutPtn` 配合显式 shape/stride，取 `n0=8`、
+- Weight NZ 转换后的 UB 使用标准 `zn_layout_ptn` 配合显式 shape/stride，取 `n0=8`、
   `n1=Align16(N)/8`，因此 footprint 按 `Align16(N)` 计算。
 
 ## 数据流
@@ -100,7 +100,7 @@ UB packed FP4 ── ShiftW4ToW8 ──► UB FP8（ZN 或 DN→ZN pitched layou
                                       ▼
                                   L1 ZN weight
 
-UB bias ── ScaleMxBias ──► UB bias(1/64) ── Tensor API CopyUB2L1 ──► L1 bias
+UB bias ── ScaleMxBias ──► UB bias(1/64) ── Tensor API copy_ub_to_l1 ──► L1 bias
 ```
 
 调用方应包含聚合头 `blaze/gemm/tile/datamove.h`（数据搬运原语）和

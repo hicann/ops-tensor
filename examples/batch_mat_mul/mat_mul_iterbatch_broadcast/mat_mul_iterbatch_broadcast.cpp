@@ -164,7 +164,7 @@ static bool ParseCliArgs(int argc, const char** argv, CliArgs& args)
 /* Device-side kernel wrapper                                                 */
 /* ========================================================================== */
 
-using ProblemShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
+using ProblemShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
 
 template <class A_TYPE, class B_TYPE, class C_TYPE, class BIAS_TYPE, class LAYOUT_A, class LAYOUT_B, bool A_BC,
           bool B_BC>
@@ -176,7 +176,7 @@ __global__ __aicore__ void iterbatch_broadcast_kernel(GM_ADDR aGM, GM_ADDR bGM, 
     KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_AIC_ONLY);
     AscendC::InitSocState();
 
-    using LAYOUT_C = AscendC::Te::NDExtLayoutPtn;
+    using LAYOUT_C = asc::te::nd_ext_layout_ptn;
     using DispatchPolicy = Blaze::Gemm::MatmulIterBatchBroadcast<A_BC, B_BC>;
     using BlockMmad = Blaze::Gemm::Block::BlockMmad<DispatchPolicy, A_TYPE, LAYOUT_A, B_TYPE, LAYOUT_B, C_TYPE,
                                                     LAYOUT_C, BIAS_TYPE, LAYOUT_C>;
@@ -272,8 +272,8 @@ struct LaunchParams {
 template <class A_TYPE, class B_TYPE, class C_TYPE, class BIAS_TYPE, bool TransA, bool TransB, bool A_BC, bool B_BC>
 void LaunchKernel(const LaunchParams& p)
 {
-    using LAYOUT_A = std::conditional_t<TransA, AscendC::Te::DNExtLayoutPtn, AscendC::Te::NDExtLayoutPtn>;
-    using LAYOUT_B = std::conditional_t<TransB, AscendC::Te::DNExtLayoutPtn, AscendC::Te::NDExtLayoutPtn>;
+    using LAYOUT_A = std::conditional_t<TransA, asc::te::dn_ext_layout_ptn, asc::te::nd_ext_layout_ptn>;
+    using LAYOUT_B = std::conditional_t<TransB, asc::te::dn_ext_layout_ptn, asc::te::nd_ext_layout_ptn>;
 
     LAUNCH_KERNEL_IMPL();
 }

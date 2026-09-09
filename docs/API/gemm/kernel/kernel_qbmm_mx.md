@@ -203,10 +203,10 @@ using BiasType = float;
 using ScaleType = fp8_e8m0_t;
 
 // 定义 Layout
-using LayoutA = AscendC::Te::NDExtLayoutPtn;
-using LayoutB = AscendC::Te::NZLayoutPtn;
-using LayoutC = AscendC::Te::NDExtLayoutPtn;
-using LayoutBias = AscendC::Te::NDExtLayoutPtn;
+using LayoutA = asc::te::nd_ext_layout_ptn;
+using LayoutB = asc::te::nz_layout_ptn;
+using LayoutC = asc::te::nd_ext_layout_ptn;
+using LayoutBias = asc::te::nd_ext_layout_ptn;
 
 // 定义调度策略
 using DispatchPolicy = Blaze::Gemm::MatmulWithScaleMx<A_FULL_LOAD_MODE>;

@@ -20,7 +20,7 @@ class AttentionUniversal;
 
 | 参数 | 说明 |
 |------|------|
-| ProblemShape_ | 问题形状类型，通常为 `AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>` (m, n, k, batch) |
+| ProblemShape_ | 问题形状类型，通常为 `asc::te::shape<int64_t, int64_t, int64_t, int64_t>` (m, n, k, batch) |
 | BlockMmad_ | BlockMmad 类，矩阵乘计算组件 |
 | BlockEpilogue_ | BlockEpilogue 类，后处理组件 |
 | BlockScheduler_ | BlockScheduler 类，任务调度组件 |
@@ -58,7 +58,7 @@ class AttentionUniversal<ProblemShape_, BlockMmad_, BlockEpilogue_, BlockSchedul
 ## 公共约束
 
 1. **模板参数要求**：
-   - ProblemShape 必须为 `AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>` 类型，分别表示 **m n k b** 维度大小
+   - ProblemShape 必须为 `asc::te::shape<int64_t, int64_t, int64_t, int64_t>` 类型，分别表示 **m n k b** 维度大小
    - BlockMmad 必须提供 `DispatchPolicy::ScheduleType` 类型，用于 SFINAE 匹配
    - BlockEpilogue 必须与 Kernel 类型匹配
    - BlockScheduler 必须提供 tile 切分和调度功能
@@ -72,7 +72,7 @@ class AttentionUniversal<ProblemShape_, BlockMmad_, BlockEpilogue_, BlockSchedul
 ### 组件组装模板
 
 ```cpp
-using ProblemShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
+using ProblemShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
 using DispatchPolicy = Blaze::Attention::BlockFlatQuant<>;
 using BlockMmad = Blaze::Attention::Block::BlockMmad<
     DispatchPolicy, QType, LayoutQ, KType, LayoutK, VType, LayoutV, OutType, LayoutOut>;

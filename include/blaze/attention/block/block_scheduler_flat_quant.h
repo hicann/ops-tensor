@@ -24,8 +24,8 @@ namespace Block {
 template <class ProblemShape_>
 class BlockSchedulerFlatQuant {
 public:
-    using BlockShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
-    using BlockL1L0Shape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
+    using BlockShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
+    using BlockL1L0Shape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
     using ProblemShape = ProblemShape_;
 
     struct Params {
@@ -36,9 +36,9 @@ public:
 
     __aicore__ inline BlockSchedulerFlatQuant(const ProblemShape& shape, int64_t blockNum, const Params& params)
     {
-        m_ = AscendC::Te::Get<Gemm::MNK_M>(shape);
-        n_ = AscendC::Te::Get<Gemm::MNK_N>(shape);
-        k_ = AscendC::Te::Get<Gemm::MNK_B>(shape);
+        m_ = asc::te::get<Gemm::MNK_M>(shape);
+        n_ = asc::te::get<Gemm::MNK_N>(shape);
+        k_ = asc::te::get<Gemm::MNK_B>(shape);
         mL1_ = m_;
         kL1_ = n_;
         nL1_ = n_;

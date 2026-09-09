@@ -250,9 +250,9 @@ __aicore__ inline void GetTileCoord(BlockCoord blockCoord, int64_t& mPos, int64_
 
 ### 组件组装
 ```
-using ProblemShape = AscendC::Te::Shape<int64_t, int64_t, int64_t>;
-using LayoutA = AscendC::Te::NZLayoutPtn;
-using LayoutB = AscendC::Te::NZLayoutPtn;
+using ProblemShape = asc::te::shape<int64_t, int64_t, int64_t>;
+using LayoutA = asc::te::nz_layout_ptn;
+using LayoutB = asc::te::nz_layout_ptn;
 using AType = fp4x2_e2m1_t;
 constexpr uint64_t FULL_LOAD_MODE = 0;
 

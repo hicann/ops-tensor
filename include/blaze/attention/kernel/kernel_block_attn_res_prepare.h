@@ -61,14 +61,13 @@ template <typename T>
 __aicore__ inline auto MakeBatchedDNExtLayout(int64_t batchCount, int64_t rows, int64_t columns, int64_t batchStride,
                                               int64_t columnStride)
 {
-    auto shape = AscendC::Te::MakeShape(
-        batchCount, AscendC::Te::MakeShape(AscendC::Te::MakeShape(AscendC::Std::Int<1>{}, rows),
-                                           AscendC::Te::MakeShape(AscendC::Std::Int<1>{}, columns)));
-    auto stride = AscendC::Te::MakeStride(
-        batchStride, AscendC::Te::MakeStride(AscendC::Te::MakeStride(AscendC::Std::Int<0>{}, AscendC::Std::Int<1>{}),
-                                             AscendC::Te::MakeStride(AscendC::Std::Int<0>{}, columnStride)));
-    return AscendC::Te::MakePatternLayout<AscendC::Te::DNExtLayoutPtn, AscendC::Te::LayoutTraitDefault<T>>(shape,
-                                                                                                           stride);
+    auto shape = asc::te::make_shape(batchCount,
+                                     asc::te::make_shape(asc::te::make_shape(AscendC::Std::Int<1>{}, rows),
+                                                         asc::te::make_shape(AscendC::Std::Int<1>{}, columns)));
+    auto stride = asc::te::make_stride(
+        batchStride, asc::te::make_stride(asc::te::make_stride(AscendC::Std::Int<0>{}, AscendC::Std::Int<1>{}),
+                                          asc::te::make_stride(AscendC::Std::Int<0>{}, columnStride)));
+    return asc::te::make_pattern_layout<asc::te::dn_ext_layout_ptn, asc::te::layout_trait_default<T>>(shape, stride);
 }
 
 class Sync {
@@ -130,7 +129,7 @@ public:
     using Mm2Params = typename Mm2Block::Params;
     using BlockEpilogueParams = typename BlockEpilogue::Params;
     using BlockSchedulerParams = typename BlockScheduler::Params;
-    using MmadBlockShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
+    using MmadBlockShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
 
     struct Params {
         ProblemShape problemShape{};
@@ -147,13 +146,13 @@ public:
                       AscendC::Std::is_same_v<typename Mm2Block::BType, float> &&
                       AscendC::Std::is_same_v<typename Mm2Block::CType, float>,
                   "BlockAttnResPrepare MM2 only supports FP32.");
-    static_assert(AscendC::Std::is_same_v<typename Mm1Block::LayoutA, AscendC::Te::NDExtLayoutPtn> &&
-                      AscendC::Std::is_same_v<typename Mm1Block::LayoutB, AscendC::Te::DNExtLayoutPtn> &&
-                      AscendC::Std::is_same_v<typename Mm1Block::LayoutC, AscendC::Te::NDExtLayoutPtn>,
+    static_assert(AscendC::Std::is_same_v<typename Mm1Block::LayoutA, asc::te::nd_ext_layout_ptn> &&
+                      AscendC::Std::is_same_v<typename Mm1Block::LayoutB, asc::te::dn_ext_layout_ptn> &&
+                      AscendC::Std::is_same_v<typename Mm1Block::LayoutC, asc::te::nd_ext_layout_ptn>,
                   "BlockAttnResPrepare MM1 requires ND x batched-DN -> ND layouts.");
-    static_assert(AscendC::Std::is_same_v<typename Mm2Block::LayoutA, AscendC::Te::NDExtLayoutPtn> &&
-                      AscendC::Std::is_same_v<typename Mm2Block::LayoutB, AscendC::Te::NDExtLayoutPtn> &&
-                      AscendC::Std::is_same_v<typename Mm2Block::LayoutC, AscendC::Te::NDExtLayoutPtn>,
+    static_assert(AscendC::Std::is_same_v<typename Mm2Block::LayoutA, asc::te::nd_ext_layout_ptn> &&
+                      AscendC::Std::is_same_v<typename Mm2Block::LayoutB, asc::te::nd_ext_layout_ptn> &&
+                      AscendC::Std::is_same_v<typename Mm2Block::LayoutC, asc::te::nd_ext_layout_ptn>,
                   "BlockAttnResPrepare MM2 requires ND x ND -> ND layouts.");
     static_assert(AscendC::Std::is_same_v<typename BlockScheduler::ProblemShape, ProblemShape>,
                   "BlockAttnResPrepare kernel and scheduler must use the same problem shape.");
@@ -194,9 +193,9 @@ private:
 
     __aicore__ inline int64_t ReadValidBlocks() const
     {
-        auto tensor = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(gm_.validBlocks),
-                                              Gemm::MakeNDExtLayout<int64_t>(1, 1, 1));
-        return tensor[AscendC::Te::MakeCoord(static_cast<int64_t>(0), static_cast<int64_t>(0))];
+        auto tensor = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::gm>(gm_.validBlocks),
+                                           Gemm::MakeNDExtLayout<int64_t>(1, 1, 1));
+        return tensor[asc::te::make_coord(static_cast<int64_t>(0), static_cast<int64_t>(0))];
     }
 
     __aicore__ inline uint32_t GetValidN() const
@@ -207,7 +206,7 @@ private:
         }
         const uint64_t positiveValidBlocks = static_cast<uint64_t>(validBlocks);
         const uint64_t totalN = static_cast<uint64_t>(
-            AscendC::Te::Get<BlockAttnResPrepareDetail::N_DIM_INDEX>(*problemShape_));
+            asc::te::get<BlockAttnResPrepareDetail::N_DIM_INDEX>(*problemShape_));
         return static_cast<uint32_t>(positiveValidBlocks < totalN ? positiveValidBlocks : totalN);
     }
 
@@ -247,7 +246,7 @@ private:
             BlockInfo blockInfo{};
             while (scheduler.GetNextBlock(blockInfo)) {
                 const uint32_t blockT = static_cast<uint32_t>(
-                    AscendC::Te::Get<BlockAttnResPrepareDetail::T_DIM_INDEX>(blockInfo.blockShape));
+                    asc::te::get<BlockAttnResPrepareDetail::T_DIM_INDEX>(blockInfo.blockShape));
                 for (uint32_t tokenIdx = 0U; tokenIdx < blockT; ++tokenIdx) {
                     ProcessEmptyToken(blockInfo, tokenIdx);
                 }
@@ -291,7 +290,7 @@ private:
     __aicore__ inline void ProcessAicBlock(const BlockInfo& blockInfo, const CoreWorkspaceTensor& coreWorkspaceTensor)
     {
         const uint32_t blockT = static_cast<uint32_t>(
-            AscendC::Te::Get<BlockAttnResPrepareDetail::T_DIM_INDEX>(blockInfo.blockShape));
+            asc::te::get<BlockAttnResPrepareDetail::T_DIM_INDEX>(blockInfo.blockShape));
         // MM1 produces all grouped-token dot values before either AIV consumes its row slice.
         RunMm1(blockInfo, coreWorkspaceTensor);
         BlockAttnResPrepareDetail::Sync::NotifyDotReady();
@@ -322,7 +321,7 @@ private:
                                            const CoreWorkspaceTensor& coreWorkspaceTensor)
     {
         const uint32_t blockT = static_cast<uint32_t>(
-            AscendC::Te::Get<BlockAttnResPrepareDetail::T_DIM_INDEX>(blockInfo.blockShape));
+            asc::te::get<BlockAttnResPrepareDetail::T_DIM_INDEX>(blockInfo.blockShape));
         // Reduce V while MM1 runs, then alternate E slots so AIV softmax can overlap the preceding token's MM2.
         for (uint32_t tokenIdx = 0U; tokenIdx < blockT; ++tokenIdx) {
             const uint16_t eSlotIdx = GetESlotIdx(tokenIdx);
@@ -341,8 +340,8 @@ private:
     template <typename T>
     __aicore__ inline static auto MakeGmTensor(__gm__ T* address, int64_t rows, int64_t columns, int64_t rowPitch)
     {
-        return AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(address),
-                                       Gemm::MakeNDExtLayout<T>(rows, columns, rowPitch));
+        return asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::gm>(address),
+                                    Gemm::MakeNDExtLayout<T>(rows, columns, rowPitch));
     }
 
     __aicore__ inline auto MakeCoreWorkspaceTensor(uint32_t coreIndex) const
@@ -350,8 +349,8 @@ private:
         const int64_t coreNum = static_cast<int64_t>(schedulerParams_->usedCoreNum);
         const int64_t perCoreElems = static_cast<int64_t>(epilogueParams_->workspacePerCoreElems);
         auto workspaceTensor = MakeGmTensor(gm_.workspace, coreNum, perCoreElems, perCoreElems);
-        return workspaceTensor.Slice(AscendC::Te::MakeCoord(static_cast<int64_t>(coreIndex), static_cast<int64_t>(0)),
-                                     AscendC::Te::MakeShape(static_cast<int64_t>(1), perCoreElems));
+        return workspaceTensor.slice(asc::te::make_coord(static_cast<int64_t>(coreIndex), static_cast<int64_t>(0)),
+                                     asc::te::make_shape(static_cast<int64_t>(1), perCoreElems));
     }
 
     template <typename CoreWorkspaceTensor>
@@ -359,10 +358,10 @@ private:
                                                  int64_t rows, int64_t columns, int64_t rowPitch) const
     {
         const int64_t storageElems = (rows - 1) * rowPitch + columns;
-        auto storageTensor = coreWorkspaceTensor.Slice(
-            AscendC::Te::MakeCoord(static_cast<int64_t>(0), static_cast<int64_t>(elementOffset)),
-            AscendC::Te::MakeShape(static_cast<int64_t>(1), storageElems));
-        auto address = reinterpret_cast<__gm__ float*>(storageTensor.Data().Get());
+        auto storageTensor = coreWorkspaceTensor.slice(
+            asc::te::make_coord(static_cast<int64_t>(0), static_cast<int64_t>(elementOffset)),
+            asc::te::make_shape(static_cast<int64_t>(1), storageElems));
+        auto address = reinterpret_cast<__gm__ float*>(storageTensor.data().get());
         return MakeGmTensor(address, rows, columns, rowPitch);
     }
 
@@ -370,9 +369,9 @@ private:
     __aicore__ inline auto MakeMm1DotTensor(const CoreWorkspaceTensor& coreWorkspaceTensor,
                                             const BlockInfo& blockInfo) const
     {
-        const int64_t blockS = AscendC::Te::Get<BlockAttnResPrepareDetail::S_DIM_INDEX>(blockInfo.blockShape);
-        const int64_t blockN = AscendC::Te::Get<BlockAttnResPrepareDetail::N_DIM_INDEX>(blockInfo.blockShape);
-        const int64_t blockT = AscendC::Te::Get<BlockAttnResPrepareDetail::T_DIM_INDEX>(blockInfo.blockShape);
+        const int64_t blockS = asc::te::get<BlockAttnResPrepareDetail::S_DIM_INDEX>(blockInfo.blockShape);
+        const int64_t blockN = asc::te::get<BlockAttnResPrepareDetail::N_DIM_INDEX>(blockInfo.blockShape);
+        const int64_t blockT = asc::te::get<BlockAttnResPrepareDetail::T_DIM_INDEX>(blockInfo.blockShape);
         const int64_t groupedN = blockT * blockN;
         return MakeCoreWorkspaceView(coreWorkspaceTensor, 0U, blockS, groupedN, mm1Params_->nL1);
     }
@@ -383,7 +382,7 @@ private:
                                                 uint32_t validSRows) const
     {
         const uint32_t blockN = static_cast<uint32_t>(
-            AscendC::Te::Get<BlockAttnResPrepareDetail::N_DIM_INDEX>(blockInfo.blockShape));
+            asc::te::get<BlockAttnResPrepareDetail::N_DIM_INDEX>(blockInfo.blockShape));
         const uint64_t offset = static_cast<uint64_t>(sRowStart) * mm1Params_->nL1 +
                                 static_cast<uint64_t>(tokenIdx) * blockN;
         return MakeCoreWorkspaceView(coreWorkspaceTensor, offset, validSRows, blockN, mm1Params_->nL1);
@@ -409,14 +408,14 @@ private:
     __aicore__ inline auto MakeResidualTensor(const BlockInfo& blockInfo, uint32_t tokenIdx, uint64_t dOffset,
                                               uint64_t validD) const
     {
-        const int64_t blockN = AscendC::Te::Get<BlockAttnResPrepareDetail::N_DIM_INDEX>(blockInfo.blockShape);
-        const uint64_t tokenGmIdx = static_cast<uint64_t>(AscendC::Te::Get<BlockAttnResPrepareDetail::T_DIM_INDEX>(
-                                        blockInfo.blockCoord)) +
+        const int64_t blockN = asc::te::get<BlockAttnResPrepareDetail::N_DIM_INDEX>(blockInfo.blockShape);
+        const uint64_t tokenGmIdx = static_cast<uint64_t>(
+                                        asc::te::get<BlockAttnResPrepareDetail::T_DIM_INDEX>(blockInfo.blockCoord)) +
                                     tokenIdx;
         const uint64_t totalN = static_cast<uint64_t>(
-            AscendC::Te::Get<BlockAttnResPrepareDetail::N_DIM_INDEX>(*problemShape_));
+            asc::te::get<BlockAttnResPrepareDetail::N_DIM_INDEX>(*problemShape_));
         const uint64_t totalD = static_cast<uint64_t>(
-            AscendC::Te::Get<BlockAttnResPrepareDetail::D_DIM_INDEX>(*problemShape_));
+            asc::te::get<BlockAttnResPrepareDetail::D_DIM_INDEX>(*problemShape_));
         __gm__ float* address = gm_.blockResidual + tokenGmIdx * totalN * totalD + dOffset;
         return MakeGmTensor(address, blockN, validD, totalD);
     }
@@ -424,16 +423,16 @@ private:
     __aicore__ inline auto MakeOutputTensor(const BlockInfo& blockInfo, uint32_t tokenIdx, uint32_t sRowStart,
                                             uint32_t validSRows, uint64_t dOffset, uint64_t validD) const
     {
-        const uint64_t tokenGmIdx = static_cast<uint64_t>(AscendC::Te::Get<BlockAttnResPrepareDetail::T_DIM_INDEX>(
-                                        blockInfo.blockCoord)) +
+        const uint64_t tokenGmIdx = static_cast<uint64_t>(
+                                        asc::te::get<BlockAttnResPrepareDetail::T_DIM_INDEX>(blockInfo.blockCoord)) +
                                     tokenIdx;
-        const uint64_t outputSStart = static_cast<uint64_t>(AscendC::Te::Get<BlockAttnResPrepareDetail::S_DIM_INDEX>(
-                                          blockInfo.blockCoord)) +
+        const uint64_t outputSStart = static_cast<uint64_t>(
+                                          asc::te::get<BlockAttnResPrepareDetail::S_DIM_INDEX>(blockInfo.blockCoord)) +
                                       sRowStart;
         const uint64_t totalD = static_cast<uint64_t>(
-            AscendC::Te::Get<BlockAttnResPrepareDetail::D_DIM_INDEX>(*problemShape_));
+            asc::te::get<BlockAttnResPrepareDetail::D_DIM_INDEX>(*problemShape_));
         const uint64_t totalT = static_cast<uint64_t>(
-            AscendC::Te::Get<BlockAttnResPrepareDetail::T_DIM_INDEX>(*problemShape_));
+            asc::te::get<BlockAttnResPrepareDetail::T_DIM_INDEX>(*problemShape_));
         const uint64_t outputRowPitch = totalT * totalD;
         __gm__ float* address = gm_.weightedOutput + (outputSStart * totalT + tokenGmIdx) * totalD + dOffset;
         return MakeGmTensor(address, validSRows, validD, outputRowPitch);
@@ -442,14 +441,14 @@ private:
     __aicore__ inline auto MakeStatisticTensor(__gm__ float* statistic, const BlockInfo& blockInfo, uint32_t tokenIdx,
                                                uint32_t sRowStart, uint32_t validSRows) const
     {
-        const uint64_t tokenGmIdx = static_cast<uint64_t>(AscendC::Te::Get<BlockAttnResPrepareDetail::T_DIM_INDEX>(
-                                        blockInfo.blockCoord)) +
+        const uint64_t tokenGmIdx = static_cast<uint64_t>(
+                                        asc::te::get<BlockAttnResPrepareDetail::T_DIM_INDEX>(blockInfo.blockCoord)) +
                                     tokenIdx;
-        const uint64_t outputSStart = static_cast<uint64_t>(AscendC::Te::Get<BlockAttnResPrepareDetail::S_DIM_INDEX>(
-                                          blockInfo.blockCoord)) +
+        const uint64_t outputSStart = static_cast<uint64_t>(
+                                          asc::te::get<BlockAttnResPrepareDetail::S_DIM_INDEX>(blockInfo.blockCoord)) +
                                       sRowStart;
         const uint64_t totalT = static_cast<uint64_t>(
-            AscendC::Te::Get<BlockAttnResPrepareDetail::T_DIM_INDEX>(*problemShape_));
+            asc::te::get<BlockAttnResPrepareDetail::T_DIM_INDEX>(*problemShape_));
         __gm__ float* address = statistic + outputSStart * totalT + tokenGmIdx;
         return MakeGmTensor(address, validSRows, 1, totalT);
     }
@@ -457,9 +456,9 @@ private:
     __aicore__ inline void ProcessEmptyToken(const BlockInfo& blockInfo, uint32_t tokenIdx)
     {
         const uint32_t blockS = static_cast<uint32_t>(
-            AscendC::Te::Get<BlockAttnResPrepareDetail::S_DIM_INDEX>(blockInfo.blockShape));
+            asc::te::get<BlockAttnResPrepareDetail::S_DIM_INDEX>(blockInfo.blockShape));
         const uint64_t totalD = static_cast<uint64_t>(
-            AscendC::Te::Get<BlockAttnResPrepareDetail::D_DIM_INDEX>(*problemShape_));
+            asc::te::get<BlockAttnResPrepareDetail::D_DIM_INDEX>(*problemShape_));
         auto outputTensor = MakeOutputTensor(blockInfo, tokenIdx, 0U, blockS, 0U, totalD);
         auto maxTensor = MakeStatisticTensor(gm_.softmaxMax, blockInfo, tokenIdx, 0U, blockS);
         auto sumTensor = MakeStatisticTensor(gm_.softmaxSum, blockInfo, tokenIdx, 0U, blockS);
@@ -469,7 +468,7 @@ private:
     __aicore__ inline void RunVReduction(const BlockInfo& blockInfo, uint32_t tokenIdx)
     {
         const uint64_t totalD = static_cast<uint64_t>(
-            AscendC::Te::Get<BlockAttnResPrepareDetail::D_DIM_INDEX>(*problemShape_));
+            asc::te::get<BlockAttnResPrepareDetail::D_DIM_INDEX>(*problemShape_));
         auto vTensor = MakeResidualTensor(blockInfo, tokenIdx, 0U, totalD);
         blockEpilogue_.ReduceV(vTensor);
     }
@@ -493,26 +492,25 @@ private:
     template <typename CoreWorkspaceTensor>
     __aicore__ inline void RunMm1(const BlockInfo& blockInfo, const CoreWorkspaceTensor& coreWorkspaceTensor)
     {
-        const int64_t blockS = AscendC::Te::Get<BlockAttnResPrepareDetail::S_DIM_INDEX>(blockInfo.blockShape);
-        const int64_t blockN = AscendC::Te::Get<BlockAttnResPrepareDetail::N_DIM_INDEX>(blockInfo.blockShape);
-        const int64_t blockT = AscendC::Te::Get<BlockAttnResPrepareDetail::T_DIM_INDEX>(blockInfo.blockShape);
-        const int64_t sOffset = AscendC::Te::Get<BlockAttnResPrepareDetail::S_DIM_INDEX>(blockInfo.blockCoord);
-        const int64_t tOffset = AscendC::Te::Get<BlockAttnResPrepareDetail::T_DIM_INDEX>(blockInfo.blockCoord);
+        const int64_t blockS = asc::te::get<BlockAttnResPrepareDetail::S_DIM_INDEX>(blockInfo.blockShape);
+        const int64_t blockN = asc::te::get<BlockAttnResPrepareDetail::N_DIM_INDEX>(blockInfo.blockShape);
+        const int64_t blockT = asc::te::get<BlockAttnResPrepareDetail::T_DIM_INDEX>(blockInfo.blockShape);
+        const int64_t sOffset = asc::te::get<BlockAttnResPrepareDetail::S_DIM_INDEX>(blockInfo.blockCoord);
+        const int64_t tOffset = asc::te::get<BlockAttnResPrepareDetail::T_DIM_INDEX>(blockInfo.blockCoord);
         const uint64_t totalN = static_cast<uint64_t>(
-            AscendC::Te::Get<BlockAttnResPrepareDetail::N_DIM_INDEX>(*problemShape_));
+            asc::te::get<BlockAttnResPrepareDetail::N_DIM_INDEX>(*problemShape_));
         const uint64_t totalD = static_cast<uint64_t>(
-            AscendC::Te::Get<BlockAttnResPrepareDetail::D_DIM_INDEX>(*problemShape_));
+            asc::te::get<BlockAttnResPrepareDetail::D_DIM_INDEX>(*problemShape_));
         __gm__ float* q = gm_.effectiveQuery + static_cast<uint64_t>(sOffset) * totalD;
         const uint64_t groupedN = static_cast<uint64_t>(blockT) * blockN;
         __gm__ float* v = gm_.blockResidual + static_cast<uint64_t>(tOffset) * totalN * totalD;
-        auto qTensor = AscendC::Te::MakeTensor(
-            AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(q),
-            AscendC::Te::FrameLayoutFormat<AscendC::Te::NDExtLayoutPtn, AscendC::Te::LayoutTraitDefault<float>>{}(
+        auto qTensor = asc::te::make_tensor(
+            asc::te::make_mem_ptr<asc::te::location::gm>(q),
+            asc::te::frame_layout_format<asc::te::nd_ext_layout_ptn, asc::te::layout_trait_default<float>>{}(
                 blockS, static_cast<int64_t>(totalD)));
-        auto vTensor = AscendC::Te::MakeTensor(
-            AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(v),
-            BlockAttnResPrepareDetail::MakeBatchedDNExtLayout<float>(blockT, totalD, blockN,
-                                                                     static_cast<int64_t>(totalN * totalD), totalD));
+        auto vTensor = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::gm>(v),
+                                            BlockAttnResPrepareDetail::MakeBatchedDNExtLayout<float>(
+                                                blockT, totalD, blockN, static_cast<int64_t>(totalN * totalD), totalD));
         auto dotTensor = MakeMm1DotTensor(coreWorkspaceTensor, blockInfo);
         auto dummyBias = MakeDummyBiasTensor(coreWorkspaceTensor, mm1Params_->nL1);
         auto& mm1 = AscendC::Std::get<BlockAttnResPrepareDetail::MM1_INDEX>(blockMmadTuple_);
@@ -527,14 +525,14 @@ private:
                                   const CoreWorkspaceTensor& coreWorkspaceTensor)
     {
         const uint32_t blockS = static_cast<uint32_t>(
-            AscendC::Te::Get<BlockAttnResPrepareDetail::S_DIM_INDEX>(blockInfo.blockShape));
+            asc::te::get<BlockAttnResPrepareDetail::S_DIM_INDEX>(blockInfo.blockShape));
         const uint32_t blockN = static_cast<uint32_t>(
-            AscendC::Te::Get<BlockAttnResPrepareDetail::N_DIM_INDEX>(blockInfo.blockShape));
+            asc::te::get<BlockAttnResPrepareDetail::N_DIM_INDEX>(blockInfo.blockShape));
         const uint16_t eSlotIdx = GetESlotIdx(tokenIdx);
         auto eTensor = MakeEWorkspaceTensor(coreWorkspaceTensor, eSlotIdx, 0U, blockS);
         auto dummyBias = MakeDummyBiasTensor(coreWorkspaceTensor, epilogueParams_->baseDAlign);
         const uint64_t totalD = static_cast<uint64_t>(
-            AscendC::Te::Get<BlockAttnResPrepareDetail::D_DIM_INDEX>(*problemShape_));
+            asc::te::get<BlockAttnResPrepareDetail::D_DIM_INDEX>(*problemShape_));
         const uint64_t dOffset = static_cast<uint64_t>(dTileIdx) * epilogueParams_->baseD;
         const uint64_t remainingD = totalD - dOffset;
         const uint32_t validD = static_cast<uint32_t>(remainingD < epilogueParams_->baseD ? remainingD :
@@ -559,17 +557,17 @@ private:
 };
 
 // Public component stack used by the ops-transformer BlockAttnResPrepare kernel entry.
-using BlockAttnResPrepareProblemShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
+using BlockAttnResPrepareProblemShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
 using BlockAttnResPrepareMm1MmadPolicy = Gemm::MatmulMultiBlockBasic<
     0U, 0U, Gemm::KernelMmadMultiBlockBasic,
     static_cast<uint64_t>(Gemm::NoContiguousType::NON_CONTIGUOUS_TYPE_BATCHED_B)>;
 using BlockAttnResPrepareMm2MmadPolicy = Gemm::MatmulMultiBlockBasic<>;
 using BlockAttnResPrepareMm1 = Gemm::Block::BlockMmad<
-    BlockAttnResPrepareMm1MmadPolicy, float, AscendC::Te::NDExtLayoutPtn, float, AscendC::Te::DNExtLayoutPtn, float,
-    AscendC::Te::NDExtLayoutPtn, float, AscendC::Te::NDExtLayoutPtn>;
+    BlockAttnResPrepareMm1MmadPolicy, float, asc::te::nd_ext_layout_ptn, float, asc::te::dn_ext_layout_ptn, float,
+    asc::te::nd_ext_layout_ptn, float, asc::te::nd_ext_layout_ptn>;
 using BlockAttnResPrepareMm2 = Gemm::Block::BlockMmad<
-    BlockAttnResPrepareMm2MmadPolicy, float, AscendC::Te::NDExtLayoutPtn, float, AscendC::Te::NDExtLayoutPtn, float,
-    AscendC::Te::NDExtLayoutPtn, float, AscendC::Te::NDExtLayoutPtn>;
+    BlockAttnResPrepareMm2MmadPolicy, float, asc::te::nd_ext_layout_ptn, float, asc::te::nd_ext_layout_ptn, float,
+    asc::te::nd_ext_layout_ptn, float, asc::te::nd_ext_layout_ptn>;
 using BlockAttnResPrepareMmadTuple = AscendC::Std::tuple<BlockAttnResPrepareMm1, BlockAttnResPrepareMm2>;
 using BlockAttnResPrepareBlockEpilogue = Blaze::Epilogue::Block::BlockEpilogueBlockAttnResPrepare<
     float, BlockAttnResPreparePolicy>;

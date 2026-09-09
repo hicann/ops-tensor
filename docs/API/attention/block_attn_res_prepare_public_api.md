@@ -7,7 +7,7 @@ Tiling 与 Kernel 入口属于 ops-transformer；ops-transformer 负责把私有
 
 ```cpp
 using BlockAttnResPrepareProblemShape =
-    AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>; // [S, N, D, T]
+    asc::te::shape<int64_t, int64_t, int64_t, int64_t>; // [S, N, D, T]
 using BlockAttnResPrepareMmadTuple =
     AscendC::Std::tuple<BlockAttnResPrepareMm1, BlockAttnResPrepareMm2>;
 using KernelBlockAttnResPrepare = AttentionUniversal<

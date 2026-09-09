@@ -106,10 +106,10 @@ Params MakeParams()
 BlockAttnResPrepareTestTiling MakeTestTiling(const Params& params)
 {
     BlockAttnResPrepareTestTiling tiling{};
-    tiling.totalS = static_cast<uint32_t>(AscendC::Te::Get<0>(params.problemShape));
-    tiling.totalN = static_cast<uint32_t>(AscendC::Te::Get<1>(params.problemShape));
-    tiling.totalD = static_cast<uint64_t>(AscendC::Te::Get<2>(params.problemShape));
-    tiling.totalT = static_cast<uint32_t>(AscendC::Te::Get<3>(params.problemShape));
+    tiling.totalS = static_cast<uint32_t>(asc::te::get<0>(params.problemShape));
+    tiling.totalN = static_cast<uint32_t>(asc::te::get<1>(params.problemShape));
+    tiling.totalD = static_cast<uint64_t>(asc::te::get<2>(params.problemShape));
+    tiling.totalT = static_cast<uint32_t>(asc::te::get<3>(params.problemShape));
     tiling.totalWorkUnits = params.schedulerParams.totalWorkUnits;
     tiling.usedCoreNum = params.schedulerParams.usedCoreNum;
     tiling.baseS = params.schedulerParams.baseS;
@@ -155,10 +155,10 @@ void FillInputs(float* residual, float* query, uint64_t totalT, uint64_t totalN,
 void RunKernelSmoke(const Params& inputParams, int64_t validN)
 {
     constexpr uint32_t BLOCK_NUM = 1U;
-    const uint64_t totalS = static_cast<uint64_t>(AscendC::Te::Get<0>(inputParams.problemShape));
-    const uint64_t totalN = static_cast<uint64_t>(AscendC::Te::Get<1>(inputParams.problemShape));
-    const uint64_t totalD = static_cast<uint64_t>(AscendC::Te::Get<2>(inputParams.problemShape));
-    const uint64_t totalT = static_cast<uint64_t>(AscendC::Te::Get<3>(inputParams.problemShape));
+    const uint64_t totalS = static_cast<uint64_t>(asc::te::get<0>(inputParams.problemShape));
+    const uint64_t totalN = static_cast<uint64_t>(asc::te::get<1>(inputParams.problemShape));
+    const uint64_t totalD = static_cast<uint64_t>(asc::te::get<2>(inputParams.problemShape));
+    const uint64_t totalT = static_cast<uint64_t>(asc::te::get<3>(inputParams.problemShape));
     const size_t residualElems = static_cast<size_t>(totalT * totalN * totalD);
     const size_t queryElems = static_cast<size_t>(totalS * totalD);
     const size_t statElems = static_cast<size_t>(totalS * totalT);
@@ -225,8 +225,8 @@ TEST_F(BlockAttnResPrepareTest, TemplateContracts)
     static_assert(Kernel::Mm1Block::NON_CONTIGUOUS_TYPE ==
                   static_cast<uint64_t>(Blaze::Gemm::NoContiguousType::NON_CONTIGUOUS_TYPE_BATCHED_B));
     static_assert(Kernel::Mm2Block::NON_CONTIGUOUS_TYPE == 0U);
-    static_assert(std::is_same_v<typename Kernel::Mm1Block::LayoutB, AscendC::Te::DNExtLayoutPtn>);
-    static_assert(std::is_same_v<typename Kernel::Mm2Block::LayoutB, AscendC::Te::NDExtLayoutPtn>);
+    static_assert(std::is_same_v<typename Kernel::Mm1Block::LayoutB, asc::te::dn_ext_layout_ptn>);
+    static_assert(std::is_same_v<typename Kernel::Mm2Block::LayoutB, asc::te::nd_ext_layout_ptn>);
     static_assert(std::is_same_v<typename Kernel::BlockEpilogue::ElementType, float>);
     static_assert(std::is_same_v<typename Kernel::BlockEpilogueParams,
                                  typename Blaze::Attention::Kernel::BlockAttnResPrepareBlockEpilogue::Params>);
@@ -245,12 +245,12 @@ TEST_F(BlockAttnResPrepareTest, Mm1ResidualUsesBatchedDnExtLayout)
     auto layout = Blaze::Attention::Kernel::BlockAttnResPrepareDetail::MakeBatchedDNExtLayout<float>(
         BATCH_COUNT, ROWS, COLUMNS, BATCH_STRIDE, COLUMN_STRIDE);
 
-    static_assert(decltype(layout)::depth == AscendC::Te::FIVE_DIM_DATA);
-    EXPECT_EQ(AscendC::Te::Get<0>(layout.Shape()), BATCH_COUNT);
-    EXPECT_EQ(AscendC::Te::Get<0>(layout.Stride()), BATCH_STRIDE);
-    EXPECT_EQ((AscendC::Te::Get<1, 0, 1>(layout.Shape())), ROWS);
-    EXPECT_EQ((AscendC::Te::Get<1, 1, 1>(layout.Shape())), COLUMNS);
-    EXPECT_EQ((AscendC::Te::Get<1, 1, 1>(layout.Stride())), COLUMN_STRIDE);
+    static_assert(decltype(layout)::depth == asc::te::five_dim_data);
+    EXPECT_EQ(asc::te::get<0>(layout.shape()), BATCH_COUNT);
+    EXPECT_EQ(asc::te::get<0>(layout.stride()), BATCH_STRIDE);
+    EXPECT_EQ((asc::te::get<1, 0, 1>(layout.shape())), ROWS);
+    EXPECT_EQ((asc::te::get<1, 1, 1>(layout.shape())), COLUMNS);
+    EXPECT_EQ((asc::te::get<1, 1, 1>(layout.stride())), COLUMN_STRIDE);
 }
 
 TEST_F(BlockAttnResPrepareTest, SchedulerDecodesBlock)
@@ -266,10 +266,10 @@ TEST_F(BlockAttnResPrepareTest, SchedulerDecodesBlock)
     for (uint32_t blockIdx = 0U; blockIdx < params.schedulerParams.totalWorkUnits; ++blockIdx) {
         ASSERT_TRUE(scheduler.GetNextBlock(blockInfo));
     }
-    EXPECT_EQ(AscendC::Te::Get<3>(blockInfo.blockCoord), 1);
-    EXPECT_EQ(AscendC::Te::Get<3>(blockInfo.blockShape), 1);
-    EXPECT_EQ(AscendC::Te::Get<0>(blockInfo.blockCoord), 16);
-    EXPECT_EQ(AscendC::Te::Get<0>(blockInfo.blockShape), 8);
+    EXPECT_EQ(asc::te::get<3>(blockInfo.blockCoord), 1);
+    EXPECT_EQ(asc::te::get<3>(blockInfo.blockShape), 1);
+    EXPECT_EQ(asc::te::get<0>(blockInfo.blockCoord), 16);
+    EXPECT_EQ(asc::te::get<0>(blockInfo.blockShape), 8);
 }
 
 TEST_F(BlockAttnResPrepareTest, SchedulerGroupsAdjacentTokens)
@@ -285,10 +285,10 @@ TEST_F(BlockAttnResPrepareTest, SchedulerGroupsAdjacentTokens)
     for (uint32_t blockIdx = 0U; blockIdx < params.schedulerParams.totalWorkUnits; ++blockIdx) {
         ASSERT_TRUE(scheduler.GetNextBlock(blockInfo));
     }
-    EXPECT_EQ(AscendC::Te::Get<3>(blockInfo.blockCoord), 2);
-    EXPECT_EQ(AscendC::Te::Get<3>(blockInfo.blockShape), 1);
-    EXPECT_EQ(AscendC::Te::Get<0>(blockInfo.blockCoord), 16);
-    EXPECT_EQ(AscendC::Te::Get<0>(blockInfo.blockShape), 8);
+    EXPECT_EQ(asc::te::get<3>(blockInfo.blockCoord), 2);
+    EXPECT_EQ(asc::te::get<3>(blockInfo.blockShape), 1);
+    EXPECT_EQ(asc::te::get<0>(blockInfo.blockCoord), 16);
+    EXPECT_EQ(asc::te::get<0>(blockInfo.blockShape), 8);
 }
 
 TEST_F(BlockAttnResPrepareTest, SchedulerAssignsBalancedBlocksToCurrentCore)
@@ -305,7 +305,7 @@ TEST_F(BlockAttnResPrepareTest, SchedulerAssignsBalancedBlocksToCurrentCore)
     Scheduler::BlockInfo blockInfo{};
     uint32_t blockCount = 0U;
     while (scheduler.GetNextBlock(blockInfo)) {
-        EXPECT_EQ(AscendC::Te::Get<3>(blockInfo.blockCoord), blockCount);
+        EXPECT_EQ(asc::te::get<3>(blockInfo.blockCoord), blockCount);
         ++blockCount;
     }
     EXPECT_EQ(blockCount, 4U);
@@ -331,8 +331,8 @@ TEST_F(BlockAttnResPrepareTest, SchedulerExpandsTokenGroupForSmallRuntimeN)
     EXPECT_EQ(scheduler.GetBlockNums(), 1U);
     Scheduler::BlockInfo blockInfo{};
     ASSERT_TRUE(scheduler.GetNextBlock(blockInfo));
-    EXPECT_EQ(AscendC::Te::Get<3>(blockInfo.blockCoord), 0);
-    EXPECT_EQ(AscendC::Te::Get<3>(blockInfo.blockShape), 4);
+    EXPECT_EQ(asc::te::get<3>(blockInfo.blockCoord), 0);
+    EXPECT_EQ(asc::te::get<3>(blockInfo.blockShape), 4);
 }
 
 TEST_F(BlockAttnResPrepareTest, SchedulerDoesNotExpandEmptyRuntimeN)
@@ -345,7 +345,7 @@ TEST_F(BlockAttnResPrepareTest, SchedulerDoesNotExpandEmptyRuntimeN)
     EXPECT_EQ(scheduler.GetBlockNums(), 4U);
     Scheduler::BlockInfo blockInfo{};
     ASSERT_TRUE(scheduler.GetNextBlock(blockInfo));
-    EXPECT_EQ(AscendC::Te::Get<3>(blockInfo.blockShape), 1);
+    EXPECT_EQ(asc::te::get<3>(blockInfo.blockShape), 1);
 }
 
 TEST_F(BlockAttnResPrepareTest, SchedulerDoesNotExpandRuntimeNAboveL1Capacity)
@@ -358,7 +358,7 @@ TEST_F(BlockAttnResPrepareTest, SchedulerDoesNotExpandRuntimeNAboveL1Capacity)
     EXPECT_EQ(scheduler.GetBlockNums(), 4U);
     Scheduler::BlockInfo blockInfo{};
     ASSERT_TRUE(scheduler.GetNextBlock(blockInfo));
-    EXPECT_EQ(AscendC::Te::Get<3>(blockInfo.blockShape), 1);
+    EXPECT_EQ(asc::te::get<3>(blockInfo.blockShape), 1);
 }
 
 TEST_F(BlockAttnResPrepareTest, SchedulerKeepsEnoughBlocksForUsedCores)
@@ -372,7 +372,7 @@ TEST_F(BlockAttnResPrepareTest, SchedulerKeepsEnoughBlocksForUsedCores)
     EXPECT_EQ(scheduler.GetBlockNums(), 4U);
     Scheduler::BlockInfo blockInfo{};
     ASSERT_TRUE(scheduler.GetNextBlock(blockInfo));
-    EXPECT_EQ(AscendC::Te::Get<3>(blockInfo.blockShape), 1);
+    EXPECT_EQ(asc::te::get<3>(blockInfo.blockShape), 1);
 }
 
 TEST_F(BlockAttnResPrepareTest, EmptyValidBlocksLaunches) { RunKernelSmoke(MakeParams(), 0); }

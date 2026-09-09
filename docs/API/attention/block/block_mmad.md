@@ -23,7 +23,7 @@ class BlockMmad;
 |------|------|
 | DispatchPolicy_ | 调度策略类型（如 `BlockFlatQuant`） |
 | QType_ | Q 矩阵数据类型（如 `bfloat16_t`） |
-| LayoutQ_ | Q 矩阵布局类型（如 `NDExtLayoutPtn`） |
+| LayoutQ_ | Q 矩阵布局类型（如 `nd_ext_layout_ptn`） |
 | KType_ | K 矩阵数据类型 |
 | LayoutK_ | K 矩阵布局类型 |
 | VType_ | V 矩阵数据类型 |
@@ -57,7 +57,7 @@ class BlockMmad {
 
 1. **模板参数要求**：
    - DispatchPolicy 必须提供 `ScheduleType` 类型，用于 Kernel 层 SFINAE 匹配
-   - LayoutQ/LayoutK 必须为 AscendC::Te 的合法布局类型
+   - LayoutQ/LayoutK 必须为 asc::te 的合法布局类型
 
 2. **SFINAE 匹配**：
    - 未匹配的 DispatchPolicy 会触发编译期 `static_assert` 报错

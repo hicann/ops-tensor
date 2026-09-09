@@ -23,15 +23,13 @@ struct CopyUB2L1Weight8Bit {
     template <typename Tp, const Tp& traits, typename T, typename U>
     __aicore__ inline static void Copy(const T& dst, const U& src)
     {
-        using SrcLayoutPattern = AscendC::Te::GetLayoutPattern<typename U::layoutType>;
-        using DstLayoutPattern = AscendC::Te::GetLayoutPattern<typename T::layoutType>;
-        static_assert(
-            AscendC::Std::is_same_v<DstLayoutPattern, AscendC::Te::ZNLayoutPtn>,
-            "Converted weight copy requires a standard ZN L1 destination layout");
-        static_assert(
-            sizeof(typename T::elementType) == sizeof(typename U::elementType) &&
-                sizeof(typename T::elementType) == 1,
-            "Converted weight copy requires matching 8-bit source and destination elements");
+        using SrcLayoutPattern = asc::te::get_layout_pattern<typename U::layout_type>;
+        using DstLayoutPattern = asc::te::get_layout_pattern<typename T::layout_type>;
+        static_assert(AscendC::Std::is_same_v<DstLayoutPattern, asc::te::zn_layout_ptn>,
+                      "Converted weight copy requires a standard ZN L1 destination layout");
+        static_assert(sizeof(typename T::element_type) == sizeof(typename U::element_type) &&
+                          sizeof(typename T::element_type) == 1,
+                      "Converted weight copy requires matching 8-bit source and destination elements");
         constexpr bool IS_DN_WEIGHT = AscendC::Std::is_same_v<SrcLayoutPattern, Weight8BitDnToZnUbLayoutPtn>;
         constexpr bool IS_NZ_UB_LAYOUT = AscendC::Std::is_same_v<SrcLayoutPattern, Weight8BitZnToZnUbLayoutPtn>;
         static_assert(IS_DN_WEIGHT || IS_NZ_UB_LAYOUT, "Converted weight copy requires a supported UB layout");
@@ -47,32 +45,30 @@ private:
     template <typename T, typename U>
     __aicore__ inline static void CopyDnToZnWeight(const T& dst, const U& src)
     {
-        const auto& dstLayout = dst.Layout();
-        const auto& srcLayout = src.Layout();
-        auto srcShape = AscendC::Te::GetShape(srcLayout);
-        auto srcStrideTuple = AscendC::Te::GetStride(srcLayout);
-        auto dstStrideTuple = AscendC::Te::GetStride(dstLayout);
+        const auto& dstLayout = dst.layout();
+        const auto& srcLayout = src.layout();
+        auto srcShape = asc::te::get_shape(srcLayout);
+        auto srcStrideTuple = asc::te::get_stride(srcLayout);
+        auto dstStrideTuple = asc::te::get_stride(dstLayout);
         uint16_t blockCount = static_cast<uint16_t>(AscendC::Std::get<1>(AscendC::Std::get<0>(srcShape)));
         uint32_t blockLen = static_cast<uint32_t>(AscendC::Std::get<1>(AscendC::Std::get<1>(srcShape)));
-        int64_t srcBlockSpan =
-            AscendC::Std::get<1>(AscendC::Std::get<0>(srcStrideTuple)) / BLOCK_BYTE_SIZE;
-        int64_t dstBlockSpan =
-            AscendC::Std::get<1>(AscendC::Std::get<0>(dstStrideTuple)) / BLOCK_BYTE_SIZE;
+        int64_t srcBlockSpan = AscendC::Std::get<1>(AscendC::Std::get<0>(srcStrideTuple)) / BLOCK_BYTE_SIZE;
+        int64_t dstBlockSpan = AscendC::Std::get<1>(AscendC::Std::get<0>(dstStrideTuple)) / BLOCK_BYTE_SIZE;
         int64_t srcGap = srcBlockSpan - static_cast<int64_t>(blockLen);
         int64_t dstGap = dstBlockSpan - static_cast<int64_t>(blockLen);
-        asc_copy_ub2l1(
-            (__cbuf__ void*)dst.Data().Get(), (__ubuf__ void*)src.Data().Get(), blockCount, blockLen, srcGap, dstGap);
+        asc_copy_ub2l1((__cbuf__ void*)dst.data().get(), (__ubuf__ void*)src.data().get(), blockCount, blockLen, srcGap,
+                       dstGap);
     }
 
     template <typename T, typename U>
     __aicore__ inline static void CopyZnToZnWeight(const T& dst, const U& src)
     {
-        using type = typename U::elementType;
-        const auto& srcLayout = src.Layout();
+        using type = typename U::element_type;
+        const auto& srcLayout = src.layout();
 
         // Get shape and stride tuples
-        auto srcShape = AscendC::Te::GetShape(srcLayout);
-        auto srcStrideTuple = AscendC::Te::GetStride(srcLayout);
+        auto srcShape = asc::te::get_shape(srcLayout);
+        auto srcStrideTuple = asc::te::get_stride(srcLayout);
 
         // Extract dimensions from srcShape = ((c0, k1), (n0, n1))
         // Std::get<0>(srcShape) = (c0, k1), Std::get<1>(srcShape) = (n0, n1)
@@ -97,8 +93,8 @@ private:
         // Destination stride in 32B units (contiguous in L1)
         int64_t dstStride = 0;
 
-        asc_copy_ub2l1((__cbuf__ void*)dst.Data().Get(), (__ubuf__ void*)src.Data().Get(),
-            blockCount, blockLen, srcStride, dstStride);
+        asc_copy_ub2l1((__cbuf__ void*)dst.data().get(), (__ubuf__ void*)src.data().get(), blockCount, blockLen,
+                       srcStride, dstStride);
     }
 };
 
@@ -106,9 +102,17 @@ private:
 } // namespace Gemm
 } // namespace Blaze
 
-// Register CopyTraits with standard trait
+namespace asc {
+namespace te {
+
+template <typename Traits>
+struct copy_traits<Blaze::Gemm::Tile::CopyUB2L1Weight8Bit, Traits>
+    : public copy_traits<Blaze::Gemm::Tile::CopyUB2L1Weight8Bit, Traits, Blaze::Gemm::Tile::CopyUB2L1Weight8Bit,
+                         Traits> {};
+
 template <>
-struct AscendC::Te::CopyTraits<Blaze::Gemm::Tile::CopyUB2L1Weight8Bit>
-    : public AscendC::Te::CopyTraits<
-          Blaze::Gemm::Tile::CopyUB2L1Weight8Bit, AscendC::Te::CopyUB2L1TraitDefault,
-          Blaze::Gemm::Tile::CopyUB2L1Weight8Bit, AscendC::Te::CopyUB2L1TraitDefault> {};
+struct copy_traits<Blaze::Gemm::Tile::CopyUB2L1Weight8Bit>
+    : public copy_traits<Blaze::Gemm::Tile::CopyUB2L1Weight8Bit, ub_to_l1_trait_default> {};
+
+} // namespace te
+} // namespace asc

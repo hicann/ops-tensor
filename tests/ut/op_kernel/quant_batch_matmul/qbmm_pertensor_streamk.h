@@ -35,10 +35,10 @@ __aicore__ inline void QBMMPertensorStreamKWrapper(GM_ADDR x1GM, GM_ADDR x2GM, G
                                                    GM_ADDR biasGM, GM_ADDR yGM, GM_ADDR workspaceGM,
                                                    const QBMMPertensorStreamKTilingData& tilingData)
 {
-    using LayoutA = AscendC::Te::NDExtLayoutPtn;
-    using LayoutB = AscendC::Te::NDExtLayoutPtn;
-    using LayoutC = AscendC::Te::NDExtLayoutPtn;
-    using ProblemShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
+    using LayoutA = asc::te::nd_ext_layout_ptn;
+    using LayoutB = asc::te::nd_ext_layout_ptn;
+    using LayoutC = asc::te::nd_ext_layout_ptn;
+    using ProblemShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
 
     using DispatchPolicy = Blaze::Gemm::MatmulWithScaleFixpipeQuant<FullLoadMode, false,
                                                                     Blaze::Gemm::KernelQbmmPertensorMultiBlockStreamK>;

@@ -49,8 +49,8 @@ using AscendC::DT_FLOAT16;
 
 namespace {
 
-using ProblemShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
-using Layout = AscendC::Te::NDExtLayoutPtn;
+using ProblemShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
+using Layout = asc::te::nd_ext_layout_ptn;
 
 constexpr uint32_t QUANT_MODE_PERCHANNEL = 2U;
 constexpr uint32_t QUANT_MODE_PERTOKEN = 4U;

@@ -19,7 +19,7 @@
 #include "blaze/gemm/utils/layout_utils.h"
 
 namespace Blaze::Gemm::Tile {
-using AscendC::Te::C0_ELEMENT;
+using asc::te::c0_element;
 
 struct CopyConcatGM2L1Params {
     uint64_t n;
@@ -30,35 +30,35 @@ struct CopySliceGM2L1 {
     template <typename Tp, const Tp& traits, typename T, typename U>
     __aicore__ inline static void Copy(const T& dst, const U& src)
     {
-        using srcType = typename U::elementType;
-        auto layoutGm = src.Layout(); // shape: [ndNum, [sliceM, curK]], stride: [oriM * k, [k, 1]]
-        auto layoutL1 = dst.Layout(); // l1 shape: [mL1, kL1] ==> NZ: ((m0, m1), (k0, k1))
+        using srcType = typename U::element_type;
+        auto layoutGm = src.layout(); // shape: [ndNum, [sliceM, curK]], stride: [oriM * k, [k, 1]]
+        auto layoutL1 = dst.layout(); // l1 shape: [mL1, kL1] ==> NZ: ((m0, m1), (k0, k1))
 
-        auto m0 = AscendC::Te::Get<0>(AscendC::Te::Get<MNK_M>(layoutL1.Shape()));
-        auto m1 = AscendC::Te::Get<1>(AscendC::Te::Get<MNK_M>(layoutL1.Shape()));
+        auto m0 = asc::te::get<0>(asc::te::get<MNK_M>(layoutL1.shape()));
+        auto m1 = asc::te::get<1>(asc::te::get<MNK_M>(layoutL1.shape()));
         uint32_t mL1 = m1 * m0; // curML1
-        uint16_t ndNum = static_cast<uint16_t>(AscendC::Te::Get<0>(layoutGm.Shape()));
-        uint16_t nValue = static_cast<uint16_t>(AscendC::Te::Get<0>(AscendC::Te::Get<1>(layoutGm.Shape())));
-        uint32_t dValue = static_cast<uint32_t>(AscendC::Te::Get<1>(AscendC::Te::Get<1>(layoutGm.Shape())));
-        uint64_t srcDValue = AscendC::Te::Get<0>(AscendC::Te::Get<1>(layoutGm.Stride()));
+        uint16_t ndNum = static_cast<uint16_t>(asc::te::get<0>(layoutGm.shape()));
+        uint16_t nValue = static_cast<uint16_t>(asc::te::get<0>(asc::te::get<1>(layoutGm.shape())));
+        uint32_t dValue = static_cast<uint32_t>(asc::te::get<1>(asc::te::get<1>(layoutGm.shape())));
+        uint64_t srcDValue = asc::te::get<0>(asc::te::get<1>(layoutGm.stride()));
         uint32_t dstNzC0Stride = AscendC::Std::ceil_align(mL1, AscendC::BLOCK_CUBE);
-        uint64_t srcNdMatrixStride = AscendC::Te::Get<0>(layoutGm.Stride());
+        uint64_t srcNdMatrixStride = asc::te::get<0>(layoutGm.stride());
         uint16_t dstNzNStride = 1;
-        uint32_t dstNzMatrixStride = nValue * C0_ELEMENT<srcType>;
+        uint32_t dstNzMatrixStride = nValue * c0_element<srcType>;
         uint64_t loop1SrcStride = srcDValue * sizeof(srcType);
         uint64_t loop4SrcStride = srcNdMatrixStride * sizeof(srcType);
         uint16_t loop2DstStride = dstNzNStride;  // loop2_dst_stride = dst_nz_n_stride
         uint16_t loop3DstStride = dstNzC0Stride; // loop3_dst_stride = dst_nz_c0_Stride
         // loop4_dst_stride: dst_nz_matrix_stride / C0_element
-        uint16_t loop4DstStride = dstNzMatrixStride / C0_ELEMENT<srcType>;
-        uint8_t cacheMode = src.Engine().GetCacheMode();
+        uint16_t loop4DstStride = dstNzMatrixStride / c0_element<srcType>;
+        uint8_t cacheMode = src.engine().get_cache_mode();
 
         if constexpr (sizeof(srcType) == sizeof(half)) {
-            CopyGmToCbufMultiNd2nz((__cbuf__ half*)(dst.Data().Get()), (__gm__ half*)(src.Data().Get()), ndNum,
+            CopyGmToCbufMultiNd2nz((__cbuf__ half*)(dst.data().get()), (__gm__ half*)(src.data().get()), ndNum,
                                    loop2DstStride, loop3DstStride, loop4DstStride, loop1SrcStride, cacheMode, nValue,
                                    dValue, loop4SrcStride, false);
         } else if constexpr (sizeof(srcType) == sizeof(float)) {
-            CopyGmToCbufMultiNd2nz((__cbuf__ float*)(dst.Data().Get()), (__gm__ float*)(src.Data().Get()), ndNum,
+            CopyGmToCbufMultiNd2nz((__cbuf__ float*)(dst.data().get()), (__gm__ float*)(src.data().get()), ndNum,
                                    loop2DstStride, loop3DstStride, loop4DstStride, loop1SrcStride, cacheMode, nValue,
                                    dValue, loop4SrcStride, false);
         }
@@ -75,12 +75,12 @@ private:
         if ASCEND_IS_AIV {
             return;
         }
-        if constexpr (AscendC::Te::CURRENT_ARCH_VERSION == AscendC::Te::ArchVersion::V3510) {
+        if constexpr (asc::te::current_arch_version == asc::te::arch_version::v3510) {
             uint64_t mte2NzPara = static_cast<uint64_t>(loop4DstStride) << 48; // MTE2_NZ_PARA[63:48]
             mte2NzPara |= static_cast<uint64_t>(loop3DstStride) << 32;         // MTE2_NZ_PARA[47:32]
             mte2NzPara |= static_cast<uint64_t>(loop2DstStride) << 16;         // MTE2_NZ_PARA[31:16]
             mte2NzPara |= static_cast<uint64_t>(ndNum);                        // MTE2_NZ_PARA[15:0]
-            AscendC::Te::SetMTE2NzPara(mte2NzPara); // CCE: store parameters for ND2NZ DMA instructions
+            asc::te::set_mte2_nz_para(mte2NzPara); // CCE: store parameters for ND2NZ DMA instructions
             asc_copy_gm2l1_nd2nz(dst, src, loop1SrcStride, cacheMode, nValue, dValue, loop4SrcStride, enableSmallC0);
         }
     }
@@ -90,9 +90,9 @@ struct CopyConcatGM2L1 {
     template <typename T, typename U>
     __aicore__ inline static void Copy(const T& dst, const U& src, const CopyConcatGM2L1Params& params)
     {
-        using SrcLayoutPtn = AscendC::Te::GetLayoutPattern<typename U::layoutType>;
-        constexpr bool isScaleB = AscendC::Std::is_one_of_v<SrcLayoutPtn, AscendC::Te::ScaleBNDLayoutPtn,
-                                                            AscendC::Te::ScaleBDNLayoutPtn>;
+        using SrcLayoutPtn = asc::te::get_layout_pattern<typename U::layout_type>;
+        constexpr bool isScaleB = AscendC::Std::is_one_of_v<SrcLayoutPtn, asc::te::scaleb_nd_layout_ptn,
+                                                            asc::te::scaleb_dn_layout_ptn>;
         if constexpr (isScaleB) {
             CopyScaleB(dst, src, params);
         } else {
@@ -107,15 +107,15 @@ private:
     template <typename T, typename U>
     __aicore__ inline static void CopyB(const T& dst, const U& src, const CopyConcatGM2L1Params& params)
     {
-        using ElementType = AscendC::Te::GetAttributeElementType<typename U::elementType*>;
+        using ElementType = asc::te::get_attribute_element_type<typename U::element_type*>;
         using CopyType = AscendC::Std::conditional_t<(sizeof(ElementType) == 1), int8_t, ElementType>;
-        using SrcLayoutPtn = AscendC::Te::GetLayoutPattern<typename U::layoutType>;
+        using SrcLayoutPtn = asc::te::get_layout_pattern<typename U::layout_type>;
         constexpr bool isTrans = IsTrans<SrcLayoutPtn>::value;
-        auto srcLayout = src.Layout();
-        auto dstLayout = dst.Layout();
-        const uint64_t singleN = AscendC::Te::GetTotalColumnShape(srcLayout);
-        const uint64_t curGmBKL1 = AscendC::Te::GetTotalRowShape(srcLayout);
-        const uint64_t l1K = AscendC::Te::GetTotalRowShape(dstLayout);
+        auto srcLayout = src.layout();
+        auto dstLayout = dst.layout();
+        const uint64_t singleN = asc::te::get_total_column_shape(srcLayout);
+        const uint64_t curGmBKL1 = asc::te::get_total_row_shape(srcLayout);
+        const uint64_t l1K = asc::te::get_total_row_shape(dstLayout);
         const uint64_t halfN = params.n >> 1;
         const uint64_t srcMatrixStride = PackFp4Size<ElementType>(isTrans ? (halfN * params.k) : halfN);
         const uint64_t srcDValue = PackFp4Size<ElementType>(isTrans ? params.k : params.n);
@@ -132,9 +132,9 @@ private:
         const uint16_t loop4DstStride = dstMatrixStride;
         const uint64_t loop1SrcStride = srcDValue * sizeof(CopyType);
         const uint64_t loop4SrcStride = srcMatrixStride * sizeof(CopyType);
-        const uint8_t cacheMode = src.Engine().GetCacheMode();
-        CopyGmToCbufMultiNd2nz(reinterpret_cast<__cbuf__ CopyType*>(dst.Data().Get()),
-                               reinterpret_cast<__gm__ CopyType*>(src.Data().Get()), CONCAT_MATRIX_NUM, loop2DstStride,
+        const uint8_t cacheMode = src.engine().get_cache_mode();
+        CopyGmToCbufMultiNd2nz(reinterpret_cast<__cbuf__ CopyType*>(dst.data().get()),
+                               reinterpret_cast<__gm__ CopyType*>(src.data().get()), CONCAT_MATRIX_NUM, loop2DstStride,
                                loop3DstStride, loop4DstStride, loop1SrcStride, cacheMode, nValue, dValue,
                                loop4SrcStride, false);
     }
@@ -142,13 +142,13 @@ private:
     template <typename T, typename U>
     __aicore__ inline static void CopyScaleB(const T& dst, const U& src, const CopyConcatGM2L1Params& params)
     {
-        using SrcLayoutPtn = AscendC::Te::GetLayoutPattern<typename U::layoutType>;
+        using SrcLayoutPtn = asc::te::get_layout_pattern<typename U::layout_type>;
         constexpr bool isTrans = IsTrans<SrcLayoutPtn>::value;
-        auto srcLayout = src.Layout();
-        auto dstLayout = dst.Layout();
-        const uint64_t singleN = AscendC::Te::GetTotalColumnShape(srcLayout);
-        const uint64_t curScaleSpan = AscendC::Te::GetTotalRowShape(srcLayout);
-        const uint64_t scaleKL1Block = AscendC::Te::GetTotalRowShape(dstLayout) / MXFP_MULTI_BASE_SIZE;
+        auto srcLayout = src.layout();
+        auto dstLayout = dst.layout();
+        const uint64_t singleN = asc::te::get_total_column_shape(srcLayout);
+        const uint64_t curScaleSpan = asc::te::get_total_row_shape(srcLayout);
+        const uint64_t scaleKL1Block = asc::te::get_total_row_shape(dstLayout) / MXFP_MULTI_BASE_SIZE;
         const uint64_t fullScaleKBlock = CeilDiv(params.k, MXFP_DIVISOR_SIZE);
         const uint64_t halfN = params.n >> 1;
         const uint64_t srcMatrixStride = isTrans ? (halfN * fullScaleKBlock) : halfN;
@@ -183,15 +183,15 @@ private:
         const uint16_t loop4DstStride = dstMatrixStride;
         const uint64_t loop1SrcStride = srcDValue * sizeof(CopyType);
         const uint64_t loop4SrcStride = srcMatrixStride * sizeof(CopyType);
-        const uint8_t cacheMode = src.Engine().GetCacheMode();
+        const uint8_t cacheMode = src.engine().get_cache_mode();
         if constexpr (IsTrans) {
-            CopyGmToCbufMultiDn2nz(reinterpret_cast<__cbuf__ CopyType*>(dst.Data().Get()),
-                                   reinterpret_cast<__gm__ CopyType*>(src.Data().Get()), CONCAT_MATRIX_NUM,
+            CopyGmToCbufMultiDn2nz(reinterpret_cast<__cbuf__ CopyType*>(dst.data().get()),
+                                   reinterpret_cast<__gm__ CopyType*>(src.data().get()), CONCAT_MATRIX_NUM,
                                    loop2DstStride, loop3DstStride, loop4DstStride, loop1SrcStride, cacheMode, nValue,
                                    dValue, loop4SrcStride, false);
         } else {
-            CopyGmToCbufMultiNd2nz(reinterpret_cast<__cbuf__ CopyType*>(dst.Data().Get()),
-                                   reinterpret_cast<__gm__ CopyType*>(src.Data().Get()), CONCAT_MATRIX_NUM,
+            CopyGmToCbufMultiNd2nz(reinterpret_cast<__cbuf__ CopyType*>(dst.data().get()),
+                                   reinterpret_cast<__gm__ CopyType*>(src.data().get()), CONCAT_MATRIX_NUM,
                                    loop2DstStride, loop3DstStride, loop4DstStride, loop1SrcStride, cacheMode, nValue,
                                    dValue, loop4SrcStride, false);
         }
@@ -207,12 +207,12 @@ private:
         if ASCEND_IS_AIV {
             return;
         }
-        if constexpr (AscendC::Te::CURRENT_ARCH_VERSION == AscendC::Te::ArchVersion::V3510) {
+        if constexpr (asc::te::current_arch_version == asc::te::arch_version::v3510) {
             uint64_t mte2NzPara = static_cast<uint64_t>(loop4DstStride) << 48; // MTE2_NZ_PARA[63:48]
             mte2NzPara |= static_cast<uint64_t>(loop3DstStride) << 32;         // MTE2_NZ_PARA[47:32]
             mte2NzPara |= static_cast<uint64_t>(loop2DstStride) << 16;         // MTE2_NZ_PARA[31:16]
             mte2NzPara |= static_cast<uint64_t>(ndNum);                        // MTE2_NZ_PARA[15:0]
-            AscendC::Te::SetMTE2NzPara(mte2NzPara); // CCE: store parameters for ND2NZ DMA instructions
+            asc::te::set_mte2_nz_para(mte2NzPara); // CCE: store parameters for ND2NZ DMA instructions
             asc_copy_gm2l1_nd2nz(dst, src, loop1SrcStride, cacheMode, nValue, dValue, loop4SrcStride, enableSmallC0);
         }
     }
@@ -227,12 +227,12 @@ private:
         if ASCEND_IS_AIV {
             return;
         }
-        if constexpr (AscendC::Te::CURRENT_ARCH_VERSION == AscendC::Te::ArchVersion::V3510) {
+        if constexpr (asc::te::current_arch_version == asc::te::arch_version::v3510) {
             uint64_t mte2NzPara = static_cast<uint64_t>(loop4DstStride) << 48; // MTE2_NZ_PARA[63:48]
             mte2NzPara |= static_cast<uint64_t>(loop3DstStride) << 32;         // MTE2_NZ_PARA[47:32]
             mte2NzPara |= static_cast<uint64_t>(loop2DstStride) << 16;         // MTE2_NZ_PARA[31:16]
             mte2NzPara |= static_cast<uint64_t>(dnNum);                        // MTE2_NZ_PARA[15:0]
-            AscendC::Te::SetMTE2NzPara(mte2NzPara); // CCE: store parameters for DN2NZ DMA instructions
+            asc::te::set_mte2_nz_para(mte2NzPara); // CCE: store parameters for DN2NZ DMA instructions
             asc_copy_gm2l1_dn2nz(dst, src, loop1SrcStride, cacheMode, nValue, dValue, loop4SrcStride, enableSmallC0);
         }
     }
@@ -240,29 +240,30 @@ private:
 
 } // namespace Blaze::Gemm::Tile
 
-namespace AscendC {
-namespace Te {
+namespace asc {
+namespace te {
 
 // 特化Traits，绑定自定义GM->L1拷贝实现
 template <typename Traits>
-struct CopyTraits<Blaze::Gemm::Tile::CopySliceGM2L1, Traits>
-    : public CopyTraits<Blaze::Gemm::Tile::CopySliceGM2L1, Traits, Blaze::Gemm::Tile::CopySliceGM2L1, Traits> {};
+struct copy_traits<Blaze::Gemm::Tile::CopySliceGM2L1, Traits>
+    : public copy_traits<Blaze::Gemm::Tile::CopySliceGM2L1, Traits, Blaze::Gemm::Tile::CopySliceGM2L1, Traits> {};
 
 template <>
-struct CopyTraits<Blaze::Gemm::Tile::CopySliceGM2L1>
-    : public CopyTraits<Blaze::Gemm::Tile::CopySliceGM2L1, CopyGM2L1TraitDefault> {};
+struct copy_traits<Blaze::Gemm::Tile::CopySliceGM2L1>
+    : public copy_traits<Blaze::Gemm::Tile::CopySliceGM2L1, gm_to_l1_trait_default> {};
 
 template <>
-struct CopyTraits<Blaze::Gemm::Tile::CopyConcatGM2L1> {
-    using TraitType = typename CopyGM2L1TraitDefault::TraitType;
-    static constexpr const TraitType defaultTrait = CopyGM2L1TraitDefault::value;
+struct copy_traits<Blaze::Gemm::Tile::CopyConcatGM2L1> {
+    using trait_type = typename gm_to_l1_trait_default::trait_type;
+    using TraitType = trait_type;
+    static constexpr const trait_type default_trait = gm_to_l1_trait_default::value;
 
-    __aicore__ inline constexpr CopyTraits with(const Blaze::Gemm::Tile::CopyConcatGM2L1Params& copyParams) const
+    __aicore__ inline constexpr copy_traits with(const Blaze::Gemm::Tile::CopyConcatGM2L1Params& copyParams) const
     {
         return {copyParams};
     }
 
-    template <const TraitType& trait = defaultTrait, typename T, typename U>
+    template <const trait_type& trait = default_trait, typename T, typename U>
     __aicore__ inline void CopyUnpack(const T& dst, const U& src) const
     {
         (void)trait;
@@ -272,5 +273,5 @@ struct CopyTraits<Blaze::Gemm::Tile::CopyConcatGM2L1> {
     Blaze::Gemm::Tile::CopyConcatGM2L1Params params{};
 };
 
-} // namespace Te
-} // namespace AscendC
+} // namespace te
+} // namespace asc

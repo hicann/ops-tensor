@@ -253,9 +253,9 @@ using AType = half;
 using BType = half;
 using CType = float;
 using BiasType = float;
-using LayoutA = AscendC::Te::NZLayoutPtn;
-using LayoutB = AscendC::Te::NZLayoutPtn;
-using LayoutC = AscendC::Te::NDLayoutPtn;
+using LayoutA = asc::te::nz_layout_ptn;
+using LayoutB = asc::te::nz_layout_ptn;
+using LayoutC = asc::te::nd_layout_ptn;
 using LayoutBias = LayoutC;
 
 using DispatchPolicy = Blaze::Gemm::MatmulMultiBlockBasic<0>;  // 非全载
@@ -298,16 +298,16 @@ blockMmad.Init(problemShape, params);
 ### 组件执行
 ```cpp
 // 准备 GM Tensor（已在 kernel 层创建）
-auto gmA = AscendC::Te::MakeTensor(...);
-auto gmB = AscendC::Te::MakeTensor(...);
-auto gmC = AscendC::Te::MakeTensor(...);
-auto gmBias = AscendC::Te::MakeTensor(...);
+auto gmA = asc::te::make_tensor(...);
+auto gmB = asc::te::make_tensor(...);
+auto gmC = asc::te::make_tensor(...);
+auto gmBias = asc::te::make_tensor(...);
 
 // Slice 到当前 block
-auto gmBlockA = gmA.Slice(AscendC::MakeCoord(coordM, 0), AscendC::MakeShape(shapeM, shapeK));
-auto gmBlockB = gmB.Slice(AscendC::MakeCoord(0, coordN), AscendC::MakeShape(shapeK, shapeN));
-auto gmBlockC = gmC.Slice(AscendC::MakeCoord(coordM, coordN), AscendC::MakeShape(shapeM, shapeN));
-auto gmBlockBias = gmBias.Slice(AscendC::MakeCoord(0, coordN), AscendC::MakeShape(1, shapeN));
+auto gmBlockA = gmA.slice(AscendC::MakeCoord(coordM, 0), AscendC::MakeShape(shapeM, shapeK));
+auto gmBlockB = gmB.slice(AscendC::MakeCoord(0, coordN), AscendC::MakeShape(shapeK, shapeN));
+auto gmBlockC = gmC.slice(AscendC::MakeCoord(coordM, coordN), AscendC::MakeShape(shapeM, shapeN));
+auto gmBlockBias = gmBias.slice(AscendC::MakeCoord(0, coordN), AscendC::MakeShape(1, shapeN));
 
 // 执行矩阵乘
 TupleL1L0Shape tileShape{shapeM, shapeN, shapeK, batch, mL0, nL0};

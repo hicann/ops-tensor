@@ -40,26 +40,26 @@ struct CopyGM2UBMxScale {
     template <typename Tp, const Tp& traits, typename T, typename U>
     __aicore__ inline static void Copy(const T& dst, const U& src)
     {
-        using SrcLayoutPattern = AscendC::Te::GetLayoutPattern<typename U::layoutType>;
-        using DstLayoutPattern = AscendC::Te::GetLayoutPattern<typename T::layoutType>;
-        static_assert(AscendC::Std::is_same_v<SrcLayoutPattern, AscendC::Te::ScaleBDNLayoutPtn> &&
-                          AscendC::Std::is_same_v<DstLayoutPattern, AscendC::Te::ScaleBDNLayoutPtn>,
+        using SrcLayoutPattern = asc::te::get_layout_pattern<typename U::layout_type>;
+        using DstLayoutPattern = asc::te::get_layout_pattern<typename T::layout_type>;
+        static_assert(AscendC::Std::is_same_v<SrcLayoutPattern, asc::te::scaleb_dn_layout_ptn> &&
+                          AscendC::Std::is_same_v<DstLayoutPattern, asc::te::scaleb_dn_layout_ptn>,
                       "MX ScaleB staging requires ScaleBDN source and destination layouts");
-        static_assert(AscendC::Std::is_same_v<AscendC::Te::GetMemLocation<U>, AscendC::Te::Location::GM> &&
-                          AscendC::Std::is_same_v<AscendC::Te::GetMemLocation<T>, AscendC::Te::Location::UB>,
+        static_assert(AscendC::Std::is_same_v<asc::te::get_mem_location<U>, asc::te::location::gm> &&
+                          AscendC::Std::is_same_v<asc::te::get_mem_location<T>, asc::te::location::ub>,
                       "MX ScaleB staging requires GM source and UB destination tensors");
-        static_assert(sizeof(typename T::elementType) == 1 && sizeof(typename U::elementType) == 1,
+        static_assert(sizeof(typename T::element_type) == 1 && sizeof(typename U::element_type) == 1,
                       "MX ScaleB staging requires 8-bit elements");
 
-        const auto& srcLayout = src.Layout();
-        const auto& dstLayout = dst.Layout();
-        uint16_t nSize = static_cast<uint16_t>(AscendC::Te::GetTotalColumnShape(srcLayout));
-        uint32_t scaleKSize = static_cast<uint32_t>(AscendC::Te::GetTotalRowShape(srcLayout));
-        uint64_t srcNStride = AscendC::Std::get<1>(AscendC::Std::get<1>(srcLayout.Stride()));
-        uint64_t dstNStride = AscendC::Std::get<1>(AscendC::Std::get<1>(dstLayout.Stride()));
-        asc_copy_gm2ub_align(reinterpret_cast<__ubuf__ uint8_t*>(dst.Data().Get()),
-                             reinterpret_cast<__gm__ uint8_t*>(src.Data().Get()), nSize, scaleKSize, 0, 0, false,
-                             src.Engine().GetCacheMode(), srcNStride, dstNStride);
+        const auto& srcLayout = src.layout();
+        const auto& dstLayout = dst.layout();
+        uint16_t nSize = static_cast<uint16_t>(asc::te::get_total_column_shape(srcLayout));
+        uint32_t scaleKSize = static_cast<uint32_t>(asc::te::get_total_row_shape(srcLayout));
+        uint64_t srcNStride = AscendC::Std::get<1>(AscendC::Std::get<1>(srcLayout.stride()));
+        uint64_t dstNStride = AscendC::Std::get<1>(AscendC::Std::get<1>(dstLayout.stride()));
+        asc_copy_gm2ub_align(reinterpret_cast<__ubuf__ uint8_t*>(dst.data().get()),
+                             reinterpret_cast<__gm__ uint8_t*>(src.data().get()), nSize, scaleKSize, 0, 0, false,
+                             src.engine().get_cache_mode(), srcNStride, dstNStride);
     }
 };
 
@@ -70,34 +70,34 @@ struct MxScaleTranspose {
     template <typename T, typename U, typename V>
     __aicore__ inline static void Transpose(const T& dst, const U& src, const V& transId)
     {
-        using SrcLayoutPattern = AscendC::Te::GetLayoutPattern<typename U::layoutType>;
-        using DstLayoutPattern = AscendC::Te::GetLayoutPattern<typename T::layoutType>;
-        using IndexLayoutPattern = AscendC::Te::GetLayoutPattern<typename V::layoutType>;
-        using IndexElementType = AscendC::Te::GetAttributeElementType<typename V::elementType*>;
-        static_assert(AscendC::Std::is_same_v<SrcLayoutPattern, AscendC::Te::ScaleBDNLayoutPtn> &&
-                          AscendC::Std::is_same_v<DstLayoutPattern, AscendC::Te::NNLayoutPtn> &&
-                          AscendC::Std::is_same_v<IndexLayoutPattern, AscendC::Te::NDExtLayoutPtn>,
+        using SrcLayoutPattern = asc::te::get_layout_pattern<typename U::layout_type>;
+        using DstLayoutPattern = asc::te::get_layout_pattern<typename T::layout_type>;
+        using IndexLayoutPattern = asc::te::get_layout_pattern<typename V::layout_type>;
+        using IndexElementType = asc::te::get_attribute_element_type<typename V::element_type*>;
+        static_assert(AscendC::Std::is_same_v<SrcLayoutPattern, asc::te::scaleb_dn_layout_ptn> &&
+                          AscendC::Std::is_same_v<DstLayoutPattern, asc::te::nn_layout_ptn> &&
+                          AscendC::Std::is_same_v<IndexLayoutPattern, asc::te::nd_ext_layout_ptn>,
                       "MX scale transpose requires ScaleBDN input, NN output and NDExt indices");
-        static_assert(AscendC::Std::is_same_v<AscendC::Te::GetMemLocation<T>, AscendC::Te::Location::UB> &&
-                          AscendC::Std::is_same_v<AscendC::Te::GetMemLocation<U>, AscendC::Te::Location::UB> &&
-                          AscendC::Std::is_same_v<AscendC::Te::GetMemLocation<V>, AscendC::Te::Location::UB>,
+        static_assert(AscendC::Std::is_same_v<asc::te::get_mem_location<T>, asc::te::location::ub> &&
+                          AscendC::Std::is_same_v<asc::te::get_mem_location<U>, asc::te::location::ub> &&
+                          AscendC::Std::is_same_v<asc::te::get_mem_location<V>, asc::te::location::ub>,
                       "MX scale transpose only supports UB tensors");
-        static_assert(sizeof(typename T::elementType) == 1 && sizeof(typename U::elementType) == 1 &&
+        static_assert(sizeof(typename T::element_type) == 1 && sizeof(typename U::element_type) == 1 &&
                           AscendC::Std::is_same_v<IndexElementType, uint16_t>,
                       "MX scale transpose requires 8-bit scales and uint16 indices");
         using SrcNStride = AscendC::Std::remove_cvref_t<decltype(AscendC::Std::get<1>(
-            AscendC::Std::get<1>(src.Layout().Stride())))>;
+            AscendC::Std::get<1>(src.layout().stride())))>;
         static_assert(SrcNStride::value == MX_SCALE_INPUT_ROW_STRIDE,
                       "MX scale transpose requires a compile-time 160-byte input row stride");
 
-        uint64_t nSize = AscendC::Te::GetTotalColumnShape(src.Layout());
-        uint64_t scaleKSize = AscendC::Te::GetTotalRowShape(src.Layout());
+        uint64_t nSize = asc::te::get_total_column_shape(src.layout());
+        uint64_t scaleKSize = asc::te::get_total_row_shape(src.layout());
         uint64_t scaleKTail = scaleKSize % BLOCK_CUBE;
-        uint64_t dstNBlockStride = AscendC::Std::get<1>(AscendC::Std::get<1>(dst.Layout().Stride()));
+        uint64_t dstNBlockStride = AscendC::Std::get<1>(AscendC::Std::get<1>(dst.layout().stride()));
         MxScaleTransposeParams params{
-            reinterpret_cast<__ubuf__ uint16_t*>(src.Data().Get()),
-            reinterpret_cast<__ubuf__ uint16_t*>(dst.Data().Get()),
-            reinterpret_cast<__ubuf__ uint16_t*>(transId.Data().Get()),
+            reinterpret_cast<__ubuf__ uint16_t*>(src.data().get()),
+            reinterpret_cast<__ubuf__ uint16_t*>(dst.data().get()),
+            reinterpret_cast<__ubuf__ uint16_t*>(transId.data().get()),
             static_cast<uint16_t>(CeilDiv(nSize, BLOCK_CUBE)),
             static_cast<uint16_t>(CeilDiv(scaleKSize, BLOCK_CUBE)),
             static_cast<uint16_t>(dstNBlockStride / sizeof(uint16_t)),
@@ -163,45 +163,45 @@ struct CopyUB2L1MxScale {
     template <typename Tp, const Tp& traits, typename T, typename U>
     __aicore__ inline static void Copy(const T& dst, const U& src)
     {
-        using SrcLayoutPattern = AscendC::Te::GetLayoutPattern<typename U::layoutType>;
-        using DstLayoutPattern = AscendC::Te::GetLayoutPattern<typename T::layoutType>;
-        static_assert(AscendC::Std::is_same_v<SrcLayoutPattern, AscendC::Te::NNLayoutPtn> &&
-                          AscendC::Std::is_same_v<DstLayoutPattern, AscendC::Te::NNLayoutPtn>,
+        using SrcLayoutPattern = asc::te::get_layout_pattern<typename U::layout_type>;
+        using DstLayoutPattern = asc::te::get_layout_pattern<typename T::layout_type>;
+        static_assert(AscendC::Std::is_same_v<SrcLayoutPattern, asc::te::nn_layout_ptn> &&
+                          AscendC::Std::is_same_v<DstLayoutPattern, asc::te::nn_layout_ptn>,
                       "MX ScaleB copy to L1 requires NN source and destination layouts");
-        static_assert(AscendC::Std::is_same_v<AscendC::Te::GetMemLocation<U>, AscendC::Te::Location::UB> &&
-                          AscendC::Std::is_same_v<AscendC::Te::GetMemLocation<T>, AscendC::Te::Location::L1>,
+        static_assert(AscendC::Std::is_same_v<asc::te::get_mem_location<U>, asc::te::location::ub> &&
+                          AscendC::Std::is_same_v<asc::te::get_mem_location<T>, asc::te::location::l1>,
                       "MX ScaleB copy to L1 requires UB source and L1 destination tensors");
-        static_assert(sizeof(typename T::elementType) == 1 && sizeof(typename U::elementType) == 1,
+        static_assert(sizeof(typename T::element_type) == 1 && sizeof(typename U::element_type) == 1,
                       "MX ScaleB copy to L1 requires 8-bit elements");
 
-        const auto& srcLayout = src.Layout();
-        uint64_t nBlockCount = AscendC::Std::get<1>(AscendC::Std::get<1>(srcLayout.Shape()));
-        uint64_t nBlockStride = AscendC::Std::get<1>(AscendC::Std::get<1>(srcLayout.Stride()));
+        const auto& srcLayout = src.layout();
+        uint64_t nBlockCount = AscendC::Std::get<1>(AscendC::Std::get<1>(srcLayout.shape()));
+        uint64_t nBlockStride = AscendC::Std::get<1>(AscendC::Std::get<1>(srcLayout.stride()));
         // Use the physical N-block span, including its padding, rather than
         // multiplying the logical NN shape (whose K dimension is paired).
         uint32_t sizeBytes = static_cast<uint32_t>(nBlockCount * nBlockStride);
-        asc_copy_ub2l1(reinterpret_cast<__cbuf__ void*>(dst.Data().Get()),
-                       reinterpret_cast<__ubuf__ void*>(src.Data().Get()), sizeBytes);
+        asc_copy_ub2l1(reinterpret_cast<__cbuf__ void*>(dst.data().get()),
+                       reinterpret_cast<__ubuf__ void*>(src.data().get()), sizeBytes);
     }
 };
 
 } // namespace Blaze::Gemm::Tile
 
-namespace AscendC {
-namespace Te {
+namespace asc {
+namespace te {
 
 template <typename Traits>
-struct CopyTraits<Blaze::Gemm::Tile::CopyGM2UBMxScale, Traits>
-    : public CopyTraits<Blaze::Gemm::Tile::CopyGM2UBMxScale, Traits, Blaze::Gemm::Tile::CopyGM2UBMxScale, Traits> {};
+struct copy_traits<Blaze::Gemm::Tile::CopyGM2UBMxScale, Traits>
+    : public copy_traits<Blaze::Gemm::Tile::CopyGM2UBMxScale, Traits, Blaze::Gemm::Tile::CopyGM2UBMxScale, Traits> {};
 
 template <>
-struct CopyTraits<Blaze::Gemm::Tile::CopyGM2UBMxScale>
-    : public CopyTraits<Blaze::Gemm::Tile::CopyGM2UBMxScale, CopyGM2UBTraitDefault> {};
+struct copy_traits<Blaze::Gemm::Tile::CopyGM2UBMxScale>
+    : public copy_traits<Blaze::Gemm::Tile::CopyGM2UBMxScale, gm_to_ub_trait_default> {};
 
 template <>
-struct CopyTraits<Blaze::Gemm::Tile::CopyUB2L1MxScale>
-    : public CopyTraits<Blaze::Gemm::Tile::CopyUB2L1MxScale, CopyUB2L1TraitDefault, Blaze::Gemm::Tile::CopyUB2L1MxScale,
-                        CopyUB2L1TraitDefault> {};
+struct copy_traits<Blaze::Gemm::Tile::CopyUB2L1MxScale>
+    : public copy_traits<Blaze::Gemm::Tile::CopyUB2L1MxScale, ub_to_l1_trait_default,
+                         Blaze::Gemm::Tile::CopyUB2L1MxScale, ub_to_l1_trait_default> {};
 
-} // namespace Te
-} // namespace AscendC
+} // namespace te
+} // namespace asc

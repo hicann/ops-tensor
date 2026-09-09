@@ -54,8 +54,8 @@ template <typename OutType, typename LayoutB>
 __aicore__ inline void Run(GM_ADDR a, GM_ADDR b, GM_ADDR scale, GM_ADDR perTokenScale, GM_ADDR offset, GM_ADDR rowSum,
                            GM_ADDR workspace, GM_ADDR out, GM_ADDR groupList, const TilingData& t)
 {
-    using Layout = AscendC::Te::NDExtLayoutPtn;
-    using ProblemShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
+    using Layout = asc::te::nd_ext_layout_ptn;
+    using ProblemShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
     using Policy = Blaze::Gemm::MatmulWithScaleFixpipeQuant<0UL, false,
                                                             Blaze::Gemm::KernelGroupedMmadWithScaleFixpipeQuant>;
     using BTypeTuple = AscendC::Std::tuple<int8_t, uint64_t>;

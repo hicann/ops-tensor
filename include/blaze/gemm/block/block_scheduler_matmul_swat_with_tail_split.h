@@ -21,12 +21,12 @@ namespace Blaze {
 namespace Gemm {
 namespace Block {
 
-template <class ProblemShape_ = AscendC::Te::Shape<int64_t, int64_t, int64_t>>
+template <class ProblemShape_ = asc::te::shape<int64_t, int64_t, int64_t>>
 class BlockSchedulerMatmulSwatWithTailSplit {
 public:
     using ProblemShape = ProblemShape_;
-    using BlockShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
-    using BlockCoord = AscendC::Te::Coord<int64_t, int64_t, int64_t, int64_t>;
+    using BlockShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
+    using BlockCoord = asc::te::coord<int64_t, int64_t, int64_t, int64_t>;
 
     struct Params {
         uint64_t baseM{0};
@@ -41,9 +41,9 @@ public:
 
     __aicore__ inline BlockSchedulerMatmulSwatWithTailSplit(const ProblemShape& problemShape, const Params& params)
     {
-        mSize_ = static_cast<uint64_t>(AscendC::Te::Get<MNK_M>(problemShape));
-        nSize_ = static_cast<uint64_t>(AscendC::Te::Get<MNK_N>(problemShape));
-        kSize_ = static_cast<uint64_t>(AscendC::Te::Get<MNK_K>(problemShape));
+        mSize_ = static_cast<uint64_t>(asc::te::get<MNK_M>(problemShape));
+        nSize_ = static_cast<uint64_t>(asc::te::get<MNK_N>(problemShape));
+        kSize_ = static_cast<uint64_t>(asc::te::get<MNK_K>(problemShape));
         baseM_ = params.baseM;
         baseN_ = params.baseN;
         if (baseM_ == 0U || baseN_ == 0U) {
@@ -86,14 +86,14 @@ public:
             mOffset += mSplitIdx * singleCoreMSplit;
             nOffset += nSplitIdx * singleCoreNSplit;
         }
-        return AscendC::Te::MakeCoord(static_cast<int64_t>(mOffset), static_cast<int64_t>(nOffset),
-                                      static_cast<int64_t>(logicalTileIdx), splitIdx);
+        return asc::te::make_coord(static_cast<int64_t>(mOffset), static_cast<int64_t>(nOffset),
+                                   static_cast<int64_t>(logicalTileIdx), splitIdx);
     }
 
     __aicore__ inline BlockShape GetBlockShape(const BlockCoord& blockCoord) const
     {
-        uint64_t logicalTileIdx = static_cast<uint64_t>(AscendC::Te::Get<2>(blockCoord));
-        int64_t splitIdx = AscendC::Te::Get<3>(blockCoord);
+        uint64_t logicalTileIdx = static_cast<uint64_t>(asc::te::get<2>(blockCoord));
+        int64_t splitIdx = asc::te::get<3>(blockCoord);
         uint64_t mTileIdx = 0;
         uint64_t nTileIdx = 0;
         GetLogicalTileCoord(logicalTileIdx, mTileIdx, nTileIdx);
@@ -110,8 +110,8 @@ public:
             singleCoreM = Min(singleCoreM - mSplitOffset, singleCoreMSplit);
             singleCoreN = Min(singleCoreN - nSplitOffset, singleCoreNSplit);
         }
-        return AscendC::Te::MakeShape(static_cast<int64_t>(singleCoreM), static_cast<int64_t>(singleCoreN),
-                                      static_cast<int64_t>(kSize_), 1L);
+        return asc::te::make_shape(static_cast<int64_t>(singleCoreM), static_cast<int64_t>(singleCoreN),
+                                   static_cast<int64_t>(kSize_), 1L);
     }
 
 private:

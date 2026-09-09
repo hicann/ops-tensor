@@ -23,9 +23,9 @@ FP8 A/B 支持 E4M3FN、E5M2 的同型或混合组合。Bias 为可选输入，�
 
 | Layout | Kernel 编译期约束 |
 |--------|-------------------|
-| `LayoutA` | 支持 `NDExtLayoutPtn` 和 `DNExtLayoutPtn` |
+| `LayoutA` | 支持 `nd_ext_layout_ptn` 和 `dn_ext_layout_ptn` |
 | `LayoutB` | Kernel 层不执行编译期校验，由 BlockMmad 和 Tensor API 的数据搬运路径约束 |
-| `LayoutC` | 仅支持 `NDExtLayoutPtn` |
+| `LayoutC` | 仅支持 `nd_ext_layout_ptn` |
 
 `LayoutA` 的 ND/DN 分别用于表达 A 矩阵不转置/转置的数据排布；输出 C 固定使用 ND 数据排布。
 
@@ -220,11 +220,11 @@ using CType = bfloat16_t;
 using BiasType = int32_t;
 using X2ScaleType = uint64_t;
 
-using LayoutA = AscendC::Te::NDExtLayoutPtn;
-using LayoutB = AscendC::Te::NDExtLayoutPtn;
-using LayoutC = AscendC::Te::NDExtLayoutPtn;
-using LayoutBias = AscendC::Te::NDExtLayoutPtn;
-using ProblemShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
+using LayoutA = asc::te::nd_ext_layout_ptn;
+using LayoutB = asc::te::nd_ext_layout_ptn;
+using LayoutC = asc::te::nd_ext_layout_ptn;
+using LayoutBias = asc::te::nd_ext_layout_ptn;
+using ProblemShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
 
 using BTypeTuple = AscendC::Std::tuple<BType, X2ScaleType>;
 using DispatchPolicy = Blaze::Gemm::MatmulWithScaleFixpipeQuant<0, false>;

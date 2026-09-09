@@ -24,21 +24,21 @@ public:
     template <typename MaxTensor, typename SumTensor>
     __aicore__ inline static void Run(const MaxTensor& maxTensor, const SumTensor& sumTensor)
     {
-        using MaxElementType = AscendC::Te::GetAttributeElementType<typename MaxTensor::elementType*>;
-        using SumElementType = AscendC::Te::GetAttributeElementType<typename SumTensor::elementType*>;
-        using MaxLayoutPattern = AscendC::Te::GetLayoutPattern<typename MaxTensor::layoutType>;
-        using SumLayoutPattern = AscendC::Te::GetLayoutPattern<typename SumTensor::layoutType>;
+        using MaxElementType = asc::te::get_attribute_element_type<typename MaxTensor::element_type*>;
+        using SumElementType = asc::te::get_attribute_element_type<typename SumTensor::element_type*>;
+        using MaxLayoutPattern = asc::te::get_layout_pattern<typename MaxTensor::layout_type>;
+        using SumLayoutPattern = asc::te::get_layout_pattern<typename SumTensor::layout_type>;
         static_assert(AscendC::Std::is_same_v<MaxElementType, float> && AscendC::Std::is_same_v<SumElementType, float>,
                       "InitializeEmptySoftmax only supports FP32 tensors.");
-        static_assert(AscendC::Std::is_same_v<AscendC::Te::GetMemLocation<MaxTensor>, AscendC::Te::Location::UB> &&
-                          AscendC::Std::is_same_v<AscendC::Te::GetMemLocation<SumTensor>, AscendC::Te::Location::UB>,
+        static_assert(AscendC::Std::is_same_v<asc::te::get_mem_location<MaxTensor>, asc::te::location::ub> &&
+                          AscendC::Std::is_same_v<asc::te::get_mem_location<SumTensor>, asc::te::location::ub>,
                       "InitializeEmptySoftmax only supports UB tensors.");
-        static_assert(AscendC::Std::is_same_v<MaxLayoutPattern, AscendC::Te::NDExtLayoutPtn> &&
-                          AscendC::Std::is_same_v<SumLayoutPattern, AscendC::Te::NDExtLayoutPtn>,
+        static_assert(AscendC::Std::is_same_v<MaxLayoutPattern, asc::te::nd_ext_layout_ptn> &&
+                          AscendC::Std::is_same_v<SumLayoutPattern, asc::te::nd_ext_layout_ptn>,
                       "InitializeEmptySoftmax requires NDExt tensor layouts.");
 
-        auto maxAddr = reinterpret_cast<__ubuf__ float*>(maxTensor.Data().Get());
-        auto sumAddr = reinterpret_cast<__ubuf__ float*>(sumTensor.Data().Get());
+        auto maxAddr = reinterpret_cast<__ubuf__ float*>(maxTensor.data().get());
+        auto sumAddr = reinterpret_cast<__ubuf__ float*>(sumTensor.data().get());
         asc_vf_call<InitializeEmptySoftmaxVf>(maxAddr, sumAddr);
     }
 

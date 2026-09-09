@@ -121,16 +121,16 @@ weightNz 场景表示 weight 矩阵（B 矩阵）使用 NZ 格式存储，优化
 
 **Layout 对应关系**：
 - `(ND,ND)` 格式：
-  - transB=true → B 使用 DNExtLayoutPtn
-  - transB=false → B 使用 NDExtLayoutPtn
+  - transB=true → B 使用 dn_ext_layout_ptn
+  - transB=false → B 使用 nd_ext_layout_ptn
 - `(ND,NZ)` 格式（weightNz 场景）：
-  - transB=true → B 使用 ZNLayoutPtn
-  - transB=false → B 使用 NZLayoutPtn
+  - transB=true → B 使用 zn_layout_ptn
+  - transB=false → B 使用 nz_layout_ptn
 
 **数据流**：
 1. `gen_data.py` 生成标准 ND 格式的 `input_b.bin`
 2. C++ 端读取后，自动转换为 NZ 格式
-3. Kernel 根据 transB 选择对应的 NZ Layout（ZNLayoutPtn 或 NZLayoutPtn）
+3. Kernel 根据 transB 选择对应的 NZ Layout（zn_layout_ptn 或 nz_layout_ptn）
 
 **约束**：
 - layoutB 必须为 `NZ`

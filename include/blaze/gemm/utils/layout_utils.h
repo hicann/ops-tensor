@@ -33,12 +33,12 @@ struct Weight8BitDnToZnUbLayoutPtn {};
 template <typename LayoutPattern>
 constexpr bool GetTransValue()
 {
-    constexpr bool isNonTrans = AscendC::Std::is_one_of_v<
-        LayoutPattern, AscendC::Te::NDLayoutPtn, AscendC::Te::NDExtLayoutPtn, AscendC::Te::NZLayoutPtn,
-        AscendC::Te::ScaleANDLayoutPtn, AscendC::Te::ScaleBNDLayoutPtn>;
-    constexpr bool isTrans = AscendC::Std::is_one_of_v<LayoutPattern, AscendC::Te::DNLayoutPtn,
-                                                       AscendC::Te::DNExtLayoutPtn, AscendC::Te::ZNLayoutPtn,
-                                                       AscendC::Te::ScaleADNLayoutPtn, AscendC::Te::ScaleBDNLayoutPtn>;
+    constexpr bool isNonTrans = AscendC::Std::is_one_of_v<LayoutPattern, asc::te::nd_layout_ptn,
+                                                          asc::te::nd_ext_layout_ptn, asc::te::nz_layout_ptn,
+                                                          asc::te::scalea_nd_layout_ptn, asc::te::scaleb_nd_layout_ptn>;
+    constexpr bool isTrans = AscendC::Std::is_one_of_v<LayoutPattern, asc::te::dn_layout_ptn,
+                                                       asc::te::dn_ext_layout_ptn, asc::te::zn_layout_ptn,
+                                                       asc::te::scalea_dn_layout_ptn, asc::te::scaleb_dn_layout_ptn>;
 
     constexpr bool isKnown = isNonTrans || isTrans;
     static_assert(isKnown, "IsTrans is not implemented for this layout pattern");
@@ -55,10 +55,10 @@ struct IsTrans {
 template <typename LayoutPattern>
 constexpr bool GetWeightNzValue()
 {
-    constexpr bool isNonWeightNz = AscendC::Std::is_one_of_v<LayoutPattern, AscendC::Te::NDExtLayoutPtn,
-                                                             AscendC::Te::DNExtLayoutPtn>;
+    constexpr bool isNonWeightNz = AscendC::Std::is_one_of_v<LayoutPattern, asc::te::nd_ext_layout_ptn,
+                                                             asc::te::dn_ext_layout_ptn>;
     constexpr bool
-        isWeightNz = AscendC::Std::is_one_of_v<LayoutPattern, AscendC::Te::NZLayoutPtn, AscendC::Te::ZNLayoutPtn>;
+        isWeightNz = AscendC::Std::is_one_of_v<LayoutPattern, asc::te::nz_layout_ptn, asc::te::zn_layout_ptn>;
 
     constexpr bool isKnown = isNonWeightNz || isWeightNz;
     static_assert(isKnown, "IsWeightNz is not implemented for this layout");
@@ -75,9 +75,9 @@ struct IsWeightNz {
 template <typename LayoutPattern>
 constexpr bool GetScaleNzValue()
 {
-    constexpr bool isScaleNz = AscendC::Std::is_same_v<LayoutPattern, AscendC::Te::NNLayoutPtn>;
-    constexpr bool isScaleNd = AscendC::Std::is_one_of_v<LayoutPattern, AscendC::Te::ScaleBNDLayoutPtn,
-                                                         AscendC::Te::ScaleBDNLayoutPtn>;
+    constexpr bool isScaleNz = AscendC::Std::is_same_v<LayoutPattern, asc::te::nn_layout_ptn>;
+    constexpr bool isScaleNd = AscendC::Std::is_one_of_v<LayoutPattern, asc::te::scaleb_nd_layout_ptn,
+                                                         asc::te::scaleb_dn_layout_ptn>;
     constexpr bool isKnown = isScaleNz || isScaleNd;
     static_assert(isKnown, "IsScaleNz is not implemented for this layout");
 
@@ -89,17 +89,16 @@ struct IsScaleNz {
     static constexpr bool value = GetScaleNzValue<LayoutPattern>();
 };
 
-// Build a row-major hierarchical ND (NDExtLayoutPtn) layout with an explicit row pitch.
+// Build a row-major hierarchical ND (nd_ext_layout_ptn) layout with an explicit row pitch.
 // Shape = ((1, rows), (1, cols)); Stride = ((0, rowPitch), (0, 1)).
 template <typename T = float>
 __aicore__ inline auto MakeNDExtLayout(int64_t rows, int64_t cols, int64_t rowPitch)
 {
-    auto shape = AscendC::Te::MakeShape(AscendC::Te::MakeShape(AscendC::Std::Int<1>{}, rows),
-                                        AscendC::Te::MakeShape(AscendC::Std::Int<1>{}, cols));
-    auto stride = AscendC::Te::MakeStride(AscendC::Te::MakeStride(AscendC::Std::Int<0>{}, rowPitch),
-                                          AscendC::Te::MakeStride(AscendC::Std::Int<0>{}, AscendC::Std::Int<1>{}));
-    return AscendC::Te::MakePatternLayout<AscendC::Te::NDExtLayoutPtn, AscendC::Te::LayoutTraitDefault<T>>(shape,
-                                                                                                           stride);
+    auto shape = asc::te::make_shape(asc::te::make_shape(AscendC::Std::Int<1>{}, rows),
+                                     asc::te::make_shape(AscendC::Std::Int<1>{}, cols));
+    auto stride = asc::te::make_stride(asc::te::make_stride(AscendC::Std::Int<0>{}, rowPitch),
+                                       asc::te::make_stride(AscendC::Std::Int<0>{}, AscendC::Std::Int<1>{}));
+    return asc::te::make_pattern_layout<asc::te::nd_ext_layout_ptn, asc::te::layout_trait_default<T>>(shape, stride);
 }
 
 } // namespace Gemm

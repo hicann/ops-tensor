@@ -79,11 +79,11 @@ __aicore__ inline BlockShape GetBlockShape(const BlockCoord& blockCoord) const;
 ## 使用示例
 
 ```cpp
-using ProblemShape = AscendC::Te::Shape<int64_t, int64_t, int64_t>;
+using ProblemShape = asc::te::shape<int64_t, int64_t, int64_t>;
 using Scheduler = Blaze::Gemm::Block::BlockSchedulerMatmulSwatWithTailSplit<ProblemShape>;
 
 Scheduler::Params schedulerParams{baseM, baseN, 1U, 1U, 1U, 1U, 0U, 0U};
-Scheduler scheduler(AscendC::Te::MakeShape(m, n, k), schedulerParams);
+Scheduler scheduler(asc::te::make_shape(m, n, k), schedulerParams);
 for (uint64_t tileIdx = 0; tileIdx < scheduler.GetTileCount(); ++tileIdx) {
     auto coord = scheduler.GetBlockCoord(tileIdx);
     auto shape = scheduler.GetBlockShape(coord);

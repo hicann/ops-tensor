@@ -14,7 +14,7 @@ Block 层矩阵乘计算组件，执行单个 block 的矩阵乘计算。基于 
 |------|------|
 | DispatchPolicy_ | 调度策略类型（MatmulMultiBlockBasic 或 MatmulMultiBlockWithStreamK） |
 | AType_ | A 矩阵数据类型（如 half, float 等） |
-| LayoutA_ | A 矩阵布局类型（NDExtLayoutPtn 或 NZLayoutPtn） |
+| LayoutA_ | A 矩阵布局类型（nd_ext_layout_ptn 或 nz_layout_ptn） |
 | BType_ | B 矩阵数据类型 |
 | LayoutB_ | B 矩阵布局类型，支持 NZ 格式 |
 | CType_ | C 矩阵（输出）数据类型 |
@@ -34,7 +34,7 @@ Block 层矩阵乘计算组件，执行单个 block 的矩阵乘计算。基于 
 | LayoutC | C 矩阵布局类型（继承自模板参数） |
 | LayoutBias | Bias 布局类型（继承自模板参数） |
 | DispatchPolicy | 调度策略类型（继承自模板参数） |
-| TupleShape | Tile 形状类型 `AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>` |
+| TupleShape | Tile 形状类型 `asc::te::shape<int64_t, int64_t, int64_t, int64_t>` |
 
 ### 静态常量
 | 常量 | 说明 |
@@ -49,7 +49,7 @@ Block 层矩阵乘计算组件，执行单个 block 的矩阵乘计算。基于 
 | MakeLayoutBL1 | B 矩阵 L1 Layout 构建器 |
 
 说明：
-- 根据 transA/transB 自动选择 NZLayoutPtn 或 ZNLayoutPtn
+- 根据 transA/transB 自动选择 nz_layout_ptn 或 zn_layout_ptn
 
 ### 核心数据结构
 
@@ -117,12 +117,12 @@ __aicore__ inline void operator()(
 
 1. **模板参数要求**：
    - DispatchPolicy 必须为 MatmulMultiBlockBasic 或 MatmulMultiBlockWithStreamK
-   - LayoutA/LayoutB 必须为 AscendC::Te 的合法布局类型
+   - LayoutA/LayoutB 必须为 asc::te 的合法布局类型
 
 2. **数据格式**：
    - A 矩阵：根据 transA 自动选择布局
    - B 矩阵：支持 ND 和 NZ 格式
-   - L0C：固定使用 NZLayoutPtn 布局
+   - L0C：固定使用 nz_layout_ptn 布局
 
 3. **Bias 支持**：可选 bias 输入，仅首次迭代时加载
 

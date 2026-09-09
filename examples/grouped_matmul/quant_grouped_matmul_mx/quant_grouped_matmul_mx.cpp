@@ -40,7 +40,7 @@
 #include "platform/platform_ascendc.h"
 
 using ScaleType = fp8_e8m0_t;
-using NdLayout = AscendC::Te::NDExtLayoutPtn;
+using NdLayout = asc::te::nd_ext_layout_ptn;
 
 template <typename T>
 inline constexpr bool IS_FP4_TYPE = std::is_same_v<T, fp4x2_e2m1_t> || std::is_same_v<T, fp4x2_e1m2_t>;
@@ -55,7 +55,7 @@ __global__ __aicore__ void qgmm_mx_kernel(GM_ADDR a, GM_ADDR b, GM_ADDR scaleA, 
 {
     KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_MIX_AIC_1_2);
     AscendC::InitSocState();
-    using ProblemShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
+    using ProblemShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
     using Policy = Blaze::Gemm::GroupedMatmulWithScaleMx<FullLoadMode>;
     using Mmad = Blaze::Gemm::Block::BlockMmad<Policy, AType, LayoutA, BType, LayoutB, CType, NdLayout, float,
                                                NdLayout>;
@@ -274,10 +274,10 @@ template <typename AType, typename BType, typename CType, typename LayoutA, type
 int RunCase(const QgmmTilingData& tiling, const std::string& dataDir, const std::string& outputPath)
 {
     const bool kGrouped = tiling.groupType == 2;
-    constexpr bool weightNz = std::is_same_v<LayoutB, AscendC::Te::NZLayoutPtn> ||
-                              std::is_same_v<LayoutB, AscendC::Te::ZNLayoutPtn>;
-    constexpr bool transB = std::is_same_v<LayoutB, AscendC::Te::DNExtLayoutPtn> ||
-                            std::is_same_v<LayoutB, AscendC::Te::ZNLayoutPtn>;
+    constexpr bool weightNz = std::is_same_v<LayoutB, asc::te::nz_layout_ptn> ||
+                              std::is_same_v<LayoutB, asc::te::zn_layout_ptn>;
+    constexpr bool transB = std::is_same_v<LayoutB, asc::te::dn_ext_layout_ptn> ||
+                            std::is_same_v<LayoutB, asc::te::zn_layout_ptn>;
     const size_t c0 = IS_FP4_TYPE<BType> ? 64U : 32U;
     const size_t storedK = weightNz ? (transB ? ((tiling.k + c0 - 1U) / c0 * c0) : ((tiling.k + 15U) / 16U * 16U)) :
                                       tiling.k;
@@ -321,12 +321,12 @@ int DispatchLayoutB(const std::string& layoutB, const QgmmTilingData& tiling, co
     if (layoutB == "nd")
         return DispatchSingleW<T, CType, LayoutA, NdLayout, FullLoadMode>(tiling, dataDir, outputPath);
     if (layoutB == "dn")
-        return DispatchSingleW<T, CType, LayoutA, AscendC::Te::DNExtLayoutPtn, FullLoadMode>(tiling, dataDir,
-                                                                                             outputPath);
+        return DispatchSingleW<T, CType, LayoutA, asc::te::dn_ext_layout_ptn, FullLoadMode>(tiling, dataDir,
+                                                                                            outputPath);
     if (layoutB == "nz")
-        return DispatchSingleW<T, CType, LayoutA, AscendC::Te::NZLayoutPtn, FullLoadMode>(tiling, dataDir, outputPath);
+        return DispatchSingleW<T, CType, LayoutA, asc::te::nz_layout_ptn, FullLoadMode>(tiling, dataDir, outputPath);
     if (layoutB == "zn")
-        return DispatchSingleW<T, CType, LayoutA, AscendC::Te::ZNLayoutPtn, FullLoadMode>(tiling, dataDir, outputPath);
+        return DispatchSingleW<T, CType, LayoutA, asc::te::zn_layout_ptn, FullLoadMode>(tiling, dataDir, outputPath);
     return 2;
 }
 
@@ -334,8 +334,8 @@ template <typename T, typename CType, uint64_t FullLoadMode>
 int DispatchLayoutA(const std::string& layoutA, const std::string& layoutB, const QgmmTilingData& tiling,
                     const std::string& dataDir, const std::string& outputPath)
 {
-    return layoutA == "dn" ? DispatchLayoutB<T, CType, AscendC::Te::DNExtLayoutPtn, FullLoadMode>(layoutB, tiling,
-                                                                                                  dataDir, outputPath) :
+    return layoutA == "dn" ? DispatchLayoutB<T, CType, asc::te::dn_ext_layout_ptn, FullLoadMode>(layoutB, tiling,
+                                                                                                 dataDir, outputPath) :
                              DispatchLayoutB<T, CType, NdLayout, FullLoadMode>(layoutB, tiling, dataDir, outputPath);
 }
 

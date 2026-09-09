@@ -74,7 +74,7 @@ namespace Blaze {}
 class BlockMmad {};
 struct Params {};
 enum class ErrorCode {};
-using TupleShape = AscendC::Te::Shape<int64_t, int64_t>;
+using TupleShape = asc::te::shape<int64_t, int64_t>;
 typedef int32_t IndexType;
 
 // 错误
@@ -186,14 +186,14 @@ void MyFunction(int32_t input_size, GM_ADDR src_addr) {
 
 ### 2.1 禁止调用 AscendC 高阶 API
 
-禁止直接调用 AscendC 高阶 API 接口（如 `AuxGetC0Size` 等），应使用 `tensor_api/utils` 下的接口（如 `C0_ELEMENT`）。
+禁止直接调用 AscendC 高阶 API 接口（如 `AuxGetC0Size` 等），应使用 `tensor_api/utils` 下的接口（如 `c0_element`）。
 
 ```cpp
 // 错误：直接调用 AscendC 高阶 API
 constexpr uint32_t c0Size = AscendC::AuxGetC0Size<AType>()>;
 
 // 正确：使用 tensor_api/utils 封装
-constexpr uint32_t c0Size = AscendC::Te::C0_ELEMENT<AType>;
+constexpr uint32_t c0Size = asc::te::c0_element<AType>;
 ```
 
 ### 2.2 禁止全局作用域中引入大命名空间
@@ -203,12 +203,12 @@ constexpr uint32_t c0Size = AscendC::Te::C0_ELEMENT<AType>;
 ```cpp
 // 错误：全局作用域引入命名空间
 using namespace AscendC;       // 禁止
-using namespace AscendC::Te;   // 禁止
+using namespace asc::te;   // 禁止
 
 // 正确：函数作用域内局部引入，或使用全限定名
 void MyFunc() {
-    using AscendC::Te::Shape;  // 允许：局部引入单个名称
-    Shape<int64_t, int64_t> s;
+    using asc::te::shape;  // 允许：局部引入单个名称
+    shape<int64_t, int64_t> s;
 }
 
 void MyFunc() {

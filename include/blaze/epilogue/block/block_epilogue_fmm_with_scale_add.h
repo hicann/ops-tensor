@@ -71,8 +71,8 @@ public:
     using X3Type = ElementType_;
     using OutputType = ElementType_;
     using ComputeType = float;
-    using BlockShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
-    using ProblemShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
+    using BlockShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
+    using ProblemShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
 
     struct Params {
         GM_ADDR x3GmAddr{nullptr};
@@ -105,7 +105,7 @@ public:
             beta_ = params.beta;
             hasAlphaScale_ = alpha_ != Detail::FMM_WITH_SCALE_ADD_DEFAULT_SCALE_VALUE;
             hasBetaScale_ = beta_ != Detail::FMM_WITH_SCALE_ADD_DEFAULT_SCALE_VALUE;
-            n_ = AscendC::Te::Get<Blaze::Gemm::MNK_N>(problemShape);
+            n_ = asc::te::get<Blaze::Gemm::MNK_N>(problemShape);
         }
     }
 
@@ -113,7 +113,7 @@ public:
     __aicore__ inline void operator()(TensorC& ubTensor, const BlockShape& blockShape, int64_t dstOffset, bool splitM,
                                       int64_t baseM, int64_t baseN)
     {
-        int64_t curM = AscendC::Te::Get<Blaze::Gemm::MNK_M>(blockShape);
+        int64_t curM = asc::te::get<Blaze::Gemm::MNK_M>(blockShape);
         if (baseM != 0) {
             curM = Blaze::Gemm::Min(curM, baseM);
         }
@@ -128,7 +128,7 @@ public:
         // Fixpipe pads M before DUAL_DST_SPLIT_M. Both AIVs therefore reserve halfM physical rows even when the
         // second AIV has one fewer valid row for an odd M.
         const int64_t accumulatorRows = splitM ? halfM : Blaze::Gemm::CeilAlign(curM, SPLIT_M_ALIGN);
-        const int64_t nL1 = AscendC::Te::Get<Blaze::Gemm::MNK_N>(blockShape);
+        const int64_t nL1 = asc::te::get<Blaze::Gemm::MNK_N>(blockShape);
         const int64_t curBaseN = baseN != 0 ? Blaze::Gemm::Min(nL1, baseN) : nL1;
         const int64_t nL1Iter = Blaze::Gemm::CeilDiv(nL1, curBaseN);
 
@@ -191,30 +191,30 @@ private:
         for (int64_t stageOffset = 0; stageOffset < localRows; stageOffset += stageRows) {
             const int64_t rowsThisStage = Blaze::Gemm::Min(stageRows, localRows - stageOffset);
             const int64_t gmElemOffset = tileGmOffset + stageOffset * n_;
-            const auto origin = AscendC::Te::MakeCoord(0L, 0L);
-            const auto validShape = AscendC::Te::MakeShape(rowsThisStage, tileN);
+            const auto origin = asc::te::make_coord(0L, 0L);
+            const auto validShape = asc::te::make_shape(rowsThisStage, tileN);
 
-            auto x3UbStorage = AscendC::Te::MakeTensor(
-                AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB, ElementType_>(accumulatorBytes),
-                AscendC::Te::MakeFrameLayout<AscendC::Te::NDExtLayoutPtn>(rowsThisStage,
-                                                                          static_cast<int64_t>(nAlignElement)));
-            auto x3Ub = x3UbStorage.Slice(origin, validShape);
-            auto x3GmStorage = AscendC::Te::MakeTensor(
-                AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(reinterpret_cast<__gm__ ElementType_*>(x3GmAddr_) +
-                                                                   gmElemOffset),
-                AscendC::Te::MakeFrameLayout<AscendC::Te::NDExtLayoutPtn>(rowsThisStage, n_));
-            auto x3Gm = x3GmStorage.Slice(origin, validShape);
+            auto x3UbStorage = asc::te::make_tensor(
+                asc::te::make_mem_ptr<asc::te::location::ub, ElementType_>(accumulatorBytes),
+                asc::te::make_frame_layout<asc::te::nd_ext_layout_ptn>(rowsThisStage,
+                                                                       static_cast<int64_t>(nAlignElement)));
+            auto x3Ub = x3UbStorage.slice(origin, validShape);
+            auto x3GmStorage = asc::te::make_tensor(
+                asc::te::make_mem_ptr<asc::te::location::gm>(reinterpret_cast<__gm__ ElementType_*>(x3GmAddr_) +
+                                                             gmElemOffset),
+                asc::te::make_frame_layout<asc::te::nd_ext_layout_ptn>(rowsThisStage, n_));
+            auto x3Gm = x3GmStorage.slice(origin, validShape);
 
             // x3 and output share the same UB region. Wait for the previous UB2GM before overwriting it.
             AscendC::WaitFlag<AscendC::HardEvent::MTE3_MTE2>(BUFFER_REUSE_EVENT);
-            auto copyGmToUb = AscendC::Te::MakeCopy(AscendC::Te::CopyGM2UB{});
-            AscendC::Te::Copy(copyGmToUb, x3Ub, x3Gm);
+            auto copyGmToUb = asc::te::make_copy(asc::te::copy_gm_to_ub{});
+            asc::te::copy(copyGmToUb, x3Ub, x3Gm);
             AscendC::SetFlag<AscendC::HardEvent::MTE2_V>(X3_EVENT);
             AscendC::WaitFlag<AscendC::HardEvent::MTE2_V>(X3_EVENT);
 
-            auto accAddr = reinterpret_cast<__ubuf__ float*>(ubTensor.Data().Get()) + stageOffset * nAlignAcc;
+            auto accAddr = reinterpret_cast<__ubuf__ float*>(ubTensor.data().get()) + stageOffset * nAlignAcc;
             VfParams vfParams{accAddr,
-                              reinterpret_cast<__ubuf__ ElementType_*>(x3Ub.Data().Get()),
+                              reinterpret_cast<__ubuf__ ElementType_*>(x3Ub.data().get()),
                               static_cast<uint32_t>(rowsThisStage),
                               static_cast<uint32_t>(tileN),
                               static_cast<uint32_t>(nAlignAcc),
@@ -235,13 +235,13 @@ private:
             AscendC::SetFlag<AscendC::HardEvent::V_MTE3>(OUTPUT_EVENT);
             AscendC::WaitFlag<AscendC::HardEvent::V_MTE3>(OUTPUT_EVENT);
 
-            auto outputGmStorage = AscendC::Te::MakeTensor(
-                AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(
-                    reinterpret_cast<__gm__ ElementType_*>(outputGmAddr_) + gmElemOffset),
-                AscendC::Te::MakeFrameLayout<AscendC::Te::NDExtLayoutPtn>(rowsThisStage, n_));
-            auto outputGm = outputGmStorage.Slice(origin, validShape);
-            auto copyUbToGm = AscendC::Te::MakeCopy(AscendC::Te::CopyUB2GM{});
-            AscendC::Te::Copy(copyUbToGm, outputGm, x3Ub);
+            auto outputGmStorage = asc::te::make_tensor(
+                asc::te::make_mem_ptr<asc::te::location::gm>(reinterpret_cast<__gm__ ElementType_*>(outputGmAddr_) +
+                                                             gmElemOffset),
+                asc::te::make_frame_layout<asc::te::nd_ext_layout_ptn>(rowsThisStage, n_));
+            auto outputGm = outputGmStorage.slice(origin, validShape);
+            auto copyUbToGm = asc::te::make_copy(asc::te::copy_ub_to_gm{});
+            asc::te::copy(copyUbToGm, outputGm, x3Ub);
             AscendC::SetFlag<AscendC::HardEvent::MTE3_MTE2>(BUFFER_REUSE_EVENT);
         }
     }

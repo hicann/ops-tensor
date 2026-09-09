@@ -28,18 +28,18 @@ public:
     {
         // This specialized tile consumes a contiguous bias vector. Reject other layouts
         // at instantiation time instead of silently treating their data as contiguous.
-        using BiasInLayoutPattern = AscendC::Te::GetLayoutPattern<typename BiasInTensor::layoutType>;
-        using BiasOutLayoutPattern = AscendC::Te::GetLayoutPattern<typename BiasOutTensor::layoutType>;
-        static_assert(AscendC::Std::is_same_v<BiasInLayoutPattern, AscendC::Te::NDExtLayoutPtn> &&
-                          AscendC::Std::is_same_v<BiasOutLayoutPattern, AscendC::Te::NDExtLayoutPtn>,
+        using BiasInLayoutPattern = asc::te::get_layout_pattern<typename BiasInTensor::layout_type>;
+        using BiasOutLayoutPattern = asc::te::get_layout_pattern<typename BiasOutTensor::layout_type>;
+        static_assert(AscendC::Std::is_same_v<BiasInLayoutPattern, asc::te::nd_ext_layout_ptn> &&
+                          AscendC::Std::is_same_v<BiasOutLayoutPattern, asc::te::nd_ext_layout_ptn>,
                       "ScaleMxBias requires contiguous NDExt bias tensors");
 
         constexpr uint64_t VECTOR_REG_BYTE_SIZE = static_cast<uint64_t>(asc_get_vf_len());
         constexpr uint64_t VECTOR_ELEMENTS = VECTOR_REG_BYTE_SIZE / sizeof(BiasType);
-        uint64_t elementCount = static_cast<uint64_t>(AscendC::Te::GetTotalColumnShape(biasInTensor.Layout()));
+        uint64_t elementCount = static_cast<uint64_t>(asc::te::get_total_column_shape(biasInTensor.layout()));
         ScaleMxBiasParams params{static_cast<uint16_t>(CeilDiv(elementCount, VECTOR_ELEMENTS)),
-                                 (__ubuf__ BiasType*)biasInTensor.Data().Get(),
-                                 (__ubuf__ BiasType*)biasOutTensor.Data().Get()};
+                                 (__ubuf__ BiasType*)biasInTensor.data().get(),
+                                 (__ubuf__ BiasType*)biasOutTensor.data().get()};
         asc_vf_call<ScaleMxBiasVf>(params);
     }
 

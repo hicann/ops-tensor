@@ -88,9 +88,9 @@ using AType = fp4x2_e2m1_t;
 using BType = fp4x2_e2m1_t;
 using CType = half;
 using BiasType = float;
-using LayoutA = AscendC::Te::NDExtLayoutPtn;
-using LayoutB = AscendC::Te::NDExtLayoutPtn;
-using LayoutC = AscendC::Te::NDExtLayoutPtn;
+using LayoutA = asc::te::nd_ext_layout_ptn;
+using LayoutB = asc::te::nd_ext_layout_ptn;
+using LayoutC = asc::te::nd_ext_layout_ptn;
 
 using DispatchPolicy = Blaze::Gemm::MatmulWithScaleMx<
     0, false, Blaze::Gemm::KernelMmadMultiBlockTQBMM>;

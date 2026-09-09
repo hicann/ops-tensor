@@ -70,20 +70,20 @@ public:
     using BlockEpilogueParams = typename BlockEpilogue::Params;
     using SchedulerProblemShape = typename BlockScheduler::ProblemShape;
     using SchedulerBlockInfo = typename BlockScheduler::BlockInfo;
-    using BlockShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
+    using BlockShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
     static_assert(AscendC::IsSameType<AType, int8_t>::value && AscendC::IsSameType<BType, int8_t>::value,
                   "GMM Fixpipe Quant only supports int8_t AType and BType.");
     static_assert(AscendC::IsSameType<ScaleType, uint64_t>::value,
                   "GMM Fixpipe Quant only supports uint64_t scale type.");
     static_assert(AscendC::IsSameType<CType, half>::value && AscendC::IsSameType<BiasType, int32_t>::value,
                   "GMM Fixpipe Quant only supports half CType and int32_t BiasType.");
-    static_assert(AscendC::Std::is_same_v<LayoutA, AscendC::Te::NDExtLayoutPtn>,
+    static_assert(AscendC::Std::is_same_v<LayoutA, asc::te::nd_ext_layout_ptn>,
                   "GMM Fixpipe Quant only supports ND LayoutA.");
-    static_assert(AscendC::Std::is_one_of_v<LayoutB, AscendC::Te::NDExtLayoutPtn, AscendC::Te::DNExtLayoutPtn,
-                                            AscendC::Te::NZLayoutPtn, AscendC::Te::ZNLayoutPtn>,
+    static_assert(AscendC::Std::is_one_of_v<LayoutB, asc::te::nd_ext_layout_ptn, asc::te::dn_ext_layout_ptn,
+                                            asc::te::nz_layout_ptn, asc::te::zn_layout_ptn>,
                   "GMM Fixpipe Quant only supports ND/DN/NZ/ZN LayoutB.");
-    static_assert(!AscendC::Std::is_one_of_v<LayoutC, AscendC::Te::NZLayoutPtn, AscendC::Te::ZNLayoutPtn> &&
-                      !AscendC::Std::is_one_of_v<LayoutBias, AscendC::Te::NZLayoutPtn, AscendC::Te::ZNLayoutPtn>,
+    static_assert(!AscendC::Std::is_one_of_v<LayoutC, asc::te::nz_layout_ptn, asc::te::zn_layout_ptn> &&
+                      !AscendC::Std::is_one_of_v<LayoutBias, asc::te::nz_layout_ptn, asc::te::zn_layout_ptn>,
                   "GMM Fixpipe Quant does not support NZ/ZN LayoutC or LayoutBias.");
     static_assert(AscendC::IsSameType<typename BlockEpilogue::FixpipeType, CType>::value,
                   "GMM Fixpipe Quant requires BlockEpilogue FixpipeType to match CType.");
@@ -120,7 +120,7 @@ public:
 private:
     static constexpr bool TRANS_B = IsTrans<LayoutB>::value;
     static constexpr bool WEIGHT_NZ = IsWeightNz<LayoutB>::value;
-    static constexpr int64_t C0_SIZE = AscendC::Te::C0_ELEMENT<AType>;
+    static constexpr int64_t C0_SIZE = asc::te::c0_element<AType>;
     // This kernel uses direct Cube/Vector pairing (sync mode 2). In this mode one
     // flag operation synchronizes the paired Cube and Vector task; unlike mode
     // 4 it must not explicitly signal the second Vector sub-block with +16.
@@ -129,9 +129,9 @@ private:
     // implementation in grouped_matmul_utils.h.
     static constexpr uint16_t AIC_TO_AIV_FLAG = 5;
     static constexpr uint16_t AIV_TO_AIC_FLAG = 3;
-    using MakeLayoutA = AscendC::Te::FrameLayoutFormat<LayoutA, AscendC::Std::Int<C0_SIZE>>;
-    using MakeLayoutB = AscendC::Te::FrameLayoutFormat<LayoutB, AscendC::Std::Int<C0_SIZE>>;
-    using MakeLayoutC = AscendC::Te::FrameLayoutFormat<LayoutC, AscendC::Std::Int<AscendC::Te::C0_ELEMENT<CType>>>;
+    using MakeLayoutA = asc::te::frame_layout_format<LayoutA, AscendC::Std::Int<C0_SIZE>>;
+    using MakeLayoutB = asc::te::frame_layout_format<LayoutB, AscendC::Std::Int<C0_SIZE>>;
+    using MakeLayoutC = asc::te::frame_layout_format<LayoutC, AscendC::Std::Int<asc::te::c0_element<CType>>>;
 
     __aicore__ inline void Run(const Params& params);
     __aicore__ inline void Init(const Params& params);
@@ -186,10 +186,10 @@ __aicore__ inline void GemmUniversal<GMM_FIXPIPE_TEM_PARAMS>::Run(const Params& 
         return;
     }
 
-    const auto groupListLayout = AscendC::Te::MakeLayout(AscendC::Te::MakeShape(static_cast<int64_t>(groupNum_)),
-                                                         AscendC::Te::MakeStride(1L));
-    const auto groupList = AscendC::Te::MakeTensor(
-        AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(reinterpret_cast<__gm__ int64_t*>(params.groupListGmAddr)),
+    const auto groupListLayout = asc::te::make_layout(asc::te::make_shape(static_cast<int64_t>(groupNum_)),
+                                                      asc::te::make_stride(1L));
+    const auto groupList = asc::te::make_tensor(
+        asc::te::make_mem_ptr<asc::te::location::gm>(reinterpret_cast<__gm__ int64_t*>(params.groupListGmAddr)),
         groupListLayout);
     if ASCEND_IS_AIC {
         AscendC::SetMMLayoutTransform(true);
@@ -202,7 +202,7 @@ __aicore__ inline void GemmUniversal<GMM_FIXPIPE_TEM_PARAMS>::Run(const Params& 
         const uint32_t groupIdx = GetGroupIdx(groupList, loopIdx);
         SetGroupShape(groupList, loopIdx);
         if (!IsValidProblem()) {
-            if (groupListType_ == GMM_GROUP_LIST_SPARSE && AscendC::Te::Get<MNK_M>(problemShape_) <= 0) {
+            if (groupListType_ == GMM_GROUP_LIST_SPARSE && asc::te::get<MNK_M>(problemShape_) <= 0) {
                 break;
             }
             continue;
@@ -315,23 +315,22 @@ __aicore__ inline void GemmUniversal<GMM_FIXPIPE_TEM_PARAMS>::SetGroupShape(cons
                                                                             uint32_t loopIdx)
 {
     const int64_t groupM = GetGroupM(groupList, loopIdx);
-    problemShape_ = ProblemShape{groupM, AscendC::Te::Get<MNK_N>(problemShape_), AscendC::Te::Get<MNK_K>(problemShape_),
-                                 0};
+    problemShape_ = ProblemShape{groupM, asc::te::get<MNK_N>(problemShape_), asc::te::get<MNK_K>(problemShape_), 0};
 }
 
 GMM_FIXPIPE_TEMPLATE_DEF
 __aicore__ inline bool GemmUniversal<GMM_FIXPIPE_TEM_PARAMS>::IsValidProblem() const
 {
-    return AscendC::Te::Get<MNK_M>(problemShape_) > 0 && AscendC::Te::Get<MNK_N>(problemShape_) > 0 &&
-           AscendC::Te::Get<MNK_K>(problemShape_) > 0;
+    return asc::te::get<MNK_M>(problemShape_) > 0 && asc::te::get<MNK_N>(problemShape_) > 0 &&
+           asc::te::get<MNK_K>(problemShape_) > 0;
 }
 
 GMM_FIXPIPE_TEMPLATE_DEF
 __aicore__ inline void GemmUniversal<GMM_FIXPIPE_TEM_PARAMS>::PrepareScheduler(BlockScheduler& scheduler)
 {
-    const int64_t m = AscendC::Te::Get<MNK_M>(problemShape_);
-    const int64_t n = AscendC::Te::Get<MNK_N>(problemShape_);
-    const int64_t k = AscendC::Te::Get<MNK_K>(problemShape_);
+    const int64_t m = asc::te::get<MNK_M>(problemShape_);
+    const int64_t n = asc::te::get<MNK_N>(problemShape_);
+    const int64_t k = asc::te::get<MNK_K>(problemShape_);
     const int64_t safeBaseM = baseM_ > 0 ? baseM_ : static_cast<int64_t>(BLOCK_CUBE);
     const int64_t blockCount = CeilDiv(m, safeBaseM);
     const int64_t balancedBaseM = CeilDiv(m, blockCount);
@@ -359,28 +358,28 @@ GMM_FIXPIPE_TEMPLATE_DEF
 __aicore__ inline void GemmUniversal<GMM_FIXPIPE_TEM_PARAMS>::ProcessSingleGroup(BlockScheduler& scheduler,
                                                                                  uint32_t groupIdx)
 {
-    const int64_t m = AscendC::Te::Get<MNK_M>(problemShape_);
-    const int64_t n = AscendC::Te::Get<MNK_N>(problemShape_);
-    const int64_t k = AscendC::Te::Get<MNK_K>(problemShape_);
+    const int64_t m = asc::te::get<MNK_M>(problemShape_);
+    const int64_t n = asc::te::get<MNK_N>(problemShape_);
+    const int64_t k = asc::te::get<MNK_K>(problemShape_);
     const int64_t groupMOffset = preOffset_ - m;
 
     auto layoutA = MakeLayoutA{}(m, k);
     auto layoutB = MakeLayoutB{}(k, n);
-    auto gmA = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(aBasePtr_ + groupMOffset * k),
-                                       layoutA);
-    auto gmB = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(
-                                           bBasePtr_ + static_cast<int64_t>(groupIdx) * perGroupBOffset_),
-                                       layoutB);
+    auto gmA = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::gm>(aBasePtr_ + groupMOffset * k),
+                                    layoutA);
+    auto gmB = asc::te::make_tensor(
+        asc::te::make_mem_ptr<asc::te::location::gm>(bBasePtr_ + static_cast<int64_t>(groupIdx) * perGroupBOffset_),
+        layoutB);
     SchedulerBlockInfo blockInfo;
     while (scheduler.GetNextBlock(blockInfo)) {
-        const int64_t curM = AscendC::Te::Get<MNK_M>(blockInfo.blockShape);
-        const int64_t curN = AscendC::Te::Get<MNK_N>(blockInfo.blockShape);
+        const int64_t curM = asc::te::get<MNK_M>(blockInfo.blockShape);
+        const int64_t curN = asc::te::get<MNK_N>(blockInfo.blockShape);
         if (curM <= 0 || curN <= 0) {
             continue;
         }
 
-        const int64_t mPos = AscendC::Te::Get<MNK_M>(blockInfo.blockCoord);
-        const int64_t nPos = AscendC::Te::Get<MNK_N>(blockInfo.blockCoord);
+        const int64_t mPos = asc::te::get<MNK_M>(blockInfo.blockCoord);
+        const int64_t nPos = asc::te::get<MNK_N>(blockInfo.blockCoord);
         const BlockShape blockShape{curM, curN, k, 0};
         ProcessOneBlock(gmA, gmB, blockShape, groupIdx, groupMOffset, mPos, nPos, curM, curN, k, n);
     }
@@ -401,26 +400,24 @@ __aicore__ inline void GemmUniversal<GMM_FIXPIPE_TEM_PARAMS>::ProcessOneBlock(co
             WaitForVector();
         }
         auto workspaceLayout = MakeLayoutC{}(curM, curN);
-        auto gmWorkspace = AscendC::Te::MakeTensor(
-            AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(workspaceBasePtr_ + workspaceOffset), workspaceLayout);
+        auto gmWorkspace = asc::te::make_tensor(
+            asc::te::make_mem_ptr<asc::te::location::gm>(workspaceBasePtr_ + workspaceOffset), workspaceLayout);
         // BlockMmad keeps a bias tensor in its call signature. Init uses isBias=false,
         // so this placeholder is never loaded or involved in the calculation.
-        auto unusedBiasLayout = AscendC::Te::MakeFrameLayout<AscendC::Te::NDExtLayoutPtn>(1L, 1L);
-        auto gmUnusedBias = AscendC::Te::MakeTensor(
-            AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(reinterpret_cast<__gm__ BiasType*>(workspaceBasePtr_)),
+        auto unusedBiasLayout = asc::te::make_frame_layout<asc::te::nd_ext_layout_ptn>(1L, 1L);
+        auto gmUnusedBias = asc::te::make_tensor(
+            asc::te::make_mem_ptr<asc::te::location::gm>(reinterpret_cast<__gm__ BiasType*>(workspaceBasePtr_)),
             unusedBiasLayout);
 
-        auto gmBlockA = gmA.Slice(AscendC::Te::MakeCoord(mPos, static_cast<int64_t>(0)),
-                                  AscendC::Te::MakeShape(curM, k));
-        auto gmBlockB = gmB.Slice(AscendC::Te::MakeCoord(static_cast<int64_t>(0), nPos),
-                                  AscendC::Te::MakeShape(k, curN));
+        auto gmBlockA = gmA.slice(asc::te::make_coord(mPos, static_cast<int64_t>(0)), asc::te::make_shape(curM, k));
+        auto gmBlockB = gmB.slice(asc::te::make_coord(static_cast<int64_t>(0), nPos), asc::te::make_shape(k, curN));
         const int64_t scaleExpertOffset = static_cast<int64_t>(groupIdx) * quantGroupNum_ * n;
-        auto scaleLayout = AscendC::Te::MakeFrameLayout<AscendC::Te::NDExtLayoutPtn>(
-            static_cast<int64_t>(quantGroupNum_), n);
-        auto gmScale = AscendC::Te::MakeTensor(
-            AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(scaleBasePtr_ + scaleExpertOffset), scaleLayout);
-        auto gmBlockScale = gmScale.Slice(AscendC::Te::MakeCoord(static_cast<int64_t>(0), nPos),
-                                          AscendC::Te::MakeShape(static_cast<int64_t>(quantGroupNum_), curN));
+        auto scaleLayout = asc::te::make_frame_layout<asc::te::nd_ext_layout_ptn>(static_cast<int64_t>(quantGroupNum_),
+                                                                                  n);
+        auto gmScale = asc::te::make_tensor(
+            asc::te::make_mem_ptr<asc::te::location::gm>(scaleBasePtr_ + scaleExpertOffset), scaleLayout);
+        auto gmBlockScale = gmScale.slice(asc::te::make_coord(static_cast<int64_t>(0), nPos),
+                                          asc::te::make_shape(static_cast<int64_t>(quantGroupNum_), curN));
         if (isPerGroup_) {
             mmOp_(gmBlockA, gmBlockB, gmBlockScale, gmUnusedBias, gmWorkspace, blockShape, quantGroupSize_,
                   quantGroupNum_);

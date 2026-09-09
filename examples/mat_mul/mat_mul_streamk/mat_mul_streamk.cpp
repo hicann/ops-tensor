@@ -193,12 +193,12 @@ inline void ConvertToNZ(const half* src, half* nzBuffer, int64_t k, int64_t n, b
     };
 
     if (transB) {
-        // ZNLayoutPtn: [k_tile, n_tile, N(16), K(16)]
+        // zn_layout_ptn: [k_tile, n_tile, N(16), K(16)]
         for (int64_t ki = 0; ki < numKTiles; ki++)
             for (int64_t ni = 0; ni < numNTiles; ni++)
                 writeTile(ki, ni, false);
     } else {
-        // NZLayoutPtn: [n_tile, k_tile, K(16), N(16)]
+        // nz_layout_ptn: [n_tile, k_tile, K(16), N(16)]
         for (int64_t ni = 0; ni < numNTiles; ni++)
             for (int64_t ki = 0; ki < numKTiles; ki++)
                 writeTile(ki, ni, true);
@@ -303,7 +303,7 @@ static bool ParseCliArgs(int argc, const char** argv, CliArgs& args)
 /* Device-side kernel wrapper (template-based)                                */
 /* ========================================================================== */
 
-using ProblemShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
+using ProblemShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
 using BlockScheduler = Blaze::Gemm::Block::BlockSchedulerMatmulStreamK<ProblemShape>;
 
 template <class A_TYPE, class B_TYPE, class C_TYPE, class BIAS_TYPE, class LAYOUT_A, class LAYOUT_B, class LAYOUT_C,
@@ -360,13 +360,13 @@ struct LaunchParams {
 template <class A_TYPE, class B_TYPE, class C_TYPE, class BIAS_TYPE, bool TransA, bool TransB, bool IsNzFormat>
 void LaunchKernel(const LaunchParams& p)
 {
-    using LAYOUT_A = std::conditional_t<TransA, AscendC::Te::DNExtLayoutPtn, AscendC::Te::NDExtLayoutPtn>;
+    using LAYOUT_A = std::conditional_t<TransA, asc::te::dn_ext_layout_ptn, asc::te::nd_ext_layout_ptn>;
 
     using LAYOUT_B = std::conditional_t<
-        IsNzFormat, std::conditional_t<TransB, AscendC::Te::ZNLayoutPtn, AscendC::Te::NZLayoutPtn>,
-        std::conditional_t<TransB, AscendC::Te::DNExtLayoutPtn, AscendC::Te::NDExtLayoutPtn>>;
+        IsNzFormat, std::conditional_t<TransB, asc::te::zn_layout_ptn, asc::te::nz_layout_ptn>,
+        std::conditional_t<TransB, asc::te::dn_ext_layout_ptn, asc::te::nd_ext_layout_ptn>>;
 
-    using LAYOUT_C = AscendC::Te::NDExtLayoutPtn;
+    using LAYOUT_C = asc::te::nd_ext_layout_ptn;
 
     if (p.tiling->isNdFixpipe12) {
         LAUNCH_KERNEL_IMPL(Blaze::Gemm::MatMulL0C2Out::ND_FIXPIPE_1_2);

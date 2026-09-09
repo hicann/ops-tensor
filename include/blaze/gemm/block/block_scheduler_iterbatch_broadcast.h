@@ -24,8 +24,8 @@ namespace Block {
 template <class ProblemShape_>
 class BlockSchedulerIterBatchBroadcast {
 public:
-    using BlockShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
-    using BlockCoord = AscendC::Te::Coord<int64_t, int64_t, int64_t, int64_t>;
+    using BlockShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
+    using BlockCoord = asc::te::coord<int64_t, int64_t, int64_t, int64_t>;
     using ProblemShape = ProblemShape_;
 
     struct Params {
@@ -54,10 +54,10 @@ public:
 public:
     __aicore__ inline BlockSchedulerIterBatchBroadcast(const ProblemShape& shape, const Params& params)
     {
-        m_ = AscendC::Te::Get<MNK_M>(shape);
-        n_ = AscendC::Te::Get<MNK_N>(shape);
-        k_ = AscendC::Te::Get<MNK_K>(shape);
-        b_ = AscendC::Te::Get<MNK_B>(shape);
+        m_ = asc::te::get<MNK_M>(shape);
+        n_ = asc::te::get<MNK_N>(shape);
+        k_ = asc::te::get<MNK_K>(shape);
+        b_ = asc::te::get<MNK_B>(shape);
         baseM_ = params.baseM;
         baseN_ = params.baseN;
         baseK_ = params.baseK;

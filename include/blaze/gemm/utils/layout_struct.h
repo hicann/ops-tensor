@@ -49,14 +49,13 @@ struct Weight8BitZnToZnUBLayout {
         int64_t n1 = CeilDiv(nSize, N0);
 
         // Shape: ((C0, k1), (N0, n1))
-        auto shape = AscendC::Te::MakeShape(AscendC::Te::MakeShape(AscendC::Std::Int<C0>{}, k1),
-                                            AscendC::Te::MakeShape(AscendC::Std::Int<N0>{}, n1));
+        auto shape = asc::te::make_shape(asc::te::make_shape(AscendC::Std::Int<C0>{}, k1),
+                                         asc::te::make_shape(AscendC::Std::Int<N0>{}, n1));
         // Stride: (MakeStride(1, n1 * InnerStride), MakeStride(C0, InnerStride))
-        auto stride = AscendC::Te::MakeStride(
-            AscendC::Te::MakeStride(AscendC::Std::Int<STRIDE_UNIT>{}, n1 * innerStride),
-            AscendC::Te::MakeStride(AscendC::Std::Int<C0>{}, innerStride));
-        using Trait = AscendC::Te::LayoutTrait<AscendC::Std::ignore_t, AscendC::Std::Int<C0>>;
-        return AscendC::Te::MakePatternLayout<Weight8BitZnToZnUbLayoutPtn, Trait>(shape, stride);
+        auto stride = asc::te::make_stride(asc::te::make_stride(AscendC::Std::Int<STRIDE_UNIT>{}, n1 * innerStride),
+                                           asc::te::make_stride(AscendC::Std::Int<C0>{}, innerStride));
+        using Trait = asc::te::layout_trait<AscendC::Std::ignore_t, AscendC::Std::Int<C0>>;
+        return asc::te::make_pattern_layout<Weight8BitZnToZnUbLayoutPtn, Trait>(shape, stride);
     }
 };
 
@@ -69,17 +68,16 @@ struct Weight8BitDnToZnUBLayout {
 
     __aicore__ inline auto operator()(int64_t kSize, int64_t nSize) const
     {
-        static constexpr int64_t C0 = AscendC::Te::C0_ELEMENT<T>;
+        static constexpr int64_t C0 = asc::te::c0_element<T>;
         static constexpr int64_t EXTRA_N_BLOCK = 1;
         int64_t k1 = CeilDiv(kSize, C0);
         int64_t nStride = static_cast<int64_t>(Align16(static_cast<uint64_t>(nSize))) + EXTRA_N_BLOCK;
-        auto shape = AscendC::Te::MakeShape(AscendC::Te::MakeShape(AscendC::Std::Int<C0>{}, k1),
-                                            AscendC::Te::MakeShape(AscendC::Std::Int<1>{}, nSize));
-        auto stride = AscendC::Te::MakeStride(
-            AscendC::Te::MakeStride(AscendC::Std::Int<1>{}, nStride * C0),
-            AscendC::Te::MakeStride(AscendC::Std::Int<C0>{}, AscendC::Std::Int<C0>{}));
-        using Trait = AscendC::Te::LayoutTrait<AscendC::Std::ignore_t, AscendC::Std::Int<C0>>;
-        return AscendC::Te::MakePatternLayout<Weight8BitDnToZnUbLayoutPtn, Trait>(shape, stride);
+        auto shape = asc::te::make_shape(asc::te::make_shape(AscendC::Std::Int<C0>{}, k1),
+                                         asc::te::make_shape(AscendC::Std::Int<1>{}, nSize));
+        auto stride = asc::te::make_stride(asc::te::make_stride(AscendC::Std::Int<1>{}, nStride * C0),
+                                           asc::te::make_stride(AscendC::Std::Int<C0>{}, AscendC::Std::Int<C0>{}));
+        using Trait = asc::te::layout_trait<AscendC::Std::ignore_t, AscendC::Std::Int<C0>>;
+        return asc::te::make_pattern_layout<Weight8BitDnToZnUbLayoutPtn, Trait>(shape, stride);
     }
 };
 

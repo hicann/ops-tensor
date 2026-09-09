@@ -26,10 +26,10 @@ constexpr int64_t INNER_AXIS_MIN_SPLIT_VAL = 128;
 
 class BlockSchedulerGmmSwatWithTailSplit {
 public:
-    using ProblemShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
+    using ProblemShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
     // M block size, N block size, M split offset, N split offset.
-    using BlockShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
-    using BlockCoord = AscendC::Te::Coord<int64_t, int64_t, int64_t, int64_t>;
+    using BlockShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
+    using BlockCoord = asc::te::coord<int64_t, int64_t, int64_t, int64_t>;
     struct BlockInfo {
         BlockShape blockShape{};
         BlockCoord blockCoord{};
@@ -125,10 +125,10 @@ public:
     __aicore__ inline void UpdateNextProblem(const ProblemShape& problemShape)
     {
         // Scheduler maps only M/N blocks; K is kept for shape consistency and does not drive split-K here.
-        k_ = AscendC::Te::Get<MNK_K>(problemShape);
-        if (m_ != AscendC::Te::Get<MNK_M>(problemShape) || n_ != AscendC::Te::Get<MNK_N>(problemShape)) {
-            m_ = AscendC::Te::Get<MNK_M>(problemShape);
-            n_ = AscendC::Te::Get<MNK_N>(problemShape);
+        k_ = asc::te::get<MNK_K>(problemShape);
+        if (m_ != asc::te::get<MNK_M>(problemShape) || n_ != asc::te::get<MNK_N>(problemShape)) {
+            m_ = asc::te::get<MNK_M>(problemShape);
+            n_ = asc::te::get<MNK_N>(problemShape);
             mBlockNums_ = CeilDiv(m_, static_cast<int64_t>(baseM_));
             nBlockNums_ = CeilDiv(n_, static_cast<int64_t>(baseN_));
             mBaseTail_ = m_ - (mBlockNums_ - 1) * baseM_;
@@ -241,7 +241,7 @@ public:
             AscendC::Std::get<MNK_N>(blockCoord) = (tailIndex / tailWindow_) % nBlockNums_;
         }
         if (rowIdx & 1) {
-            AscendC::Std::get<MNK_N>(blockCoord) = nBlockNums_ - 1 - AscendC::Te::Get<MNK_N>(blockCoord);
+            AscendC::Std::get<MNK_N>(blockCoord) = nBlockNums_ - 1 - asc::te::get<MNK_N>(blockCoord);
         }
         roundIdx_++;
         return true;
@@ -249,8 +249,8 @@ public:
 
     __aicore__ inline BlockShape GetBlockShape(const BlockCoord& blockCoord)
     {
-        int64_t singleCoreM = AscendC::Te::Get<MNK_M>(blockCoord) != (mBlockNums_ - 1) ? baseM_ : mBaseTail_;
-        int64_t singleCoreN = AscendC::Te::Get<MNK_N>(blockCoord) != (nBlockNums_ - 1) ? baseN_ : nBaseTail_;
+        int64_t singleCoreM = asc::te::get<MNK_M>(blockCoord) != (mBlockNums_ - 1) ? baseM_ : mBaseTail_;
+        int64_t singleCoreN = asc::te::get<MNK_N>(blockCoord) != (nBlockNums_ - 1) ? baseN_ : nBaseTail_;
         // Return offsets only for the final split tail block; bias and split-K are handled by the kernel/block.
         if (tailCnt_ == 1 || roundIdx_ < round_) {
             return {singleCoreM, singleCoreN, 0, 0};
@@ -282,12 +282,12 @@ public:
 
         // Convert the internal SWAT tile index and tail-split offsets to an element coordinate and a true MNKB shape.
         const BlockShape legacyBlockShape = GetBlockShape(blockIndex);
-        const int64_t blockM = AscendC::Te::Get<MNK_M>(legacyBlockShape);
-        const int64_t blockN = AscendC::Te::Get<MNK_N>(legacyBlockShape);
-        const int64_t mSplitOffset = AscendC::Te::Get<MNK_K>(legacyBlockShape);
-        const int64_t nSplitOffset = AscendC::Te::Get<MNK_B>(legacyBlockShape);
-        const int64_t mOffset = AscendC::Te::Get<MNK_M>(blockIndex) * baseM_ + mSplitOffset;
-        const int64_t nOffset = AscendC::Te::Get<MNK_N>(blockIndex) * baseN_ + nSplitOffset;
+        const int64_t blockM = asc::te::get<MNK_M>(legacyBlockShape);
+        const int64_t blockN = asc::te::get<MNK_N>(legacyBlockShape);
+        const int64_t mSplitOffset = asc::te::get<MNK_K>(legacyBlockShape);
+        const int64_t nSplitOffset = asc::te::get<MNK_B>(legacyBlockShape);
+        const int64_t mOffset = asc::te::get<MNK_M>(blockIndex) * baseM_ + mSplitOffset;
+        const int64_t nOffset = asc::te::get<MNK_N>(blockIndex) * baseN_ + nSplitOffset;
 
         blockInfo.blockShape = BlockShape{blockM, blockN, k_, 1};
         blockInfo.blockCoord = BlockCoord{mOffset, nOffset, 0, 0};
@@ -297,9 +297,9 @@ public:
     __aicore__ inline void UpdateMxGroup(const MxGroupParams& params)
     {
         const int64_t groupIdx = static_cast<int64_t>(params.groupIdx);
-        const int64_t problemM = AscendC::Te::Get<MNK_M>(params.problemShape);
-        const int64_t problemN = AscendC::Te::Get<MNK_N>(params.problemShape);
-        const int64_t problemK = AscendC::Te::Get<MNK_K>(params.problemShape);
+        const int64_t problemM = asc::te::get<MNK_M>(params.problemShape);
+        const int64_t problemN = asc::te::get<MNK_N>(params.problemShape);
+        const int64_t problemK = asc::te::get<MNK_K>(params.problemShape);
         const int64_t previousSplitOffset = params.groupEndOffset - (params.transA ? problemK : problemM);
         const int64_t inputScaleK = GetScaleK(problemK);
         const int64_t outputScaleN = GetScaleK(problemN);
@@ -345,8 +345,8 @@ public:
             return false;
         }
         mxBlockInfo.blockShape = blockInfo.blockShape;
-        mxBlockInfo.mOffset = AscendC::Te::Get<MNK_M>(blockInfo.blockCoord);
-        mxBlockInfo.nOffset = AscendC::Te::Get<MNK_N>(blockInfo.blockCoord);
+        mxBlockInfo.mOffset = asc::te::get<MNK_M>(blockInfo.blockCoord);
+        mxBlockInfo.nOffset = asc::te::get<MNK_N>(blockInfo.blockCoord);
         mxBlockInfo.outputOffsets.outputOffset = mxBlockInfo.mOffset * mxOutputN_ + mxBlockInfo.nOffset;
         mxBlockInfo.outputOffsets.outputScaleOffset = mxBlockInfo.mOffset * mxOutputScaleN_ +
                                                       CeilDiv(mxBlockInfo.nOffset,
@@ -358,9 +358,9 @@ public:
     __aicore__ inline void UpdateSwigluGroup(const SwigluGroupParams& params)
     {
         const int64_t groupIdx = static_cast<int64_t>(params.groupIdx);
-        const int64_t problemM = AscendC::Te::Get<MNK_M>(params.problemShape);
-        const int64_t problemN = AscendC::Te::Get<MNK_N>(params.problemShape);
-        const int64_t problemK = AscendC::Te::Get<MNK_K>(params.problemShape);
+        const int64_t problemM = asc::te::get<MNK_M>(params.problemShape);
+        const int64_t problemN = asc::te::get<MNK_N>(params.problemShape);
+        const int64_t problemK = asc::te::get<MNK_K>(params.problemShape);
         const int64_t mPrefixOffset = params.groupMEndOffset - problemM;
         const int64_t inputScaleK = GetScaleK(problemK);
         swigluOutputN_ = problemN / SWIGLU_SPLIT_COUNT;
@@ -385,10 +385,10 @@ public:
         }
 
         // Resolve all SwiGLU-specific input coordinates and epilogue offsets before returning to the kernel.
-        const int64_t blockM = AscendC::Te::Get<MNK_M>(blockInfo.blockShape);
-        const int64_t blockN = AscendC::Te::Get<MNK_N>(blockInfo.blockShape);
-        const int64_t mOffset = AscendC::Te::Get<MNK_M>(blockInfo.blockCoord);
-        const int64_t nOffset = AscendC::Te::Get<MNK_N>(blockInfo.blockCoord);
+        const int64_t blockM = asc::te::get<MNK_M>(blockInfo.blockShape);
+        const int64_t blockN = asc::te::get<MNK_N>(blockInfo.blockShape);
+        const int64_t mOffset = asc::te::get<MNK_M>(blockInfo.blockCoord);
+        const int64_t nOffset = asc::te::get<MNK_N>(blockInfo.blockCoord);
 
         swigluBlockInfo.blockShape = blockInfo.blockShape;
         swigluBlockInfo.epilogueBlockShape = BlockShape{blockM, blockN, 0, 0};

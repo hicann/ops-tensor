@@ -62,13 +62,13 @@ public:
     using A_T = typename BlockMmad::A_T;
     using B_T = typename BlockMmad::B_T;
     using L0CType = typename BlockMmad::L0cType;
-    using TupleShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
-    using TupleL1L0Shape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
+    using TupleShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
+    using TupleL1L0Shape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
 
-    using MakeLayoutA = AscendC::Te::FrameLayoutFormat<AscendC::Te::NDExtLayoutPtn,
-                                                       AscendC::Std::Int<AscendC::Te::C0_ELEMENT<AType>>>;
-    using MakeLayoutB = AscendC::Te::FrameLayoutFormat<AscendC::Te::NDExtLayoutPtn,
-                                                       AscendC::Std::Int<AscendC::Te::C0_ELEMENT<BType>>>;
+    using MakeLayoutA = asc::te::frame_layout_format<asc::te::nd_ext_layout_ptn,
+                                                     AscendC::Std::Int<asc::te::c0_element<AType>>>;
+    using MakeLayoutB = asc::te::frame_layout_format<asc::te::nd_ext_layout_ptn,
+                                                     AscendC::Std::Int<asc::te::c0_element<BType>>>;
 
     struct Params {
         ProblemShape problemShape;
@@ -84,10 +84,10 @@ private:
     __aicore__ inline void Init(Params const& params)
     {
         problemShape_ = params.problemShape;
-        m_ = AscendC::Te::Get<Gemm::MNK_M>(problemShape_);
-        n_ = AscendC::Te::Get<Gemm::MNK_N>(problemShape_);
-        k_ = AscendC::Te::Get<Gemm::MNK_K>(problemShape_);
-        b_ = AscendC::Te::Get<Gemm::MNK_B>(problemShape_);
+        m_ = asc::te::get<Gemm::MNK_M>(problemShape_);
+        n_ = asc::te::get<Gemm::MNK_N>(problemShape_);
+        k_ = asc::te::get<Gemm::MNK_K>(problemShape_);
+        b_ = asc::te::get<Gemm::MNK_B>(problemShape_);
 
         BlockMmadParams blockMmadParams = params.mmadParams;
         aGmPtr_ = reinterpret_cast<__gm__ A_T*>(blockMmadParams.aGmAddr);
@@ -122,13 +122,13 @@ private:
         auto layoutP1 = MakeLayoutB{}(m_, m_);
         auto layoutP2 = MakeLayoutB{}(n_, n_);
 
-        auto gmA = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(aGmPtr_), layoutA);
-        auto gmP1 = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(p1GmPtr_), layoutP1);
-        auto gmP2 = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(p2GmPtr_), layoutP2);
+        auto gmA = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::gm>(aGmPtr_), layoutA);
+        auto gmP1 = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::gm>(p1GmPtr_), layoutP1);
+        auto gmP2 = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::gm>(p2GmPtr_), layoutP2);
 
         for (int64_t tileIdx = curBlockIdx; tileIdx < blockNums; tileIdx += coreNums) {
             TupleL1L0Shape blockShape = bs.GetBlockShape(tileIdx);
-            uint64_t iterBatch = AscendC::Te::Get<Gemm::MNK_B>(blockShape);
+            uint64_t iterBatch = asc::te::get<Gemm::MNK_B>(blockShape);
             uint64_t roundIdx = tileIdx / coreNums;
             int64_t batchOffset = bs.GetBlockCoord(tileIdx, curBlockIdx);
             if ASCEND_IS_AIC {
@@ -141,8 +141,7 @@ private:
                     }
                 }
                 int64_t rowOffset = batchOffset * m_;
-                auto gmBlockA = gmA.Slice(AscendC::Te::MakeCoord(rowOffset, 0L),
-                                          AscendC::Te::MakeShape(m_ * iterBatch, k_));
+                auto gmBlockA = gmA.slice(asc::te::make_coord(rowOffset, 0L), asc::te::make_shape(m_ * iterBatch, k_));
 
                 blockMmadOp(gmBlockA, gmP1, gmP2, blockShape, tileIdx < coreNums);
                 if (roundIdx % 2 == 0) {
