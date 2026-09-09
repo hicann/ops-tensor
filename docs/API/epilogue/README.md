@@ -1,5 +1,9 @@
 # Gemm/Epilogue 类模板概述
 
+## 开发指导
+
+新 Epilogue 开发请参阅：[Epilogue 层编写指导](./epilogue_developer_guide.md)
+
 ## API 清单
 
 | 组件名 | 描述 |

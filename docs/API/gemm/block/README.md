@@ -1,5 +1,9 @@
 # Gemm/Block 类模板概述
 
+## 开发指导
+
+新组件开发请参阅：[Block 层编写指导](./block_developer_guide.md)
+
 ## API 清单
 
 ### BlockMmad（矩阵乘计算）

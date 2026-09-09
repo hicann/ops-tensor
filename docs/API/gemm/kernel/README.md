@@ -1,5 +1,9 @@
 # Gemm/Kernel 模板概览
 
+## 开发指导
+
+新 Kernel 开发请参阅：[Kernel 层编写指导](./kernel_developer_guide.md)
+
 ## API 清单
 
 | 组件名 | 说明 |
