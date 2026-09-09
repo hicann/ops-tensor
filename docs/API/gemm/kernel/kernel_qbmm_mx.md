@@ -13,6 +13,13 @@ MX 量化 Batch Matmul Kernel，仅支持 AIC 计算，支持 MxFP4/MxFP8 量化
 - **MxFP4**：`fp4x2_e2m1_t`、`fp4x2_e1m2_t`（4-bit 浮点）
 - **MxFP8**：`fp8_e5m2_t`、`fp8_e4m3fn_t`（8-bit 浮点）
 
+Kernel 通过 `static_assert` 要求 A/B 为同 bit-width 的 MxFP4 或 MxFP8 组合，C 为 `half`、
+`bfloat16_t` 或 `float`，并保留原有 `BiasType = float` 约束。`LayoutA` 支持 ND/DN，`LayoutB` 支持 ND/DN/NZ/ZN，
+`LayoutC` 支持 `nd_ext_layout_ptn` / `dn_ext_layout_ptn`；本次不增加 `LayoutBias` 或 scale 校验。
+
+ND/DN 白名单保留 L0C 搬运路径支持的 C Tensor 布局；自定义 BlockEpilogue 必须与输出布局一致。
+模板校验通过不等同于任意后处理组件均支持 DN 输出。
+
 ### Scale 因子要求
 必须提供两个 Scale 因子：
 - `scaleAGmAddr`：A 矩阵的 缩放因子（`fp8_e8m0_t` 类型）

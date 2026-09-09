@@ -51,6 +51,7 @@ public:
     using BlockMmadParams = typename BlockMmad::Params;
     using AType = typename BlockMmad::AType;
     using BType = typename BlockMmad::BType;
+    using OutType = typename BlockEpilogue::OutType;
     using L0CType = typename BlockMmad::L0CType;
     using LayoutA = typename BlockMmad::LayoutA;
     using LayoutB = typename BlockMmad::LayoutB;
@@ -59,6 +60,26 @@ public:
     using BlockShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
     using BlockCoord = asc::te::coord<int64_t, int64_t, int64_t, int64_t>;
 
+private:
+    static constexpr bool IS_INT8_INPUT = AscendC::Std::is_same_v<AType, int8_t> &&
+                                          AscendC::Std::is_same_v<BType, int8_t>;
+    static constexpr bool IS_HIFLOAT8_INPUT = AscendC::Std::is_same_v<AType, hifloat8_t> &&
+                                              AscendC::Std::is_same_v<BType, hifloat8_t>;
+    static constexpr bool IS_FP8_INPUT = IsFp8<AType>() && IsFp8<BType>();
+    static constexpr bool IS_SUPPORTED_OUTPUT = AscendC::Std::is_one_of_v<OutType, half, bfloat16_t, float>;
+
+    static_assert(IS_INT8_INPUT || IS_HIFLOAT8_INPUT || IS_FP8_INPUT,
+                  "QBMM Mix: AType/BType must both be int8_t, both be hifloat8_t, or each be fp8_e4m3fn_t/fp8_e5m2_t.");
+    static_assert(IS_SUPPORTED_OUTPUT, "QBMM Mix: BlockEpilogue::OutType must be half/bfloat16_t/float.");
+    static_assert(AscendC::Std::is_same_v<typename BlockEpilogue::L0CType, L0CType>,
+                  "QBMM Mix: BlockEpilogue::L0CType must match BlockMmad::L0CType.");
+    static_assert(AscendC::Std::is_one_of_v<LayoutA, asc::te::nd_ext_layout_ptn, asc::te::dn_ext_layout_ptn>,
+                  "QBMM Mix: LayoutA must be nd_ext_layout_ptn/dn_ext_layout_ptn.");
+    static_assert(AscendC::Std::is_one_of_v<LayoutB, asc::te::nd_ext_layout_ptn, asc::te::dn_ext_layout_ptn,
+                                            asc::te::nz_layout_ptn, asc::te::zn_layout_ptn>,
+                  "QBMM Mix: LayoutB must be nd_ext_layout_ptn/dn_ext_layout_ptn/nz_layout_ptn/zn_layout_ptn.");
+
+public:
     struct QBMMTiling {
         uint32_t batchA1;
         uint32_t batchA2;

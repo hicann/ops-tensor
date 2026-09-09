@@ -50,6 +50,7 @@ public:
     using LayoutA = LayoutA_;
     using LayoutB = LayoutB_;
     using LayoutC = LayoutC_;
+    using LayoutBias = LayoutBias_;
     using BiasType = BiasType_;
     using DispatchPolicy = MatmulWithScaleMxL0CPingpong<AFullLoadMode_, AtomicAdd_, ScheduleType_>;
     using ProblemShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
@@ -158,6 +159,7 @@ public:
 
 private:
     static constexpr uint64_t C0_SIZE = IsFp4<AType>() ? C0_SIZE_B4 : C0_SIZE_B8;
+    static constexpr uint64_t L0_PING_PONG_MASK = DOUBLE_BUFFER_COUNT - 1UL;
     using MakeLayoutAL1 = AscendC::Std::conditional_t<
         TRANS_A, asc::te::frame_layout_format<asc::te::zn_layout_ptn, AscendC::Std::Int<C0_SIZE>>,
         asc::te::frame_layout_format<asc::te::nz_layout_ptn, AscendC::Std::Int<C0_SIZE>>>;
@@ -523,7 +525,7 @@ private:
         const uint64_t scaleKL0Len = (Align64(curKL0) >> ALIGN_64_BYTES_SHIFT) * MXFP_MULTI_BASE_SIZE;
         const uint64_t scaleK0Offset = iter1 * scaleK0OffsetStride;
         const bool needBias = needBiasInL1 && iter1 == 0;
-        const uint64_t l0PingPongId = l0PingPong_ & 1;
+        const uint64_t l0PingPongId = l0PingPong_ & L0_PING_PONG_MASK;
         constexpr uint64_t halfL0Size = AscendC::TOTAL_L0A_SIZE / DOUBLE_BUFFER_COUNT;
         const uint64_t l0Offset = halfL0Size * l0PingPongId;
         const uint16_t mte1WaitMFlag = static_cast<uint16_t>(l0PingPongId + M_MTE1_FLAG_0);

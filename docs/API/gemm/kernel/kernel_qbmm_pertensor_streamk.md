@@ -45,6 +45,21 @@ BlockMmad 和 BlockEpilogue 的 schedule tag 必须同时为 `KernelQbmmPertenso
 | `BlockEpilogue` | `BlockEpilogueQbmmPertensorStreamK` |
 | `BlockScheduler` | `BlockSchedulerMatmulStreamK<ProblemShape>` |
 
+## 编译期 dtype/format 约束
+
+Kernel 在模板实例化入口通过 `static_assert` 校验：
+
+- A/B 支持 `int8_t` 同型、`hifloat8_t` 同型，以及 `fp8_e4m3fn_t` / `fp8_e5m2_t` 的 FP8 组合；
+- C 支持 `half`、`bfloat16_t` 和 `float`；
+- BlockMmad 与 BlockEpilogue 的输出和 workspace 类型必须一致；
+- `LayoutA` 支持 ND/DN，`LayoutB` 支持 ND/DN/NZ/ZN，`LayoutC` 仅支持 `nd_ext_layout_ptn`。
+
+本次不增加 bias 类型、`LayoutBias`、scale 类型或 bias/scale 配对校验。scale 的存储类型、
+实际启用的量化模式及 MMAD/Epilogue 参数仍须遵循下文所述的数据流要求；通过模板校验不代表
+任意 bias/scale 组合都具备运行时支持。
+
+不满足上述范围的组合会在编译期返回包含具体组件和类型/格式要求的错误信息，不再进入深层模板实例化。
+
 ## Params
 
 ```cpp

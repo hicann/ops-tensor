@@ -51,6 +51,7 @@ public:
     using LayoutA = LayoutA_;
     using LayoutB = LayoutB_;
     using LayoutC = LayoutC_;
+    using LayoutBias = LayoutBias_;
     using BiasType = BiasType_;
     using DispatchPolicy = MatmulWithScaleMx<FullLoadMode_, AtomicAdd_, ScheduleType_, L0C2UBMode_, NonContiguousType_>;
     using ProblemShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;

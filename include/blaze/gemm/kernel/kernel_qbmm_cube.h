@@ -86,6 +86,9 @@ private:
                   "QBMM Cube only supports uint64_t/int64_t/bfloat16_t/float ScaleGmType.");
     static_assert(AscendC::Std::is_one_of_v<LayoutA, asc::te::nd_ext_layout_ptn, asc::te::dn_ext_layout_ptn>,
                   "QBMM Cube only supports ND/DN LayoutA.");
+    static_assert(AscendC::Std::is_one_of_v<LayoutB, asc::te::nd_ext_layout_ptn, asc::te::dn_ext_layout_ptn,
+                                            asc::te::nz_layout_ptn, asc::te::zn_layout_ptn>,
+                  "QBMM Cube: LayoutB must be nd_ext_layout_ptn/dn_ext_layout_ptn/nz_layout_ptn/zn_layout_ptn.");
     static_assert(AscendC::Std::is_same_v<LayoutC, asc::te::nd_ext_layout_ptn>, "QBMM Cube only supports ND LayoutC.");
 
 public:

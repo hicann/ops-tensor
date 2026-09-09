@@ -69,6 +69,7 @@ public:
     static constexpr uint32_t OUT_ALIGN = DATA_BLOCK / sizeof(OutType);
     static constexpr uint32_t CV_RATIO = 2;
     static constexpr uint32_t FP32_OUTPUT_TIMES = IsSameType<OutType, float>::value ? 4 : 2;
+    static constexpr uint16_t BIAS_EVENT_ID = 2U;
 
     // The host passes the ACTUAL bias tensor dtype (a ge::DataType code) in params.biasDtype.
     // For int8 inputs the compile-time BiasType is forced to int32_t (DTYPE_BIAS), which does
@@ -102,7 +103,7 @@ public:
     {
         AscendC::WaitFlag<AscendC::HardEvent::V_MTE2>(0);
         AscendC::WaitFlag<AscendC::HardEvent::V_MTE2>(1);
-        AscendC::WaitFlag<AscendC::HardEvent::V_MTE2>(2);
+        AscendC::WaitFlag<AscendC::HardEvent::V_MTE2>(BIAS_EVENT_ID);
         AscendC::WaitFlag<AscendC::HardEvent::MTE3_V>(0);
         AscendC::WaitFlag<AscendC::HardEvent::MTE3_V>(1);
     }
@@ -152,7 +153,7 @@ public:
 
         AscendC::SetFlag<AscendC::HardEvent::V_MTE2>(0);
         AscendC::SetFlag<AscendC::HardEvent::V_MTE2>(1);
-        AscendC::SetFlag<AscendC::HardEvent::V_MTE2>(2);
+        AscendC::SetFlag<AscendC::HardEvent::V_MTE2>(BIAS_EVENT_ID);
         AscendC::SetFlag<AscendC::HardEvent::MTE3_V>(0);
         AscendC::SetFlag<AscendC::HardEvent::MTE3_V>(1);
     }
@@ -309,7 +310,7 @@ private:
         }
 
         if (isBias_) {
-            AscendC::WaitFlag<AscendC::HardEvent::V_MTE2>(2);
+            AscendC::WaitFlag<AscendC::HardEvent::V_MTE2>(BIAS_EVENT_ID);
             // Interpret the bias buffer by its RUNTIME dtype, not the compile-time BiasType.
             if (biasDtype_ == DT_FLOAT) {
                 CopyBiasToUbTyped<float>(singleCoreN, offsetBias);
@@ -318,8 +319,8 @@ private:
             } else {
                 CopyBiasToUbTyped<bfloat16_t>(singleCoreN, offsetBias);
             }
-            AscendC::SetFlag<AscendC::HardEvent::MTE2_V>(2);
-            AscendC::WaitFlag<AscendC::HardEvent::MTE2_V>(2);
+            AscendC::SetFlag<AscendC::HardEvent::MTE2_V>(BIAS_EVENT_ID);
+            AscendC::WaitFlag<AscendC::HardEvent::MTE2_V>(BIAS_EVENT_ID);
         }
     }
 
@@ -633,7 +634,7 @@ private:
             AscendC::SetFlag<AscendC::HardEvent::V_MTE2>(1);
         }
         if (isBias_) {
-            AscendC::SetFlag<AscendC::HardEvent::V_MTE2>(2);
+            AscendC::SetFlag<AscendC::HardEvent::V_MTE2>(BIAS_EVENT_ID);
         }
     }
 

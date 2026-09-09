@@ -58,6 +58,16 @@ public:
 
     using BlockSchedulerParams = typename BlockScheduler::Params;
 
+    static_assert((IsFp8<AType>() && IsFp8<BType>()) || (IsFp4<AType>() && IsFp4<BType>()),
+                  "QBMM MX Activation Quant: AType/BType must each be fp8_e4m3fn_t/fp8_e5m2_t, or each be "
+                  "fp4x2_e2m1_t/fp4x2_e1m2_t.");
+    static_assert(AscendC::Std::is_one_of_v<LayoutA, asc::te::nd_ext_layout_ptn, asc::te::dn_ext_layout_ptn>,
+                  "QBMM MX Activation Quant: LayoutA must be nd_ext_layout_ptn/dn_ext_layout_ptn.");
+    static_assert(
+        AscendC::Std::is_one_of_v<LayoutB, asc::te::nd_ext_layout_ptn, asc::te::dn_ext_layout_ptn,
+                                  asc::te::nz_layout_ptn, asc::te::zn_layout_ptn>,
+        "QBMM MX Activation Quant: LayoutB must be nd_ext_layout_ptn/dn_ext_layout_ptn/nz_layout_ptn/zn_layout_ptn.");
+
     struct QBMMTiling {
         uint32_t batchA1;
         uint32_t batchA2;

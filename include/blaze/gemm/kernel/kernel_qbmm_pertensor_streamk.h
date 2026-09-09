@@ -74,6 +74,32 @@ public:
     using MakeLayoutC = asc::te::frame_layout_format<LayoutC, asc::te::layout_trait_default<CType>>;
     using MakeLayoutBias = asc::te::frame_layout_format<LayoutBias, asc::te::layout_trait_default<BiasType>>;
 
+private:
+    static constexpr bool IS_INT8_INPUT = AscendC::Std::is_same_v<AType, int8_t> &&
+                                          AscendC::Std::is_same_v<BType, int8_t>;
+    static constexpr bool IS_HIFLOAT8_INPUT = AscendC::Std::is_same_v<AType, hifloat8_t> &&
+                                              AscendC::Std::is_same_v<BType, hifloat8_t>;
+    static constexpr bool IS_FP8_INPUT = IsFp8<AType>() && IsFp8<BType>();
+    static constexpr bool IS_SUPPORTED_OUTPUT = AscendC::Std::is_one_of_v<CType, half, bfloat16_t, float>;
+
+    static_assert(IS_INT8_INPUT || IS_HIFLOAT8_INPUT || IS_FP8_INPUT,
+                  "QBMM Per-tensor StreamK: AType/BType must both be int8_t, both be hifloat8_t, or each be "
+                  "fp8_e4m3fn_t/fp8_e5m2_t.");
+    static_assert(IS_SUPPORTED_OUTPUT, "QBMM Per-tensor StreamK: BlockMmad::CType must be half/bfloat16_t/float.");
+    static_assert(AscendC::Std::is_same_v<typename BlockEpilogue::OutType, CType>,
+                  "QBMM Per-tensor StreamK: BlockEpilogue::OutType must match BlockMmad::CType.");
+    static_assert(AscendC::Std::is_same_v<typename BlockEpilogue::WorkspaceType, typename BlockMmad::WorkspaceType>,
+                  "QBMM Per-tensor StreamK: BlockEpilogue::WorkspaceType must match BlockMmad::WorkspaceType.");
+    static_assert(AscendC::Std::is_one_of_v<LayoutA, asc::te::nd_ext_layout_ptn, asc::te::dn_ext_layout_ptn>,
+                  "QBMM Per-tensor StreamK: LayoutA must be nd_ext_layout_ptn/dn_ext_layout_ptn.");
+    static_assert(
+        AscendC::Std::is_one_of_v<LayoutB, asc::te::nd_ext_layout_ptn, asc::te::dn_ext_layout_ptn,
+                                  asc::te::nz_layout_ptn, asc::te::zn_layout_ptn>,
+        "QBMM Per-tensor StreamK: LayoutB must be nd_ext_layout_ptn/dn_ext_layout_ptn/nz_layout_ptn/zn_layout_ptn.");
+    static_assert(AscendC::Std::is_same_v<LayoutC, asc::te::nd_ext_layout_ptn>,
+                  "QBMM Per-tensor StreamK: LayoutC must be nd_ext_layout_ptn.");
+
+public:
     struct Params {
         ProblemShape problemShape;
         BlockMmadParams blockMmadParams;
@@ -234,28 +260,41 @@ private:
 
     __aicore__ inline void InitScale(Params const& params)
     {
+        const auto scalarLayout = asc::te::make_layout(asc::te::make_shape(1L), asc::te::make_stride(1L));
         if (params.epilogueParams.perTokenScaleGmAddr != nullptr) {
-            AscendC::GlobalTensor<float> x1Scale;
-            AscendC::GlobalTensor<float> x2Scale;
-            x1Scale.SetGlobalBuffer(reinterpret_cast<__gm__ float*>(params.epilogueParams.perTokenScaleGmAddr));
-            x2Scale.SetGlobalBuffer(reinterpret_cast<__gm__ float*>(params.epilogueParams.scaleGmAddr));
-            float dequantScale = x1Scale.GetValue(0) * x2Scale.GetValue(0);
-            uint32_t scaleBits = Blaze::Gemm::Float32ToBits(dequantScale);
+            const auto x1Scale = asc::te::make_tensor(
+                asc::te::make_mem_ptr<asc::te::location::gm>(
+                    reinterpret_cast<__gm__ float*>(params.epilogueParams.perTokenScaleGmAddr)),
+                scalarLayout);
+            const auto x2Scale = asc::te::make_tensor(
+                asc::te::make_mem_ptr<asc::te::location::gm>(
+                    reinterpret_cast<__gm__ float*>(params.epilogueParams.scaleGmAddr)),
+                scalarLayout);
+            const float dequantScale = x1Scale[0] * x2Scale[0];
+            const uint32_t scaleBits = *reinterpret_cast<const uint32_t*>(&dequantScale);
             scaleScalar_ = static_cast<uint64_t>(scaleBits & DEQ_SCALE_MUL_MASK);
         } else if constexpr (AscendC::IsSameType<X2ScaleType, uint64_t>::value ||
                              AscendC::IsSameType<X2ScaleType, int64_t>::value) {
-            AscendC::GlobalTensor<uint64_t> x2Scale;
-            x2Scale.SetGlobalBuffer(reinterpret_cast<__gm__ uint64_t*>(params.epilogueParams.scaleGmAddr));
-            scaleScalar_ = x2Scale.GetValue(0);
+            const auto x2Scale = asc::te::make_tensor(
+                asc::te::make_mem_ptr<asc::te::location::gm>(
+                    reinterpret_cast<__gm__ uint64_t*>(params.epilogueParams.scaleGmAddr)),
+                scalarLayout);
+            scaleScalar_ = x2Scale[0];
         } else if constexpr (AscendC::IsSameType<X2ScaleType, bfloat16_t>::value) {
-            AscendC::GlobalTensor<uint16_t> x2Scale;
-            x2Scale.SetGlobalBuffer(reinterpret_cast<__gm__ uint16_t*>(params.epilogueParams.scaleGmAddr));
-            uint32_t scaleBits = static_cast<uint32_t>(x2Scale.GetValue(0)) << BF16_SHIFT;
+            const auto x2Scale = asc::te::make_tensor(
+                asc::te::make_mem_ptr<asc::te::location::gm>(
+                    reinterpret_cast<__gm__ uint16_t*>(params.epilogueParams.scaleGmAddr)),
+                scalarLayout);
+            const uint32_t scaleBits = static_cast<uint32_t>(x2Scale[0]) << BF16_SHIFT;
             scaleScalar_ = static_cast<uint64_t>(scaleBits & DEQ_SCALE_MUL_MASK);
         } else {
-            AscendC::GlobalTensor<float> x2Scale;
-            x2Scale.SetGlobalBuffer(reinterpret_cast<__gm__ float*>(params.epilogueParams.scaleGmAddr));
-            scaleScalar_ = static_cast<uint64_t>(Blaze::Gemm::Float32ToBits(x2Scale.GetValue(0)) & DEQ_SCALE_MUL_MASK);
+            const auto x2Scale = asc::te::make_tensor(
+                asc::te::make_mem_ptr<asc::te::location::gm>(
+                    reinterpret_cast<__gm__ float*>(params.epilogueParams.scaleGmAddr)),
+                scalarLayout);
+            const float x2ScaleValue = x2Scale[0];
+            const uint32_t scaleBits = *reinterpret_cast<const uint32_t*>(&x2ScaleValue);
+            scaleScalar_ = static_cast<uint64_t>(scaleBits & DEQ_SCALE_MUL_MASK);
         }
     }
 

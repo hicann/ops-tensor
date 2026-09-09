@@ -29,6 +29,9 @@
 #include "qbmm_mx.h"
 #include "qbmm_mx_l0c_pingpong.h"
 #include "qbmm_streamk.h"
+#include "blaze/epilogue/block/block_epilogue_gelu_mx_quant.h"
+#include "blaze/gemm/kernel/kernel_qbmm_mx_activation_quant.h"
+#include "blaze/gemm/kernel/kernel_qbmm_mx_mix.h"
 
 class QBMMV3Test : public testing::Test {
 protected:
@@ -59,13 +62,13 @@ struct MixCaseCfg {
     int64_t N;
     int64_t K;
     uint32_t blockNum;
-    uint32_t x1QuantMode;   // 激活量化模式
-    uint32_t x2QuantMode;   // 权重量化模式
+    uint32_t x1QuantMode; // 激活量化模式
+    uint32_t x2QuantMode; // 权重量化模式
     bool isBias;
-    uint32_t biasDtype;     // ge::DataType 编码，需与 bias.bin 元素类型一致
-    size_t biasElemSize;    // bias 单元素字节数（与 biasDtype 匹配）
-    size_t outElemSize;     // 输出单元素字节数（half/bf16=2, float=4）
-    const char* genArgs;    // 传给 gen_data.py 的量化模式参数
+    uint32_t biasDtype;  // ge::DataType 编码，需与 bias.bin 元素类型一致
+    size_t biasElemSize; // bias 单元素字节数（与 biasDtype 匹配）
+    size_t outElemSize;  // 输出单元素字节数（half/bf16=2, float=4）
+    const char* genArgs; // 传给 gen_data.py 的量化模式参数
 };
 
 struct CubeCaseCfg {
@@ -115,10 +118,7 @@ struct StreamKCaseCfg {
     uint32_t blockNum;
 };
 
-size_t GetMxScaleKLen(int64_t k)
-{
-    return static_cast<size_t>((k + 63) / 64) * 2UL;
-}
+size_t GetMxScaleKLen(int64_t k) { return static_cast<size_t>((k + 63) / 64) * 2UL; }
 
 template <typename T>
 size_t GetMxInputSize(int64_t elementCount)
@@ -138,9 +138,7 @@ void FillGmBuffer(GM_ADDR addr, size_t size, uint8_t value)
 
 class GmBuffer {
 public:
-    explicit GmBuffer(size_t size) : addr_(reinterpret_cast<GM_ADDR>(AscendC::GmAlloc(size)))
-    {
-    }
+    explicit GmBuffer(size_t size) : addr_(reinterpret_cast<GM_ADDR>(AscendC::GmAlloc(size))) {}
 
     ~GmBuffer()
     {
@@ -152,10 +150,7 @@ public:
     GmBuffer(const GmBuffer&) = delete;
     GmBuffer& operator=(const GmBuffer&) = delete;
 
-    GM_ADDR Get() const
-    {
-        return addr_;
-    }
+    GM_ADDR Get() const { return addr_; }
 
 private:
     GM_ADDR addr_{nullptr};
@@ -314,9 +309,9 @@ void FillMxTiling(QBMMV3TilingData* tilingData, const MxCaseCfg& caseCfg)
 void RunGenData(const std::string& dataDir, int64_t M, int64_t N, int64_t K, const std::string& genArgs)
 {
     std::string cleanCmd = std::string("cd ") + dataDir + " && rm -rf *.bin";
-    std::string genDataCmd = std::string("cd ") + dataDir + " && python3 gen_data.py --m " +
-        std::to_string(M) + " --n " + std::to_string(N) + " --k " + std::to_string(K) +
-        (genArgs.empty() ? std::string("") : (std::string(" ") + genArgs));
+    std::string genDataCmd = std::string("cd ") + dataDir + " && python3 gen_data.py --m " + std::to_string(M) +
+                             " --n " + std::to_string(N) + " --k " + std::to_string(K) +
+                             (genArgs.empty() ? std::string("") : (std::string(" ") + genArgs));
     int genRet = system(cleanCmd.c_str());
     ASSERT_EQ(genRet, 0) << "Failed to clean old .bin files in qbmm_data";
     genRet = system(genDataCmd.c_str());
@@ -381,9 +376,8 @@ void RunCubeSmoke(Func kernelFunc, const CubeCaseCfg& cfg)
 
     AscendC::SetKernelMode(KernelMode::MIX_MODE);
 
-    const bool ok = KERNEL_RUN_KF(
-        kernelFunc, cfg.blockNum, x1GM.Get(), x2GM.Get(), pertokenScaleGM.Get(), scaleGM.Get(), biasGM.Get(),
-        yGM.Get(), tilingGM.Get());
+    const bool ok = KERNEL_RUN_KF(kernelFunc, cfg.blockNum, x1GM.Get(), x2GM.Get(), pertokenScaleGM.Get(),
+                                  scaleGM.Get(), biasGM.Get(), yGM.Get(), tilingGM.Get());
 
     ASSERT_TRUE(ok) << "Kernel execution failed: one or more cores exited with non-zero status";
 }
@@ -438,9 +432,8 @@ void RunMixSmoke(Func kernelFunc, const MixCaseCfg& cfg)
 
     AscendC::SetKernelMode(KernelMode::MIX_MODE);
 
-    const bool ok = KERNEL_RUN_KF(
-        kernelFunc, cfg.blockNum, x1GM.Get(), x2GM.Get(), pertokenScaleGM.Get(), scaleGM.Get(), biasGM.Get(),
-        yGM.Get(), tilingGM.Get());
+    const bool ok = KERNEL_RUN_KF(kernelFunc, cfg.blockNum, x1GM.Get(), x2GM.Get(), pertokenScaleGM.Get(),
+                                  scaleGM.Get(), biasGM.Get(), yGM.Get(), tilingGM.Get());
 
     ASSERT_TRUE(ok) << "Kernel execution failed: one or more cores exited with non-zero status";
 }
@@ -489,9 +482,8 @@ void RunMxL0CPingpongSmoke(const L0CPingpongCaseCfg& cfg)
     if constexpr (FullLoadMode == Blaze::Gemm::A_FULL_LOAD_MODE) {
         kernelFunc = qbmm_mx_l0c_pingpong_a_full_load_kernel_entry<AType, BType, half, float>;
     }
-    const bool ok = KERNEL_RUN_KF(
-        kernelFunc, cfg.blockNum, x1GM.Get(), x2GM.Get(), pertokenScaleGM.Get(), scaleGM.Get(), biasGM.Get(),
-        yGM.Get(), tilingGM.Get());
+    const bool ok = KERNEL_RUN_KF(kernelFunc, cfg.blockNum, x1GM.Get(), x2GM.Get(), pertokenScaleGM.Get(),
+                                  scaleGM.Get(), biasGM.Get(), yGM.Get(), tilingGM.Get());
 
     ASSERT_TRUE(ok) << "QBMM MX L0C ping-pong kernel execution failed";
 }
@@ -544,15 +536,14 @@ void RunMxStreamKSmoke(const StreamKCaseCfg& cfg)
     AscendC::SetKernelMode(KernelMode::MIX_MODE);
 
     auto kernelFunc = qbmm_streamk_kernel_entry<AType, BType, CType, BiasType>;
-    const bool ok = KERNEL_RUN_KF(
-        kernelFunc, cfg.blockNum, x1GM.Get(), x2GM.Get(), pertokenScaleGM.Get(), scaleGM.Get(), biasGM.Get(),
-        yGM.Get(), workspaceGM.Get(), tilingGM.Get());
+    const bool ok = KERNEL_RUN_KF(kernelFunc, cfg.blockNum, x1GM.Get(), x2GM.Get(), pertokenScaleGM.Get(),
+                                  scaleGM.Get(), biasGM.Get(), yGM.Get(), workspaceGM.Get(), tilingGM.Get());
 
     ASSERT_TRUE(ok) << "QBMM MX StreamK kernel execution failed";
 }
 
 template <typename AType, typename BType, typename CType, typename BiasType,
-    uint64_t FullLoadMode = Blaze::Gemm::NONE_FULL_LOAD_MODE>
+          uint64_t FullLoadMode = Blaze::Gemm::NONE_FULL_LOAD_MODE>
 void RunMxSmoke(const MxCaseCfg& cfg)
 {
     const size_t scaleKLen = GetMxScaleKLen(cfg.K);
@@ -595,15 +586,14 @@ void RunMxSmoke(const MxCaseCfg& cfg)
     if constexpr (FullLoadMode == Blaze::Gemm::A_FULL_LOAD_MODE) {
         kernelFunc = qbmm_mx_a_full_load_kernel_entry<AType, BType, CType, BiasType>;
     }
-    const bool ok = KERNEL_RUN_KF(
-        kernelFunc, cfg.blockNum, x1GM.Get(), x2GM.Get(), pertokenScaleGM.Get(), scaleGM.Get(), biasGM.Get(),
-        yGM.Get(), tilingGM.Get());
+    const bool ok = KERNEL_RUN_KF(kernelFunc, cfg.blockNum, x1GM.Get(), x2GM.Get(), pertokenScaleGM.Get(),
+                                  scaleGM.Get(), biasGM.Get(), yGM.Get(), tilingGM.Get());
 
     ASSERT_TRUE(ok) << "QBMM MX kernel execution failed";
 }
 
 template <typename AType, typename BType, typename CType, typename BiasType,
-    uint64_t FullLoadMode = Blaze::Gemm::NONE_FULL_LOAD_MODE>
+          uint64_t FullLoadMode = Blaze::Gemm::NONE_FULL_LOAD_MODE>
 void RunMxWithoutBatchSmoke(const MxCaseCfg& cfg)
 {
     const size_t scaleKLen = GetMxScaleKLen(cfg.K);
@@ -646,28 +636,24 @@ void RunMxWithoutBatchSmoke(const MxCaseCfg& cfg)
     if constexpr (FullLoadMode == Blaze::Gemm::A_FULL_LOAD_MODE) {
         kernelFunc = qbmm_mx_without_batch_a_full_load_kernel_entry<AType, BType, CType, BiasType>;
     }
-    const bool ok = KERNEL_RUN_KF(
-        kernelFunc, cfg.blockNum, x1GM.Get(), x2GM.Get(), pertokenScaleGM.Get(), scaleGM.Get(), biasGM.Get(),
-        yGM.Get(), tilingGM.Get());
+    const bool ok = KERNEL_RUN_KF(kernelFunc, cfg.blockNum, x1GM.Get(), x2GM.Get(), pertokenScaleGM.Get(),
+                                  scaleGM.Get(), biasGM.Get(), yGM.Get(), tilingGM.Get());
 
     ASSERT_TRUE(ok) << "QBMM MX without-batch kernel execution failed";
 }
 
 } // namespace
 
-
 TEST_F(QBMMV3Test, Test_INT8_A8W8_PERTENSOR)
 {
-    CubeCaseCfg cfg{16, 16, 16, 1, QM_DEFAULT, QM_PERTENSOR, false, GE_DT_FLOAT,
-        sizeof(int32_t), sizeof(half), ""};
+    CubeCaseCfg cfg{16, 16, 16, 1, QM_DEFAULT, QM_PERTENSOR, false, GE_DT_FLOAT, sizeof(int32_t), sizeof(half), ""};
     auto kernelFunc = qbmm_cube_kernel_entry<int8_t, int8_t, half, int32_t>;
     RunCubeSmoke(kernelFunc, cfg);
 }
 
 TEST_F(QBMMV3Test, Test_INT8_A8W8_PERTENSOR_AFullLoad)
 {
-    CubeCaseCfg cfg{16, 16, 16, 1, QM_DEFAULT, QM_PERTENSOR, false, GE_DT_FLOAT,
-        sizeof(int32_t), sizeof(half), ""};
+    CubeCaseCfg cfg{16, 16, 16, 1, QM_DEFAULT, QM_PERTENSOR, false, GE_DT_FLOAT, sizeof(int32_t), sizeof(half), ""};
     auto kernelFunc = qbmm_cube_a_full_load_kernel_entry<int8_t, int8_t, half, int32_t>;
     RunCubeSmoke(kernelFunc, cfg);
 }
@@ -711,8 +697,7 @@ TEST_F(QBMMV3Test, Test_MX_FP8_WithoutBatchDoubleBuffer_AFullLoad)
 {
     using MxType = fp8_e4m3fn_t;
     MxCaseCfg cfg{64, 128, 128, 1, 64, 128, 64, 64, 64, 2, false};
-    RunMxWithoutBatchSmoke<
-        MxType, MxType, float, float, Blaze::Gemm::A_FULL_LOAD_MODE>(cfg);
+    RunMxWithoutBatchSmoke<MxType, MxType, float, float, Blaze::Gemm::A_FULL_LOAD_MODE>(cfg);
 }
 
 TEST_F(QBMMV3Test, Test_MX_FP8_WithoutBatchTripleBuffer)
@@ -769,18 +754,34 @@ TEST_F(QBMMV3Test, Test_MX_FP8_StreamK)
 // 最典型：激活 per-token + 权重 per-channel，双向量 scale，half 输出。
 TEST_F(QBMMV3Test, Test_MIX_A8W8_PerChannel_PerToken)
 {
-    MixCaseCfg cfg{16, 16, 16, 1, QM_PERTOKEN, QM_PERCHANNEL, false, GE_DT_FLOAT,
-        sizeof(float), sizeof(half),
-        "--x1_mode pertoken --x2_mode perchannel --scale_dtype float32"};
+    MixCaseCfg cfg{16,
+                   16,
+                   16,
+                   1,
+                   QM_PERTOKEN,
+                   QM_PERCHANNEL,
+                   false,
+                   GE_DT_FLOAT,
+                   sizeof(float),
+                   sizeof(half),
+                   "--x1_mode pertoken --x2_mode perchannel --scale_dtype float32"};
     auto kernelFunc = qbmm_mix_kernel_entry<int8_t, int8_t, half, int32_t>;
     RunMixSmoke(kernelFunc, cfg);
 }
 
 TEST_F(QBMMV3Test, Test_MIX_A8W8_PerChannel_PerToken_AFullLoad)
 {
-    MixCaseCfg cfg{16, 16, 16, 1, QM_PERTOKEN, QM_PERCHANNEL, false, GE_DT_FLOAT,
-        sizeof(float), sizeof(half),
-        "--x1_mode pertoken --x2_mode perchannel --scale_dtype float32"};
+    MixCaseCfg cfg{16,
+                   16,
+                   16,
+                   1,
+                   QM_PERTOKEN,
+                   QM_PERCHANNEL,
+                   false,
+                   GE_DT_FLOAT,
+                   sizeof(float),
+                   sizeof(half),
+                   "--x1_mode pertoken --x2_mode perchannel --scale_dtype float32"};
     auto kernelFunc = qbmm_mix_a_full_load_kernel_entry<int8_t, int8_t, half, int32_t>;
     RunMixSmoke(kernelFunc, cfg);
 }
@@ -788,9 +789,17 @@ TEST_F(QBMMV3Test, Test_MIX_A8W8_PerChannel_PerToken_AFullLoad)
 // 仅权重 scale：激活 DEFAULT（epilogue 忽略 x1 scale）+ 权重 per-channel，half 输出。
 TEST_F(QBMMV3Test, Test_MIX_A8W8_PerChannel_NoPtScale)
 {
-    MixCaseCfg cfg{16, 16, 16, 1, QM_DEFAULT, QM_PERCHANNEL, false, GE_DT_FLOAT,
-        sizeof(float), sizeof(half),
-        "--x1_mode default --x2_mode perchannel --scale_dtype float32"};
+    MixCaseCfg cfg{16,
+                   16,
+                   16,
+                   1,
+                   QM_DEFAULT,
+                   QM_PERCHANNEL,
+                   false,
+                   GE_DT_FLOAT,
+                   sizeof(float),
+                   sizeof(half),
+                   "--x1_mode default --x2_mode perchannel --scale_dtype float32"};
     auto kernelFunc = qbmm_mix_kernel_entry<int8_t, int8_t, half, int32_t>;
     RunMixSmoke(kernelFunc, cfg);
 }
@@ -798,9 +807,17 @@ TEST_F(QBMMV3Test, Test_MIX_A8W8_PerChannel_NoPtScale)
 // 权重标量 scale：激活 per-token + 权重 per-tensor，half 输出。
 TEST_F(QBMMV3Test, Test_MIX_A8W8_PerTensor_PerToken)
 {
-    MixCaseCfg cfg{16, 16, 16, 1, QM_PERTOKEN, QM_PERTENSOR, false, GE_DT_FLOAT,
-        sizeof(float), sizeof(half),
-        "--x1_mode pertoken --x2_mode pertensor --scale_dtype float32"};
+    MixCaseCfg cfg{16,
+                   16,
+                   16,
+                   1,
+                   QM_PERTOKEN,
+                   QM_PERTENSOR,
+                   false,
+                   GE_DT_FLOAT,
+                   sizeof(float),
+                   sizeof(half),
+                   "--x1_mode pertoken --x2_mode pertensor --scale_dtype float32"};
     auto kernelFunc = qbmm_mix_kernel_entry<int8_t, int8_t, half, int32_t>;
     RunMixSmoke(kernelFunc, cfg);
 }
@@ -808,9 +825,17 @@ TEST_F(QBMMV3Test, Test_MIX_A8W8_PerTensor_PerToken)
 // 覆盖 bias 路径 + biasDtype=fp16：激活 per-token + 权重 per-channel + fp16 bias，half 输出。
 TEST_F(QBMMV3Test, Test_MIX_A8W8_WithBias_FP16)
 {
-    MixCaseCfg cfg{16, 16, 16, 1, QM_PERTOKEN, QM_PERCHANNEL, true, GE_DT_FLOAT16,
-        sizeof(half), sizeof(half),
-        "--x1_mode pertoken --x2_mode perchannel --scale_dtype float32 --bias --bias_dtype float16"};
+    MixCaseCfg cfg{16,
+                   16,
+                   16,
+                   1,
+                   QM_PERTOKEN,
+                   QM_PERCHANNEL,
+                   true,
+                   GE_DT_FLOAT16,
+                   sizeof(half),
+                   sizeof(half),
+                   "--x1_mode pertoken --x2_mode perchannel --scale_dtype float32 --bias --bias_dtype float16"};
     auto kernelFunc = qbmm_mix_kernel_entry<int8_t, int8_t, half, int32_t>;
     RunMixSmoke(kernelFunc, cfg);
 }
@@ -818,9 +843,17 @@ TEST_F(QBMMV3Test, Test_MIX_A8W8_WithBias_FP16)
 // 覆盖 OutType=bf16：激活 per-token + 权重 per-channel，bfloat16 输出。
 TEST_F(QBMMV3Test, Test_MIX_A8W8_Output_BF16)
 {
-    MixCaseCfg cfg{16, 16, 16, 1, QM_PERTOKEN, QM_PERCHANNEL, false, GE_DT_FLOAT,
-        sizeof(float), sizeof(bfloat16_t),
-        "--x1_mode pertoken --x2_mode perchannel --scale_dtype float32"};
+    MixCaseCfg cfg{16,
+                   16,
+                   16,
+                   1,
+                   QM_PERTOKEN,
+                   QM_PERCHANNEL,
+                   false,
+                   GE_DT_FLOAT,
+                   sizeof(float),
+                   sizeof(bfloat16_t),
+                   "--x1_mode pertoken --x2_mode perchannel --scale_dtype float32"};
     auto kernelFunc = qbmm_mix_kernel_entry<int8_t, int8_t, bfloat16_t, int32_t>;
     RunMixSmoke(kernelFunc, cfg);
 }
@@ -828,18 +861,178 @@ TEST_F(QBMMV3Test, Test_MIX_A8W8_Output_BF16)
 // 单 batch 特化：走 GemmUniversal without_batch，激活 per-token + 权重 per-channel，half 输出。
 TEST_F(QBMMV3Test, Test_MIX_A8W8_WithoutBatch)
 {
-    MixCaseCfg cfg{16, 16, 16, 1, QM_PERTOKEN, QM_PERCHANNEL, false, GE_DT_FLOAT,
-        sizeof(float), sizeof(half),
-        "--x1_mode pertoken --x2_mode perchannel --scale_dtype float32"};
+    MixCaseCfg cfg{16,
+                   16,
+                   16,
+                   1,
+                   QM_PERTOKEN,
+                   QM_PERCHANNEL,
+                   false,
+                   GE_DT_FLOAT,
+                   sizeof(float),
+                   sizeof(half),
+                   "--x1_mode pertoken --x2_mode perchannel --scale_dtype float32"};
     auto kernelFunc = qbmm_mix_without_batch_kernel_entry<int8_t, int8_t, half, int32_t>;
     RunMixSmoke(kernelFunc, cfg);
 }
 
 TEST_F(QBMMV3Test, Test_MIX_A8W8_WithoutBatch_AFullLoad)
 {
-    MixCaseCfg cfg{16, 16, 16, 1, QM_PERTOKEN, QM_PERCHANNEL, false, GE_DT_FLOAT,
-        sizeof(float), sizeof(half),
-        "--x1_mode pertoken --x2_mode perchannel --scale_dtype float32"};
+    MixCaseCfg cfg{16,
+                   16,
+                   16,
+                   1,
+                   QM_PERTOKEN,
+                   QM_PERCHANNEL,
+                   false,
+                   GE_DT_FLOAT,
+                   sizeof(float),
+                   sizeof(half),
+                   "--x1_mode pertoken --x2_mode perchannel --scale_dtype float32"};
     auto kernelFunc = qbmm_mix_without_batch_a_full_load_kernel_entry<int8_t, int8_t, half, int32_t>;
     RunMixSmoke(kernelFunc, cfg);
+}
+
+namespace {
+
+using ND = asc::te::nd_ext_layout_ptn;
+using DN = asc::te::dn_ext_layout_ptn;
+using ProblemShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
+
+template <class Schedule, class AType, class BType, class OutType, class ScaleType, class BiasType,
+          class EpilogueBiasType = BiasType, class BiasLayout = ND, class MmadLayoutC = ND>
+void CheckMixContract()
+{
+    using Policy = Blaze::Gemm::MatmulWithScaleMix<0, false, Schedule>;
+    // The MMAD CType and tuple scale are placeholders in MIX. Do not constrain them
+    // to the epilogue's actual OutType and X2ScaleType.
+    using Mmad = Blaze::Gemm::Block::BlockMmad<Policy, AType, ND, AscendC::Std::tuple<BType, uint64_t>, ND, int32_t,
+                                               MmadLayoutC, BiasType, BiasLayout>;
+    using Epilogue = Blaze::Epilogue::Block::BlockEpilogueDequant<OutType, EpilogueBiasType, ScaleType, float,
+                                                                  typename Mmad::L0CType>;
+    using Scheduler = Blaze::Gemm::Block::BlockSchedulerQuantBatchMatmulV3<ProblemShape, 0, ND, ND, AType>;
+    using Kernel = Blaze::Gemm::Kernel::GemmUniversal<ProblemShape, Mmad, Epilogue, Scheduler>;
+    // sizeof instantiates the complete class and therefore its static_asserts.
+    EXPECT_GT(sizeof(Kernel), 0U);
+}
+
+template <class Schedule>
+void CheckMixContracts()
+{
+    CheckMixContract<Schedule, int8_t, int8_t, bfloat16_t, bfloat16_t, int32_t>();
+    CheckMixContract<Schedule, int8_t, int8_t, half, float, int32_t>();
+    CheckMixContract<Schedule, fp8_e4m3fn_t, fp8_e5m2_t, float, float, float>();
+    CheckMixContract<Schedule, hifloat8_t, hifloat8_t, float, float, float>();
+}
+
+template <class Schedule>
+void CheckMixUnconstrainedParameters()
+{
+    // MIX does not use MMAD BiasType. The epilogue dispatches bias by runtime dtype.
+    CheckMixContract<Schedule, int8_t, int8_t, half, float, float, int32_t>();
+    CheckMixContract<Schedule, int8_t, int8_t, half, float, int32_t, float, DN>();
+    // The BF16 x2Scale load does not depend on the input A/B dtype family.
+    CheckMixContract<Schedule, fp8_e4m3fn_t, fp8_e5m2_t, float, bfloat16_t, float>();
+}
+
+template <class Schedule, class LayoutC, class AType, class BType, class BiasLayout = ND>
+void CheckMxContract()
+{
+    using Policy = Blaze::Gemm::MatmulWithScaleMx<0, false, Schedule>;
+    using Mmad = Blaze::Gemm::Block::BlockMmad<Policy, AType, ND, BType, ND, half, LayoutC, float, BiasLayout>;
+    using Scheduler = Blaze::Gemm::Block::BlockSchedulerQuantBatchMatmulV3<ProblemShape, 0, ND, ND, AType>;
+    using Kernel = Blaze::Gemm::Kernel::GemmUniversal<ProblemShape, Mmad, Blaze::Gemm::Block::BlockEpilogueEmpty,
+                                                      Scheduler>;
+    EXPECT_GT(sizeof(Kernel), 0U);
+}
+
+template <class Schedule>
+void CheckMxContracts()
+{
+    CheckMxContract<Schedule, ND, fp8_e4m3fn_t, fp8_e5m2_t>();
+    CheckMxContract<Schedule, DN, fp8_e4m3fn_t, fp8_e5m2_t>();
+    CheckMxContract<Schedule, ND, fp4x2_e2m1_t, fp4x2_e1m2_t>();
+    CheckMxContract<Schedule, DN, fp4x2_e2m1_t, fp4x2_e1m2_t>();
+}
+
+template <class LayoutC, class BiasLayout = ND>
+void CheckMxStreamKContract()
+{
+    using Policy = Blaze::Gemm::MatmulWithScaleMx<0, false, Blaze::Gemm::KernelQbmmMultiBlockStreamK>;
+    using EpiloguePolicy = Blaze::Gemm::MatmulMultiBlockWithStreamK<>;
+    using Mmad = Blaze::Gemm::Block::BlockMmad<Policy, fp8_e4m3fn_t, ND, fp8_e5m2_t, ND, half, LayoutC, float,
+                                               BiasLayout>;
+    using Epilogue = QBMMUT::BlockEpilogueStreamKForUt<float, half, EpiloguePolicy>;
+    using Scheduler = Blaze::Gemm::Block::BlockSchedulerMatmulStreamK<ProblemShape>;
+    using Kernel = Blaze::Gemm::Kernel::GemmUniversal<ProblemShape, Mmad, Epilogue, Scheduler>;
+    EXPECT_GT(sizeof(Kernel), 0U);
+}
+
+template <class AType, class BType, class MmadCType, class MmadLayoutC, class OutType>
+void CheckMxActivationContract()
+{
+    using Policy = Blaze::Gemm::MatmulWithScaleMx<0, false, Blaze::Gemm::KernelMmadWithScaleMxActivationQuant, true>;
+    using Mmad = Blaze::Gemm::Block::BlockMmad<Policy, AType, ND, BType, ND, MmadCType, MmadLayoutC, float, ND>;
+    using Epilogue = Blaze::Epilogue::Block::BlockEpilogueGeluMxQuant<OutType, float>;
+    using Scheduler = Blaze::Gemm::Block::BlockSchedulerQuantBatchMatmulV3<ProblemShape, 0, ND, ND, AType>;
+    using Kernel = Blaze::Gemm::Kernel::GemmUniversal<ProblemShape, Mmad, Epilogue, Scheduler>;
+    // Check only template compatibility, not device execution or cross-width batch offsets.
+    EXPECT_GT(sizeof(Kernel), 0U);
+}
+
+} // namespace
+
+TEST(QBMMTemplateContractTest, MixPreservesPlaceholderTypes)
+{
+    CheckMixContracts<Blaze::Gemm::KernelMmadWithScaleMix>();
+    CheckMixContracts<Blaze::Gemm::KernelMmadWithScaleMixWithoutBatch>();
+}
+
+TEST(QBMMTemplateContractTest, MxPreservesNdAndDnOutput)
+{
+    CheckMxContracts<Blaze::Gemm::KernelMmadWithScaleMx>();
+    CheckMxContracts<Blaze::Gemm::KernelMmadWithScaleMxWithoutBatch>();
+    CheckMxContracts<Blaze::Gemm::KernelMmadWithScaleMxMix>();
+}
+
+TEST(QBMMTemplateContractTest, MxStreamKPreservesNdAndDnOutput)
+{
+    CheckMxStreamKContract<ND>();
+    CheckMxStreamKContract<DN>();
+}
+
+TEST(QBMMTemplateContractTest, MixPreservesBiasAndScaleParameters)
+{
+    CheckMixUnconstrainedParameters<Blaze::Gemm::KernelMmadWithScaleMix>();
+    CheckMixUnconstrainedParameters<Blaze::Gemm::KernelMmadWithScaleMixWithoutBatch>();
+}
+
+TEST(QBMMTemplateContractTest, MxPreservesBiasLayoutTags)
+{
+    // Existing wrappers may pass LayoutC as LayoutBias; the actual bias view is ND.
+    CheckMxContract<Blaze::Gemm::KernelMmadWithScaleMx, DN, fp8_e4m3fn_t, fp8_e5m2_t, DN>();
+    CheckMxContract<Blaze::Gemm::KernelMmadWithScaleMxWithoutBatch, DN, fp8_e4m3fn_t, fp8_e5m2_t, DN>();
+    CheckMxContract<Blaze::Gemm::KernelMmadWithScaleMxMix, DN, fp8_e4m3fn_t, fp8_e5m2_t, DN>();
+    CheckMxStreamKContract<DN, DN>();
+}
+
+TEST(QBMMTemplateContractTest, MixPreservesPlaceholderOutputLayout)
+{
+    // The LayoutC tag does not select the actual ND UB/GM output layout.
+    CheckMixContract<Blaze::Gemm::KernelMmadWithScaleMix, int8_t, int8_t, half, float, int32_t, int32_t, ND, DN>();
+    CheckMixContract<Blaze::Gemm::KernelMmadWithScaleMixWithoutBatch, int8_t, int8_t, half, float, int32_t, int32_t, ND,
+                     DN>();
+}
+
+TEST(QBMMTemplateContractTest, MxActivationPreservesNominalOutputParameters)
+{
+    CheckMxActivationContract<fp8_e4m3fn_t, fp8_e5m2_t, float, DN, fp8_e4m3fn_t>();
+    CheckMxActivationContract<fp8_e4m3fn_t, fp8_e5m2_t, half, ND, fp8_e4m3fn_t>();
+    CheckMxActivationContract<fp8_e4m3fn_t, fp8_e5m2_t, half, DN, fp8_e4m3fn_t>();
+}
+
+TEST(QBMMTemplateContractTest, MxActivationPreservesIndependentOutputWidth)
+{
+    CheckMxActivationContract<fp8_e4m3fn_t, fp8_e5m2_t, float, ND, fp4x2_e2m1_t>();
+    CheckMxActivationContract<fp4x2_e2m1_t, fp4x2_e1m2_t, float, ND, fp8_e4m3fn_t>();
 }
