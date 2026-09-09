@@ -328,8 +328,8 @@ private:
             l1BufferBiasOffset_[bufferId] = l1BufferScaleBOffset_[bufferId] + scaleBL1OneBuffer_;
         }
         if (l1BufferStage_ == TRIPLE_BUFFER_COUNT) {
-            l1BufferAOffset_[2] = l1BufferBiasOffset_[0] + biasL1OneBuffer_;
-            l1BufferBOffset_[2] = l1BufferBiasOffset_[1] + biasL1OneBuffer_;
+            l1BufferAOffset_[2] = l1BufferBiasOffset_[0] + biasL1OneBuffer_; // 2为l1BufferAOffset_数组的最后一位下标
+            l1BufferBOffset_[2] = l1BufferBiasOffset_[1] + biasL1OneBuffer_; // 2为l1BufferBOffset_数组的最后一位下标
         }
     }
 
