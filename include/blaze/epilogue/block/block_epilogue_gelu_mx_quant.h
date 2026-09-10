@@ -347,17 +347,17 @@ __aicore__ inline void BlockEpilogueGeluMxQuant<DataTypeOut_, DataTypeIn_>::Comp
         AscendC::Reg::MaskReg Mask = AscendC::Reg::CreateMask<uint16_t, AscendC::Reg::MaskPattern::ALL>();
         AscendC::Reg::UnalignReg u1;
         for (uint16_t i = 0; i < loopNum; i++) {
-            AscendC::Reg::DataCopy<bfloat16_t, AscendC::Reg::PostLiteral::POST_MODE_UPDATE,
-                                   AscendC::Reg::LoadDist::DIST_DINTLV_B16>(vdExp0, vdExp1, srcAddr,
-                                                                            vlForHalfNumber_ * 2);
+            AscendC::Reg::LoadAlign<bfloat16_t, AscendC::Reg::PostLiteral::POST_MODE_UPDATE,
+                                    AscendC::Reg::LoadDist::DIST_DINTLV_B16>(vdExp0, vdExp1, srcAddr,
+                                                                             vlForHalfNumber_ * 2);
             AscendC::Reg::And(vdExpExtract0, (AscendC::Reg::RegTensor<uint16_t>&)vdExp0, expMaskBF16, Mask);
             AscendC::Reg::And(vdExpExtract1, (AscendC::Reg::RegTensor<uint16_t>&)vdExp1, expMaskBF16, Mask);
             AscendC::Reg::Max(vdMaxExp, vdExpExtract0, vdExpExtract1, Mask);
             AscendC::Reg::ReduceMaxWithDataBlock(vdMaxExp, vdMaxExp, Mask);
-            AscendC::Reg::DataCopyUnAlign<uint16_t, AscendC::Reg::PostLiteral::POST_MODE_UPDATE>(
-                maxExpAddr, vdMaxExp, u1, elementAfterReduce_);
+            AscendC::Reg::StoreUnAlign<uint16_t, AscendC::Reg::PostLiteral::POST_MODE_UPDATE>(maxExpAddr, vdMaxExp, u1,
+                                                                                              elementAfterReduce_);
         }
-        AscendC::Reg::DataCopyUnAlignPost(maxExpAddr, u1, 0);
+        AscendC::Reg::StoreUnAlignPost(maxExpAddr, u1, 0);
     }
     return;
 }
@@ -378,9 +378,9 @@ __aicore__ inline void BlockEpilogueGeluMxQuant<DataTypeOut_, DataTypeIn_>::Comp
         AscendC::Reg::MaskReg Mask = AscendC::Reg::CreateMask<uint16_t, AscendC::Reg::MaskPattern::ALL>();
         AscendC::Reg::UnalignReg u1;
         for (uint16_t i = 0; i < loopNum; i++) {
-            AscendC::Reg::DataCopy<bfloat16_t, AscendC::Reg::PostLiteral::POST_MODE_UPDATE,
-                                   AscendC::Reg::LoadDist::DIST_DINTLV_B16>(vdExp0, vdExp1, srcAddr,
-                                                                            vlForHalfNumber_ * 2);
+            AscendC::Reg::LoadAlign<bfloat16_t, AscendC::Reg::PostLiteral::POST_MODE_UPDATE,
+                                    AscendC::Reg::LoadDist::DIST_DINTLV_B16>(vdExp0, vdExp1, srcAddr,
+                                                                             vlForHalfNumber_ * 2);
             AscendC::Reg::And((AscendC::Reg::RegTensor<uint16_t>&)vdExp0, (AscendC::Reg::RegTensor<uint16_t>&)vdExp0,
                               absMask16Bit, Mask);
             AscendC::Reg::And((AscendC::Reg::RegTensor<uint16_t>&)vdExp1, (AscendC::Reg::RegTensor<uint16_t>&)vdExp1,
@@ -388,10 +388,10 @@ __aicore__ inline void BlockEpilogueGeluMxQuant<DataTypeOut_, DataTypeIn_>::Comp
             AscendC::Reg::Max(vdMaxExp, (AscendC::Reg::RegTensor<uint16_t>&)vdExp0,
                               (AscendC::Reg::RegTensor<uint16_t>&)vdExp1, Mask);
             AscendC::Reg::ReduceMaxWithDataBlock(vdMaxExp, vdMaxExp, Mask);
-            AscendC::Reg::DataCopyUnAlign<uint16_t, AscendC::Reg::PostLiteral::POST_MODE_UPDATE>(
-                maxExpAddr, vdMaxExp, u1, elementAfterReduce_);
+            AscendC::Reg::StoreUnAlign<uint16_t, AscendC::Reg::PostLiteral::POST_MODE_UPDATE>(maxExpAddr, vdMaxExp, u1,
+                                                                                              elementAfterReduce_);
         }
-        AscendC::Reg::DataCopyUnAlignPost(maxExpAddr, u1, 0);
+        AscendC::Reg::StoreUnAlignPost(maxExpAddr, u1, 0);
     }
     return;
 }
@@ -517,8 +517,8 @@ __aicore__ inline void BlockEpilogueGeluMxQuant<DataTypeOut_, DataTypeIn_>::Comp
         AscendC::Reg::Duplicate(specialExpRegTensor, SPECIAL_EXP_THRESHOLD);
         for (uint16_t i = 0; i < loopNumScale; i++) {
             maskScale = AscendC::Reg::UpdateMask<uint16_t>(totalScaleInUB);
-            AscendC::Reg::DataCopy<uint16_t, AscendC::Reg::PostLiteral::POST_MODE_UPDATE>(vdMaxExp, maxExpAddr,
-                                                                                          vlForHalfNumber_);
+            AscendC::Reg::LoadAlign<uint16_t, AscendC::Reg::PostLiteral::POST_MODE_UPDATE>(vdMaxExp, maxExpAddr,
+                                                                                           vlForHalfNumber_);
             AscendC::Reg::Compare<uint16_t, AscendC::CMPMODE::NE>(cmpResult, vdMaxExp, expMask,
                                                                   maskScale); // INF\nAN
             AscendC::Reg::Compare<uint16_t, AscendC::CMPMODE::NE>(zeroMask, vdMaxExp, zeroRegTensor, maskScale);
@@ -529,9 +529,9 @@ __aicore__ inline void BlockEpilogueGeluMxQuant<DataTypeOut_, DataTypeIn_>::Comp
             AscendC::Reg::Select<uint16_t>(scaleValue, scaleValue, fp8NanRegTensor, cmpResult);
             AscendC::Reg::Select<uint16_t>(scaleValue, scaleValue, zeroRegTensor, zeroMask);
 
-            AscendC::Reg::DataCopy<uint16_t, AscendC::Reg::PostLiteral::POST_MODE_UPDATE,
-                                   AscendC::Reg::StoreDist::DIST_PACK_B16>(mxScaleLocalAddr, scaleValue,
-                                                                           vlForHalfNumber_ >> 1, maskScale);
+            AscendC::Reg::StoreAlign<uint16_t, AscendC::Reg::PostLiteral::POST_MODE_UPDATE,
+                                     AscendC::Reg::StoreDist::DIST_PACK_B16>(mxScaleLocalAddr, scaleValue,
+                                                                             vlForHalfNumber_ >> 1, maskScale);
 
             AscendC::Reg::Compare<uint16_t, AscendC::CMPMODE::EQ>(specialDataMask, sharedExp, scaleBias, maskScale);
             AscendC::Reg::Sub(halfScale, scaleBias, sharedExp, maskScale);
@@ -539,8 +539,8 @@ __aicore__ inline void BlockEpilogueGeluMxQuant<DataTypeOut_, DataTypeIn_>::Comp
             AscendC::Reg::Select<uint16_t>(halfScale, halfScale, zeroRegTensor, zeroMask);
             AscendC::Reg::Select<uint16_t>(halfScale, specialExpRegTensor, halfScale, specialDataMask);
 
-            AscendC::Reg::DataCopy<uint16_t, AscendC::Reg::PostLiteral::POST_MODE_UPDATE>(halfScaleLocalAddr, halfScale,
-                                                                                          vlForHalfNumber_, maskScale);
+            AscendC::Reg::StoreAlign<uint16_t, AscendC::Reg::PostLiteral::POST_MODE_UPDATE>(
+                halfScaleLocalAddr, halfScale, vlForHalfNumber_, maskScale);
         }
     }
     return;
@@ -611,8 +611,8 @@ __aicore__ inline void BlockEpilogueGeluMxQuant<DataTypeOut_, DataTypeIn_>::Comp
 
         for (uint16_t i = 0; i < loopNumScale; i++) {
             preMaskScale = AscendC::Reg::UpdateMask<uint16_t>(totalScaleInUB);
-            AscendC::Reg::DataCopy<uint16_t, AscendC::Reg::PostLiteral::POST_MODE_UPDATE>(xMaxExp, maxExpAddr,
-                                                                                          vlForHalfNumber_);
+            AscendC::Reg::LoadAlign<uint16_t, AscendC::Reg::PostLiteral::POST_MODE_UPDATE>(xMaxExp, maxExpAddr,
+                                                                                           vlForHalfNumber_);
 
             AscendC::Reg::And(xMaxExpOnly, xMaxExp, expMask, preMaskScale); // 提取指数位
             AscendC::Reg::Compare<uint16_t, AscendC::CMPMODE::NE>(cmpResult, xMaxExpOnly, expMask,
@@ -627,9 +627,9 @@ __aicore__ inline void BlockEpilogueGeluMxQuant<DataTypeOut_, DataTypeIn_>::Comp
 
             AscendC::Reg::ShiftRights(scaleValue, sharedExp, SHR_NUM_FOR_BF16, preMaskScale);
             AscendC::Reg::Select<uint16_t>(scaleValue, scaleValue, fp8NanU16, cmpResult);
-            AscendC::Reg::DataCopy<uint16_t, AscendC::Reg::PostLiteral::POST_MODE_UPDATE,
-                                   AscendC::Reg::StoreDist::DIST_PACK_B16>(mxScaleLocalAddr, scaleValue,
-                                                                           vlForHalfNumber_ >> 1, preMaskScale);
+            AscendC::Reg::StoreAlign<uint16_t, AscendC::Reg::PostLiteral::POST_MODE_UPDATE,
+                                     AscendC::Reg::StoreDist::DIST_PACK_B16>(mxScaleLocalAddr, scaleValue,
+                                                                             vlForHalfNumber_ >> 1, preMaskScale);
 
             AscendC::Reg::Compare<uint16_t, AscendC::CMPMODE::NE>(zeroMask, sharedExp, zeroU16, preMaskScale);
             AscendC::Reg::Compare<uint16_t, AscendC::CMPMODE::EQ>(specialDataMask, sharedExp, scaleBias, preMaskScale);
@@ -638,7 +638,7 @@ __aicore__ inline void BlockEpilogueGeluMxQuant<DataTypeOut_, DataTypeIn_>::Comp
             AscendC::Reg::Select<uint16_t>(halfScale, halfScale, zeroU16, zeroMask);
             AscendC::Reg::Select<uint16_t>(halfScale, specialExpU16, halfScale, specialDataMask);
 
-            AscendC::Reg::DataCopy<uint16_t, AscendC::Reg::PostLiteral::POST_MODE_UPDATE>(
+            AscendC::Reg::StoreAlign<uint16_t, AscendC::Reg::PostLiteral::POST_MODE_UPDATE>(
                 halfScaleLocalAddr, halfScale, vlForHalfNumber_, preMaskScale);
         }
     }
@@ -677,13 +677,13 @@ __aicore__ inline void BlockEpilogueGeluMxQuant<DataTypeOut_, DataTypeIn_>::Comp
             dataMask2 = AscendC::Reg::UpdateMask<T>(totalCountInUB);
             dataMask3 = AscendC::Reg::UpdateMask<T>(totalCountInUB2);
             dataMask4 = AscendC::Reg::UpdateMask<T>(totalCountInUB2);
-            AscendC::Reg::DataCopy<T, AscendC::Reg::PostLiteral::POST_MODE_UPDATE,
-                                   AscendC::Reg::LoadDist::DIST_DINTLV_B16>(
+            AscendC::Reg::LoadAlign<T, AscendC::Reg::PostLiteral::POST_MODE_UPDATE,
+                                    AscendC::Reg::LoadDist::DIST_DINTLV_B16>(
                 vdExp0, vdExp1, srcAddr,
                 vlForHalfNumber_ * 2); // copy two chunks from srcAddr to regbase
-            AscendC::Reg::DataCopy<uint16_t, AscendC::Reg::PostLiteral::POST_MODE_UPDATE,
-                                   AscendC::Reg::LoadDist::DIST_E2B_B16>(halfScaleForMul, halfScaleLocalAddr,
-                                                                         elementAfterReduce_);
+            AscendC::Reg::LoadAlign<uint16_t, AscendC::Reg::PostLiteral::POST_MODE_UPDATE,
+                                    AscendC::Reg::LoadDist::DIST_E2B_B16>(halfScaleForMul, halfScaleLocalAddr,
+                                                                          elementAfterReduce_);
 
             AscendC::Reg::Mul(vdExp0, vdExp0, (AscendC::Reg::RegTensor<T>&)halfScaleForMul, dataMask1);
             AscendC::Reg::Mul(vdExp1, vdExp1, (AscendC::Reg::RegTensor<T>&)halfScaleForMul, dataMask1);
@@ -698,17 +698,17 @@ __aicore__ inline void BlockEpilogueGeluMxQuant<DataTypeOut_, DataTypeIn_>::Comp
             AscendC::Reg::Interleave(vdExp1FP32Zero, vdExp1FP32One, vdExp1FP32Zero, vdExp1FP32One);
             AscendC::Reg::Cast<DataTypeOut, float, castTrait32to8>(vdExp1FP8Zero, vdExp1FP32Zero, dataMask4);
             AscendC::Reg::Cast<DataTypeOut, float, castTrait32to8>(vdExp1FP8One, vdExp1FP32One, dataMask4);
-            AscendC::Reg::DataCopy<int8_t, AscendC::Reg::PostLiteral::POST_MODE_UPDATE,
-                                   AscendC::Reg::StoreDist::DIST_PACK4_B32>(
+            AscendC::Reg::StoreAlign<int8_t, AscendC::Reg::PostLiteral::POST_MODE_UPDATE,
+                                     AscendC::Reg::StoreDist::DIST_PACK4_B32>(
                 outLocalAddr, (AscendC::Reg::RegTensor<int8_t>&)vdExp0FP8Zero, OUT_ELE_NUM_ONE_BLK, dataMask3);
-            AscendC::Reg::DataCopy<int8_t, AscendC::Reg::PostLiteral::POST_MODE_UPDATE,
-                                   AscendC::Reg::StoreDist::DIST_PACK4_B32>(
+            AscendC::Reg::StoreAlign<int8_t, AscendC::Reg::PostLiteral::POST_MODE_UPDATE,
+                                     AscendC::Reg::StoreDist::DIST_PACK4_B32>(
                 outLocalAddr, (AscendC::Reg::RegTensor<int8_t>&)vdExp0FP8One, OUT_ELE_NUM_ONE_BLK, dataMask3);
-            AscendC::Reg::DataCopy<int8_t, AscendC::Reg::PostLiteral::POST_MODE_UPDATE,
-                                   AscendC::Reg::StoreDist::DIST_PACK4_B32>(
+            AscendC::Reg::StoreAlign<int8_t, AscendC::Reg::PostLiteral::POST_MODE_UPDATE,
+                                     AscendC::Reg::StoreDist::DIST_PACK4_B32>(
                 outLocalAddr, (AscendC::Reg::RegTensor<int8_t>&)vdExp1FP8Zero, OUT_ELE_NUM_ONE_BLK, dataMask4);
-            AscendC::Reg::DataCopy<int8_t, AscendC::Reg::PostLiteral::POST_MODE_UPDATE,
-                                   AscendC::Reg::StoreDist::DIST_PACK4_B32>(
+            AscendC::Reg::StoreAlign<int8_t, AscendC::Reg::PostLiteral::POST_MODE_UPDATE,
+                                     AscendC::Reg::StoreDist::DIST_PACK4_B32>(
                 outLocalAddr, (AscendC::Reg::RegTensor<int8_t>&)vdExp1FP8One, OUT_ELE_NUM_ONE_BLK, dataMask4);
         }
     }
@@ -745,12 +745,12 @@ __aicore__ inline void BlockEpilogueGeluMxQuant<DataTypeOut_, DataTypeIn_>::Comp
         for (uint16_t i = 0; i < loopNum; i++) {
             dataMask1 = AscendC::Reg::UpdateMask<T>(totalCountInUB);
             dataMask2 = AscendC::Reg::UpdateMask<T>(totalCountInUB);
-            AscendC::Reg::DataCopy<T, AscendC::Reg::PostLiteral::POST_MODE_UPDATE,
-                                   AscendC::Reg::LoadDist::DIST_DINTLV_B16>(vdExp0, vdExp1, srcAddr,
-                                                                            vlForHalfNumber_ * 2);
-            AscendC::Reg::DataCopy<uint16_t, AscendC::Reg::PostLiteral::POST_MODE_UPDATE,
-                                   AscendC::Reg::LoadDist::DIST_E2B_B16>(halfScaleForMul, halfScaleLocalAddr,
-                                                                         elementAfterReduce_);
+            AscendC::Reg::LoadAlign<T, AscendC::Reg::PostLiteral::POST_MODE_UPDATE,
+                                    AscendC::Reg::LoadDist::DIST_DINTLV_B16>(vdExp0, vdExp1, srcAddr,
+                                                                             vlForHalfNumber_ * 2);
+            AscendC::Reg::LoadAlign<uint16_t, AscendC::Reg::PostLiteral::POST_MODE_UPDATE,
+                                    AscendC::Reg::LoadDist::DIST_E2B_B16>(halfScaleForMul, halfScaleLocalAddr,
+                                                                          elementAfterReduce_);
 
             AscendC::Reg::Mul(vdExp0, vdExp0, (AscendC::Reg::RegTensor<T>&)halfScaleForMul, dataMask1);
             AscendC::Reg::Mul(vdExp1, vdExp1, (AscendC::Reg::RegTensor<T>&)halfScaleForMul, dataMask1);
@@ -758,11 +758,11 @@ __aicore__ inline void BlockEpilogueGeluMxQuant<DataTypeOut_, DataTypeIn_>::Comp
             AscendC::Reg::Cast<U, T, castTrait>(vdExp0FP4, vdExp0, dataMask1);
             AscendC::Reg::Cast<U, T, castTrait>(vdExp1FP4, vdExp1, dataMask2);
 
-            AscendC::Reg::DataCopy<int8_t, AscendC::Reg::PostLiteral::POST_MODE_UPDATE,
-                                   AscendC::Reg::StoreDist::DIST_PACK4_B32>(
+            AscendC::Reg::StoreAlign<int8_t, AscendC::Reg::PostLiteral::POST_MODE_UPDATE,
+                                     AscendC::Reg::StoreDist::DIST_PACK4_B32>(
                 outLocalAddr, (AscendC::Reg::RegTensor<int8_t>&)vdExp0FP4, OUT_ELE_NUM_ONE_BLK, dataMask1);
-            AscendC::Reg::DataCopy<int8_t, AscendC::Reg::PostLiteral::POST_MODE_UPDATE,
-                                   AscendC::Reg::StoreDist::DIST_PACK4_B32>(
+            AscendC::Reg::StoreAlign<int8_t, AscendC::Reg::PostLiteral::POST_MODE_UPDATE,
+                                     AscendC::Reg::StoreDist::DIST_PACK4_B32>(
                 outLocalAddr, (AscendC::Reg::RegTensor<int8_t>&)vdExp1FP4, OUT_ELE_NUM_ONE_BLK, dataMask2);
         }
     }
@@ -785,8 +785,8 @@ __aicore__ inline void BlockEpilogueGeluMxQuant<DataTypeOut_, DataTypeIn_>::VFDo
             uint32_t zeroOffset = 0;
             while (remainingElements > 0) {
                 AscendC::Reg::MaskReg zeroMask = AscendC::Reg::UpdateMask<bfloat16_t>(remainingElements);
-                AscendC::Reg::DataCopy<bfloat16_t, AscendC::Reg::StoreDist::DIST_NORM_B16>(geluResAddr + zeroOffset,
-                                                                                           zeroReg, zeroMask);
+                AscendC::Reg::StoreAlign<bfloat16_t, AscendC::Reg::StoreDist::DIST_NORM_B16>(geluResAddr + zeroOffset,
+                                                                                             zeroReg, zeroMask);
                 zeroOffset += bf16Vl;
             }
         }
@@ -884,7 +884,7 @@ __aicore__ inline void BlockEpilogueGeluMxQuant<DataTypeOut_, DataTypeIn_>::VFDo
  * 2. 计算目标地址行间距: singleNAligned = Align32(singleN_ / 2)
  * 3. 对每一行数据:
  *    a. 计算有效元素数量: elemNum = singleN_ / 2 (FP4打包后的字节数)
- *    b. 从源地址加载数据到寄存器(使用DataCopyUnAlign支持非对齐加载)
+ *    b. 从源地址加载数据到寄存器(使用LoadUnAlign支持非对齐加载)
  *    c. 将数据存储到目标地址，使用DIST_NORM_B8模式进行字节级存储
  *
  * @param mSize 处理的行数
@@ -908,10 +908,10 @@ __aicore__ inline void BlockEpilogueGeluMxQuant<DataTypeOut_, DataTypeIn_>::Tran
             AscendC::Reg::RegTensor<int8_t> vreg0;
             AscendC::Reg::UnalignReg u0, u1;
             auto srcUb = quantOutputInUbAddr + mIdx * tailLineStride;
-            AscendC::Reg::DataCopyUnAlignPre(u0, srcUb);
-            AscendC::Reg::DataCopyUnAlign(vreg0, u0, srcUb);
+            AscendC::Reg::LoadUnAlignPre(u0, srcUb);
+            AscendC::Reg::LoadUnAlign(vreg0, u0, srcUb);
             auto dstUb = quantBlockOutputInUbAddr + mIdx * singleNAligned;
-            AscendC::Reg::DataCopy<int8_t, AscendC::Reg::StoreDist::DIST_NORM_B8>(dstUb, vreg0, maskOutN);
+            AscendC::Reg::StoreAlign<int8_t, AscendC::Reg::StoreDist::DIST_NORM_B8>(dstUb, vreg0, maskOutN);
         }
     }
 }
@@ -930,10 +930,10 @@ __aicore__ inline void BlockEpilogueGeluMxQuant<DataTypeOut_, DataTypeIn_>::Tran
             AscendC::Reg::RegTensor<int8_t> vreg0;
             AscendC::Reg::UnalignReg u0, u1;
             auto srcUb = quantScaleOutputInUbAddr + mIdx * scaleBlockN_;
-            AscendC::Reg::DataCopyUnAlignPre(u0, srcUb);
-            AscendC::Reg::DataCopyUnAlign(vreg0, u0, srcUb);
+            AscendC::Reg::LoadUnAlignPre(u0, srcUb);
+            AscendC::Reg::LoadUnAlign(vreg0, u0, srcUb);
             auto dstUb = quantScaleBlockOutputInUbAddr + mIdx * AscendC::ONE_BLK_SIZE;
-            AscendC::Reg::DataCopy<int8_t, AscendC::Reg::StoreDist::DIST_NORM_B8>(dstUb, vreg0, maskScaleN);
+            AscendC::Reg::StoreAlign<int8_t, AscendC::Reg::StoreDist::DIST_NORM_B8>(dstUb, vreg0, maskScaleN);
         }
     }
 }

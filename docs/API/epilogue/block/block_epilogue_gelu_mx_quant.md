@@ -25,7 +25,7 @@
 
 <summary><strong>动态量化计算公式</strong></summary>
 
-- 场景1，当scaleAlg为0时：
+- 场景1，当quantAlg为0时：
     - 将输入x在axis维度上按k = blocksize个数分组，一组k个数 $\{\{V_i\}_{i=1}^{k}\}$ 动态量化为 $\{mxscale1, \{P_i\}_{i=1}^{k}\}$, k = blocksize
 
     $$
@@ -45,7 +45,7 @@
         | FLOAT8_E4M3FN |  8   |
         |  FLOAT8_E5M2  |  15  |
 
-- 场景2，当scaleAlg为1时，只涉及FP8类型：
+- 场景2，当quantAlg为1时，只涉及FP8类型：
     - 将长向量按块分，每块长度为k，对每块单独计算一个块缩放因子$S_{fp32}^b$，再把块内所有元素用同一个$S_{fp32}^b$映射到目标低精度类型FP8。如果最后一块不足k个元素，把缺失值视为0，按照完整块处理。
     - 找到该块中数值的最大绝对值:
 
@@ -70,7 +70,7 @@
     - 计算块缩放因子：$S_{ue8m0}^b=2^{E_{int}^b}$
     - 计算块转换因子：$R_{fp32}^b=\frac{1}{fp32(S_{ue8m0}^b)}$
     - 应用到量化的最终步骤，对于每个块内元素，$d^i = DType(d_{fp32}^i \cdot R_{fp32}^n)$，最终输出的量化结果是$\left(S^b, [d^i]_{i=1}^k\right)$，其中$S^b$代表块的缩放因子，这里指$S_{ue8m0}^b$，$[d^i]_{i=1}^k$代表块内量化后的数据。
-- 场景3，当scaleAlg为2时，只涉及FP4_E2M1类型：
+- 场景3，当quantAlg为2时，只涉及FP4_E2M1类型：
     - 当dstTypeMax = 0.0/6.0/7.0时：
         - 将输入x在axis维度上按k = blocksize个数分组，一组k个数  $\{\{V_i\}_{i=1}^{k}\}$ 动态量化为 $\{mxscale1, \{P_i\}_{i=1}^{k}\}$, k = blocksize：
         $$
@@ -113,7 +113,7 @@
 ### 计算位置
 仅在 AIV 上执行；由 Kernel（[kernel_qbmm_mx_activation_quant](../../gemm/kernel/kernel_qbmm_mx_activation_quant.md)) 在 `WaitForCube()` 后调用。
 
-### 激活算法（QuantAlg）
+### 激活算法（GeluAlg）
 | 算法 | 值 | 说明 |
 |------|----|------|
 | TANH | 0 | 默认，高性能Gelu近似 |
@@ -126,7 +126,7 @@
 |------|----|------|
 | OCP | 0 | 默认，对应上述量化场景1 |
 | BLAS | 1 | 对应上述量化场景2 |
-| DYN_CUBLAS | 2 | 对应上述量化场景3 |
+| DYN_DTYPE_RANGE | 2 | 对应上述量化场景3 |
 
 - BLAS模式只支持量化目的类型为FLOAT8_E4M3FN / FLOAT8_E5M2。
 
@@ -180,8 +180,8 @@ struct Params {
 
 ### 构造/析构函数
 ```
-__aicore__ inline BlockEpilogueGeluQuant() {}  // 默认
-__aicore__ inline ~BlockEpilogueGeluQuant()   // 默认
+__aicore__ inline BlockEpilogueGeluMxQuant() {}  // 默认
+__aicore__ inline ~BlockEpilogueGeluMxQuant()   // 默认
 ```
 
 ### Init函数

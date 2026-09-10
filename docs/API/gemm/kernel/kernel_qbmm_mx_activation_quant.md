@@ -1,8 +1,9 @@
-# Kernel Qbmm Mx Activation Quant
+# Kernel Qbmm MX Activation Quant
 > [代码位置](../../../../include/blaze/gemm/kernel/kernel_qbmm_mx_activation_quant.h)
 
 ## 功能说明
-基于 MX 量化 Batch Matmul 改造的 **CV 融合 Kernel**，**AIC（cube）+ AIV（vector）双核协同**：AIC 执行 MxFP8 量化矩阵乘，通过 DualDst fixpipe 将 L0C 结果搬到 UB；AIV 执行 Gelu 激活 + 动态 MX 量化后处理，输出 MxFP8。相比 [kernel_qbmm_mx](./kernel_qbmm_mx.md)（仅 AIC、直写 GM），本 Kernel 将矩阵乘与激活量化融合到同一 Kernel 调用中，通过 cube 流水掩盖 vector 流水实现性能优化。
+
+基于 MX 量化 Batch Matmul 的 **CV 融合 Kernel**，**AIC（cube）+ AIV（vector）双核协同**：AIC 执行 MxFP 量化矩阵乘，通过 DualDst fixpipe 将 L0C 结果搬到 UB；AIV 执行 Gelu 激活 + 动态 MX 量化后处理，输出 MxFP8/MxFP4。相比 [kernel_qbmm_mx](./kernel_qbmm_mx.md)（仅 AIC、直写 GM），本 Kernel 将矩阵乘与激活量化融合到同一 Kernel 调用中，通过 cube 流水掩盖 vector 流水实现性能优化。
 
 **继承自**：[Kernel Matmul 基础框架](./kernel.md)
 
@@ -24,8 +25,8 @@ Kernel 通过 `static_assert` 要求 A/B 为同 bit-width 的 MxFP4 或 MxFP8 �
 
 ### Scale 因子要求
 必须提供两个 Scale 因子：
-- `scaleAGmAddr`：A 矩阵的 缩放因子（`fp8_e8m0_t` 类型）
-- `scaleBGmAddr`：B 矩阵的 缩放因子（`fp8_e8m0_t` 类型）
+- `scaleAGmAddr`：A 矩阵的缩放因子（`fp8_e8m0_t` 类型）
+- `scaleBGmAddr`：B 矩阵的缩放因子（`fp8_e8m0_t` 类型）
 
 ### 计算模式
 AIC + AIV 双核：
@@ -41,7 +42,7 @@ AIC + AIV 双核：
 - 小 tile：启用 L2 Cache
 
 ### Batch 维度限制
-支持 4 维 Batch（batchA1/A2/A3/A4、batchB1/B2/B3/B4、batchC1/C2/C3/C4），需满足广播规则。 x1Scale/x2Scale 的 Batch 维度须分别与 A 矩阵/B 矩阵一致。
+支持 4 维 Batch（batchA1/A2/A3/A4、batchB1/B2/B3/B4、batchC1/C2/C3/C4），需满足广播规则。x1Scale/x2Scale 的 Batch 维度须分别与 A 矩阵/B 矩阵一致。
 
 ### Atomic Add 模式
 可选 Atomic Add 模式（`IS_ATOMIC_ADD = true`），用于多核并行累加场景。
@@ -53,7 +54,7 @@ AIC + AIV 双核：
 ### DualDst 模式要求
 `BlockMmad` 的 DispatchPolicy 必须设置 `IsDualDst_ = true`：
 ```
-using DispatchPolicy = Blaze::Gemm::MatmulWithScaleMx<FullLoadMode, false, ScheduleType, true>;
+using DispatchPolicy = Blaze::Gemm::MatmulWithScaleMxActivationQuant;
 ```
 此时 BlockMmad 在 L0C→UB 时使用 `CustomCopyL0C2UBTrait`（`DUAL_DST_SPLIT_M`），将结果写入 UB 地址 0 供 AIV 读取。
 
@@ -75,8 +76,8 @@ __aicore__ inline ~GemmUniversal()
 ```
 template <
     class ProblemShape,      // 问题形状类型 (m, n, k, batch)
-    class BlockMmad,         // BlockMmadMX（需 IsDualDst_=true），ScheduleType 必须为 KernelMmadWithScaleMx
-    class BlockEpilogue,     // BlockEpilogueGeluQuant（AIV Gelu 激活 + 动态 MX 量化）
+    class BlockMmad,         // BlockMmadMX（需 IsDualDst_=true），ScheduleType 必须为 KernelMmadWithScaleMxActivationQuant
+    class BlockEpilogue,     // BlockEpilogueGeluMxQuant（AIV Gelu 激活 + 动态 MX 量化）
     class BlockScheduler>    // BlockSchedulerQbmm 调度器
 ```
 
@@ -84,8 +85,8 @@ template <
 | 参数 | 说明 |
 |------|------|
 | ProblemShape | 问题形状类型，包含 m、n、k、b（batch） |
-| BlockMmad | BlockMmadMX 组件，基于 `MatmulWithScaleMx<..., true>` 调度策略（IsDualDst_=true） |
-| BlockEpilogue | `BlockEpilogueGeluQuant`，AIV 侧 Gelu 激活 + 动态 MX 量化后处理 |
+| BlockMmad | BlockMmadMX 组件，基于 `MatmulWithScaleMxActivationQuant` 调度策略（IsDualDst_=true） |
+| BlockEpilogue | `BlockEpilogueGeluMxQuant`，AIV 侧 Gelu 激活 + 动态 MX 量化后处理 |
 | BlockScheduler | BlockSchedulerQbmm 调度器 |
 
 ## 特殊类型别名
@@ -150,7 +151,8 @@ __aicore__ inline void Init(const Params& params)
 执行流程：
 1. 设置 Bias 标志：根据 `qbmmParams.isBias` 判断
 2. 设置 BiasThreeDim 标志：根据 `qbmmParams.biasThreeDim` 判断
-3. 调用 `ResetGmAddr` 设置 GM 地址
+3. 判断 Batch 是否相同：比较 batchA1-A4 与 batchB1-B4
+4. 调用 `ResetGmAddr` 设置 GM 地址
 
 ### Run函数
 ```
@@ -162,7 +164,7 @@ __aicore__ inline void Run(const Params& params)
 2. 调用 `Init(params)` 设置参数
 3. 创建 BlockScheduler 实例
 4. 初始化 BlockMmadMX 组件（`baseM/baseN/baseK` + `dbL0C`）
-5. 初始化 BlockEpilogueGeluQuant 并调用 `UpdateNextProblem`
+5. 初始化 BlockEpilogueGeluMxQuant 并调用 `UpdateNextProblem`
 6. 判断 Batch 数量：
    - 单 Batch（`b == 1`）：调用 `ProcessSingleBatch`，结束后调用 `End()`
    - 多 Batch：调用 `ProcessWithBatch`，结束后调用 `End()`
@@ -176,14 +178,43 @@ __aicore__ inline void ProcessSingleBatch(
 ```
 功能：处理单个 Batch 的矩阵乘 + 激活量化计算。
 执行流程：
+1. 更新尾块切分参数（如果需要）
+2. 调用 `ProcessTileLoop` 处理当前 Batch 的所有 tile
+
+### ProcessTileLoop函数
+```
+__aicore__ inline void ProcessTileLoop(const Params& params, BlockScheduler& bs)
+```
+功能：处理当前 Batch 的所有 tile 循环。
+执行流程：
 1. 构建 Layout：A、B、ScaleA、ScaleB、Bias、C
 2. 创建 GM Tensor 与 UB Tensor（地址 0，`nd_ext_layout_ptn`，行数 `(baseM+1)&~1`）
 3. 动态配置 L2 Cache
 4. Tile 循环处理：
    - 获取 tile 坐标 (mPos, nPos) 与形状 (baseM, baseN)
+   - 边界检查：如果 `baseM <= 0` 或 `baseN <= 0`，通知对方并返回
    - Slice GM Tensor 到当前 tile
-   - **AIC**：必要时 `WaitForVector()`；调用 BlockMmadMX 执行量化矩阵乘（L0C→UB DualDst）；`NotifyVector()`
-   - **AIV**：`WaitForCube()`；调用 `BlockEpilogueGeluQuant`（Gelu 激活 + 动态 MX 量化，写回 GM）；`NotifyCube()`
+   - 调用 `ProcessOneBlock` 处理单个 tile
+5. 循环结束后更新下一轮参数：`bs.UpdateNextBatchBlockRoundParams()`
+
+### ProcessOneBlock函数
+```
+template <class GmTensorA, class GmTensorB, class GmTensorScaleA, class GmTensorScaleB, class GmTensorBias,
+          class GmTensorC, class UbMemPtr>
+__aicore__ inline void ProcessOneBlock(const GmTensorA& gmA, const GmTensorB& gmB, const GmTensorScaleA& gmScaleA,
+                                       const GmTensorScaleB& gmScaleB, const GmTensorBias& gmBias,
+                                       const GmTensorC& gmC, const BlockShape& singleShape, int64_t mPos,
+                                       int64_t nPos, int64_t baseM, int64_t baseN, int64_t k, int64_t scaleKLen,
+                                       int64_t n, const UbMemPtr& ubmemPtr);
+```
+功能：处理单个 tile 的 AIC cube 计算 + AIV 向量计算。
+执行流程：
+1. **AIC 侧**：必要时 `WaitForVector()`；调用 BlockMmadMX 执行量化矩阵乘（L0C→UB DualDst）；`NotifyVector()`
+2. **AIV 侧**：`WaitForCube()`；调用 `BlockEpilogueGeluMxQuant`（Gelu 激活 + 动态 MX 量化，写回 GM）；`NotifyCube()`
+   - BlockShape 参数：`{baseM, baseN, 0, 0}`
+   - BlockCoord 参数：`{yOffset, yScaleOffset, 0, 0, 0}`
+   - `yOffset = mPos × n + nPos`
+   - `yScaleOffset = mPos × CeilDiv(n, BLOCK_SIZE × ALIGN_NUM_2) × ALIGN_NUM_2 + CeilDiv(nPos, BLOCK_SIZE)`
 
 ### ProcessWithBatch函数
 ```
@@ -191,8 +222,17 @@ __aicore__ inline void ProcessWithBatch(const Params& params, BlockScheduler& bs
 ```
 功能：处理多 Batch 的矩阵乘计算。
 执行流程：
-1. 计算 Batch 广播倍数：multiA1C1、multiB1C1 等
-2. 4 维 Batch 循环（batchC1/C2/C3/C4）：
+1. 计算 Batch 步长信息：`CalcBatchStrides`
+2. 调用 `ProcessBatchLoop` 处理所有 Batch
+
+### ProcessBatchLoop函数
+```
+__aicore__ inline void ProcessBatchLoop(
+    const Params& params, BlockScheduler& bs, const BatchStrideInfo& info)
+```
+功能：4 维 Batch 循环处理。
+执行流程：
+1. 4 维 Batch 循环（batchC1/C2/C3/C4）：
    - 更新 Batch 偏移：`batchCOffset_`、`batchAOffset_`、`batchBOffset_`，x1Scale/x2Scale 分别复用 `batchAOffset_`/`batchBOffset_`
    - 调用 `AddBatchOffset` 更新 GM 地址与 epilogue 输出偏移
    - 调用 `ProcessSingleBatch` 处理当前 Batch
@@ -209,6 +249,24 @@ __aicore__ inline void AddBatchOffset(
 1. 调用 `ResetGmAddr` 重置到基址
 2. 按偏移量更新 A/B/C/Bias/ScaleA/ScaleB 的 GM 地址（FP4 时 A/B 右移 1 位）
 3. 调用 `epilogueOp_.UpdateGlobalAddr` 更新 epilogue 输出偏移（`batchCOffset_ * m * n`、`batchCOffset_ * m * scaleN`）
+
+### CalcBatchStrides函数
+```
+__aicore__ inline auto CalcBatchStrides(const Params& params) -> BatchStrideInfo
+```
+功能：计算 Batch 步长信息。
+返回结构包含：
+- `aBatchElementStride`：A 矩阵 Batch 步长（m * k）
+- `bBatchElementStride`：B 矩阵 Batch 步长（n * k 或 NZ 格式计算）
+- `cBatchStride`：C 矩阵 Batch 步长（m * n）
+- `scaleABatchStride`：ScaleA Batch 步长（m * scaleKLen）
+- `scaleBBatchStride`：ScaleB Batch 步长（n * scaleKLen）
+- `biasBatchStride`：Bias Batch 步长（n 或 0）
+- `batchC2C3C4`：BatchC 第2-4维乘积（batchC2 × batchC3 × batchC4）
+- `batchB2B3B4`：BatchB 第2-4维乘积（batchB2 × batchB3 × batchB4）
+- `batchA2A3A4`：BatchA 第2-4维乘积（batchA2 × batchA3 × batchA4）
+- `multiA1C1` ~ `multiA4C4`：BatchA 各维与 BatchC 的广播倍数
+- `multiB1C1` ~ `multiB4C4`：BatchB 各维与 BatchC 的广播倍数
 
 ### SetL2Cache函数
 ```
@@ -242,11 +300,11 @@ __aicore__ inline void End()
 ### 组件组装
 ```
 // 定义量化数据类型
-using AType = fp8_e4m3fn_t;       // 或 fp8_e5m2_t
-using BType = fp8_e4m3fn_t;       // 或 fp8_e4m3fn_t
+using AType = fp8_e4m3fn_t;       // 或 fp8_e5m2_t, fp4x2_e2m1_t
+using BType = fp8_e4m3fn_t;       // 或 fp8_e5m2_t, fp4x2_e2m1_t
 using CType = float;
 using BiasType = float;
-using OutType = fp8_e8m0_t;     // epilogue 输出类型
+using OutType = fp8_e4m3fn_t;     // epilogue 输出类型
 
 // 定义 Layout
 using LayoutA = asc::te::nd_ext_layout_ptn; // codespell:ignore te
@@ -255,15 +313,14 @@ using LayoutC = asc::te::nd_ext_layout_ptn; // codespell:ignore te
 using LayoutBias = asc::te::nd_ext_layout_ptn; // codespell:ignore te
 
 // 定义调度策略（IsDualDst_ = true）
-using DispatchPolicy = Blaze::Gemm::MatmulWithScaleMx<
-    A_FULL_LOAD_MODE, false, Blaze::Gemm::KernelMmadWithScaleMx, true>;
+using DispatchPolicy = Blaze::Gemm::MatmulWithScaleMxActivationQuant;
 
 // 定义 BlockMmadMX（DualDst 模式）
 using BlockMmad = Blaze::Gemm::Block::BlockMmad<
     DispatchPolicy, AType, LayoutA, BType, LayoutB, CType, LayoutC, BiasType, LayoutBias>;
 
-// 定义 BlockEpilogueGeluQuant
-using BlockEpilogue = Blaze::Epilogue::Block::BlockEpilogueGeluQuant<OutType, CType>;
+// 定义 BlockEpilogueGeluMxQuant
+using BlockEpilogue = Blaze::Epilogue::Block::BlockEpilogueGeluMxQuant<OutType, CType>;
 
 // 定义 BlockScheduler
 using BlockScheduler = Blaze::Gemm::Block::BlockSchedulerQbmm<ProblemShape>;
@@ -279,7 +336,7 @@ using Params = typename QBMMKernel::Params;
 Params params;
 params.problemShape = {m, n, k, batch};
 params.mmadParams = {aGM, bGM, cGM, biasGM, scaleAGM, scaleBGM};
-params.epilogueParams = {yGM, yScaleGM, baseM, baseN, geluAlg, quantAlg, fp4RoundMode};
+params.epilogueParams = {yGM, yScaleGM, baseM, baseN, geluAlg, quantAlg, fp4RoundMode, dtypeMax};
 params.l1Params = {kL1, scaleKL1, l1BufNum};
 params.schParams = {baseM, baseN, baseK, mTailTile, nTailTile, ...};
 params.qbmmParams = {batchA1, batchA2, ..., batchC4, biasThreeDim, baseM, baseN, baseK, isBias, dbL0C};
@@ -297,7 +354,7 @@ qbmm(params);  // 或 qbmm.Run(params);
 ```
 AIC:  GM(A/B/ScaleA/ScaleB/Bias) → L1(量化数据+Scale) → L0A/L0B → L0C(float) --DualDst fixpipe--> UB
                                                                                               │ (CrossCore Notify)
-AIV:  UB(float) --Gelu激活--> bf16 --动态MX量化--> GM(y: MxFP8, yScale: fp8_e8m0)
+AIV:  UB(float) --Gelu激活--> bf16 --动态MX量化--> GM(y: MxFP8/MxFP4, yScale: fp8_e8m0)
 ```
 
 ### Batch 处理流程
@@ -317,7 +374,7 @@ Tile 循环 → AIC: BlockMmadMX(L0C→UB) + AIV: Gelu+MXQuant(UB→GM)
 ```
 AIC: 加载量化数据(A/B) + Scale(ScaleA/ScaleB) → Mmad 计算 → L0C(float) → DualDst fixpipe → UB
                                                                                   ↓ CrossCore Notify
-AIV: UB(float) → Gelu 激活 → bf16 → 动态 MX 量化 → GM(MxFP8 + fp8_e8m0 scale)
+AIV: UB(float) → Gelu 激活 → bf16 → 动态 MX 量化 → GM(MxFP8/MxFP4 + fp8_e8m0 scale)
 ```
 
 ## 性能优化建议
@@ -347,13 +404,13 @@ AIV: UB(float) → Gelu 激活 → bf16 → 动态 MX 量化 → GM(MxFP8 + fp8_
 - Atomic Add 模式自动禁用 C 的 L2 Cache
 
 ### UB 对齐
-- L0C -> UB Dualdst 拷贝时, M 必须为偶数(向 2 对齐)
+- L0C -> UB DualDst 拷贝时，M 必须为偶数（向 2 对齐）
 - `baseN` 需 32 元素对齐，满足 AIV 每 32 个元素做一次 MX 量化
-- 尾块不足 32 元素时由 epilogue 自动Padding为 0
+- 尾块不足 32 元素时由 epilogue 自动 Padding 为 0
 
 ## 适用场景
 
-- **量化推理融合**：MxFP8 量化矩阵乘 + Gelu 激活 + 动态 MX 量化，单 Kernel 完成
+- **量化推理融合**：MxFP8/MxFP4 量化矩阵乘 + Gelu 激活 + 动态 MX 量化，单 Kernel 完成
 - **Batch Matmul**：多 Batch 维度支持
-- **Scale 因子处理**：per-token 和 per-group scale
+- **Scale 因子处理**：per-group scale（ScaleA 和 ScaleB）
 - **广播 Batch**：A/B/C 不同 Batch 维度的广播计算
