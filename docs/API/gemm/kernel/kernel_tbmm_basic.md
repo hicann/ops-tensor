@@ -40,7 +40,7 @@ if ASCEND_IS_AIV {
 ### ProblemShape 维度要求
 不同于 [KernelMatmulBasic](./kernel_matmul_basic.md) 的 4 元 ProblemShape，本 Kernel 的 ProblemShape 为 **5 元**，第 5 维为 Batch 切分因子 `splitB`：
 ```cpp
-using ProblemShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t, int64_t>; // (m, n, k, batch, splitB)
+using ProblemShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t, int64_t>; // (m, n, k, batch, splitB)
 ```
 - `batch`：Batch 数量，大于 1 表示多 Batch。
 - `splitB`：Batch 切分因子，将 `batch` 切分为 `splitB × innerBatch`（`innerBatch = batch / splitB`）；为 1 时不切分。
@@ -154,24 +154,24 @@ UnsetHf32：关闭 HF32 模式
 ```cpp
 // A：Batch ND layout（TRANS_BATCH_A 时 stride 互换）
 auto layoutA = MakeNDBatchLayout<AType>(batch_, m_, k_, batchStrideA, mStrideA);
-// B：FrameLayoutFormat，(batch, k, n)
+// B：frame_layout_format，(batch, k, n)
 auto layoutB = MakeLayoutB{}(batch_, k_, n_);
 // C：Batch ND layout，(batch, m, n)
 auto layoutC = MakeNDBatchLayout<CType>(batch_, m_, n_, n_, batch_ * n_);
 // 切分 Batch 的 C layout：(splitB, innerBatch, m, n)
-auto splitBatchLayoutC = AscendC::Te::MakePatternLayout<
-    AscendC::Te::NDLayoutPtn,
-    AscendC::Te::LayoutTrait<CType, AscendC::Std::Int<AscendC::Te::C0_ELEMENT<CType>>>>(
-    AscendC::Te::MakeShape(batchSplitFactor_, innerBatch, AscendC::Te::MakeShape(m_, n_)),
-    AscendC::Te::MakeStride(m_ * innerBatch * n_, n_, AscendC::Te::MakeStride(innerBatch * n_, AscendC::Te::_1{})));
+auto splitBatchLayoutC = asc::te::make_pattern_layout<
+    asc::te::nd_layout_ptn,
+    asc::te::layout_trait<CType, AscendC::Std::Int<asc::te::c0_element<CType>>>>(
+    asc::te::make_shape(batchSplitFactor_, innerBatch, asc::te::make_shape(m_, n_)),
+    asc::te::make_stride(m_ * innerBatch * n_, n_, asc::te::make_stride(innerBatch * n_, asc::te::_1{})));
 // Bias：单行 (1, n)，跨 Batch 共享
 auto layoutBias = MakeLayoutBias{}(1L, n_);
 
-auto gmA = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(aGmAddr_), layoutA);
-auto gmB = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(bGmAddr_), layoutB);
-auto gmC = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(cGmAddr_), layoutC);
-auto splitBatchGmC = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(cGmAddr_), splitBatchLayoutC);
-auto gmBias = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(biasGmAddr_), layoutBias);
+auto gmA = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::gm>(aGmAddr_), layoutA);
+auto gmB = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::gm>(bGmAddr_), layoutB);
+auto gmC = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::gm>(cGmAddr_), layoutC);
+auto splitBatchGmC = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::gm>(cGmAddr_), splitBatchLayoutC);
+auto gmBias = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::gm>(biasGmAddr_), layoutBias);
 ```
 
 ### Tile 循环与 Batch 切分
@@ -179,9 +179,9 @@ auto gmBias = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Locat
 for (int64_t blockIdx = curBlockIdx; blockIdx < totalBlockNums; blockIdx += coreNums) {
     auto blockShape = bs.GetBlockShape<TRANS_B, BType>(blockIdx); // (m, n, k, batch)
     auto blockCoord = bs.GetBlockCoord(blockIdx);                 // (m, n, k, batch)
-    curBatchIdx_ = AscendC::Te::Get<MNK_B>(blockCoord);
+    curBatchIdx_ = asc::te::get<MNK_B>(blockCoord);
     // 切出当前 tile 的 A/B/C 子 Tensor（Squeeze 掉 batch 维）
-    auto gmBlockA = AscendC::Te::Squeeze<0>(gmA.Slice(
+    auto gmBlockA = asc::te::squeeze<0>(gmA.slice(
         AscendC::MakeCoord(curBatchIdx_, AscendC::MakeCoord(coordM, 0L)),
         AscendC::MakeShape(1L, AscendC::MakeShape(shapeM, shapeK))));
     ...
@@ -210,14 +210,14 @@ using AType = half;
 using BType = half;
 using CType = half;
 using BiasType = half;
-using LayoutA = AscendC::Te::NDLayoutPtn;        // A 矩阵布局（ND/NZ）
-using LayoutB = AscendC::Te::NZLayoutPtn;        // B 矩阵布局（NZ/ND）
-using LayoutC = AscendC::Te::NDLayoutPtn;        // C 矩阵布局（ND）
+using LayoutA = asc::te::nd_layout_ptn;        // A 矩阵布局（ND/NZ）
+using LayoutB = asc::te::nz_layout_ptn;        // B 矩阵布局（NZ/ND）
+using LayoutC = asc::te::nd_layout_ptn;        // C 矩阵布局（ND）
 using LayoutBias = LayoutC;                       // Bias 布局
 
 // ============== 2. ProblemShape 定义（5 元）==============
 // (m, n, k, batch, splitB)
-using ProblemShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t, int64_t>;
+using ProblemShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t, int64_t>;
 
 // ============== 3. BlockScheduler 组装 ==============
 // FullLoadMode: 0=非全载（默认）, 1=A全载, 2=B全载

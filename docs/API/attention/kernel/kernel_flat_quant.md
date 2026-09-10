@@ -63,8 +63,8 @@ GM 地址映射：
 | L0CType | L0C 累加类型，固定为 `float` |
 | TupleShape | `Shape<int64_t, int64_t, int64_t, int64_t>` |
 | TupleL1L0Shape | `Shape<int64_t, int64_t, int64_t, int64_t>` |
-| MakeLayoutA | A 矩阵 Layout 构建器（NDExtLayoutPtn） |
-| MakeLayoutB | P1/P2 矩阵 Layout 构建器（NDExtLayoutPtn） |
+| MakeLayoutA | A 矩阵 Layout 构建器（nd_ext_layout_ptn） |
+| MakeLayoutB | P1/P2 矩阵 Layout 构建器（nd_ext_layout_ptn） |
 
 ## Params 参数结构
 
@@ -191,13 +191,13 @@ using AType = bfloat16_t;
 using BType = bfloat16_t;
 using CType = bfloat16_t;
 using OutType = bfloat16_t;
-using LayoutA = AscendC::Te::NDExtLayoutPtn;
-using LayoutB = AscendC::Te::NDExtLayoutPtn;
-using LayoutC = AscendC::Te::NDExtLayoutPtn;
+using LayoutA = asc::te::nd_ext_layout_ptn;
+using LayoutB = asc::te::nd_ext_layout_ptn;
+using LayoutC = asc::te::nd_ext_layout_ptn;
 using LayoutOut = LayoutC;
 
 // ============== 2. ProblemShape 定义 ==============
-using ProblemShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
+using ProblemShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
 
 // ============== 3. DispatchPolicy 组装 ==============
 using DispatchPolicy = Blaze::Attention::BlockFlatQuant<>;

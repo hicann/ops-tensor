@@ -44,8 +44,8 @@ public:
     using DispatchPolicy = DispatchPolicy_;
 
     // block shape
-    using BlockShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
-    using ProblemShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
+    using BlockShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
+    using ProblemShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
 
     static constexpr uint32_t DATA_BLOCK = 32;
     static constexpr uint32_t OUT_ALIGN = DATA_BLOCK / sizeof(DataTypeOut);
@@ -76,7 +76,7 @@ public:
     __aicore__ inline void Run(BlockShape const& blockShape, int64_t dstOffset, bool splitM, int64_t baseM,
                                int64_t baseN, uint64_t ubDB = 1)
     {
-        int64_t mL1 = AscendC::Te::Get<Gemm::MNK_M>(blockShape);
+        int64_t mL1 = asc::te::get<Gemm::MNK_M>(blockShape);
         int64_t curM = mL1;
         if (baseM != 0) {
             curM = Blaze::Gemm::Min(curM, baseM);
@@ -87,11 +87,11 @@ public:
             blockShapeM = (static_cast<uint64_t>(curM) & 1UL) > 0UL ? (halfBlockShapeM - AscendC::GetSubBlockIdx()) :
                                                                       halfBlockShapeM;
         }
-        int64_t nL1 = AscendC::Te::Get<Gemm::MNK_N>(blockShape);
+        int64_t nL1 = asc::te::get<Gemm::MNK_N>(blockShape);
         int64_t curBaseN = (baseN != 0) ? Blaze::Gemm::Min(nL1, baseN) : nL1;
         int64_t nL1Iter = Blaze::Gemm::CeilDiv(nL1, curBaseN);
-        int64_t N = AscendC::Te::Get<Gemm::MNK_N>(problemShape_);
-        constexpr int64_t c0Size = static_cast<int64_t>(AscendC::Te::C0_ELEMENT<DataTypeOut>);
+        int64_t N = asc::te::get<Gemm::MNK_N>(problemShape_);
+        constexpr int64_t c0Size = static_cast<int64_t>(asc::te::c0_element<DataTypeOut>);
         constexpr int64_t ubHalfElems = static_cast<int64_t>(AscendC::TOTAL_UB_SIZE / sizeof(DataTypeIn) /
                                                              Gemm::DOUBLE_BUFFER_COUNT);
         bool enablePp = (ubDB > 1);

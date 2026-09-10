@@ -68,11 +68,11 @@ public:
     using LayoutC = typename BlockMmad::LayoutC;
     using LayoutBias = typename BlockMmad::LayoutBias;
     using WorkspaceType = typename BlockEpilogue::WorkspaceType;
-    using BlockShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
-    using MakeLayoutA = AscendC::Te::FrameLayoutFormat<LayoutA, AscendC::Te::LayoutTraitDefault<AType>>;
-    using MakeLayoutB = AscendC::Te::FrameLayoutFormat<LayoutB, AscendC::Te::LayoutTraitDefault<BType>>;
-    using MakeLayoutC = AscendC::Te::FrameLayoutFormat<LayoutC, AscendC::Te::LayoutTraitDefault<CType>>;
-    using MakeLayoutBias = AscendC::Te::FrameLayoutFormat<LayoutBias, AscendC::Te::LayoutTraitDefault<BiasType>>;
+    using BlockShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
+    using MakeLayoutA = asc::te::frame_layout_format<LayoutA, asc::te::layout_trait_default<AType>>;
+    using MakeLayoutB = asc::te::frame_layout_format<LayoutB, asc::te::layout_trait_default<BType>>;
+    using MakeLayoutC = asc::te::frame_layout_format<LayoutC, asc::te::layout_trait_default<CType>>;
+    using MakeLayoutBias = asc::te::frame_layout_format<LayoutBias, asc::te::layout_trait_default<BiasType>>;
 
     struct Params {
         ProblemShape problemShape;
@@ -84,7 +84,7 @@ public:
 
     __aicore__ inline void operator()(Params const& params)
     {
-        if (params.schParams.usedCoreNum <= 0 || AscendC::Te::Get<MNK_B>(params.problemShape) != 1) {
+        if (params.schParams.usedCoreNum <= 0 || asc::te::get<MNK_B>(params.problemShape) != 1) {
             return;
         }
         Init(params);
@@ -131,11 +131,10 @@ private:
         auto layoutB = MakeLayoutB{}(k_, n_);
         auto layoutC = MakeLayoutC{}(m_, n_);
         auto layoutBias = MakeLayoutBias{}(1L, n_);
-        auto gmA = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(aGmAddr_), layoutA);
-        auto gmB = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(bGmAddr_), layoutB);
-        auto gmC = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(cGmAddr_), layoutC);
-        auto gmBias = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(biasGmAddr_),
-                                              layoutBias);
+        auto gmA = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::gm>(aGmAddr_), layoutA);
+        auto gmB = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::gm>(bGmAddr_), layoutB);
+        auto gmC = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::gm>(cGmAddr_), layoutC);
+        auto gmBias = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::gm>(biasGmAddr_), layoutBias);
 
         for (int64_t blockIdx = curBlockIdx; blockIdx < totalBlockNums; blockIdx += usedCoreNum) {
             int64_t actualBlockIdx = GetActualBlockIdx(bs, blockIdx, totalBlockNums, tailSKTotalBlockNums, usedCoreNum);
@@ -181,23 +180,23 @@ private:
         int64_t offsetWorkspace = (isSkBlock ? (blockIdx - totalMNBlockNumsInDP) : 0) * BLOCK_BASE_M * BLOCK_BASE_N;
         auto gmWorkSpace = MakeWorkspaceTensor(singleCoreShape, offsetWorkspace);
 
-        auto gmBlockA = gmA.Slice(
-            AscendC::Te::MakeCoord(AscendC::Te::Get<MNK_M>(singleCoreCoord) * mL1_,
-                                   AscendC::Te::Get<MNK_K>(singleCoreCoord) * kSingleCore),
-            AscendC::Te::MakeShape(AscendC::Te::Get<MNK_M>(singleCoreShape), AscendC::Te::Get<MNK_K>(singleCoreShape)));
-        auto gmBlockB = gmB.Slice(
-            AscendC::Te::MakeCoord(AscendC::Te::Get<MNK_K>(singleCoreCoord) * kSingleCore,
-                                   AscendC::Te::Get<MNK_N>(singleCoreCoord) * nL1_),
-            AscendC::Te::MakeShape(AscendC::Te::Get<MNK_K>(singleCoreShape), AscendC::Te::Get<MNK_N>(singleCoreShape)));
-        auto gmBlockC = gmC.Slice(
-            AscendC::Te::MakeCoord(AscendC::Te::Get<MNK_M>(singleCoreCoord) * mL1_,
-                                   AscendC::Te::Get<MNK_N>(singleCoreCoord) * nL1_),
-            AscendC::Te::MakeShape(AscendC::Te::Get<MNK_M>(singleCoreShape), AscendC::Te::Get<MNK_N>(singleCoreShape)));
-        auto gmBlockBias = gmBias.Slice(AscendC::Te::MakeCoord(0L, AscendC::Te::Get<MNK_N>(singleCoreCoord) * nL1_),
-                                        AscendC::Te::MakeShape(1L, AscendC::Te::Get<MNK_N>(singleCoreShape)));
+        auto gmBlockA = gmA.slice(
+            asc::te::make_coord(asc::te::get<MNK_M>(singleCoreCoord) * mL1_,
+                                asc::te::get<MNK_K>(singleCoreCoord) * kSingleCore),
+            asc::te::make_shape(asc::te::get<MNK_M>(singleCoreShape), asc::te::get<MNK_K>(singleCoreShape)));
+        auto gmBlockB = gmB.slice(
+            asc::te::make_coord(asc::te::get<MNK_K>(singleCoreCoord) * kSingleCore,
+                                asc::te::get<MNK_N>(singleCoreCoord) * nL1_),
+            asc::te::make_shape(asc::te::get<MNK_K>(singleCoreShape), asc::te::get<MNK_N>(singleCoreShape)));
+        auto gmBlockC = gmC.slice(
+            asc::te::make_coord(asc::te::get<MNK_M>(singleCoreCoord) * mL1_,
+                                asc::te::get<MNK_N>(singleCoreCoord) * nL1_),
+            asc::te::make_shape(asc::te::get<MNK_M>(singleCoreShape), asc::te::get<MNK_N>(singleCoreShape)));
+        auto gmBlockBias = gmBias.slice(asc::te::make_coord(0L, asc::te::get<MNK_N>(singleCoreCoord) * nL1_),
+                                        asc::te::make_shape(1L, asc::te::get<MNK_N>(singleCoreShape)));
 
         blockMmad(gmBlockA, gmBlockB, scaleScalar_, gmBlockBias, gmBlockC, gmWorkSpace, singleCoreShape,
-                  AscendC::Te::Get<MNK_K>(singleCoreCoord), isSkBlock);
+                  asc::te::get<MNK_K>(singleCoreCoord), isSkBlock);
     }
 
     __aicore__ inline void ProcessOnAiv(Params const& params, BlockScheduler& bs)
@@ -219,9 +218,9 @@ private:
 
     __aicore__ inline void Init(Params const& params)
     {
-        m_ = static_cast<uint64_t>(AscendC::Te::Get<MNK_M>(params.problemShape));
-        n_ = static_cast<uint64_t>(AscendC::Te::Get<MNK_N>(params.problemShape));
-        k_ = static_cast<uint64_t>(AscendC::Te::Get<MNK_K>(params.problemShape));
+        m_ = static_cast<uint64_t>(asc::te::get<MNK_M>(params.problemShape));
+        n_ = static_cast<uint64_t>(asc::te::get<MNK_N>(params.problemShape));
+        k_ = static_cast<uint64_t>(asc::te::get<MNK_K>(params.problemShape));
         if ASCEND_IS_AIC {
             auto mmParams = params.blockMmadParams;
             aGmAddr_ = reinterpret_cast<__gm__ AType*>(mmParams.aGmAddr);
@@ -264,19 +263,17 @@ private:
     __aicore__ inline auto MakeWorkspaceTensor(const SingleCoreShape& singleCoreShape, int64_t offsetWorkspace)
     {
         auto workspaceStrideColumn = Blaze::Gemm::CeilAlign(
-            AscendC::Te::Get<MNK_N>(singleCoreShape),
-            static_cast<int64_t>(AscendC::GetVecLen() / sizeof(WorkspaceType)));
-        auto workspaceShape = AscendC::Te::MakeShape(
-            AscendC::Te::MakeShape(AscendC::Te::_1{}, AscendC::Te::Get<MNK_M>(singleCoreShape)),
-            AscendC::Te::MakeShape(AscendC::Te::_1{}, workspaceStrideColumn));
-        auto workspaceStride = AscendC::Te::MakeStride(
-            AscendC::Te::MakeStride(AscendC::Te::_0{}, workspaceStrideColumn),
-            AscendC::Te::MakeStride(AscendC::Te::_0{}, AscendC::Te::_1{}));
-        auto layoutWorkspace = AscendC::Te::MakePatternLayout<AscendC::Te::NDExtLayoutPtn,
-                                                              AscendC::Te::LayoutTraitDefault<WorkspaceType>>(
+            asc::te::get<MNK_N>(singleCoreShape), static_cast<int64_t>(AscendC::GetVecLen() / sizeof(WorkspaceType)));
+        auto workspaceShape = asc::te::make_shape(
+            asc::te::make_shape(asc::te::_1{}, asc::te::get<MNK_M>(singleCoreShape)),
+            asc::te::make_shape(asc::te::_1{}, workspaceStrideColumn));
+        auto workspaceStride = asc::te::make_stride(asc::te::make_stride(asc::te::_0{}, workspaceStrideColumn),
+                                                    asc::te::make_stride(asc::te::_0{}, asc::te::_1{}));
+        auto layoutWorkspace = asc::te::make_pattern_layout<asc::te::nd_ext_layout_ptn,
+                                                            asc::te::layout_trait_default<WorkspaceType>>(
             workspaceShape, workspaceStride);
-        return AscendC::Te::MakeTensor(
-            AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(workspaceGmAddr_ + offsetWorkspace), layoutWorkspace);
+        return asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::gm>(workspaceGmAddr_ + offsetWorkspace),
+                                    layoutWorkspace);
     }
 
 private:

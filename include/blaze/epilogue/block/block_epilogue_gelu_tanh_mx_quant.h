@@ -74,8 +74,8 @@ public:
     static constexpr uint32_t EPILOGUE_UB_DB_COUNT = 2;
     using DataTypeOut = DataTypeOut_;
     using DataTypeIn = DataTypeIn_;
-    using BlockShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
-    using ProblemShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
+    using BlockShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
+    using ProblemShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
 
     struct OutputOffsets {
         int64_t yOffset{0};
@@ -194,15 +194,15 @@ public:
 
     __aicore__ inline void UpdateNextProblem(const ProblemShape& problemShape)
     {
-        n_ = AscendC::Te::Get<Gemm::MNK_N>(problemShape);
+        n_ = asc::te::get<Gemm::MNK_N>(problemShape);
         scaleN_ = Gemm::CeilDiv(static_cast<uint64_t>(n_), static_cast<uint64_t>(Gemm::MXFP_DIVISOR_SIZE)) *
                   Gemm::MXFP_MULTI_BASE_SIZE;
     }
 
     __aicore__ inline void operator()(const BlockShape& blockShape, const OutputOffsets& outputOffsets)
     {
-        singleM_ = AscendC::Te::Get<Gemm::MNK_M>(blockShape);
-        singleN_ = AscendC::Te::Get<Gemm::MNK_N>(blockShape);
+        singleM_ = asc::te::get<Gemm::MNK_M>(blockShape);
+        singleN_ = asc::te::get<Gemm::MNK_N>(blockShape);
         scaleBlockN_ = Gemm::CeilDiv(static_cast<uint64_t>(singleN_), static_cast<uint64_t>(Gemm::MXFP_DIVISOR_SIZE)) *
                        Gemm::MXFP_MULTI_BASE_SIZE;
         const uint64_t halfSingleM = Gemm::CeilDiv(static_cast<uint64_t>(singleM_),
@@ -688,10 +688,9 @@ private:
             reinterpret_cast<uintptr_t>(activationResult_.GetPhyAddr()) - asc_get_phy_buf_addr(0));
         auto layout = Gemm::MakeNDExtLayout(static_cast<int64_t>(mSize), static_cast<int64_t>(singleN_),
                                             static_cast<int64_t>(nAligned));
-        auto srcTensor = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB, DataTypeIn>(0),
-                                                 layout);
-        auto dstTensor = AscendC::Te::MakeTensor(
-            AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB, bfloat16_t>(activationUbOffset), layout);
+        auto srcTensor = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::ub, DataTypeIn>(0), layout);
+        auto dstTensor = asc::te::make_tensor(
+            asc::te::make_mem_ptr<asc::te::location::ub, bfloat16_t>(activationUbOffset), layout);
         Gelu<bfloat16_t, DataTypeIn> gelu;
         gelu.GeluTanh(srcTensor, dstTensor, mSize, static_cast<uint16_t>(singleN_));
 

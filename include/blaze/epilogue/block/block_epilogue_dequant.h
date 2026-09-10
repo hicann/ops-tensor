@@ -125,23 +125,23 @@ public:
         if (isPerChannel_) {
             x2ScaleGmAddr_ = params.x2ScaleGmAddr;
         } else if constexpr (IsSameType<X2ScaleType, float>::value) {
-            auto x2ScaleTensor = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(
-                                                             reinterpret_cast<__gm__ float*>(params.x2ScaleGmAddr)),
-                                                         Gemm::MakeNDExtLayout(1, 1, 1));
+            auto x2ScaleTensor = asc::te::make_tensor(
+                asc::te::make_mem_ptr<asc::te::location::gm>(reinterpret_cast<__gm__ float*>(params.x2ScaleGmAddr)),
+                Gemm::MakeNDExtLayout(1, 1, 1));
             ReadX2ScaleScalar(x2ScaleTensor);
         } else {
-            auto x2ScaleTensor = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(
-                                                             reinterpret_cast<__gm__ uint16_t*>(params.x2ScaleGmAddr)),
-                                                         Gemm::MakeNDExtLayout(1, 1, 1));
+            auto x2ScaleTensor = asc::te::make_tensor(
+                asc::te::make_mem_ptr<asc::te::location::gm>(reinterpret_cast<__gm__ uint16_t*>(params.x2ScaleGmAddr)),
+                Gemm::MakeNDExtLayout(1, 1, 1));
             ReadX2ScaleScalar(x2ScaleTensor);
         }
         if (isPerToken_) {
             x1ScaleGmAddr_ = params.x1ScaleGmAddr;
         } else if (isX1PerTensor_) {
-            auto ptTensor = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(
-                                                        reinterpret_cast<__gm__ float*>(params.x1ScaleGmAddr)),
-                                                    Gemm::MakeNDExtLayout(1, 1, 1));
-            x1ScaleScalar_ = ptTensor[AscendC::Te::MakeCoord(static_cast<int64_t>(0), static_cast<int64_t>(0))];
+            auto ptTensor = asc::te::make_tensor(
+                asc::te::make_mem_ptr<asc::te::location::gm>(reinterpret_cast<__gm__ float*>(params.x1ScaleGmAddr)),
+                Gemm::MakeNDExtLayout(1, 1, 1));
+            x1ScaleScalar_ = ptTensor[asc::te::make_coord(static_cast<int64_t>(0), static_cast<int64_t>(0))];
         }
         if (isBias_) {
             biasDtype_ = params.biasDtype;
@@ -205,9 +205,9 @@ private:
     __aicore__ inline void ReadX2ScaleScalar(const X2ScaleTensor& x2ScaleTensor)
     {
         if constexpr (IsSameType<X2ScaleType, float>::value) {
-            x2ScaleScalar_ = x2ScaleTensor[AscendC::Te::MakeCoord(static_cast<int64_t>(0), static_cast<int64_t>(0))];
+            x2ScaleScalar_ = x2ScaleTensor[asc::te::make_coord(static_cast<int64_t>(0), static_cast<int64_t>(0))];
         } else {
-            uint16_t raw = x2ScaleTensor[AscendC::Te::MakeCoord(static_cast<int64_t>(0), static_cast<int64_t>(0))];
+            uint16_t raw = x2ScaleTensor[asc::te::make_coord(static_cast<int64_t>(0), static_cast<int64_t>(0))];
             uint32_t bits = static_cast<uint32_t>(raw) << 16;
             x2ScaleScalar_ = *reinterpret_cast<float*>(&bits);
         }
@@ -250,7 +250,7 @@ private:
     }
 
     // Resolve a raw __ubuf__ pointer from a byte offset into UB via the C_API asc_get_phy_buf_addr(0)
-    // (bank 0 base) + byteOffset. This is exactly what MakeMemPtr<UB, T>(byteOffset).Get() expands to,
+    // (bank 0 base) + byteOffset. This is exactly what make_mem_ptr<location::ub, T>(byteOffset).get() expands to,
     // but calls the C_API directly (the VF dequant core needs raw __ubuf__ pointers, not Tensor handles).
     template <class T>
     __aicore__ inline static __ubuf__ T* GetUbAddr(uint64_t byteOffset)
@@ -270,12 +270,12 @@ private:
     }
 
     // Copy x2Scale / x1Scale / bias from GM to UB (raw, no pre-cast). bf16/fp16 widening is
-    // done inline in the VF dequant loop. The GM->UB move uses the Tensor API CopyGM2UB
+    // done inline in the VF dequant loop. The GM->UB move uses the Tensor API copy_gm_to_ub
     // operation (a single contiguous 1-row NDExt block) instead of DataCopyPad.
     __aicore__ inline void CopyScaleBiasToUb(int64_t singleCoreN, int64_t singleMInVec, int64_t offsetScale,
                                              int64_t offsetPtScale, int64_t offsetBias)
     {
-        auto copyGM2UB = AscendC::Te::MakeCopy(AscendC::Te::CopyGM2UB{});
+        auto copyGM2UB = asc::te::make_copy(asc::te::copy_gm_to_ub{});
 
         if (isPerChannel_) {
             AscendC::WaitFlag<AscendC::HardEvent::V_MTE2>(0);
@@ -284,13 +284,12 @@ private:
             // stride to be 32B-aligned or the load corrupts data.
             auto ubLayout = Gemm::MakeNDExtLayout(1, singleCoreN, AlignedUbPitch<X2ScaleType>(singleCoreN));
             auto gmLayout = Gemm::MakeNDExtLayout(1, singleCoreN, singleCoreN);
-            auto x2Ub = AscendC::Te::MakeTensor(
-                AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB, X2ScaleType>(x2ScaleUbOffset_), ubLayout);
-            auto x2Gm = AscendC::Te::MakeTensor(
-                AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(
-                    reinterpret_cast<__gm__ X2ScaleType*>(x2ScaleGmAddr_) + offsetScale),
-                gmLayout);
-            AscendC::Te::Copy(copyGM2UB, x2Ub, x2Gm);
+            auto x2Ub = asc::te::make_tensor(
+                asc::te::make_mem_ptr<asc::te::location::ub, X2ScaleType>(x2ScaleUbOffset_), ubLayout);
+            auto x2Gm = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::gm>(
+                                                 reinterpret_cast<__gm__ X2ScaleType*>(x2ScaleGmAddr_) + offsetScale),
+                                             gmLayout);
+            asc::te::copy(copyGM2UB, x2Ub, x2Gm);
             AscendC::SetFlag<AscendC::HardEvent::MTE2_V>(0);
             AscendC::WaitFlag<AscendC::HardEvent::MTE2_V>(0);
         }
@@ -299,13 +298,12 @@ private:
             AscendC::WaitFlag<AscendC::HardEvent::V_MTE2>(1);
             auto ubLayout = Gemm::MakeNDExtLayout(1, singleMInVec, AlignedUbPitch<X1ScaleType>(singleMInVec));
             auto gmLayout = Gemm::MakeNDExtLayout(1, singleMInVec, singleMInVec);
-            auto x1Ub = AscendC::Te::MakeTensor(
-                AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB, X1ScaleType>(x1ScaleUbOffset_), ubLayout);
-            auto x1Gm = AscendC::Te::MakeTensor(
-                AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(
-                    reinterpret_cast<__gm__ X1ScaleType*>(x1ScaleGmAddr_) + offsetPtScale),
-                gmLayout);
-            AscendC::Te::Copy(copyGM2UB, x1Ub, x1Gm);
+            auto x1Ub = asc::te::make_tensor(
+                asc::te::make_mem_ptr<asc::te::location::ub, X1ScaleType>(x1ScaleUbOffset_), ubLayout);
+            auto x1Gm = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::gm>(
+                                                 reinterpret_cast<__gm__ X1ScaleType*>(x1ScaleGmAddr_) + offsetPtScale),
+                                             gmLayout);
+            asc::te::copy(copyGM2UB, x1Ub, x1Gm);
             AscendC::SetFlag<AscendC::HardEvent::MTE2_V>(1);
             AscendC::WaitFlag<AscendC::HardEvent::MTE2_V>(1);
         }
@@ -331,15 +329,15 @@ private:
     template <class ActualBiasType>
     __aicore__ inline void CopyBiasToUbTyped(int64_t singleCoreN, int64_t offsetBias)
     {
-        auto copyGM2UB = AscendC::Te::MakeCopy(AscendC::Te::CopyGM2UB{});
+        auto copyGM2UB = asc::te::make_copy(asc::te::copy_gm_to_ub{});
         // UB dest pitch 32B-aligned (per-ActualBiasType), GM src pitch contiguous singleCoreN.
         auto ubLayout = Gemm::MakeNDExtLayout(1, singleCoreN, AlignedUbPitch<ActualBiasType>(singleCoreN));
         auto gmLayout = Gemm::MakeNDExtLayout(1, singleCoreN, singleCoreN);
-        auto biasUb = AscendC::Te::MakeTensor(
-            AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB, ActualBiasType>(biasUbOffset_), ubLayout);
+        auto biasUb = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::ub, ActualBiasType>(biasUbOffset_),
+                                           ubLayout);
         __gm__ ActualBiasType* biasGmPtr = reinterpret_cast<__gm__ ActualBiasType*>(biasGmAddr_) + offsetBias;
-        auto biasGm = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(biasGmPtr), gmLayout);
-        AscendC::Te::Copy(copyGM2UB, biasUb, biasGm);
+        auto biasGm = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::gm>(biasGmPtr), gmLayout);
+        asc::te::copy(copyGM2UB, biasUb, biasGm);
     }
 
     // Dispatch entry for one M-chunk: compute UB addresses for the current ping-pong buffer,
@@ -610,20 +608,20 @@ private:
         uint64_t dequantOffset = (pingPongId_ == 0) ? dequantPingOffset_ : dequantPongOffset_;
         uint64_t nDstAligned = CeilAlign(static_cast<uint64_t>(singleCoreN), static_cast<uint64_t>(OUT_ALIGN));
 
-        // UB->GM via Tensor API CopyUB2GM. Both ends are NDExtLayoutPtn with mSize rows and
+        // UB->GM via Tensor API copy_ub_to_gm. Both ends are nd_ext_layout_ptn with mSize rows and
         // singleCoreN valid columns; the row pitch differs per buffer (UB padded to nDstAligned,
         // GM strided by the full output width n_), which reproduces the original DataCopyPad
         // gap-based strided copy out.
         auto ubLayout = Gemm::MakeNDExtLayout(mSize, singleCoreN, static_cast<int64_t>(nDstAligned));
         auto gmLayout = Gemm::MakeNDExtLayout(mSize, singleCoreN, n_);
-        auto outUb = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB, OutType>(dequantOffset),
-                                             ubLayout);
-        auto outGm = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(
-                                                 reinterpret_cast<__gm__ OutType*>(outGmAddr_) + gmOffset),
-                                             gmLayout);
+        auto outUb = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::ub, OutType>(dequantOffset),
+                                          ubLayout);
+        auto outGm = asc::te::make_tensor(
+            asc::te::make_mem_ptr<asc::te::location::gm>(reinterpret_cast<__gm__ OutType*>(outGmAddr_) + gmOffset),
+            gmLayout);
 
-        auto copyUB2GM = AscendC::Te::MakeCopy(AscendC::Te::CopyUB2GM{});
-        AscendC::Te::Copy(copyUB2GM, outGm, outUb);
+        auto copyUB2GM = asc::te::make_copy(asc::te::copy_ub_to_gm{});
+        asc::te::copy(copyUB2GM, outGm, outUb);
     }
 
     __aicore__ inline void UbSetFlag()

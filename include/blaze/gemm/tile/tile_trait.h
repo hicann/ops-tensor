@@ -18,23 +18,22 @@
 
 namespace Blaze::Gemm::Tile {
 
-constexpr AscendC::Te::MmadTrait MX_MMAD_TRAIT =
-    AscendC::Te::MmadTrait{0, false, false, true, AscendC::Te::MmadType::MX};
+constexpr asc::te::mmad_trait MX_MMAD_TRAIT = asc::te::mmad_trait{0, false, false, true, asc::te::mmad_type::mx};
 struct MmadTraitMX {
-    using TraitType = AscendC::Te::MmadTrait;
+    using TraitType = asc::te::mmad_trait;
     static constexpr const TraitType value = MX_MMAD_TRAIT;
 };
-constexpr AscendC::Te::CopyL0C2UBTrait MIX_COPY_L0C2UB_SPLIT_M_TRAIT =
-    AscendC::Te::CopyL0C2UBTrait{AscendC::Te::RoundMode::DEFAULT, false, false, AscendC::Te::DUAL_DST_SPLIT_M};
+constexpr asc::te::l0c_to_ub_trait MIX_COPY_L0C2UB_SPLIT_M_TRAIT = asc::te::l0c_to_ub_trait{
+    asc::te::round_mode::default_round, false, false, asc::te::dual_dst_mode::split_m};
 struct CopyL0C2UBTraitMixSplitM {
-    using TraitType = AscendC::Te::CopyL0C2UBTrait;
+    using TraitType = asc::te::l0c_to_ub_trait;
     static constexpr const TraitType value = MIX_COPY_L0C2UB_SPLIT_M_TRAIT;
 };
 
 struct CopyL0C2UBTraitSplitM {
-    using TraitType = AscendC::Te::CopyL0C2UBTrait;
-    static constexpr const TraitType value = AscendC::Te::CopyL0C2UBTrait{AscendC::Te::RoundMode::DEFAULT, false, false,
-                                                                          AscendC::Te::DualDstMode::DUAL_DST_SPLIT_M};
+    using TraitType = asc::te::l0c_to_ub_trait;
+    static constexpr const TraitType value = asc::te::l0c_to_ub_trait{asc::te::round_mode::default_round, false, false,
+                                                                      asc::te::dual_dst_mode::split_m};
 };
 
 } // namespace Blaze::Gemm::Tile

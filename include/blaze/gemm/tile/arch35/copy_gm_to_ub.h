@@ -25,17 +25,16 @@ struct CopyGM2UBWeight {
     template <typename Tp, const Tp& traits, typename T, typename U>
     __aicore__ inline static void Copy(const T& dst, const U& src)
     {
-        using SrcLayoutPattern = AscendC::Te::GetLayoutPattern<typename U::layoutType>;
-        using DstLayoutPattern = AscendC::Te::GetLayoutPattern<typename T::layoutType>;
-        constexpr bool IS_ZN_WEIGHT = AscendC::Std::is_same_v<SrcLayoutPattern, AscendC::Te::ZNLayoutPtn>;
-        constexpr bool IS_DN_WEIGHT = AscendC::Std::is_same_v<SrcLayoutPattern, AscendC::Te::DNExtLayoutPtn>;
+        using SrcLayoutPattern = asc::te::get_layout_pattern<typename U::layout_type>;
+        using DstLayoutPattern = asc::te::get_layout_pattern<typename T::layout_type>;
+        constexpr bool IS_ZN_WEIGHT = AscendC::Std::is_same_v<SrcLayoutPattern, asc::te::zn_layout_ptn>;
+        constexpr bool IS_DN_WEIGHT = AscendC::Std::is_same_v<SrcLayoutPattern, asc::te::dn_ext_layout_ptn>;
         static_assert(IS_ZN_WEIGHT || IS_DN_WEIGHT, "Packed weight copy only supports ZN and DNExt source layouts");
         static_assert(AscendC::Std::is_same_v<DstLayoutPattern, SrcLayoutPattern>,
-            "Packed weight copy source and destination layouts must match");
-        static_assert(
-            sizeof(typename T::elementType) == sizeof(typename U::elementType) &&
-                sizeof(typename T::elementType) == 1,
-            "Packed weight copy requires matching packed source and destination elements");
+                      "Packed weight copy source and destination layouts must match");
+        static_assert(sizeof(typename T::element_type) == sizeof(typename U::element_type) &&
+                          sizeof(typename T::element_type) == 1,
+                      "Packed weight copy requires matching packed source and destination elements");
 
         if constexpr (IS_DN_WEIGHT) {
             CopyDnPackedWeight(dst, src);
@@ -48,13 +47,13 @@ private:
     template <typename T, typename U>
     __aicore__ inline static void CopyDnPackedWeight(const T& dst, const U& src)
     {
-        const auto& dstLayout = dst.Layout();
-        const auto& srcLayout = src.Layout();
+        const auto& dstLayout = dst.layout();
+        const auto& srcLayout = src.layout();
 
-        uint8_t cacheMode = src.Engine().GetCacheMode();
-        auto srcShape = AscendC::Te::GetShape(srcLayout);
-        auto srcStrideTuple = AscendC::Te::GetStride(srcLayout);
-        auto dstStrideTuple = AscendC::Te::GetStride(dstLayout);
+        uint8_t cacheMode = src.engine().get_cache_mode();
+        auto srcShape = asc::te::get_shape(srcLayout);
+        auto srcStrideTuple = asc::te::get_stride(srcLayout);
+        auto dstStrideTuple = asc::te::get_stride(dstLayout);
 
         uint16_t blockCount = AscendC::Std::get<1>(AscendC::Std::get<1>(srcShape));
         uint32_t kLen = AscendC::Std::get<1>(AscendC::Std::get<0>(srcShape));
@@ -66,22 +65,21 @@ private:
         uint32_t blockLen = kLen >> 1U;
         int64_t srcRowSpanBytes = srcRowStride >> 1U;
         int64_t dstRowSpanBytes = dstRowStride >> 1U;
-        asc_copy_gm2ub_align(
-            (__ubuf__ uint8_t*)dst.Data().Get(), (__gm__ uint8_t*)src.Data().Get(), blockCount, blockLen, 0, 0, false,
-            cacheMode, srcRowSpanBytes, dstRowSpanBytes);
+        asc_copy_gm2ub_align((__ubuf__ uint8_t*)dst.data().get(), (__gm__ uint8_t*)src.data().get(), blockCount,
+                             blockLen, 0, 0, false, cacheMode, srcRowSpanBytes, dstRowSpanBytes);
     }
 
     template <typename T, typename U>
     __aicore__ inline static void CopyZnPackedWeight(const T& dst, const U& src)
     {
-        const auto& dstLayout = dst.Layout();
-        const auto& srcLayout = src.Layout();
-        uint8_t cacheMode = src.Engine().GetCacheMode();
+        const auto& dstLayout = dst.layout();
+        const auto& srcLayout = src.layout();
+        uint8_t cacheMode = src.engine().get_cache_mode();
 
         // Get shape and stride
-        auto srcShape = AscendC::Te::GetShape(srcLayout);
-        auto srcStrideTuple = AscendC::Te::GetStride(srcLayout);
-        auto dstStrideTuple = AscendC::Te::GetStride(dstLayout);
+        auto srcShape = asc::te::get_shape(srcLayout);
+        auto srcStrideTuple = asc::te::get_stride(srcLayout);
+        auto dstStrideTuple = asc::te::get_stride(dstLayout);
 
         // Extract k1 from shape: ((c0, k1), (n0, n1)).
         uint16_t blockCount = AscendC::Std::get<1>(AscendC::Std::get<0>(srcShape));
@@ -91,9 +89,8 @@ private:
         int64_t srcStride = AscendC::Std::get<1>(AscendC::Std::get<0>(srcStrideTuple)) >> 1;
         int64_t dstStride = AscendC::Std::get<1>(AscendC::Std::get<0>(dstStrideTuple)) >> 1;
 
-        asc_copy_gm2ub_align(
-            (__ubuf__ uint8_t*)dst.Data().Get(), (__gm__ uint8_t*)src.Data().Get(), blockCount, blockLen, 0, 0, false,
-            cacheMode, srcStride, dstStride);
+        asc_copy_gm2ub_align((__ubuf__ uint8_t*)dst.data().get(), (__gm__ uint8_t*)src.data().get(), blockCount,
+                             blockLen, 0, 0, false, cacheMode, srcStride, dstStride);
     }
 };
 
@@ -101,9 +98,16 @@ private:
 } // namespace Gemm
 } // namespace Blaze
 
-// Register CopyTraits for the custom GM-to-UB packed-weight copy.
+namespace asc {
+namespace te {
+
+template <typename Traits>
+struct copy_traits<Blaze::Gemm::Tile::CopyGM2UBWeight, Traits>
+    : public copy_traits<Blaze::Gemm::Tile::CopyGM2UBWeight, Traits, Blaze::Gemm::Tile::CopyGM2UBWeight, Traits> {};
+
 template <>
-struct AscendC::Te::CopyTraits<Blaze::Gemm::Tile::CopyGM2UBWeight>
-    : public AscendC::Te::CopyTraits<
-          Blaze::Gemm::Tile::CopyGM2UBWeight, AscendC::Te::CopyGM2UBTraitDefault, Blaze::Gemm::Tile::CopyGM2UBWeight,
-          AscendC::Te::CopyGM2UBTraitDefault> {};
+struct copy_traits<Blaze::Gemm::Tile::CopyGM2UBWeight>
+    : public copy_traits<Blaze::Gemm::Tile::CopyGM2UBWeight, gm_to_ub_trait_default> {};
+
+} // namespace te
+} // namespace asc

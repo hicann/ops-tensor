@@ -108,11 +108,11 @@ __aicore__ inline void MyOperatorBasicWrapper(
     GM_ADDR xGM, GM_ADDR yGM, const MyOperatorTilingData& tiling)
 {
     // 调用 Blaze Kernel
-    using ProblemShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
-    using LayoutX = AscendC::Te::NDExtLayoutPtn;
+    using ProblemShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
+    using LayoutX = asc::te::nd_ext_layout_ptn;
 
-    auto gmX = AscendC::Te::MakeTensor(
-        AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(xGM),
+    auto gmX = asc::te::make_tensor(
+        asc::te::make_mem_ptr<asc::te::location::gm>(xGM),
         LayoutX{}(tiling.m, tiling.k));
 
     // ... 调用 Kernel

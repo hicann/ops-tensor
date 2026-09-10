@@ -179,10 +179,10 @@ using BType = fp8_e4m3fn_t;
 using CType = float;
 using BiasType = float;
 
-using LayoutA = AscendC::Te::NDExtLayoutPtn;
-using LayoutB = AscendC::Te::NZLayoutPtn;
-using LayoutC = AscendC::Te::NDExtLayoutPtn;
-using LayoutBias = AscendC::Te::NDExtLayoutPtn;
+using LayoutA = asc::te::nd_ext_layout_ptn;
+using LayoutB = asc::te::nz_layout_ptn;
+using LayoutC = asc::te::nd_ext_layout_ptn;
+using LayoutBias = asc::te::nd_ext_layout_ptn;
 
 using DispatchPolicy = Blaze::Gemm::GroupedMatmulWithScaleMx<0>;
 using BlockMmad = Blaze::Gemm::Block::BlockMmad<
@@ -204,12 +204,12 @@ blockMmad.Init(problemShape, params);
 
 ### 组件执行
 ```cpp
-auto gmBlockA = gmA.Slice(...);
-auto gmBlockB = gmB.Slice(...);
-auto gmBlockScaleA = gmScaleA.Slice(...);
-auto gmBlockScaleB = gmScaleB.Slice(...);
-auto gmBlockBias = gmBias.Slice(...);
-auto gmBlockC = gmC.Slice(...);
+auto gmBlockA = gmA.slice(...);
+auto gmBlockB = gmB.slice(...);
+auto gmBlockScaleA = gmScaleA.slice(...);
+auto gmBlockScaleB = gmScaleB.slice(...);
+auto gmBlockBias = gmBias.slice(...);
+auto gmBlockC = gmC.slice(...);
 
 const int64_t blockK = problemK;
 BlockMmad::BlockShape blockShape{blockM, blockN, blockK, 0};

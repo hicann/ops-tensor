@@ -133,7 +133,7 @@ static bool ParseCliArgs(int argc, const char** argv, CliArgs& args)
 /* Device-side kernel                                                          */
 /* ========================================================================== */
 
-using ProblemShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t, int64_t>;
+using ProblemShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t, int64_t>;
 using BlockScheduler = Blaze::Gemm::Block::BlockSchedulerMatmulBasic<ProblemShape>;
 
 template <class A_TYPE, class B_TYPE, class C_TYPE, class BIAS_TYPE, uint64_t NON_CONTIGUOUS_TYPE>
@@ -145,10 +145,10 @@ __global__ __aicore__ void tbmm_basic_kernel(GM_ADDR aGM, GM_ADDR bGM, GM_ADDR c
     KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_MIX_AIC_1_2);
     AscendC::InitSocState();
 
-    using LayoutA = AscendC::Te::NDExtLayoutPtn;
-    using LayoutB = AscendC::Te::NDExtLayoutPtn;
-    using LayoutC = AscendC::Te::NDExtLayoutPtn;
-    using LayoutBias = AscendC::Te::NDExtLayoutPtn;
+    using LayoutA = asc::te::nd_ext_layout_ptn;
+    using LayoutB = asc::te::nd_ext_layout_ptn;
+    using LayoutC = asc::te::nd_ext_layout_ptn;
+    using LayoutBias = asc::te::nd_ext_layout_ptn;
 
     using DispatchPolicy = Blaze::Gemm::MatmulMultiBlockBasic<0, 0, Blaze::Gemm::KernelMmadMultiBlockTBMM,
                                                               NON_CONTIGUOUS_TYPE>;

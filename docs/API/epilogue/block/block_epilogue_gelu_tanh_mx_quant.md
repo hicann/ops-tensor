@@ -202,7 +202,7 @@ __aicore__ inline void operator()(
 典型组合如下：
 
 ~~~cpp
-using ProblemShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
+using ProblemShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
 
 using DispatchPolicy = Blaze::Gemm::GroupedMatmulWithScaleMx<
     0, false, Blaze::Gemm::KernelGroupedMmadWithScaleMxActivationQuant>;

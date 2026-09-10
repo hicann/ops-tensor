@@ -46,12 +46,12 @@ template <typename AType, typename BType, typename CType, typename BiasType, uin
 __aicore__ inline void TqbmmMxBasicWrapper(GM_ADDR aGM, GM_ADDR bGM, GM_ADDR biasGM, GM_ADDR scaleAGM, GM_ADDR scaleBGM,
                                            GM_ADDR cGM, const TqbmmMxTilingData& tilingData)
 {
-    using LayoutA = AscendC::Te::NDExtLayoutPtn;
-    using LayoutB = AscendC::Te::NDExtLayoutPtn;
-    using LayoutC = AscendC::Te::NDExtLayoutPtn;
-    using LayoutBias = AscendC::Te::NDExtLayoutPtn;
+    using LayoutA = asc::te::nd_ext_layout_ptn;
+    using LayoutB = asc::te::nd_ext_layout_ptn;
+    using LayoutC = asc::te::nd_ext_layout_ptn;
+    using LayoutBias = asc::te::nd_ext_layout_ptn;
 
-    using ProblemShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
+    using ProblemShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
 
     using DispatchPolicy = Blaze::Gemm::MatmulWithScaleMx<0, false, Blaze::Gemm::KernelMmadMultiBlockTQBMM,
                                                           Blaze::Gemm::L0C2UB_MODE_NONE, NON_CONTIGUOUS_TYPE>;

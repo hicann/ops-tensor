@@ -168,10 +168,10 @@ template <typename AType, typename BType, typename LayoutB, bool MultiTensor = f
 void RunQgmmCase(const std::string& dtypeA, const std::string& dtypeB, const std::string& weightFormat,
                  uint8_t groupListType = 1, bool withBias = false, uint8_t dbL0C = 1)
 {
-    using LayoutA = AscendC::Te::NDExtLayoutPtn;
+    using LayoutA = asc::te::nd_ext_layout_ptn;
     constexpr size_t totalM = M0 + M1;
-    constexpr bool blockedWeight = std::is_same_v<LayoutB, AscendC::Te::NZLayoutPtn> ||
-                                   std::is_same_v<LayoutB, AscendC::Te::ZNLayoutPtn>;
+    constexpr bool blockedWeight = std::is_same_v<LayoutB, asc::te::nz_layout_ptn> ||
+                                   std::is_same_v<LayoutB, asc::te::zn_layout_ptn>;
     constexpr size_t c0 = IS_FP4_TYPE<BType> ? 64UL : 32UL;
     constexpr size_t alignedN = blockedWeight ? ((N + 15UL) / 16UL * 16UL) : N;
     constexpr size_t alignedK = blockedWeight ? ((K + c0 - 1UL) / c0 * c0) : K;
@@ -238,11 +238,11 @@ void FillShapeGroupList(GmBuffer& groupList, uint32_t groupNum, int64_t splitSiz
 template <typename MxType, typename LayoutA, typename LayoutB>
 void RunQgmmShapeCase(uint32_t e, int64_t m, int64_t n, int64_t k, uint8_t l1BufferStage = 2, uint8_t groupListType = 1)
 {
-    constexpr bool transA = std::is_same_v<LayoutA, AscendC::Te::DNExtLayoutPtn>;
-    constexpr bool transB = std::is_same_v<LayoutB, AscendC::Te::DNExtLayoutPtn> ||
-                            std::is_same_v<LayoutB, AscendC::Te::ZNLayoutPtn>;
-    constexpr bool weightNz = std::is_same_v<LayoutB, AscendC::Te::NZLayoutPtn> ||
-                              std::is_same_v<LayoutB, AscendC::Te::ZNLayoutPtn>;
+    constexpr bool transA = std::is_same_v<LayoutA, asc::te::dn_ext_layout_ptn>;
+    constexpr bool transB = std::is_same_v<LayoutB, asc::te::dn_ext_layout_ptn> ||
+                            std::is_same_v<LayoutB, asc::te::zn_layout_ptn>;
+    constexpr bool weightNz = std::is_same_v<LayoutB, asc::te::nz_layout_ptn> ||
+                              std::is_same_v<LayoutB, asc::te::zn_layout_ptn>;
     const size_t c0 = IS_FP4_TYPE<MxType> ? 64UL : 32UL;
     const size_t storedK = weightNz ? (transB ? ((k + c0 - 1UL) / c0 * c0) : ((k + 15UL) / 16UL * 16UL)) : k;
     const size_t storedN = weightNz ? (transB ? ((n + 15UL) / 16UL * 16UL) : ((n + c0 - 1UL) / c0 * c0)) : n;
@@ -294,87 +294,87 @@ protected:
 
 TEST_F(QgmmMxKernelTest, MxFp8NdSingleTensor)
 {
-    RunQgmmCase<fp8_e4m3fn_t, fp8_e4m3fn_t, AscendC::Te::NDExtLayoutPtn>("mxfp8_e4m3", "mxfp8_e4m3", "nd");
+    RunQgmmCase<fp8_e4m3fn_t, fp8_e4m3fn_t, asc::te::nd_ext_layout_ptn>("mxfp8_e4m3", "mxfp8_e4m3", "nd");
 }
 
 TEST_F(QgmmMxKernelTest, MxFp8E5m2NdSingleTensor)
 {
-    RunQgmmCase<fp8_e5m2_t, fp8_e5m2_t, AscendC::Te::NDExtLayoutPtn>("mxfp8_e5m2", "mxfp8_e5m2", "nd");
+    RunQgmmCase<fp8_e5m2_t, fp8_e5m2_t, asc::te::nd_ext_layout_ptn>("mxfp8_e5m2", "mxfp8_e5m2", "nd");
 }
 
 TEST_F(QgmmMxKernelTest, MxFp4NdSingleTensor)
 {
-    RunQgmmCase<fp4x2_e2m1_t, fp4x2_e2m1_t, AscendC::Te::NDExtLayoutPtn>("mxfp4_e2m1", "mxfp4_e2m1", "nd");
+    RunQgmmCase<fp4x2_e2m1_t, fp4x2_e2m1_t, asc::te::nd_ext_layout_ptn>("mxfp4_e2m1", "mxfp4_e2m1", "nd");
 }
 
 TEST_F(QgmmMxKernelTest, MxFp4E1m2NzSingleTensor)
 {
-    RunQgmmCase<fp4x2_e1m2_t, fp4x2_e1m2_t, AscendC::Te::NZLayoutPtn>("mxfp4_e1m2", "mxfp4_e1m2", "nz");
+    RunQgmmCase<fp4x2_e1m2_t, fp4x2_e1m2_t, asc::te::nz_layout_ptn>("mxfp4_e1m2", "mxfp4_e1m2", "nz");
 }
 
 TEST_F(QgmmMxKernelTest, MxFp4DnWeightOffsetListWithBias)
 {
-    RunQgmmCase<fp4x2_e2m1_t, fp4x2_e2m1_t, AscendC::Te::DNExtLayoutPtn>("mxfp4_e2m1", "mxfp4_e2m1", "dn", 0, true, 2);
+    RunQgmmCase<fp4x2_e2m1_t, fp4x2_e2m1_t, asc::te::dn_ext_layout_ptn>("mxfp4_e2m1", "mxfp4_e2m1", "dn", 0, true, 2);
 }
 
 TEST_F(QgmmMxKernelTest, MxFp8NdSparseList)
 {
-    RunQgmmCase<fp8_e4m3fn_t, fp8_e4m3fn_t, AscendC::Te::NDExtLayoutPtn>("mxfp8_e4m3", "mxfp8_e4m3", "nd", 2);
+    RunQgmmCase<fp8_e4m3fn_t, fp8_e4m3fn_t, asc::te::nd_ext_layout_ptn>("mxfp8_e4m3", "mxfp8_e4m3", "nd", 2);
 }
 
 TEST_F(QgmmMxKernelTest, MxFp8NzSingleTensor)
 {
-    RunQgmmCase<fp8_e4m3fn_t, fp8_e4m3fn_t, AscendC::Te::NZLayoutPtn>("mxfp8_e4m3", "mxfp8_e4m3", "nz");
+    RunQgmmCase<fp8_e4m3fn_t, fp8_e4m3fn_t, asc::te::nz_layout_ptn>("mxfp8_e4m3", "mxfp8_e4m3", "nz");
 }
 
 TEST_F(QgmmMxKernelTest, MxFp4NzSingleTensor)
 {
-    RunQgmmCase<fp4x2_e2m1_t, fp4x2_e2m1_t, AscendC::Te::NZLayoutPtn>("mxfp4_e2m1", "mxfp4_e2m1", "nz");
+    RunQgmmCase<fp4x2_e2m1_t, fp4x2_e2m1_t, asc::te::nz_layout_ptn>("mxfp4_e2m1", "mxfp4_e2m1", "nz");
 }
 
 TEST_F(QgmmMxKernelTest, MxFp4MixedEncodingNzSingleTensor)
 {
-    RunQgmmCase<fp4x2_e2m1_t, fp4x2_e1m2_t, AscendC::Te::NZLayoutPtn>("mxfp4_e2m1", "mxfp4_e1m2", "nz");
+    RunQgmmCase<fp4x2_e2m1_t, fp4x2_e1m2_t, asc::te::nz_layout_ptn>("mxfp4_e2m1", "mxfp4_e1m2", "nz");
 }
 
 TEST_F(QgmmMxKernelTest, MxFp8ZnSingleTensor)
 {
-    RunQgmmCase<fp8_e4m3fn_t, fp8_e4m3fn_t, AscendC::Te::ZNLayoutPtn>("mxfp8_e4m3", "mxfp8_e4m3", "zn");
+    RunQgmmCase<fp8_e4m3fn_t, fp8_e4m3fn_t, asc::te::zn_layout_ptn>("mxfp8_e4m3", "mxfp8_e4m3", "zn");
 }
 
 TEST_F(QgmmMxKernelTest, MxFp8NzMultiTensor)
 {
-    RunQgmmCase<fp8_e4m3fn_t, fp8_e4m3fn_t, AscendC::Te::NZLayoutPtn, true>("mxfp8_e4m3", "mxfp8_e4m3", "nz");
+    RunQgmmCase<fp8_e4m3fn_t, fp8_e4m3fn_t, asc::te::nz_layout_ptn, true>("mxfp8_e4m3", "mxfp8_e4m3", "nz");
 }
 
 TEST_F(QgmmMxKernelTest, MxFp4NzMultiTensor)
 {
-    RunQgmmCase<fp4x2_e2m1_t, fp4x2_e2m1_t, AscendC::Te::NZLayoutPtn, true>("mxfp4_e2m1", "mxfp4_e2m1", "nz");
+    RunQgmmCase<fp4x2_e2m1_t, fp4x2_e2m1_t, asc::te::nz_layout_ptn, true>("mxfp4_e2m1", "mxfp4_e2m1", "nz");
 }
 
 TEST_F(QgmmMxKernelTest, MxFp4E1m2NzMultiTensor)
 {
-    RunQgmmCase<fp4x2_e1m2_t, fp4x2_e1m2_t, AscendC::Te::NZLayoutPtn, true>("mxfp4_e1m2", "mxfp4_e1m2", "nz");
+    RunQgmmCase<fp4x2_e1m2_t, fp4x2_e1m2_t, asc::te::nz_layout_ptn, true>("mxfp4_e1m2", "mxfp4_e1m2", "nz");
 }
 
 TEST_F(QgmmMxKernelTest, BasicShapeE1M16N32K64)
 {
-    RunQgmmShapeCase<fp8_e4m3fn_t, AscendC::Te::NDExtLayoutPtn, AscendC::Te::NDExtLayoutPtn>(1, 16, 32, 64);
+    RunQgmmShapeCase<fp8_e4m3fn_t, asc::te::nd_ext_layout_ptn, asc::te::nd_ext_layout_ptn>(1, 16, 32, 64);
 }
 
 TEST_F(QgmmMxKernelTest, BasicShapeE3M24N48K96Tail)
 {
-    RunQgmmShapeCase<fp8_e4m3fn_t, AscendC::Te::NDExtLayoutPtn, AscendC::Te::NDExtLayoutPtn>(3, 24, 48, 96);
+    RunQgmmShapeCase<fp8_e4m3fn_t, asc::te::nd_ext_layout_ptn, asc::te::nd_ext_layout_ptn>(3, 24, 48, 96);
 }
 
 TEST_F(QgmmMxKernelTest, MxFp8NdL1TripleBuffer)
 {
-    RunQgmmShapeCase<fp8_e4m3fn_t, AscendC::Te::NDExtLayoutPtn, AscendC::Te::NDExtLayoutPtn>(2, 64, 128, 192, 3);
+    RunQgmmShapeCase<fp8_e4m3fn_t, asc::te::nd_ext_layout_ptn, asc::te::nd_ext_layout_ptn>(2, 64, 128, 192, 3);
 }
 
 TEST_F(QgmmMxKernelTest, TransB)
 {
-    RunQgmmShapeCase<fp8_e4m3fn_t, AscendC::Te::NDExtLayoutPtn, AscendC::Te::DNExtLayoutPtn>(2, 16, 64, 64);
+    RunQgmmShapeCase<fp8_e4m3fn_t, asc::te::nd_ext_layout_ptn, asc::te::dn_ext_layout_ptn>(2, 16, 64, 64);
 }
 
 } // namespace

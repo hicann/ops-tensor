@@ -85,11 +85,11 @@ using AType = int8_t;
 using BType = int8_t;
 using OutType = bfloat16_t;
 using BiasType = int32_t;
-using LayoutA = AscendC::Te::NDExtLayoutPtn;
-using LayoutB = AscendC::Te::NDExtLayoutPtn;
-using LayoutC = AscendC::Te::NDExtLayoutPtn;
-using LayoutBias = AscendC::Te::NDExtLayoutPtn;
-using ProblemShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
+using LayoutA = asc::te::nd_ext_layout_ptn;
+using LayoutB = asc::te::nd_ext_layout_ptn;
+using LayoutC = asc::te::nd_ext_layout_ptn;
+using LayoutBias = asc::te::nd_ext_layout_ptn;
+using ProblemShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
 using BTypeTuple = AscendC::Std::tuple<BType, uint64_t>;
 
 constexpr uint64_t FULL_LOAD_MODE = Blaze::Gemm::NONE_FULL_LOAD_MODE;

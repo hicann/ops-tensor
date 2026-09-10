@@ -35,12 +35,12 @@
 #undef half
 #endif
 
-template <typename AType_, typename BType_, typename OutputType_, typename LayoutB_ = AscendC::Te::NZLayoutPtn>
+template <typename AType_, typename BType_, typename OutputType_, typename LayoutB_ = asc::te::nz_layout_ptn>
 struct QgmmMxActivationQuantTypes {
-    using ProblemShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
-    using LayoutA = AscendC::Te::NDExtLayoutPtn;
+    using ProblemShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
+    using LayoutA = asc::te::nd_ext_layout_ptn;
     using LayoutB = LayoutB_;
-    using LayoutC = AscendC::Te::NDExtLayoutPtn;
+    using LayoutC = asc::te::nd_ext_layout_ptn;
     using DispatchPolicy = Blaze::Gemm::GroupedMatmulWithScaleMx<
         0, false, Blaze::Gemm::KernelGroupedMmadWithScaleMxActivationQuant>;
     using BlockMmad = Blaze::Gemm::Block::BlockMmad<DispatchPolicy, AType_, LayoutA, BType_, LayoutB, float, LayoutC,
@@ -60,8 +60,8 @@ class KernelSmokeEpilogue {
 public:
     using DataTypeOut = DataTypeOut_;
     using DataTypeIn = DataTypeIn_;
-    using BlockShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
-    using ProblemShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
+    using BlockShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
+    using ProblemShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
 
     struct OutputOffsets {
         int64_t yOffset{0};
@@ -135,7 +135,7 @@ __aicore__ inline void RunGmmaqMx(GM_ADDR x, GM_ADDR weight, GM_ADDR weightScale
 }
 } // namespace GMMAQUT
 
-template <typename AType_, typename BType_, typename OutputType_, typename LayoutB_ = AscendC::Te::NZLayoutPtn>
+template <typename AType_, typename BType_, typename OutputType_, typename LayoutB_ = asc::te::nz_layout_ptn>
 __global__ __aicore__ void GmmaqMxKernelEntry(GM_ADDR x, GM_ADDR weight, GM_ADDR weightScale, GM_ADDR xScale,
                                               GM_ADDR groupList, GM_ADDR y, GM_ADDR yScale, GM_ADDR tiling)
 {

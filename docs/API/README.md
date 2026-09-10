@@ -85,10 +85,10 @@ Blaze 使用 Ascend Tensor API 的 Layout Pattern 来描述矩阵数据布局：
 
 | Layout Pattern | 说明 | 适用场景 |
 |----------------|------|---------|
-| `NZLayoutPtn` | NZ格式（fractal布局） | NZ场景，提升L1/L0搬运效率 |
-| `ZNLayoutPtn` | ZN格式（fractal布局） | NZ + 转置场景，提升L1/L0搬运效率 |
-| `NDLayoutPtn` / `NDExtLayoutPtn` | ND格式（连续布局）/ ND扩展格式 | ND 场景，其中ND扩展格式相比较ND格式支持更加灵活的stride配置 |
-| `DNLayoutPtn` / `DNExtLayoutPtn` | DN格式（连续布局）/ DN扩展格式 | ND + 转置场景，其中DN扩展格式相比较DN格式支持更加灵活的stride配置 |
+| `nz_layout_ptn` | NZ格式（fractal布局） | NZ场景，提升L1/L0搬运效率 |
+| `zn_layout_ptn` | ZN格式（fractal布局） | NZ + 转置场景，提升L1/L0搬运效率 |
+| `nd_layout_ptn` / `nd_ext_layout_ptn` | ND格式（连续布局）/ ND扩展格式 | ND 场景，其中ND扩展格式相比较ND格式支持更加灵活的stride配置 |
+| `dn_layout_ptn` / `dn_ext_layout_ptn` | DN格式（连续布局）/ DN扩展格式 | ND + 转置场景，其中DN扩展格式相比较DN格式支持更加灵活的stride配置 |
 
 
 Tensor和Layout关系如下：
@@ -188,20 +188,20 @@ FRACTAL_ZN格式，简称ZN格式，是对一个Tensor最低两维（一个Tenso
 ### Layout 构建流程示例
 ```cpp
 // 1. 定义Layout Pattern类型
-using LayoutA = AscendC::Te::NDExtLayoutPtn;      // A矩阵使用ND扩展格式
-using LayoutB = AscendC::Te::NZLayoutPtn;         // B矩阵使用NZ格式
-using LayoutC = AscendC::Te::NDExtLayoutPtn;     // C矩阵使用ND扩展格式
+using LayoutA = asc::te::nd_ext_layout_ptn;      // A矩阵使用ND扩展格式
+using LayoutB = asc::te::nz_layout_ptn;         // B矩阵使用NZ格式
+using LayoutC = asc::te::nd_ext_layout_ptn;     // C矩阵使用ND扩展格式
 
-// 2. 使用FrameLayoutFormat构建Layout
-using MakeLayoutA = AscendC::Te::FrameLayoutFormat<
+// 2. 使用frame_layout_format构建Layout
+using MakeLayoutA = asc::te::frame_layout_format<
     LayoutA,                                   // Layout Pattern
-    AscendC::Std::Int<C0_ELEMENT<AType>>>;     // C0对齐元素数
-using MakeLayoutB = AscendC::Te::FrameLayoutFormat<
+    AscendC::Std::Int<asc::te::c0_element<AType>>>;     // C0对齐元素数
+using MakeLayoutB = asc::te::frame_layout_format<
     LayoutB,
-    AscendC::Std::Int<C0_ELEMENT<BType>>>;
-using MakeLayoutC = AscendC::Te::FrameLayoutFormat<
+    AscendC::Std::Int<asc::te::c0_element<BType>>>;
+using MakeLayoutC = asc::te::frame_layout_format<
     LayoutC,
-    AscendC::Std::Int<C0_ELEMENT<CType>>>;
+    AscendC::Std::Int<asc::te::c0_element<CType>>>;
 
 // 3. Layout实例化
 auto layoutA = MakeLayoutA{}(m_, k_);  // 创建(m, k)的A矩阵layout
@@ -212,19 +212,19 @@ auto layoutC = MakeLayoutC{}(m_, n_);  // 创建(m, n)的C矩阵layout
 ### Tensor 创建流程示例
 ```cpp
 // 1. 创建GM MemPtr
-auto memPtrA = AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(aGmAddr_);
-auto memPtrB = AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(bGmAddr_);
-auto memPtrC = AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(cGmAddr_);
+auto memPtrA = asc::te::make_mem_ptr<asc::te::location::gm>(aGmAddr_);
+auto memPtrB = asc::te::make_mem_ptr<asc::te::location::gm>(bGmAddr_);
+auto memPtrC = asc::te::make_mem_ptr<asc::te::location::gm>(cGmAddr_);
 
 // 2. 创建GM Tensor
-auto gmA = AscendC::Te::MakeTensor(memPtrA, layoutA);
-auto gmB = AscendC::Te::MakeTensor(memPtrB, layoutB);
-auto gmC = AscendC::Te::MakeTensor(memPtrC, layoutC);
+auto gmA = asc::te::make_tensor(memPtrA, layoutA);
+auto gmB = asc::te::make_tensor(memPtrB, layoutB);
+auto gmC = asc::te::make_tensor(memPtrC, layoutC);
 
 // 3. Tensor Slice操作（获取tile数据）
-auto gmBlockA = gmA.Slice(
-    AscendC::MakeCoord(coordM, 0L),          // 起始坐标
-    AscendC::MakeShape(shapeM, shapeK));     // tile形状
+auto gmBlockA = gmA.slice(
+    asc::te::make_coord(coordM, 0L),         // 起始坐标
+    asc::te::make_shape(shapeM, shapeK));    // tile形状
 ```
 
 ### Layout 在矩阵乘中的应用
@@ -235,7 +235,7 @@ auto gmBlockA = gmA.Slice(
 
 ### C0 对齐说明
 不同数据类型的C0对齐元素数：
-| 数据类型 | C0_ELEMENT | 说明 |
+| 数据类型 | c0_element | 说明 |
 |---------|-----------|------|
 | half (FP16) | 16 | 16个FP16元素 = 32字节 |
 | float (FP32) | 8 | 8个FP32元素 = 32字节 |
@@ -252,8 +252,8 @@ auto gmBlockA = gmA.Slice(
 │ // 定义数据类型和布局                                           │
 │ using AType = half;                                            │
 │ using BType = half;                                            │
-│ using LayoutA = AscendC::Te::NDExtLayoutPtn;                   │
-│ using LayoutB = AscendC::Te::NZLayoutPtn;                      │
+│ using LayoutA = asc::te::nd_ext_layout_ptn;                   │
+│ using LayoutB = asc::te::nz_layout_ptn;                      │
 │                                                                │
 │ // 定义 ProblemShape                                           │
 │ using ProblemShape = Shape<int64_t, int64_t, int64_t, int64_t>;│

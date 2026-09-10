@@ -31,13 +31,13 @@
 
 | 数据 | 类型 | Layout | 说明 |
 | :--- | :--- | :--- | :--- |
-| A | `fp8_e4m3fn_t` | `NDExtLayoutPtn` | 激活矩阵 |
-| B | `fp4x2_e2m1_t` | `ZNLayoutPtn` 或 `DNExtLayoutPtn` | packed FP4 转置权重 |
+| A | `fp8_e4m3fn_t` | `nd_ext_layout_ptn` | 激活矩阵 |
+| B | `fp4x2_e2m1_t` | `zn_layout_ptn` 或 `dn_ext_layout_ptn` | packed FP4 转置权重 |
 | ScaleA/ScaleB | `fp8_e8m0_t` | 由对应 scale layout 表达 | MX scale |
-| C | `half` 或 `bfloat16_t` | `NDExtLayoutPtn` | 输出矩阵 |
-| Bias | 与 C 一致 | `NDExtLayoutPtn` | 可选，首个 K window 参与计算 |
+| C | `half` 或 `bfloat16_t` | `nd_ext_layout_ptn` | 输出矩阵 |
+| Bias | 与 C 一致 | `nd_ext_layout_ptn` | 可选，首个 K window 参与计算 |
 
-`LayoutB` 是 Weight NZ/ND 的唯一来源：NZ 使用 `ZNLayoutPtn`，ND 使用 `DNExtLayoutPtn`。
+`LayoutB` 是 Weight NZ/ND 的唯一来源：NZ 使用 `zn_layout_ptn`，ND 使用 `dn_ext_layout_ptn`。
 输入 B 必须是转置布局。各输入的 layout pattern 由 `BlockMmad` 类型提供，GM Tensor shape 由
 `ProblemShape` 派生。
 
@@ -61,7 +61,7 @@ class GemmUniversal;
 
 | 参数 | 要求 |
 | :--- | :--- |
-| `ProblemShape` | `AscendC::Te::Shape<int64_t, int64_t, int64_t>`，维序为 `(M, N, K)` |
+| `ProblemShape` | `asc::te::shape<int64_t, int64_t, int64_t>`，维序为 `(M, N, K)` |
 | `BlockMmad` | `MatmulWithWeightQuantMx` 特化的 `BlockMmad` |
 | `BlockEpilogue` | 必须为 `void` |
 | `BlockScheduler` | 通常为 `BlockSchedulerMatmulSwatWithTailSplit<ProblemShape>` |
@@ -132,8 +132,8 @@ __aicore__ inline void operator()(const Params& params);
 
 ## 格式和尾块
 
-- **Weight NZ（`ZNLayoutPtn`）**：AIV 沿 K 方向分片，转换后 UB 使用标准 ZN layout 搭配显式 stride。
-- **Weight ND（`DNExtLayoutPtn`）**：Tensor 坐标为 `(K, N)`，GM 物理数据按 `(N, K)` 行主序存放。
+- **Weight NZ（`zn_layout_ptn`）**：AIV 沿 K 方向分片，转换后 UB 使用标准 ZN layout 搭配显式 stride。
+- **Weight ND（`dn_ext_layout_ptn`）**：Tensor 坐标为 `(K, N)`，GM 物理数据按 `(N, K)` 行主序存放。
   FP8 UB 中每个 K32 slab 的 N pitch 为 `(Align16(N) + 1) * 32B`，UB→L1 时剥离额外 gap。
 - **K 尾块**：AIV 写入物理 K32 block；AIC 在 MMAD 前清理 `[Align32(K), Align64(K))`。
 - **Bias**：仅首个 K window 处理，按 MX MMAD 要求乘以 `1/64`；UB backing storage 至少按
@@ -150,12 +150,12 @@ using BType = fp4x2_e2m1_t;
 using ScaleType = AscendC::fp8_e8m0_t;
 using CType = half;
 using BiasType = half;
-using LayoutA = AscendC::Te::NDExtLayoutPtn;
-using LayoutB = AscendC::Te::ZNLayoutPtn;  // ND 权重时改为 DNExtLayoutPtn
-using LayoutC = AscendC::Te::NDExtLayoutPtn;
-using LayoutScaleA = AscendC::Te::ScaleANDLayoutPtn;
-using LayoutScaleB = AscendC::Te::ScaleBDNLayoutPtn;
-using ProblemShape = AscendC::Te::Shape<int64_t, int64_t, int64_t>;
+using LayoutA = asc::te::nd_ext_layout_ptn;
+using LayoutB = asc::te::zn_layout_ptn;  // ND 权重时改为 dn_ext_layout_ptn
+using LayoutC = asc::te::nd_ext_layout_ptn;
+using LayoutScaleA = asc::te::scalea_nd_layout_ptn;
+using LayoutScaleB = asc::te::scaleb_dn_layout_ptn;
+using ProblemShape = asc::te::shape<int64_t, int64_t, int64_t>;
 using DispatchPolicy = Blaze::Gemm::MatmulWithWeightQuantMx;
 using BlockMmad = Blaze::Gemm::Block::BlockMmad<
     DispatchPolicy, AscendC::Std::tuple<AType, ScaleType>, AscendC::Std::tuple<LayoutA, LayoutScaleA>,
@@ -165,12 +165,12 @@ using BlockScheduler = Blaze::Gemm::Block::BlockSchedulerMatmulSwatWithTailSplit
 using Kernel = Blaze::Gemm::Kernel::GemmUniversal<ProblemShape, BlockMmad, void, BlockScheduler>;
 
 Kernel::Params params{
-    AscendC::Te::MakeShape(m, n, k),
+    asc::te::make_shape(m, n, k),
     {aGm, scaleAGm, scaleBGm, cGm,
-     AscendC::Te::MakeShape(
+     asc::te::make_shape(
          static_cast<int64_t>(baseM), static_cast<int64_t>(baseN), static_cast<int64_t>(tileShapeKL1),
          static_cast<int64_t>(tileShapeScaleKL1)),
-     AscendC::Te::MakeShape(
+     asc::te::make_shape(
          static_cast<int64_t>(baseM), static_cast<int64_t>(baseN), static_cast<int64_t>(baseK)),
      l1BufferNum, hasBias},
     {bGm, biasGm, kBubSize, nBubSize},

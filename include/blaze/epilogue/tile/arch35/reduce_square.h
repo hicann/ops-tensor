@@ -25,28 +25,27 @@ public:
     template <typename InputTensor, typename SumSquareTensor>
     __aicore__ inline static void Run(const InputTensor& inputTensor, const SumSquareTensor& sumSquareTensor)
     {
-        using InputElementType = AscendC::Te::GetAttributeElementType<typename InputTensor::elementType*>;
-        using SumSquareElementType = AscendC::Te::GetAttributeElementType<typename SumSquareTensor::elementType*>;
-        using InputLayoutPattern = AscendC::Te::GetLayoutPattern<typename InputTensor::layoutType>;
-        using SumSquareLayoutPattern = AscendC::Te::GetLayoutPattern<typename SumSquareTensor::layoutType>;
+        using InputElementType = asc::te::get_attribute_element_type<typename InputTensor::element_type*>;
+        using SumSquareElementType = asc::te::get_attribute_element_type<typename SumSquareTensor::element_type*>;
+        using InputLayoutPattern = asc::te::get_layout_pattern<typename InputTensor::layout_type>;
+        using SumSquareLayoutPattern = asc::te::get_layout_pattern<typename SumSquareTensor::layout_type>;
         static_assert(
             AscendC::Std::is_same_v<InputElementType, float> && AscendC::Std::is_same_v<SumSquareElementType, float>,
             "ReduceSquare only supports FP32 tensors.");
-        static_assert(
-            AscendC::Std::is_same_v<AscendC::Te::GetMemLocation<InputTensor>, AscendC::Te::Location::UB> &&
-                AscendC::Std::is_same_v<AscendC::Te::GetMemLocation<SumSquareTensor>, AscendC::Te::Location::UB>,
-            "ReduceSquare only supports UB tensors.");
-        static_assert(AscendC::Std::is_same_v<InputLayoutPattern, AscendC::Te::NDExtLayoutPtn> &&
-                          AscendC::Std::is_same_v<SumSquareLayoutPattern, AscendC::Te::NDExtLayoutPtn>,
+        static_assert(AscendC::Std::is_same_v<asc::te::get_mem_location<InputTensor>, asc::te::location::ub> &&
+                          AscendC::Std::is_same_v<asc::te::get_mem_location<SumSquareTensor>, asc::te::location::ub>,
+                      "ReduceSquare only supports UB tensors.");
+        static_assert(AscendC::Std::is_same_v<InputLayoutPattern, asc::te::nd_ext_layout_ptn> &&
+                          AscendC::Std::is_same_v<SumSquareLayoutPattern, asc::te::nd_ext_layout_ptn>,
                       "ReduceSquare requires NDExt tensor layouts.");
 
-        const uint32_t rowCount = static_cast<uint32_t>(AscendC::Te::GetTotalRowShape(inputTensor.Layout()));
-        const uint32_t validElements = static_cast<uint32_t>(AscendC::Te::GetTotalColumnShape(inputTensor.Layout()));
+        const uint32_t rowCount = static_cast<uint32_t>(asc::te::get_total_row_shape(inputTensor.layout()));
+        const uint32_t validElements = static_cast<uint32_t>(asc::te::get_total_column_shape(inputTensor.layout()));
         const uint32_t rowPitch = static_cast<uint32_t>(
-            AscendC::Te::Get<1>(AscendC::Te::Get<0>(inputTensor.Layout().Stride())));
+            asc::te::get<1>(asc::te::get<0>(inputTensor.layout().stride())));
         const uint16_t loopCount = static_cast<uint16_t>((validElements + FP32_REG_ELEMS - 1U) / FP32_REG_ELEMS);
-        auto inputAddr = reinterpret_cast<__ubuf__ float*>(inputTensor.Data().Get());
-        auto sumSquareAddr = reinterpret_cast<__ubuf__ float*>(sumSquareTensor.Data().Get());
+        auto inputAddr = reinterpret_cast<__ubuf__ float*>(inputTensor.data().get());
+        auto sumSquareAddr = reinterpret_cast<__ubuf__ float*>(sumSquareTensor.data().get());
         RunRows(inputAddr, sumSquareAddr, rowCount, validElements, loopCount, rowPitch);
     }
 

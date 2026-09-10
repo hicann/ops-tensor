@@ -221,10 +221,10 @@ using OutType = half;
 using BiasType = float;
 using WorkspaceType = float;
 
-using LayoutA = AscendC::Te::NDExtLayoutPtn;
-using LayoutB = AscendC::Te::NDExtLayoutPtn;
-using LayoutC = AscendC::Te::NDExtLayoutPtn;
-using ProblemShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
+using LayoutA = asc::te::nd_ext_layout_ptn;
+using LayoutB = asc::te::nd_ext_layout_ptn;
+using LayoutC = asc::te::nd_ext_layout_ptn;
+using ProblemShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
 using DispatchPolicy = Blaze::Gemm::MatmulWithScaleMx<0, false, Blaze::Gemm::KernelQbmmMultiBlockStreamK>;
 using EpilogueDispatchPolicy = Blaze::Gemm::MatmulMultiBlockWithStreamK<>;
 

@@ -193,8 +193,8 @@ class QBMMPertensorStreamKTest : public testing::Test {};
 
 TEST_F(QBMMPertensorStreamKTest, TemplateContracts)
 {
-    using Layout = AscendC::Te::NDExtLayoutPtn;
-    using ProblemShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
+    using Layout = asc::te::nd_ext_layout_ptn;
+    using ProblemShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
     using DefaultDispatchPolicy = Blaze::Gemm::MatmulWithScaleFixpipeQuant<>;
     using DispatchPolicy = Blaze::Gemm::MatmulWithScaleFixpipeQuant<0, false,
                                                                     Blaze::Gemm::KernelQbmmPertensorMultiBlockStreamK>;
@@ -235,7 +235,7 @@ TEST_F(QBMMPertensorStreamKTest, TemplateContracts)
 
 TEST_F(QBMMPertensorStreamKTest, SingleScaleWithoutPostBiasIsMaskedBeforeMultiply)
 {
-    using Layout = AscendC::Te::NDExtLayoutPtn;
+    using Layout = asc::te::nd_ext_layout_ptn;
     using DispatchPolicy = Blaze::Gemm::MatmulWithScaleFixpipeQuant<0, false,
                                                                     Blaze::Gemm::KernelQbmmPertensorMultiBlockStreamK>;
     using Mmad = Blaze::Gemm::Block::BlockMmad<DispatchPolicy, int8_t, Layout, AscendC::Std::tuple<int8_t, float>,
@@ -252,7 +252,7 @@ TEST_F(QBMMPertensorStreamKTest, SingleScaleWithoutPostBiasIsMaskedBeforeMultipl
 
 TEST_F(QBMMPertensorStreamKTest, DoubleScaleWithoutPostBiasMergesBeforeMask)
 {
-    using Layout = AscendC::Te::NDExtLayoutPtn;
+    using Layout = asc::te::nd_ext_layout_ptn;
     using DispatchPolicy = Blaze::Gemm::MatmulWithScaleFixpipeQuant<0, false,
                                                                     Blaze::Gemm::KernelQbmmPertensorMultiBlockStreamK>;
     using Mmad = Blaze::Gemm::Block::BlockMmad<DispatchPolicy, fp8_e4m3fn_t, Layout,
@@ -273,7 +273,7 @@ TEST_F(QBMMPertensorStreamKTest, DoubleScaleWithoutPostBiasMergesBeforeMask)
 
 TEST_F(QBMMPertensorStreamKTest, PostBiasScaleDecodePreservesFullPrecision)
 {
-    using Layout = AscendC::Te::NDExtLayoutPtn;
+    using Layout = asc::te::nd_ext_layout_ptn;
     using DispatchPolicy = Blaze::Gemm::MatmulWithScaleFixpipeQuant<0, false,
                                                                     Blaze::Gemm::KernelQbmmPertensorMultiBlockStreamK>;
     using Mmad = Blaze::Gemm::Block::BlockMmad<DispatchPolicy, fp8_e4m3fn_t, Layout,

@@ -33,8 +33,8 @@ struct CopySliceGM2L1 {
 ## 使用方式
 
 ```cpp
-auto copyGM2L1Slice = AscendC::Te::MakeCopy(Blaze::Gemm::Tile::CopySliceGM2L1{});
-AscendC::Te::Copy(copyGM2L1Slice, tensorAL1, gmTileASlice);
+auto copyGM2L1Slice = asc::te::make_copy(Blaze::Gemm::Tile::CopySliceGM2L1{});
+asc::te::copy(copyGM2L1Slice, tensorAL1, gmTileASlice);
 ```
 
 说明：

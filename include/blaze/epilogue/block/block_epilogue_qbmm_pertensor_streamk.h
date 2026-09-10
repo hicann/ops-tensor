@@ -51,8 +51,8 @@ template <class WorkspaceType_, class OutType_, class DispatchPolicy_, class X2S
           class X1ScaleType_ = float>
 class BlockEpilogueQbmmPertensorStreamK {
 public:
-    using BlockShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
-    using BlockCoord = AscendC::Te::Coord<int64_t, int64_t, int64_t, int64_t>;
+    using BlockShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
+    using BlockCoord = asc::te::coord<int64_t, int64_t, int64_t, int64_t>;
 
     struct Params {
         GM_ADDR cGmAddr{nullptr};
@@ -141,13 +141,13 @@ public:
     __aicore__ inline void Init(Params const& params, BlockShape blockShapeInAiv, BlockShape tileL1ShapeInAiv,
                                 BlockCoord coordInAiv, uint64_t usedCoreNum, bool checkIsSkScene)
     {
-        m_ = AscendC::Te::Get<Blaze::Gemm::MNK_M>(blockShapeInAiv);
-        n_ = AscendC::Te::Get<Blaze::Gemm::MNK_N>(blockShapeInAiv);
-        mL1_ = AscendC::Te::Get<Blaze::Gemm::MNK_M>(tileL1ShapeInAiv);
-        nL1_ = AscendC::Te::Get<Blaze::Gemm::MNK_N>(tileL1ShapeInAiv);
-        mCnt_ = AscendC::Te::Get<Blaze::Gemm::MNK_M>(coordInAiv);
-        nCnt_ = AscendC::Te::Get<Blaze::Gemm::MNK_N>(coordInAiv);
-        kCnt_ = AscendC::Te::Get<Blaze::Gemm::MNK_K>(coordInAiv);
+        m_ = asc::te::get<Blaze::Gemm::MNK_M>(blockShapeInAiv);
+        n_ = asc::te::get<Blaze::Gemm::MNK_N>(blockShapeInAiv);
+        mL1_ = asc::te::get<Blaze::Gemm::MNK_M>(tileL1ShapeInAiv);
+        nL1_ = asc::te::get<Blaze::Gemm::MNK_N>(tileL1ShapeInAiv);
+        mCnt_ = asc::te::get<Blaze::Gemm::MNK_M>(coordInAiv);
+        nCnt_ = asc::te::get<Blaze::Gemm::MNK_N>(coordInAiv);
+        kCnt_ = asc::te::get<Blaze::Gemm::MNK_K>(coordInAiv);
         usedCoreNum_ = usedCoreNum;
         cGmAddr_ = params.cGmAddr;
         scaleGmAddr_ = params.scaleGmAddr;
@@ -353,14 +353,14 @@ private:
         // Each split-K partial occupies one fixed-size GM tile; pack its valid prefix contiguously in UB.
         auto ubLayout = Gemm::MakeNDExtLayout(rows, cols, cols);
         auto gmLayout = Gemm::MakeNDExtLayout(rows, cols, static_cast<int64_t>(BLOCK_BASE_M * BLOCK_BASE_N));
-        auto workspaceUb = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB, WorkspaceType>(0),
-                                                   ubLayout);
-        auto workspaceGm = AscendC::Te::MakeTensor(
-            AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(
-                reinterpret_cast<__gm__ WorkspaceType*>(workspaceGmAddr_) + reductionTileParams_.workspaceOffset),
+        auto workspaceUb = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::ub, WorkspaceType>(0),
+                                                ubLayout);
+        auto workspaceGm = asc::te::make_tensor(
+            asc::te::make_mem_ptr<asc::te::location::gm>(reinterpret_cast<__gm__ WorkspaceType*>(workspaceGmAddr_) +
+                                                         reductionTileParams_.workspaceOffset),
             gmLayout);
-        auto copyGM2UB = AscendC::Te::MakeCopy(AscendC::Te::CopyGM2UB{});
-        AscendC::Te::Copy(copyGM2UB, workspaceUb, workspaceGm);
+        auto copyGM2UB = asc::te::make_copy(asc::te::copy_gm_to_ub{});
+        asc::te::copy(copyGM2UB, workspaceUb, workspaceGm);
     }
 
     template <class T>
@@ -412,15 +412,15 @@ private:
     template <class ActualBiasType>
     __aicore__ inline void CopyBiasToUbTyped(int64_t localN, int64_t offsetBias)
     {
-        auto copyGM2UB = AscendC::Te::MakeCopy(AscendC::Te::CopyGM2UB{});
+        auto copyGM2UB = asc::te::make_copy(asc::te::copy_gm_to_ub{});
         auto ubLayout = Gemm::MakeNDExtLayout(1, localN, AlignedUbPitch<ActualBiasType>(localN));
         auto gmLayout = Gemm::MakeNDExtLayout(1, localN, localN);
-        auto biasUb = AscendC::Te::MakeTensor(
-            AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB, ActualBiasType>(biasUbOffset_), ubLayout);
-        auto biasGm = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(
-                                                  reinterpret_cast<__gm__ ActualBiasType*>(biasGmAddr_) + offsetBias),
-                                              gmLayout);
-        AscendC::Te::Copy(copyGM2UB, biasUb, biasGm);
+        auto biasUb = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::ub, ActualBiasType>(biasUbOffset_),
+                                           ubLayout);
+        auto biasGm = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::gm>(
+                                               reinterpret_cast<__gm__ ActualBiasType*>(biasGmAddr_) + offsetBias),
+                                           gmLayout);
+        asc::te::copy(copyGM2UB, biasUb, biasGm);
     }
 
     __aicore__ inline void DequantCompute(int64_t mSize, int64_t localN, int64_t rowStride, int64_t l0cOffset)
@@ -572,12 +572,12 @@ private:
         uint64_t nDstAligned = CeilAlign(static_cast<uint64_t>(localN), static_cast<uint64_t>(OUT_ALIGN));
         auto ubLayout = Gemm::MakeNDExtLayout(mSize, localN, static_cast<int64_t>(nDstAligned));
         auto gmLayout = Gemm::MakeNDExtLayout(mSize, localN, static_cast<int64_t>(n_));
-        auto outUb = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB, OutType>(dequantOffset),
-                                             ubLayout);
-        auto outGm = AscendC::Te::MakeTensor(
-            AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(reinterpret_cast<__gm__ OutType*>(cGmAddr_) + gmOffset),
+        auto outUb = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::ub, OutType>(dequantOffset),
+                                          ubLayout);
+        auto outGm = asc::te::make_tensor(
+            asc::te::make_mem_ptr<asc::te::location::gm>(reinterpret_cast<__gm__ OutType*>(cGmAddr_) + gmOffset),
             gmLayout);
-        AscendC::Te::Copy(AscendC::Te::MakeCopy(AscendC::Te::CopyUB2GM{}), outGm, outUb);
+        asc::te::copy(asc::te::make_copy(asc::te::copy_ub_to_gm{}), outGm, outUb);
     }
 
     __aicore__ inline void ResetAuxCopyFlags()

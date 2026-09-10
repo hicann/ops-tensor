@@ -84,13 +84,13 @@ private:
         "QBMM Cube requires half/bfloat16_t/float CType and float BiasType for HiFloat8/FP8 A/B.");
     static_assert(AscendC::Std::is_one_of_v<ScaleGmType, uint64_t, int64_t, bfloat16_t, float>,
                   "QBMM Cube only supports uint64_t/int64_t/bfloat16_t/float ScaleGmType.");
-    static_assert(AscendC::Std::is_one_of_v<LayoutA, AscendC::Te::NDExtLayoutPtn, AscendC::Te::DNExtLayoutPtn>,
+    static_assert(AscendC::Std::is_one_of_v<LayoutA, asc::te::nd_ext_layout_ptn, asc::te::dn_ext_layout_ptn>,
                   "QBMM Cube only supports ND/DN LayoutA.");
-    static_assert(AscendC::Std::is_same_v<LayoutC, AscendC::Te::NDExtLayoutPtn>, "QBMM Cube only supports ND LayoutC.");
+    static_assert(AscendC::Std::is_same_v<LayoutC, asc::te::nd_ext_layout_ptn>, "QBMM Cube only supports ND LayoutC.");
 
 public:
-    using BlockShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
-    using BlockCoord = AscendC::Te::Coord<int64_t, int64_t, int64_t, int64_t>;
+    using BlockShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
+    using BlockCoord = asc::te::coord<int64_t, int64_t, int64_t, int64_t>;
     using BlockSchedulerParams = typename BlockScheduler::Params;
 
     struct QBMMTiling {
@@ -137,13 +137,13 @@ private:
     static constexpr bool TRANS_A = IsTrans<LayoutA>::value;
     static constexpr bool TRANS_B = IsTrans<LayoutB>::value;
     static constexpr bool IS_ATOMIC_ADD = BlockMmad::DispatchPolicy::IS_ATOMIC_ADD;
-    static constexpr int64_t C0_SIZE = AscendC::Te::C0_ELEMENT<AType>;
+    static constexpr int64_t C0_SIZE = asc::te::c0_element<AType>;
     static constexpr uint64_t DEQ_SCALE_MUL = 0xFFFFE000;
     static constexpr uint32_t LEFT_SHIFT_16 = 16;
 
-    using MakeLayoutA = AscendC::Te::FrameLayoutFormat<LayoutA, AscendC::Std::Int<C0_SIZE>>;
-    using MakeLayoutB = AscendC::Te::FrameLayoutFormat<LayoutB, AscendC::Std::Int<C0_SIZE>>;
-    using MakeLayoutC = AscendC::Te::FrameLayoutFormat<LayoutC, AscendC::Std::Int<AscendC::Te::C0_ELEMENT<CType>>>;
+    using MakeLayoutA = asc::te::frame_layout_format<LayoutA, AscendC::Std::Int<C0_SIZE>>;
+    using MakeLayoutB = asc::te::frame_layout_format<LayoutB, AscendC::Std::Int<C0_SIZE>>;
+    using MakeLayoutC = asc::te::frame_layout_format<LayoutC, AscendC::Std::Int<asc::te::c0_element<CType>>>;
 
     struct BatchBroadcastInfo {
         uint64_t batchC3C4;
@@ -181,11 +181,10 @@ private:
     template <typename T>
     __aicore__ inline T ReadGmScalar(GM_ADDR gmAddr)
     {
-        auto layout = AscendC::Te::MakeFrameLayout<AscendC::Te::NDExtLayoutPtn, AscendC::Te::LayoutTraitDefault<T>>(1L,
-                                                                                                                    1L);
-        auto tensor = AscendC::Te::MakeTensor(
-            AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(reinterpret_cast<__gm__ T*>(gmAddr)), layout);
-        return tensor[AscendC::Te::MakeCoord(0L, 0L)];
+        auto layout = asc::te::make_frame_layout<asc::te::nd_ext_layout_ptn, asc::te::layout_trait_default<T>>(1L, 1L);
+        auto tensor = asc::te::make_tensor(
+            asc::te::make_mem_ptr<asc::te::location::gm>(reinterpret_cast<__gm__ T*>(gmAddr)), layout);
+        return tensor[asc::te::make_coord(0L, 0L)];
     }
 
     BlockMmad mmadOp_;
@@ -213,7 +212,7 @@ __aicore__ inline void GemmUniversal<QBMM_CUBE_KERNEL_TEM_PARAMS>::Run(const Par
     BlockScheduler bs(params.problemShape, params.schParams);
 
     BlockMmadParams blockMmadParams = params.mmadParams;
-    blockMmadParams.oriK = static_cast<uint64_t>(AscendC::Te::Get<MNK_K>(params.problemShape));
+    blockMmadParams.oriK = static_cast<uint64_t>(asc::te::get<MNK_K>(params.problemShape));
     blockMmadParams.kAL1 = params.qbmmParams.kAL1;
     blockMmadParams.kBL1 = params.qbmmParams.kBL1;
     blockMmadParams.l1BufNum = params.qbmmParams.nBufferNum;
@@ -225,7 +224,7 @@ __aicore__ inline void GemmUniversal<QBMM_CUBE_KERNEL_TEM_PARAMS>::Run(const Par
     blockMmadParams.enableL0cPingPong = params.qbmmParams.dbL0C > 1;
     mmadOp_.Init(blockMmadParams);
 
-    if (AscendC::Te::Get<MNK_B>(params.problemShape) == 1) {
+    if (asc::te::get<MNK_B>(params.problemShape) == 1) {
         AddBatchOffset(params);
         ProcessSingleBatch(params, bs, 0, true);
         if constexpr (IS_ATOMIC_ADD) {
@@ -296,28 +295,25 @@ QBMM_CUBE_KERNEL_CLASS_TEMPLATE_DEF_PARAMS
 __aicore__ inline void GemmUniversal<QBMM_CUBE_KERNEL_TEM_PARAMS>::AddBatchOffset(const Params& params)
 {
     ResetGmAddr(params);
-    aGmBase_ += batchAOffset_ * AscendC::Te::Get<MNK_M>(params.problemShape) *
-                AscendC::Te::Get<MNK_K>(params.problemShape);
+    aGmBase_ += batchAOffset_ * asc::te::get<MNK_M>(params.problemShape) * asc::te::get<MNK_K>(params.problemShape);
     if constexpr (WEIGHT_NZ) {
         if constexpr (TRANS_B) {
-            bGmBase_ += batchBOffset_ * Blaze::Gemm::CeilDiv(AscendC::Te::Get<MNK_K>(params.problemShape), C0_SIZE) *
-                        Blaze::Gemm::CeilDiv(AscendC::Te::Get<MNK_N>(params.problemShape),
+            bGmBase_ += batchBOffset_ * Blaze::Gemm::CeilDiv(asc::te::get<MNK_K>(params.problemShape), C0_SIZE) *
+                        Blaze::Gemm::CeilDiv(asc::te::get<MNK_N>(params.problemShape),
                                              static_cast<int64_t>(BLOCK_CUBE)) *
                         BLOCK_CUBE * C0_SIZE;
         } else {
-            bGmBase_ += batchBOffset_ * Blaze::Gemm::CeilDiv(AscendC::Te::Get<MNK_N>(params.problemShape), C0_SIZE) *
-                        Blaze::Gemm::CeilDiv(AscendC::Te::Get<MNK_K>(params.problemShape),
+            bGmBase_ += batchBOffset_ * Blaze::Gemm::CeilDiv(asc::te::get<MNK_N>(params.problemShape), C0_SIZE) *
+                        Blaze::Gemm::CeilDiv(asc::te::get<MNK_K>(params.problemShape),
                                              static_cast<int64_t>(BLOCK_CUBE)) *
                         BLOCK_CUBE * C0_SIZE;
         }
     } else {
-        bGmBase_ += batchBOffset_ * AscendC::Te::Get<MNK_N>(params.problemShape) *
-                    AscendC::Te::Get<MNK_K>(params.problemShape);
+        bGmBase_ += batchBOffset_ * asc::te::get<MNK_N>(params.problemShape) * asc::te::get<MNK_K>(params.problemShape);
     }
-    cGmBase_ += batchCOffset_ * AscendC::Te::Get<MNK_M>(params.problemShape) *
-                AscendC::Te::Get<MNK_N>(params.problemShape);
+    cGmBase_ += batchCOffset_ * asc::te::get<MNK_M>(params.problemShape) * asc::te::get<MNK_N>(params.problemShape);
     if (isBiasThreeDim_) {
-        biasGmBase_ += batchCOffset_ * AscendC::Te::Get<MNK_N>(params.problemShape);
+        biasGmBase_ += batchCOffset_ * asc::te::get<MNK_N>(params.problemShape);
     }
 }
 
@@ -353,7 +349,7 @@ __aicore__ inline void GemmUniversal<QBMM_CUBE_KERNEL_TEM_PARAMS>::ProcessWithBa
     uint64_t batchA1Offset = 0;
     uint64_t batchB1Offset = 0;
     uint64_t curBatchC = 1UL;
-    const uint64_t totalCnt = bs.GetTotalCnt() * AscendC::Te::Get<MNK_B>(params.problemShape);
+    const uint64_t totalCnt = bs.GetTotalCnt() * asc::te::get<MNK_B>(params.problemShape);
     const uint64_t nonTailRoundCnt = (totalCnt / AscendC::GetBlockNum()) * AscendC::GetBlockNum();
     for (uint64_t b1Index = 0; b1Index < qbmmParams.batchC1; ++b1Index) {
         uint64_t batchC2Offset = batchC1Offset;
@@ -370,8 +366,7 @@ __aicore__ inline void GemmUniversal<QBMM_CUBE_KERNEL_TEM_PARAMS>::ProcessWithBa
                 for (uint64_t b4Index = 0; b4Index < qbmmParams.batchC4; ++b4Index) {
                     const bool isTailRound = curBatchC * bs.GetTotalCnt() > nonTailRoundCnt;
                     AddBatchOffset(params);
-                    ProcessSingleBatch(params, bs, (AscendC::Te::Get<MNK_B>(params.problemShape) - curBatchC),
-                                       isTailRound);
+                    ProcessSingleBatch(params, bs, (asc::te::get<MNK_B>(params.problemShape) - curBatchC), isTailRound);
                     curBatchC++;
                     batchCOffset_ += 1;
                     batchAOffset_ += info.multiA4C4;
@@ -401,10 +396,9 @@ __aicore__ inline void GemmUniversal<QBMM_CUBE_KERNEL_TEM_PARAMS>::SetBL2Cache(c
     // 0x7f: 128-element alignment for 128-byte B matrix GM streaming
     constexpr uint64_t cacheLineAlignMask = 0x7fUL;
     const bool isCurrentNAligned = TRANS_B || (currentBasicBlockN & cacheLineAlignMask) == 0UL;
-    const bool disableWeightL2 = bMustHitL2 == 0U && currentBasicBlockM >= AscendC::Te::Get<MNK_M>(problemShape) &&
+    const bool disableWeightL2 = bMustHitL2 == 0U && currentBasicBlockM >= asc::te::get<MNK_M>(problemShape) &&
                                  isCurrentNAligned;
-    gmB.SetL2CacheHint(disableWeightL2 ? AscendC::Te::CacheMode::CACHE_MODE_DISABLE :
-                                         AscendC::Te::CacheMode::CACHE_MODE_NORMAL);
+    gmB.set_l2_cache_hint(disableWeightL2 ? asc::te::cache_mode::disable : asc::te::cache_mode::normal);
 }
 
 QBMM_CUBE_KERNEL_CLASS_TEMPLATE_DEF_PARAMS
@@ -414,14 +408,14 @@ __aicore__ inline void GemmUniversal<QBMM_CUBE_KERNEL_TEM_PARAMS>::ProcessOneBlo
     int64_t mPos, int64_t nPos, int64_t curM, int64_t curN, int64_t k, bool isPerChannel)
 {
     constexpr int64_t kPos = 0L;
-    auto gmBlockA = gmA.Slice(AscendC::Te::MakeCoord(mPos, kPos), AscendC::Te::MakeShape(curM, k));
-    auto gmBlockB = gmB.Slice(AscendC::Te::MakeCoord(kPos, nPos), AscendC::Te::MakeShape(k, curN));
-    auto gmBlockC = gmC.Slice(AscendC::Te::MakeCoord(mPos, nPos), AscendC::Te::MakeShape(curM, curN));
+    auto gmBlockA = gmA.slice(asc::te::make_coord(mPos, kPos), asc::te::make_shape(curM, k));
+    auto gmBlockB = gmB.slice(asc::te::make_coord(kPos, nPos), asc::te::make_shape(k, curN));
+    auto gmBlockC = gmC.slice(asc::te::make_coord(mPos, nPos), asc::te::make_shape(curM, curN));
     const int64_t biasNPos = isBias_ ? nPos : 0L;
     const int64_t biasNSize = isBias_ ? curN : 1L;
-    auto gmBlockBias = gmBias.Slice(AscendC::Te::MakeCoord(0L, biasNPos), AscendC::Te::MakeShape(1L, biasNSize));
+    auto gmBlockBias = gmBias.slice(asc::te::make_coord(0L, biasNPos), asc::te::make_shape(1L, biasNSize));
     if (isPerChannel) {
-        auto gmBlockScale = gmScale.Slice(AscendC::Te::MakeCoord(0L, nPos), AscendC::Te::MakeShape(1L, curN));
+        auto gmBlockScale = gmScale.slice(asc::te::make_coord(0L, nPos), asc::te::make_shape(1L, curN));
         mmadOp_(gmBlockA, gmBlockB, gmBlockScale, gmBlockBias, gmBlockC, singleShape);
     } else {
         mmadOp_(gmBlockA, gmBlockB, scaleScalar_, gmBlockBias, gmBlockC, singleShape);
@@ -434,22 +428,21 @@ __aicore__ inline void GemmUniversal<QBMM_CUBE_KERNEL_TEM_PARAMS>::ProcessSingle
                                                                                       uint64_t restBatch,
                                                                                       bool isTailRound)
 {
-    const int64_t m = AscendC::Te::Get<MNK_M>(params.problemShape);
-    const int64_t n = AscendC::Te::Get<MNK_N>(params.problemShape);
-    const int64_t k = AscendC::Te::Get<MNK_K>(params.problemShape);
+    const int64_t m = asc::te::get<MNK_M>(params.problemShape);
+    const int64_t n = asc::te::get<MNK_N>(params.problemShape);
+    const int64_t k = asc::te::get<MNK_K>(params.problemShape);
     auto layoutA = MakeLayoutA{}(m, k);
     auto layoutB = MakeLayoutB{}(k, n);
     auto layoutC = MakeLayoutC{}(m, n);
-    auto gmA = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(aGmBase_), layoutA);
-    auto gmB = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(bGmBase_), layoutB);
-    auto gmC = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(cGmBase_), layoutC);
-    auto layoutBias = AscendC::Te::MakeFrameLayout<AscendC::Te::NDExtLayoutPtn>(1L, n);
+    auto gmA = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::gm>(aGmBase_), layoutA);
+    auto gmB = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::gm>(bGmBase_), layoutB);
+    auto gmC = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::gm>(cGmBase_), layoutC);
+    auto layoutBias = asc::te::make_frame_layout<asc::te::nd_ext_layout_ptn>(1L, n);
     __gm__ BiasType* biasPtr = isBias_ ? biasGmBase_ : reinterpret_cast<__gm__ BiasType*>(cGmBase_);
-    auto gmBias = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(biasPtr), layoutBias);
-    auto layoutScale = AscendC::Te::MakeFrameLayout<AscendC::Te::NDExtLayoutPtn,
-                                                    AscendC::Te::LayoutTraitDefault<X2ScaleType>>(1, n);
-    auto gmScale = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(scaleGmBase_),
-                                           layoutScale);
+    auto gmBias = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::gm>(biasPtr), layoutBias);
+    auto layoutScale = asc::te::make_frame_layout<asc::te::nd_ext_layout_ptn,
+                                                  asc::te::layout_trait_default<X2ScaleType>>(1, n);
+    auto gmScale = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::gm>(scaleGmBase_), layoutScale);
     const bool isPerChannel = static_cast<QuantMode>(params.qbmmParams.x2QuantMode) == QuantMode::PERCHANNEL_MODE;
 
     const bool canSplitTail = ((bs.GetEndBlockIdx() + 1) + (restBatch * bs.GetTotalCnt())) *
@@ -465,12 +458,12 @@ __aicore__ inline void GemmUniversal<QBMM_CUBE_KERNEL_TEM_PARAMS>::ProcessSingle
     while (bs.GetTileIdx(blockCoord)) {
         BlockShape singleShape = bs.template GetBlockShape<QuantMode::DEFAULT, QuantMode::DEFAULT, WEIGHT_NZ>(
             blockCoord);
-        if (AscendC::Te::Get<IDX_M_TILEIDX>(singleShape) <= 0 || AscendC::Te::Get<IDX_N_TILEIDX>(singleShape) <= 0) {
+        if (asc::te::get<IDX_M_TILEIDX>(singleShape) <= 0 || asc::te::get<IDX_N_TILEIDX>(singleShape) <= 0) {
             break;
         }
         bs.GetTileCoord(blockCoord, mPos, nPos);
-        const int64_t curM = AscendC::Te::Get<IDX_M_TILEIDX>(singleShape);
-        const int64_t curN = AscendC::Te::Get<IDX_N_TILEIDX>(singleShape);
+        const int64_t curM = asc::te::get<IDX_M_TILEIDX>(singleShape);
+        const int64_t curN = asc::te::get<IDX_N_TILEIDX>(singleShape);
         SetBL2Cache(params.problemShape, curM, curN, params.qbmmParams.bMustHitL2, gmB);
         ProcessOneBlock(gmA, gmB, gmC, gmBias, gmScale, singleShape, mPos, nPos, curM, curN, k, isPerChannel);
     }

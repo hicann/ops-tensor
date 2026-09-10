@@ -69,8 +69,8 @@ public:
         uint64_t nSize;
     };
 
-    using BlockShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
-    using BlockCoord = AscendC::Te::Coord<int64_t, int64_t, int64_t, int64_t>;
+    using BlockShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
+    using BlockCoord = asc::te::coord<int64_t, int64_t, int64_t, int64_t>;
     using ProblemShape = ProblemShape_;
 
     __aicore__ inline explicit BlockSchedulerWqgmmNResplit(const Params& params) : params_(params)
@@ -90,7 +90,7 @@ public:
     __aicore__ inline void UpdateNextProblem(const ProblemShape& problemShape)
     {
         startBasicBlockId_ = (startBasicBlockId_ + prevTileNum_) % params_.coreNum;
-        mSize_ = AscendC::Te::Get<MNK_M>(problemShape);
+        mSize_ = asc::te::get<MNK_M>(problemShape);
         mBlkNum_ = CeilDiv(mSize_, static_cast<uint64_t>(params_.baseM));
         mStep_ = CeilDiv(mSize_, mBlkNum_);
         tileNum_ = mBlkNum_ * nBlockNum_;
@@ -132,8 +132,8 @@ public:
     // Resolve the true M/N tile shape for a previously returned coordinate.
     __aicore__ inline BlockShape GetBlockShape(const BlockCoord& blockCoord) const
     {
-        const uint64_t mOffset = static_cast<uint64_t>(AscendC::Te::Get<MNK_M>(blockCoord));
-        const uint64_t nOffset = static_cast<uint64_t>(AscendC::Te::Get<MNK_N>(blockCoord));
+        const uint64_t mOffset = static_cast<uint64_t>(asc::te::get<MNK_M>(blockCoord));
+        const uint64_t nOffset = static_cast<uint64_t>(asc::te::get<MNK_N>(blockCoord));
 
         const uint64_t mL1Size = mOffset + mStep_ > mSize_ ? mSize_ - mOffset : mStep_;
 
@@ -373,13 +373,13 @@ __aicore__ inline WQGMM_MX_PROLOGUE_CLASS::GroupedWeightPrologueMx(bool hasBias)
         SetFlag<HardEvent::MTE3_V>(VEC_EVENT_ID_TRANS_SCALE_MTE3_TO_V + idx);
     }
 
-    auto transIdLayout = AscendC::Te::MakeFrameLayout<AscendC::Te::NDExtLayoutPtn>(1, Tile::MX_SCALE_TRANS_ID_SIZE);
-    auto transIdGm = AscendC::Te::MakeTensor(
-        AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>((__gm__ uint16_t*)Tile::MX_SCALE_TRANS_ID), transIdLayout);
-    auto transIdUb = AscendC::Te::MakeTensor(
-        AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB, uint16_t>(MX_SCALE_TRANS_ID_OFFSET), transIdLayout);
-    auto copyGM2UB = AscendC::Te::MakeCopy(AscendC::Te::CopyGM2UB{});
-    AscendC::Te::Copy(copyGM2UB, transIdUb, transIdGm);
+    auto transIdLayout = asc::te::make_frame_layout<asc::te::nd_ext_layout_ptn>(1, Tile::MX_SCALE_TRANS_ID_SIZE);
+    auto transIdGm = asc::te::make_tensor(
+        asc::te::make_mem_ptr<asc::te::location::gm>((__gm__ uint16_t*)Tile::MX_SCALE_TRANS_ID), transIdLayout);
+    auto transIdUb = asc::te::make_tensor(
+        asc::te::make_mem_ptr<asc::te::location::ub, uint16_t>(MX_SCALE_TRANS_ID_OFFSET), transIdLayout);
+    auto copyGM2UB = asc::te::make_copy(asc::te::copy_gm_to_ub{});
+    asc::te::copy(copyGM2UB, transIdUb, transIdGm);
     SetFlag<HardEvent::MTE2_V>(EVENT_ID_MTE2_TO_V);
     WaitFlag<HardEvent::MTE2_V>(EVENT_ID_MTE2_TO_V);
 }
@@ -486,34 +486,33 @@ __aicore__ inline void WQGMM_MX_PROLOGUE_CLASS::HandleMxScale(const WeightProlog
 
     uint64_t scaleWindowK = Min(MX_SCALE_K_WINDOW_SIZE, param.kSize - kOffset);
     uint64_t scaleKReal = CeilDiv(scaleWindowK, MX_GROUP_SIZE);
-    auto gmScaleSlice = gmScaleBTensor.Slice(
-        AscendC::Te::MakeCoord(kOffset / MX_GROUP_SIZE, param.nOffset + vecNOffset),
-        AscendC::Te::MakeShape(scaleKReal, vecNSize));
+    auto gmScaleSlice = gmScaleBTensor.slice(asc::te::make_coord(kOffset / MX_GROUP_SIZE, param.nOffset + vecNOffset),
+                                             asc::te::make_shape(scaleKReal, vecNSize));
 
     WaitVectorToMTE2();
     // Keep the 160-byte physical row stride while slicing to the active K/N.
-    auto scaleInputLayout = AscendC::Te::MakeFrameLayout<AscendC::Te::ScaleBDNLayoutPtn>(
+    auto scaleInputLayout = asc::te::make_frame_layout<asc::te::scaleb_dn_layout_ptn>(
         AscendC::Std::Int<Tile::MX_SCALE_INPUT_ROW_STRIDE>{}, vecNSize);
-    auto scaleInputBase = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB, fp8_e8m0_t>(
-                                                      WEIGHT_4BIT_OFFSETS[ubMte2LoopIdx_ & (UB_MTE2_BUFFER_NUM - 1)]),
-                                                  scaleInputLayout);
-    auto scaleInput = scaleInputBase.Slice(AscendC::Te::MakeCoord(0, 0), AscendC::Te::MakeShape(scaleKReal, vecNSize));
-    auto copyGM2UBMxScale = AscendC::Te::MakeCopy(Tile::CopyGM2UBMxScale{});
-    AscendC::Te::Copy(copyGM2UBMxScale, scaleInput, gmScaleSlice);
+    auto scaleInputBase = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::ub, fp8_e8m0_t>(
+                                                   WEIGHT_4BIT_OFFSETS[ubMte2LoopIdx_ & (UB_MTE2_BUFFER_NUM - 1)]),
+                                               scaleInputLayout);
+    auto scaleInput = scaleInputBase.slice(asc::te::make_coord(0, 0), asc::te::make_shape(scaleKReal, vecNSize));
+    auto copyGM2UBMxScale = asc::te::make_copy(Tile::CopyGM2UBMxScale{});
+    asc::te::copy(copyGM2UBMxScale, scaleInput, gmScaleSlice);
     SetFlag<HardEvent::MTE2_V>(EVENT_ID_MTE2_TO_V);
     WaitFlag<HardEvent::MTE2_V>(EVENT_ID_MTE2_TO_V);
 
     uint64_t scaleOutputBuf = scaleComputeLoopIdx_ & (MX_SCALE_OUTPUT_BUFFER_NUM - 1);
     WaitFlag<HardEvent::MTE3_V>(VEC_EVENT_ID_TRANS_SCALE_MTE3_TO_V + scaleOutputBuf);
-    auto scaleOutputLayout = AscendC::Te::MakeFrameLayout<AscendC::Te::NNLayoutPtn, AscendC::Std::Int<SCALE_C0>>(
-        scaleKReal, vecNSize);
-    auto scaleOutput = AscendC::Te::MakeTensor(
-        AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB, fp8_e8m0_t>(
-            MX_SCALE_OUTPUT_OFFSET + scaleOutputBuf * MX_SCALE_OUTPUT_SINGLE_BUFFER_SIZE),
+    auto scaleOutputLayout = asc::te::make_frame_layout<asc::te::nn_layout_ptn, AscendC::Std::Int<SCALE_C0>>(scaleKReal,
+                                                                                                             vecNSize);
+    auto scaleOutput = asc::te::make_tensor(
+        asc::te::make_mem_ptr<asc::te::location::ub, fp8_e8m0_t>(MX_SCALE_OUTPUT_OFFSET +
+                                                                 scaleOutputBuf * MX_SCALE_OUTPUT_SINGLE_BUFFER_SIZE),
         scaleOutputLayout);
-    auto transIdLayout = AscendC::Te::MakeFrameLayout<AscendC::Te::NDExtLayoutPtn>(1, Tile::MX_SCALE_TRANS_ID_SIZE);
-    auto transId = AscendC::Te::MakeTensor(
-        AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB, uint16_t>(MX_SCALE_TRANS_ID_OFFSET), transIdLayout);
+    auto transIdLayout = asc::te::make_frame_layout<asc::te::nd_ext_layout_ptn>(1, Tile::MX_SCALE_TRANS_ID_SIZE);
+    auto transId = asc::te::make_tensor(
+        asc::te::make_mem_ptr<asc::te::location::ub, uint16_t>(MX_SCALE_TRANS_ID_OFFSET), transIdLayout);
     Tile::MxScaleTranspose::Transpose(scaleOutput, scaleInput, transId);
     SetFlag<HardEvent::V_MTE3>(0);
     WaitFlag<HardEvent::V_MTE3>(0);
@@ -522,15 +521,14 @@ __aicore__ inline void WQGMM_MX_PROLOGUE_CLASS::HandleMxScale(const WeightProlog
                            ((hasBias_ && scaleL1Buf == 0) ? BIAS_L1_SINGLE_BUFFER_SIZE : 0);
     // MX ScaleB uses the hardware NN scale layout whose C0 is two E8M0
     // elements.  The generic data-type trait would select the ordinary
-    // 32-byte cube C0 and is therefore not valid for NNLayoutPtn.
-    auto scaleL1Layout = AscendC::Te::MakeFrameLayout<AscendC::Te::NNLayoutPtn, AscendC::Std::Int<2>>(scaleKReal,
-                                                                                                      param.nL1Size);
-    auto scaleL1 = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::L1, fp8_e8m0_t>(scaleL1Base),
-                                           scaleL1Layout);
-    auto scaleL1Slice = scaleL1.Slice(AscendC::Te::MakeCoord(0, vecNOffset),
-                                      AscendC::Te::MakeShape(scaleKReal, vecNSize));
-    auto copyUB2L1MxScale = AscendC::Te::MakeCopy(Tile::CopyUB2L1MxScale{});
-    AscendC::Te::Copy(copyUB2L1MxScale, scaleL1Slice, scaleOutput);
+    // 32-byte cube C0 and is therefore not valid for nn_layout_ptn.
+    auto scaleL1Layout = asc::te::make_frame_layout<asc::te::nn_layout_ptn, AscendC::Std::Int<2>>(scaleKReal,
+                                                                                                  param.nL1Size);
+    auto scaleL1 = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::l1, fp8_e8m0_t>(scaleL1Base),
+                                        scaleL1Layout);
+    auto scaleL1Slice = scaleL1.slice(asc::te::make_coord(0, vecNOffset), asc::te::make_shape(scaleKReal, vecNSize));
+    auto copyUB2L1MxScale = asc::te::make_copy(Tile::CopyUB2L1MxScale{});
+    asc::te::copy(copyUB2L1MxScale, scaleL1Slice, scaleOutput);
 
     SetFlag<HardEvent::MTE3_V>(VEC_EVENT_ID_TRANS_SCALE_MTE3_TO_V + scaleOutputBuf);
     SetVectorToMTE2();
@@ -610,16 +608,16 @@ __aicore__ inline void WQGMM_MX_PROLOGUE_CLASS::CopyGmToUb(uint64_t kOffset, uin
                                                            uint64_t biasNSize, bool processBias)
 {
     if (mte2RealK > 0) {
-        auto gmSliceTensor = gmWeightBaseTensor.Slice(AscendC::Te::MakeCoord(kOffset, param.nOffset),
-                                                      AscendC::Te::MakeShape(mte2RealK, param.nL1Size));
-        auto copyGM2UBWeight = AscendC::Te::MakeCopy(Blaze::Gemm::Tile::CopyGM2UBWeight{});
-        AscendC::Te::Copy(copyGM2UBWeight, weight4BitTensor, gmSliceTensor);
+        auto gmSliceTensor = gmWeightBaseTensor.slice(asc::te::make_coord(kOffset, param.nOffset),
+                                                      asc::te::make_shape(mte2RealK, param.nL1Size));
+        auto copyGM2UBWeight = asc::te::make_copy(Blaze::Gemm::Tile::CopyGM2UBWeight{});
+        asc::te::copy(copyGM2UBWeight, weight4BitTensor, gmSliceTensor);
     }
     if (processBias) {
-        auto gmBiasSlice = gmBiasTensor.Slice(AscendC::Te::MakeCoord(0, param.nOffset + biasNOffset),
-                                              AscendC::Te::MakeShape(1, biasNSize));
-        auto copyGM2UBBias = AscendC::Te::MakeCopy(AscendC::Te::CopyGM2UB{});
-        AscendC::Te::Copy(copyGM2UBBias, biasInTensor, gmBiasSlice);
+        auto gmBiasSlice = gmBiasTensor.slice(asc::te::make_coord(0, param.nOffset + biasNOffset),
+                                              asc::te::make_shape(1, biasNSize));
+        auto copyGM2UBBias = asc::te::make_copy(asc::te::copy_gm_to_ub{});
+        asc::te::copy(copyGM2UBBias, biasInTensor, gmBiasSlice);
     }
 
     // Synchronization point after copy completes
@@ -652,12 +650,12 @@ __aicore__ inline void WQGMM_MX_PROLOGUE_CLASS::CopyWeightToL1(uint64_t mte2Real
 {
     if (likely(mte2RealK > 0)) {
         // Copy weight 8-bit from UB to L1 (inlined from CopyWeight8BitForAligned)
-        auto copyUB2L1 = AscendC::Te::MakeCopy(Blaze::Gemm::Tile::CopyUB2L1Weight8Bit{});
-        AscendC::Te::Copy(copyUB2L1, l1Tensor, weight8BitTensor);
+        auto copyUB2L1 = asc::te::make_copy(Blaze::Gemm::Tile::CopyUB2L1Weight8Bit{});
+        asc::te::copy(copyUB2L1, l1Tensor, weight8BitTensor);
     }
     if (processBias) {
-        auto copyUB2L1Bias = AscendC::Te::MakeCopy(AscendC::Te::CopyUB2L1{});
-        AscendC::Te::Copy(copyUB2L1Bias, biasL1Tensor, biasOutTensor);
+        auto copyUB2L1Bias = asc::te::make_copy(asc::te::copy_ub_to_l1{});
+        asc::te::copy(copyUB2L1Bias, biasL1Tensor, biasOutTensor);
     }
     SetFlag<HardEvent::MTE3_V>(VEC_EVENT_ID_MTE3_TO_V + (ubComputeLoopIdx_ & (WEIGHT_8BIT_BUFFER_NUM - 1)));
     ubComputeLoopIdx_++;
@@ -684,18 +682,18 @@ __aicore__ inline void WQGMM_MX_PROLOGUE_CLASS::FinalizeVectorCompute()
 WQGMM_MX_PROLOGUE_TEMPLATE_PARAM
 __aicore__ inline auto WQGMM_MX_PROLOGUE_CLASS::MakeWeight4BitTensor(uint64_t mte2RealK, uint64_t nL1Size)
 {
-    return AscendC::Te::MakeTensor(
-        AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB, InType>(
+    return asc::te::make_tensor(
+        asc::te::make_mem_ptr<asc::te::location::ub, InType>(
             WEIGHT_4BIT_OFFSETS[ubMte2LoopIdx_ & (UB_MTE2_BUFFER_NUM - 1)]),
-        AscendC::Te::MakeFrameLayout<AscendC::Te::ZNLayoutPtn, AscendC::Std::Int<AscendC::Te::C0_ELEMENT<OutType>>>(
+        asc::te::make_frame_layout<asc::te::zn_layout_ptn, AscendC::Std::Int<asc::te::c0_element<OutType>>>(
             static_cast<int64_t>(mte2RealK), static_cast<int64_t>(nL1Size)));
 }
 
 WQGMM_MX_PROLOGUE_TEMPLATE_PARAM
 __aicore__ inline auto WQGMM_MX_PROLOGUE_CLASS::MakeWeight8BitTensor(uint64_t mte2RealK, uint64_t nL1Size)
 {
-    return AscendC::Te::MakeTensor(
-        AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB, OutType>(
+    return asc::te::make_tensor(
+        asc::te::make_mem_ptr<asc::te::location::ub, OutType>(
             WEIGHT_8BIT_OFFSETS[ubComputeLoopIdx_ & (WEIGHT_8BIT_BUFFER_NUM - 1)]),
         Blaze::Gemm::Weight8BitZnToZnUBLayout<OutType>{}(
             static_cast<int64_t>(mte2RealK), static_cast<int64_t>(Align16(nL1Size)), WEIGHT_8BIT_LAYOUT_INNER_SIZE));
@@ -705,10 +703,10 @@ WQGMM_MX_PROLOGUE_TEMPLATE_PARAM
 __aicore__ inline auto WQGMM_MX_PROLOGUE_CLASS::MakeBiasUbTensor(uint64_t baseOffset, uint64_t slotIdx,
                                                                  uint64_t nL1Size)
 {
-    auto layout = AscendC::Te::MakeFrameLayout<AscendC::Te::NDExtLayoutPtn>(
+    auto layout = asc::te::make_frame_layout<asc::te::nd_ext_layout_ptn>(
         1, CeilAlign(nL1Size, static_cast<uint64_t>(BLOCK_CUBE)));
-    return AscendC::Te::MakeTensor(
-        AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB, BiasType>(baseOffset + slotIdx * BIAS_UB_SINGLE_BUFFER_SIZE),
+    return asc::te::make_tensor(
+        asc::te::make_mem_ptr<asc::te::location::ub, BiasType>(baseOffset + slotIdx * BIAS_UB_SINGLE_BUFFER_SIZE),
         layout);
 }
 
@@ -716,22 +714,22 @@ WQGMM_MX_PROLOGUE_TEMPLATE_PARAM
 __aicore__ inline auto WQGMM_MX_PROLOGUE_CLASS::MakeL1WeightTensor(uint64_t mte2RealK, uint64_t nL1Size,
                                                                    uint64_t l1SplitOffset)
 {
-    auto l1BaseLayout = AscendC::Te::MakeFrameLayout<AscendC::Te::ZNLayoutPtn,
-                                                     AscendC::Te::LayoutTraitDefault<OutType>>(mte2RealK, nL1Size);
-    auto l1BaseTensor = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::L1, OutType>(
-                                                    L1_WEIGHT_OFFSETS[cvLoopIdx_ & (DOUBLE_BUFFER_COUNT - 1)]),
-                                                l1BaseLayout);
-    return l1BaseTensor.Slice(AscendC::Te::MakeCoord(l1SplitOffset, 0), AscendC::Te::MakeShape(mte2RealK, nL1Size));
+    auto l1BaseLayout = asc::te::make_frame_layout<asc::te::zn_layout_ptn, asc::te::layout_trait_default<OutType>>(
+        mte2RealK, nL1Size);
+    auto l1BaseTensor = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::l1, OutType>(
+                                                 L1_WEIGHT_OFFSETS[cvLoopIdx_ & (DOUBLE_BUFFER_COUNT - 1)]),
+                                             l1BaseLayout);
+    return l1BaseTensor.slice(asc::te::make_coord(l1SplitOffset, 0), asc::te::make_shape(mte2RealK, nL1Size));
 }
 
 WQGMM_MX_PROLOGUE_TEMPLATE_PARAM
 __aicore__ inline auto WQGMM_MX_PROLOGUE_CLASS::MakeL1BiasTensor(uint64_t nL1Size, uint64_t nOffset)
 {
-    auto layout = AscendC::Te::MakeFrameLayout<AscendC::Te::NDExtLayoutPtn>(
+    auto layout = asc::te::make_frame_layout<asc::te::nd_ext_layout_ptn>(
         1, CeilAlign(nL1Size, static_cast<uint64_t>(BLOCK_CUBE)));
-    return AscendC::Te::MakeTensor(
-        AscendC::Te::MakeMemPtr<AscendC::Te::Location::L1, BiasType>(
-            BIAS_L1_OFFSETS[cvLoopIdx_ & (DOUBLE_BUFFER_COUNT - 1)] + nOffset * sizeof(BiasType)),
+    return asc::te::make_tensor(
+        asc::te::make_mem_ptr<asc::te::location::l1, BiasType>(BIAS_L1_OFFSETS[cvLoopIdx_ & (DOUBLE_BUFFER_COUNT - 1)] +
+                                                               nOffset * sizeof(BiasType)),
         layout);
 }
 
@@ -831,7 +829,7 @@ private:
 
     __gm__ int64_t* groupListGm_;
 
-    using TensorLayoutGroupList = typename AscendC::Te::FrameLayoutFormat<AscendC::Te::NDExtLayoutPtn>;
+    using TensorLayoutGroupList = typename asc::te::frame_layout_format<asc::te::nd_ext_layout_ptn>;
 
     template <typename T_>
     __aicore__ inline __gm__ T_* GetTensorAddrFromTensorList(uint32_t tensorIdx, __gm__ T_* tensorListAddr) const
@@ -863,23 +861,23 @@ __aicore__ inline void GROUPED_MATMUL_RESPLIT_KERNEL_CLASS::operator()(const Par
     const uint64_t nSize = AscendC::Std::get<2>(params.problemShape);
     const uint64_t groupNum = AscendC::Std::get<3>(params.problemShape);
     const uint64_t scaleKSize = CeilDiv(kSize, static_cast<uint64_t>(64)) * 2;
-    auto tensorGroupListGm = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(groupListGm_),
-                                                     TensorLayoutGroupList{}(1, groupNum));
-    using MakeLayoutB = AscendC::Te::FrameLayoutFormat<
-        typename BlockMmad::LayoutB, AscendC::Std::Int<AscendC::Te::C0_ELEMENT<typename BlockMmad::AType>>>;
-    using MakeLayoutScaleB = AscendC::Te::FrameLayoutFormat<typename BlockMmad::LayoutScaleB,
-                                                            AscendC::Std::Int<SCALE_C0>>;
+    auto tensorGroupListGm = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::gm>(groupListGm_),
+                                                  TensorLayoutGroupList{}(1, groupNum));
+    using MakeLayoutB = asc::te::frame_layout_format<typename BlockMmad::LayoutB,
+                                                     AscendC::Std::Int<asc::te::c0_element<typename BlockMmad::AType>>>;
+    using MakeLayoutScaleB = asc::te::frame_layout_format<typename BlockMmad::LayoutScaleB,
+                                                          AscendC::Std::Int<SCALE_C0>>;
     const auto scaleBLayout = MakeLayoutScaleB{}(scaleKSize, nSize);
     if ASCEND_IS_AIC {
-        using MakeLayoutA = AscendC::Te::FrameLayoutFormat<typename BlockMmad::LayoutA>;
-        using MakeLayoutC = AscendC::Te::FrameLayoutFormat<typename BlockMmad::LayoutC>;
-        using MakeLayoutScaleA = AscendC::Te::FrameLayoutFormat<typename BlockMmad::LayoutScaleA,
-                                                                AscendC::Std::Int<SCALE_C0>>;
+        using MakeLayoutA = asc::te::frame_layout_format<typename BlockMmad::LayoutA>;
+        using MakeLayoutC = asc::te::frame_layout_format<typename BlockMmad::LayoutC>;
+        using MakeLayoutScaleA = asc::te::frame_layout_format<typename BlockMmad::LayoutScaleA,
+                                                              AscendC::Std::Int<SCALE_C0>>;
         BlockMmad blockMmad{};
         // ScaleB is now produced by AIV directly in L1. Keep one GM tensor for the BlockMmad API contract; AIC does
         // not resolve, slice, or dereference it in the group/tile loops.
-        auto tensorScaleBGm = AscendC::Te::MakeTensor(
-            AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(antiquantScaleGm_), scaleBLayout);
+        auto tensorScaleBGm = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::gm>(antiquantScaleGm_),
+                                                   scaleBLayout);
         uint64_t preGroupOffset = 0;
         for (uint32_t groupIdx = 0; groupIdx < groupNum; ++groupIdx) {
             uint64_t groupListValue = static_cast<uint64_t>(tensorGroupListGm[groupIdx]);
@@ -889,15 +887,15 @@ __aicore__ inline void GROUPED_MATMUL_RESPLIT_KERNEL_CLASS::operator()(const Par
                 preGroupOffset = groupListValue;
             }
             if (mSize > 0 && nSize > 0) {
-                auto tensorAGm = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(xGm_),
-                                                         MakeLayoutA{}(mSize, kSize));
-                auto tensorScaleAGm = AscendC::Te::MakeTensor(
-                    AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(perTokenScaleGm_),
+                auto tensorAGm = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::gm>(xGm_),
+                                                      MakeLayoutA{}(mSize, kSize));
+                auto tensorScaleAGm = asc::te::make_tensor(
+                    asc::te::make_mem_ptr<asc::te::location::gm>(perTokenScaleGm_),
                     MakeLayoutScaleA{}(mSize, scaleKSize));
-                auto tensorCGm = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(yGm_),
-                                                         MakeLayoutC{}(mSize, nSize));
+                auto tensorCGm = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::gm>(yGm_),
+                                                      MakeLayoutC{}(mSize, nSize));
 
-                scheduler.UpdateNextProblem(AscendC::Te::MakeShape(mSize, nSize, kSize));
+                scheduler.UpdateNextProblem(asc::te::make_shape(mSize, nSize, kSize));
                 typename BlockScheduler::BlockCoord blockCoord;
                 while (scheduler.GetTileIdx(blockCoord)) {
                     auto blockShape = scheduler.GetBlockShape(blockCoord);
@@ -906,12 +904,12 @@ __aicore__ inline void GROUPED_MATMUL_RESPLIT_KERNEL_CLASS::operator()(const Par
                     auto mL1Size = AscendC::Std::get<0>(blockShape);
                     auto nL1Size = AscendC::Std::get<1>(blockShape);
 
-                    auto tensorBlockAGm = tensorAGm.Slice(AscendC::Te::MakeCoord(mOffset, 0),
-                                                          AscendC::Te::MakeShape(mL1Size, kSize));
-                    auto tensorBlockScaleAGm = tensorScaleAGm.Slice(AscendC::Te::MakeCoord(mOffset, 0),
-                                                                    AscendC::Te::MakeShape(mL1Size, scaleKSize));
-                    auto tensorBlockCGm = tensorCGm.Slice(AscendC::Te::MakeCoord(mOffset, nOffset),
-                                                          AscendC::Te::MakeShape(mL1Size, nL1Size));
+                    auto tensorBlockAGm = tensorAGm.slice(asc::te::make_coord(mOffset, 0),
+                                                          asc::te::make_shape(mL1Size, kSize));
+                    auto tensorBlockScaleAGm = tensorScaleAGm.slice(asc::te::make_coord(mOffset, 0),
+                                                                    asc::te::make_shape(mL1Size, scaleKSize));
+                    auto tensorBlockCGm = tensorCGm.slice(asc::te::make_coord(mOffset, nOffset),
+                                                          asc::te::make_shape(mL1Size, nL1Size));
                     blockMmad(tensorBlockAGm, tensorBlockScaleAGm, tensorScaleBGm, tensorBlockCGm, params.hasBias != 0);
                 }
             }
@@ -923,8 +921,8 @@ __aicore__ inline void GROUPED_MATMUL_RESPLIT_KERNEL_CLASS::operator()(const Par
         using TensorLayoutBias = typename BlockMmad::LayoutBias;
         const uint64_t nAlign = CeilAlign(nSize, static_cast<uint64_t>(BLOCK_CUBE));
         const auto weightLayout = MakeLayoutB{}(static_cast<int64_t>(kSize), static_cast<int64_t>(nAlign));
-        const auto biasLayout = AscendC::Te::FrameLayoutFormat<TensorLayoutBias>{}(static_cast<int64_t>(1),
-                                                                                   static_cast<int64_t>(nSize));
+        const auto biasLayout = asc::te::frame_layout_format<TensorLayoutBias>{}(static_cast<int64_t>(1),
+                                                                                 static_cast<int64_t>(nSize));
         constexpr uint64_t FP4_CACHE_LINE_ELEMENT_NUM = 256;
         const bool isWeightCacheLineAligned = kSize % FP4_CACHE_LINE_ELEMENT_NUM == 0;
         const uint64_t baseM = static_cast<uint64_t>(params.scheduler.baseM);
@@ -948,17 +946,17 @@ __aicore__ inline void GROUPED_MATMUL_RESPLIT_KERNEL_CLASS::operator()(const Par
                         groupBiasGm = GetTensorAddrFromTensorList(groupIdx, biasGm_);
                     }
                 }
-                scheduler.UpdateNextProblem(AscendC::Te::MakeShape(mSize, nSize, kSize));
+                scheduler.UpdateNextProblem(asc::te::make_shape(mSize, nSize, kSize));
                 typename BlockScheduler::BlockCoord blockCoord;
-                auto weightGmTensor = AscendC::Te::MakeTensor(
-                    AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(groupWeightGm), weightLayout);
-                auto scaleBGmTensor = AscendC::Te::MakeTensor(
-                    AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(groupScaleBGm), scaleBLayout);
+                auto weightGmTensor = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::gm>(groupWeightGm),
+                                                           weightLayout);
+                auto scaleBGmTensor = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::gm>(groupScaleBGm),
+                                                           scaleBLayout);
                 const bool disableWeightL2 = mSize <= baseM && isWeightCacheLineAligned;
-                weightGmTensor.SetL2CacheHint(disableWeightL2 ? AscendC::Te::CacheMode::CACHE_MODE_DISABLE :
-                                                                AscendC::Te::CacheMode::CACHE_MODE_NORMAL);
-                auto biasGmTensor = AscendC::Te::MakeTensor(
-                    AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(groupBiasGm), biasLayout);
+                weightGmTensor.set_l2_cache_hint(disableWeightL2 ? asc::te::cache_mode::disable :
+                                                                   asc::te::cache_mode::normal);
+                auto biasGmTensor = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::gm>(groupBiasGm),
+                                                         biasLayout);
                 while (scheduler.GetTileIdx(blockCoord)) {
                     auto blockShape = scheduler.GetBlockShape(blockCoord);
                     auto nOffset = AscendC::Std::get<1>(blockCoord);

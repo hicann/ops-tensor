@@ -26,21 +26,20 @@
 namespace WeightQuantBatchMatmulMxUT {
 
 template <bool WeightNz>
-__aicore__ inline void Run(
-    GM_ADDR aGm, GM_ADDR bGm, GM_ADDR biasGm, GM_ADDR scaleAGm, GM_ADDR scaleBGm, GM_ADDR cGm,
-    const WeightQuantBatchMatmulMxTilingData& tiling)
+__aicore__ inline void Run(GM_ADDR aGm, GM_ADDR bGm, GM_ADDR biasGm, GM_ADDR scaleAGm, GM_ADDR scaleBGm, GM_ADDR cGm,
+                           const WeightQuantBatchMatmulMxTilingData& tiling)
 {
     using AType = fp8_e4m3fn_t;
     using BType = fp4x2_e2m1_t;
     using ScaleType = AscendC::fp8_e8m0_t;
     using CType = half;
     using BiasType = half;
-    using LayoutA = AscendC::Te::NDExtLayoutPtn;
-    using LayoutB = AscendC::Std::conditional_t<WeightNz, AscendC::Te::ZNLayoutPtn, AscendC::Te::DNExtLayoutPtn>;
-    using LayoutC = AscendC::Te::NDExtLayoutPtn;
-    using LayoutScaleA = AscendC::Te::ScaleANDLayoutPtn;
-    using LayoutScaleB = AscendC::Te::ScaleBDNLayoutPtn;
-    using ProblemShape = AscendC::Te::Shape<int64_t, int64_t, int64_t>;
+    using LayoutA = asc::te::nd_ext_layout_ptn;
+    using LayoutB = AscendC::Std::conditional_t<WeightNz, asc::te::zn_layout_ptn, asc::te::dn_ext_layout_ptn>;
+    using LayoutC = asc::te::nd_ext_layout_ptn;
+    using LayoutScaleA = asc::te::scalea_nd_layout_ptn;
+    using LayoutScaleB = asc::te::scaleb_dn_layout_ptn;
+    using ProblemShape = asc::te::shape<int64_t, int64_t, int64_t>;
     using DispatchPolicy = Blaze::Gemm::MatmulWithWeightQuantMx;
     using BlockMmad = Blaze::Gemm::Block::BlockMmad<
         DispatchPolicy, AscendC::Std::tuple<AType, ScaleType>, AscendC::Std::tuple<LayoutA, LayoutScaleA>,
@@ -50,14 +49,12 @@ __aicore__ inline void Run(
     using Kernel = Blaze::Gemm::Kernel::GemmUniversal<ProblemShape, BlockMmad, void, BlockScheduler>;
 
     typename Kernel::Params params{
-        AscendC::Te::MakeShape(tiling.m, tiling.n, tiling.k),
+        asc::te::make_shape(tiling.m, tiling.n, tiling.k),
         {aGm, scaleAGm, scaleBGm, cGm,
-         AscendC::Te::MakeShape(
-             static_cast<int64_t>(tiling.baseM), static_cast<int64_t>(tiling.baseN),
-             static_cast<int64_t>(tiling.tileShapeKL1), static_cast<int64_t>(tiling.tileShapeScaleKL1)),
-         AscendC::Te::MakeShape(
-             static_cast<int64_t>(tiling.baseM), static_cast<int64_t>(tiling.baseN),
-             static_cast<int64_t>(tiling.baseK)),
+         asc::te::make_shape(static_cast<int64_t>(tiling.baseM), static_cast<int64_t>(tiling.baseN),
+                             static_cast<int64_t>(tiling.tileShapeKL1), static_cast<int64_t>(tiling.tileShapeScaleKL1)),
+         asc::te::make_shape(static_cast<int64_t>(tiling.baseM), static_cast<int64_t>(tiling.baseN),
+                             static_cast<int64_t>(tiling.baseK)),
          tiling.l1BufferNum, tiling.hasBias != 0U},
         {bGm, biasGm, tiling.kBubSize, tiling.nBubSize},
         {tiling.baseM, tiling.baseN, tiling.mTailTile, tiling.nTailTile, tiling.mBaseTailSplitCnt,
@@ -69,8 +66,9 @@ __aicore__ inline void Run(
 } // namespace WeightQuantBatchMatmulMxUT
 
 template <bool WeightNz>
-__global__ __aicore__ void weight_quant_batch_matmul_mx_kernel_entry(
-    GM_ADDR aGm, GM_ADDR bGm, GM_ADDR biasGm, GM_ADDR scaleAGm, GM_ADDR scaleBGm, GM_ADDR cGm, GM_ADDR tilingGm)
+__global__ __aicore__ void weight_quant_batch_matmul_mx_kernel_entry(GM_ADDR aGm, GM_ADDR bGm, GM_ADDR biasGm,
+                                                                     GM_ADDR scaleAGm, GM_ADDR scaleBGm, GM_ADDR cGm,
+                                                                     GM_ADDR tilingGm)
 {
     KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_MIX_AIC_1_2);
     const auto* tiling = reinterpret_cast<const WeightQuantBatchMatmulMxTilingData*>(tilingGm);

@@ -81,7 +81,7 @@ public:
     using DataTypeScale = DataTypeScale_;
     static constexpr uint64_t INPUT_UB_TILE_ELEMENTS = Constant::MAX_SINGLE_MN;
     static constexpr uint64_t INPUT_UB_BUFFER_BYTES = INPUT_UB_TILE_ELEMENTS * sizeof(DataTypeIn);
-    static constexpr uint64_t OUTPUT_C0_SIZE = AscendC::Te::C0_ELEMENT<DataTypeIn>;
+    static constexpr uint64_t OUTPUT_C0_SIZE = asc::te::c0_element<DataTypeIn>;
     static constexpr uint64_t SPLIT_M_ALIGN = Constant::NUM_TWO;
 
     enum class L0c2UbTensorType : uint8_t {
@@ -89,8 +89,8 @@ public:
         GATE_INPUT = 1,
     };
 
-    using BlockShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
-    using ProblemShape = AscendC::Te::Shape<int64_t, int64_t, int64_t>;
+    using BlockShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
+    using ProblemShape = asc::te::shape<int64_t, int64_t, int64_t>;
 
     struct OutputOffsets {
         int64_t yOffset{0};
@@ -127,20 +127,19 @@ public:
         // logical row count and ignores the padding row on sub-block 1.
         const uint64_t copyRows = Blaze::Gemm::CeilAlign(static_cast<uint64_t>(rows), SPLIT_M_ALIGN);
         const auto
-            layoutOutUb = AscendC::Te::MakeFrameLayout<AscendC::Te::NDExtLayoutPtn, AscendC::Std::Int<OUTPUT_C0_SIZE>>(
+            layoutOutUb = asc::te::make_frame_layout<asc::te::nd_ext_layout_ptn, AscendC::Std::Int<OUTPUT_C0_SIZE>>(
                 copyRows, static_cast<uint64_t>(cols));
         const uint64_t ubOffset = static_cast<uint64_t>(tensorType) * INPUT_UB_BUFFER_BYTES;
-        return AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB, DataTypeIn>(ubOffset),
-                                       layoutOutUb);
+        return asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::ub, DataTypeIn>(ubOffset), layoutOutUb);
     }
 
     __aicore__ inline auto GetConcatL0c2UbTensor(int64_t rows, int64_t cols)
     {
         const uint64_t copyRows = Blaze::Gemm::CeilAlign(static_cast<uint64_t>(rows), SPLIT_M_ALIGN);
         const auto
-            layoutOutUb = AscendC::Te::MakeFrameLayout<AscendC::Te::NDExtLayoutPtn, AscendC::Std::Int<OUTPUT_C0_SIZE>>(
+            layoutOutUb = asc::te::make_frame_layout<asc::te::nd_ext_layout_ptn, AscendC::Std::Int<OUTPUT_C0_SIZE>>(
                 copyRows, static_cast<uint64_t>(cols) * Constant::NUM_TWO);
-        return AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB, DataTypeIn>(0), layoutOutUb);
+        return asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::ub, DataTypeIn>(0), layoutOutUb);
     }
 
     __aicore__ inline void Init(Params const& params);
@@ -254,7 +253,7 @@ template <typename DataTypeOut_, typename DataTypeIn_, typename DataTypeScale_>
 __aicore__ inline void BlockEpilogueSwigluMxQuant<DataTypeOut_, DataTypeIn_, DataTypeScale_>::UpdateNextProblem(
     const ProblemShape& problemShape)
 {
-    n_ = AscendC::Te::Get<Blaze::Gemm::MNK_N>(problemShape);
+    n_ = asc::te::get<Blaze::Gemm::MNK_N>(problemShape);
     scaleN_ = Blaze::Gemm::CeilDiv(static_cast<uint64_t>(n_), Blaze::Gemm::MXFP_DIVISOR_SIZE) *
               Blaze::Gemm::MXFP_MULTI_BASE_SIZE;
 }
@@ -266,8 +265,8 @@ __aicore__ inline void BlockEpilogueSwigluMxQuant<DataTypeOut_, DataTypeIn_, Dat
     if ASCEND_IS_AIC {
         return;
     }
-    singleM_ = static_cast<uint32_t>(AscendC::Te::Get<Blaze::Gemm::MNK_M>(blockShape));
-    singleN_ = static_cast<uint32_t>(AscendC::Te::Get<Blaze::Gemm::MNK_N>(blockShape));
+    singleM_ = static_cast<uint32_t>(asc::te::get<Blaze::Gemm::MNK_M>(blockShape));
+    singleN_ = static_cast<uint32_t>(asc::te::get<Blaze::Gemm::MNK_N>(blockShape));
     scaleBlockN_ = Blaze::Gemm::CeilDiv(static_cast<uint64_t>(singleN_), Blaze::Gemm::MXFP_DIVISOR_SIZE) *
                    Blaze::Gemm::MXFP_MULTI_BASE_SIZE;
 
@@ -313,13 +312,13 @@ __aicore__ inline void BlockEpilogueSwigluMxQuant<DataTypeOut_, DataTypeIn_, Dat
 
     auto ubLayout = Gemm::MakeNDExtLayout(static_cast<int64_t>(blockCount), nValid, nUbAligned);
     auto gmLayout = Gemm::MakeNDExtLayout(static_cast<int64_t>(blockCount), nValid, gmRowPitch);
-    auto outUb = AscendC::Te::MakeTensor(
-        AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB, int8_t>(quantOutputUbOffset_), ubLayout);
-    auto outGm = AscendC::Te::MakeTensor(
-        AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(quantOutputGmAddr_ + gmOffset), gmLayout);
+    auto outUb = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::ub, int8_t>(quantOutputUbOffset_),
+                                      ubLayout);
+    auto outGm = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::gm>(quantOutputGmAddr_ + gmOffset),
+                                      gmLayout);
 
-    auto copyUB2GM = AscendC::Te::MakeCopy(AscendC::Te::CopyUB2GM{});
-    AscendC::Te::Copy(copyUB2GM, outGm, outUb);
+    auto copyUB2GM = asc::te::make_copy(asc::te::copy_ub_to_gm{});
+    asc::te::copy(copyUB2GM, outGm, outUb);
 }
 
 template <typename DataTypeOut_, typename DataTypeIn_, typename DataTypeScale_>
@@ -333,13 +332,13 @@ __aicore__ inline void BlockEpilogueSwigluMxQuant<DataTypeOut_, DataTypeIn_, Dat
     auto ubLayout = Gemm::MakeNDExtLayout(static_cast<int64_t>(blockCount), blockScaleN,
                                           static_cast<int64_t>(AscendC::ONE_BLK_SIZE));
     auto gmLayout = Gemm::MakeNDExtLayout(static_cast<int64_t>(blockCount), blockScaleN, scaleN_);
-    auto outUb = AscendC::Te::MakeTensor(
-        AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB, int8_t>(quantScaleBlockOutputUbOffset_), ubLayout);
-    auto outGm = AscendC::Te::MakeTensor(
-        AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(quantScaleGmAddr_ + gmOffset), gmLayout);
+    auto outUb = asc::te::make_tensor(
+        asc::te::make_mem_ptr<asc::te::location::ub, int8_t>(quantScaleBlockOutputUbOffset_), ubLayout);
+    auto outGm = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::gm>(quantScaleGmAddr_ + gmOffset),
+                                      gmLayout);
 
-    auto copyUB2GM = AscendC::Te::MakeCopy(AscendC::Te::CopyUB2GM{});
-    AscendC::Te::Copy(copyUB2GM, outGm, outUb);
+    auto copyUB2GM = asc::te::make_copy(asc::te::copy_ub_to_gm{});
+    asc::te::copy(copyUB2GM, outGm, outUb);
 }
 
 template <typename DataTypeOut_, typename DataTypeIn_, typename DataTypeScale_>

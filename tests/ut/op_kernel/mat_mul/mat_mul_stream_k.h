@@ -29,32 +29,31 @@
 
 namespace MatMulV3UT {
 
-template <typename A_TYPE, typename B_TYPE, typename C_TYPE, typename BIAS_TYPE, 
-    Blaze::Gemm::MatMulL0C2Out L0C2OUT_MODE = Blaze::Gemm::MatMulL0C2Out::ON_THE_FLY, uint64_t FUSED_OP_TYPE = 0>
-__aicore__ inline void MatMulStreamKWrapper(
-    GM_ADDR aGM, GM_ADDR bGM, GM_ADDR biasGM, GM_ADDR cGM, GM_ADDR workspaceGM,
-    const MatMulV3BasicTilingData& tilingData, int64_t batch = 0)
+template <typename A_TYPE, typename B_TYPE, typename C_TYPE, typename BIAS_TYPE,
+          Blaze::Gemm::MatMulL0C2Out L0C2OUT_MODE = Blaze::Gemm::MatMulL0C2Out::ON_THE_FLY, uint64_t FUSED_OP_TYPE = 0>
+__aicore__ inline void MatMulStreamKWrapper(GM_ADDR aGM, GM_ADDR bGM, GM_ADDR biasGM, GM_ADDR cGM, GM_ADDR workspaceGM,
+                                            const MatMulV3BasicTilingData& tilingData, int64_t batch = 0)
 {
     using AType = A_TYPE;
     using BType = B_TYPE;
     using OutType = C_TYPE;
     using BiasType = BIAS_TYPE;
 
-    using LayoutA = AscendC::Te::NDExtLayoutPtn;
-    using LayoutB = AscendC::Te::NDExtLayoutPtn;
-    using LayoutC = AscendC::Te::NDExtLayoutPtn;
+    using LayoutA = asc::te::nd_ext_layout_ptn;
+    using LayoutB = asc::te::nd_ext_layout_ptn;
+    using LayoutC = asc::te::nd_ext_layout_ptn;
 
     if (batch > 1) {
         return;
     }
 
-    using ProblemShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
+    using ProblemShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
 
     using BlockScheduler = Blaze::Gemm::Block::BlockSchedulerMatmulStreamK<ProblemShape>;
 
     using BlockMmad = Blaze::Gemm::Block::BlockMmad<
-        Blaze::Gemm::MatmulMultiBlockWithStreamK<L0C2OUT_MODE, FUSED_OP_TYPE>, AType, LayoutA, BType, LayoutB,
-        OutType, LayoutC, BiasType, LayoutC>;
+        Blaze::Gemm::MatmulMultiBlockWithStreamK<L0C2OUT_MODE, FUSED_OP_TYPE>, AType, LayoutA, BType, LayoutB, OutType,
+        LayoutC, BiasType, LayoutC>;
 
     using FusionOp = Blaze::Gemm::Block::DefaultFusion<OutType, OutType>;
 
@@ -65,7 +64,8 @@ __aicore__ inline void MatMulStreamKWrapper(
 
     using Params = typename MatmulKernel::Params;
     Params params = {
-        {static_cast<int64_t>(tilingData.m), static_cast<int64_t>(tilingData.n), static_cast<int64_t>(tilingData.k), batch},
+        {static_cast<int64_t>(tilingData.m), static_cast<int64_t>(tilingData.n), static_cast<int64_t>(tilingData.k),
+         batch},
         {aGM, bGM, cGM, biasGM, nullptr, workspaceGM, tilingData.mL1, tilingData.nL1, tilingData.kL1, tilingData.baseM,
          tilingData.baseN, tilingData.baseK, tilingData.l1BufferNum, tilingData.l0cDB},
         {cGM, workspaceGM},

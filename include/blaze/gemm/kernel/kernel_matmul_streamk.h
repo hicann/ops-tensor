@@ -53,11 +53,11 @@ public:
     using LayoutB = typename BlockMmad::LayoutB;
     using LayoutC = typename BlockMmad::LayoutC;
     using LayoutBias = typename BlockMmad::LayoutBias;
-    using BlockShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
-    using MakeLayoutA = AscendC::Te::FrameLayoutFormat<LayoutA, AscendC::Te::LayoutTraitDefault<AType>>;
-    using MakeLayoutB = AscendC::Te::FrameLayoutFormat<LayoutB, AscendC::Te::LayoutTraitDefault<BType>>;
-    using MakeLayoutC = AscendC::Te::FrameLayoutFormat<LayoutC, AscendC::Te::LayoutTraitDefault<CType>>;
-    using MakeLayoutBias = AscendC::Te::FrameLayoutFormat<LayoutBias, AscendC::Te::LayoutTraitDefault<BiasType>>;
+    using BlockShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
+    using MakeLayoutA = asc::te::frame_layout_format<LayoutA, asc::te::layout_trait_default<AType>>;
+    using MakeLayoutB = asc::te::frame_layout_format<LayoutB, asc::te::layout_trait_default<BType>>;
+    using MakeLayoutC = asc::te::frame_layout_format<LayoutC, asc::te::layout_trait_default<CType>>;
+    using MakeLayoutBias = asc::te::frame_layout_format<LayoutBias, asc::te::layout_trait_default<BiasType>>;
 
     struct Params {
         ProblemShape problemShape;
@@ -117,11 +117,10 @@ private:
         auto layoutB = MakeLayoutB{}(batch_, k_, n_);
         auto layoutC = MakeLayoutC{}(batch_, m_, n_);
         auto layoutBias = MakeLayoutBias{}(1L, n_);
-        auto gmA = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(aGmAddr_), layoutA);
-        auto gmB = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(bGmAddr_), layoutB);
-        auto gmC = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(cGmAddr_), layoutC);
-        auto gmBias = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(biasGmAddr_),
-                                              layoutBias);
+        auto gmA = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::gm>(aGmAddr_), layoutA);
+        auto gmB = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::gm>(bGmAddr_), layoutB);
+        auto gmC = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::gm>(cGmAddr_), layoutC);
+        auto gmBias = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::gm>(biasGmAddr_), layoutBias);
 
         for (int64_t blockIdx = curBlockIdx; blockIdx < totalBlockNums; blockIdx += usedCoreNum) {
             int64_t tmpBlockIdx = blockIdx;
@@ -138,13 +137,13 @@ private:
             }
             BlockShape singleCoreShape = bs.GetBlockShape(tmpBlockIdx);
             BlockShape singleCoreCoord = bs.GetBlockCoord(tmpBlockIdx);
-            auto coordM = AscendC::Te::Get<MNK_M>(singleCoreCoord);
-            auto coordN = AscendC::Te::Get<MNK_N>(singleCoreCoord);
-            auto coordK = AscendC::Te::Get<MNK_K>(singleCoreCoord);
-            auto shapeM = AscendC::Te::Get<MNK_M>(singleCoreShape);
-            auto shapeN = AscendC::Te::Get<MNK_N>(singleCoreShape);
-            auto shapeK = AscendC::Te::Get<MNK_K>(singleCoreShape);
-            curBatchIdx_ = AscendC::Te::Get<MNK_B>(singleCoreCoord);
+            auto coordM = asc::te::get<MNK_M>(singleCoreCoord);
+            auto coordN = asc::te::get<MNK_N>(singleCoreCoord);
+            auto coordK = asc::te::get<MNK_K>(singleCoreCoord);
+            auto shapeM = asc::te::get<MNK_M>(singleCoreShape);
+            auto shapeN = asc::te::get<MNK_N>(singleCoreShape);
+            auto shapeK = asc::te::get<MNK_K>(singleCoreShape);
+            curBatchIdx_ = asc::te::get<MNK_B>(singleCoreCoord);
 
             // 切K场景使用blockSchedulerParams的singleCoreK
             int64_t kSingleCore = bs.CheckIsSkScene(tmpBlockIdx) ? params.schParams.singleCoreK : k_;
@@ -154,34 +153,31 @@ private:
             auto workspaceStrideColumn0 = BlockMmad::DispatchPolicy::FIXP_OPTI == MatMulL0C2Out::ND_FIXPIPE_1_2 ?
                                               Blaze::Gemm::CeilAlign(shapeN, static_cast<int64_t>(BLOCK_BYTE_SIZE)) :
                                               shapeN;
-            auto workspaceShape = AscendC::Te::MakeShape(AscendC::Te::MakeShape(AscendC::Te::_1{}, shapeM),
-                                                         AscendC::Te::MakeShape(AscendC::Te::_1{}, shapeN));
-            auto workspaceStride = AscendC::Te::MakeStride(
-                AscendC::Te::MakeStride(AscendC::Te::_0{}, workspaceStrideColumn0),
-                AscendC::Te::MakeStride(AscendC::Te::_0{}, AscendC::Te::_1{}));
-            auto layoutWorkspace = AscendC::Te::MakePatternLayout<AscendC::Te::NDExtLayoutPtn,
-                                                                  AscendC::Te::LayoutTraitDefault<float>>(
-                workspaceShape, workspaceStride);
+            auto workspaceShape = asc::te::make_shape(asc::te::make_shape(asc::te::_1{}, shapeM),
+                                                      asc::te::make_shape(asc::te::_1{}, shapeN));
+            auto workspaceStride = asc::te::make_stride(asc::te::make_stride(asc::te::_0{}, workspaceStrideColumn0),
+                                                        asc::te::make_stride(asc::te::_0{}, asc::te::_1{}));
+            auto layoutWorkspace = asc::te::make_pattern_layout<asc::te::nd_ext_layout_ptn,
+                                                                asc::te::layout_trait_default<float>>(workspaceShape,
+                                                                                                      workspaceStride);
             // workspace use 1 dim expression, make tensor each calculate
-            auto gmWorkSpace = AscendC::Te::MakeTensor(
-                AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(workspaceGmAddr_ + offsetWorkspace),
-                layoutWorkspace);
+            auto gmWorkSpace = asc::te::make_tensor(
+                asc::te::make_mem_ptr<asc::te::location::gm>(workspaceGmAddr_ + offsetWorkspace), layoutWorkspace);
 
             // split tensor from gm which needed by current calculate
-            auto subTensorA = gmA.Slice(
-                AscendC::MakeCoord(curBatchIdx_, AscendC::Te::MakeCoord(coordM * mL1_, coordK * kSingleCore)),
-                AscendC::MakeShape(1L, AscendC::Te::MakeShape(shapeM, shapeK)));
-            auto gmBlockA = AscendC::Te::Squeeze<0>(subTensorA);
-            auto subTensorB = gmB.Slice(
-                AscendC::MakeCoord(curBatchIdx_, AscendC::Te::MakeCoord(coordK * kSingleCore, coordN * nL1_)),
-                AscendC::MakeShape(1L, AscendC::Te::MakeShape(shapeK, shapeN)));
-            auto gmBlockB = AscendC::Te::Squeeze<0>(subTensorB);
-            auto subTensorC = gmC.Slice(
-                AscendC::MakeCoord(curBatchIdx_, AscendC::Te::MakeCoord(coordM * mL1_, coordN * nL1_)),
-                AscendC::MakeShape(1L, AscendC::Te::MakeShape(shapeM, shapeN)));
-            auto gmBlockC = AscendC::Te::Squeeze<0>(subTensorC);
-            auto gmBlockBias = gmBias.Slice(AscendC::Te::MakeCoord(0L, coordN * nL1_),
-                                            AscendC::Te::MakeShape(1L, shapeN));
+            auto subTensorA = gmA.slice(
+                AscendC::MakeCoord(curBatchIdx_, asc::te::make_coord(coordM * mL1_, coordK * kSingleCore)),
+                AscendC::MakeShape(1L, asc::te::make_shape(shapeM, shapeK)));
+            auto gmBlockA = asc::te::squeeze<0>(subTensorA);
+            auto subTensorB = gmB.slice(
+                AscendC::MakeCoord(curBatchIdx_, asc::te::make_coord(coordK * kSingleCore, coordN * nL1_)),
+                AscendC::MakeShape(1L, asc::te::make_shape(shapeK, shapeN)));
+            auto gmBlockB = asc::te::squeeze<0>(subTensorB);
+            auto subTensorC = gmC.slice(
+                AscendC::MakeCoord(curBatchIdx_, asc::te::make_coord(coordM * mL1_, coordN * nL1_)),
+                AscendC::MakeShape(1L, asc::te::make_shape(shapeM, shapeN)));
+            auto gmBlockC = asc::te::squeeze<0>(subTensorC);
+            auto gmBlockBias = gmBias.slice(asc::te::make_coord(0L, coordN * nL1_), asc::te::make_shape(1L, shapeN));
             blockMmad(gmBlockA, gmBlockB, gmBlockBias, gmBlockC, gmWorkSpace, singleCoreShape, coordK,
                       bs.CheckIsSkScene(tmpBlockIdx));
 
@@ -219,10 +215,10 @@ private:
     __aicore__ inline void Init(Params const& params)
     {
         auto blockMmadParams = params.mmadParams;
-        m_ = AscendC::Te::Get<MNK_M>(params.problemShape);
-        n_ = AscendC::Te::Get<MNK_N>(params.problemShape);
-        k_ = AscendC::Te::Get<MNK_K>(params.problemShape);
-        batch_ = AscendC::Te::Get<MNK_B>(params.problemShape);
+        m_ = asc::te::get<MNK_M>(params.problemShape);
+        n_ = asc::te::get<MNK_N>(params.problemShape);
+        k_ = asc::te::get<MNK_K>(params.problemShape);
+        batch_ = asc::te::get<MNK_B>(params.problemShape);
         aGmAddr_ = reinterpret_cast<__gm__ AType*>(blockMmadParams.aGmAddr);
         bGmAddr_ = reinterpret_cast<__gm__ BType*>(blockMmadParams.bGmAddr);
         cGmAddr_ = reinterpret_cast<__gm__ CType*>(blockMmadParams.cGmAddr);

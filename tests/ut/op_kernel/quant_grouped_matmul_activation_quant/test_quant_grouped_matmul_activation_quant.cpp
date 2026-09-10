@@ -106,7 +106,7 @@ void CheckPublicAssembly()
 template <typename AType, typename BType, typename OutputType, typename LayoutB>
 void RunKernelSmoke(uint8_t groupListType, uint32_t scaleAlg)
 {
-    constexpr bool transB = std::is_same_v<LayoutB, AscendC::Te::ZNLayoutPtn>;
+    constexpr bool transB = std::is_same_v<LayoutB, asc::te::zn_layout_ptn>;
     constexpr size_t c0 = IS_FP4_TYPE<BType> ? 64UL : 32UL;
     const size_t storedK = transB ? AlignUp(K, c0) : AlignUp(K, 16UL);
     const size_t storedN = transB ? AlignUp(N, 16UL) : AlignUp(N, c0);
@@ -176,30 +176,30 @@ TEST(QgmmMxActivationQuantTest, AssembleFp4E1M2Output)
 
 TEST(QgmmMxActivationQuantTest, KernelMxFp8E4M3NzOffsetOcp)
 {
-    RunKernelSmoke<fp8_e4m3fn_t, fp8_e4m3fn_t, fp8_e4m3fn_t, AscendC::Te::NZLayoutPtn>(0, 0);
+    RunKernelSmoke<fp8_e4m3fn_t, fp8_e4m3fn_t, fp8_e4m3fn_t, asc::te::nz_layout_ptn>(0, 0);
 }
 
 TEST(QgmmMxActivationQuantTest, KernelMxFp8E5M2ZnLengthCublas)
 {
-    RunKernelSmoke<fp8_e5m2_t, fp8_e4m3fn_t, fp8_e5m2_t, AscendC::Te::ZNLayoutPtn>(1, 1);
+    RunKernelSmoke<fp8_e5m2_t, fp8_e4m3fn_t, fp8_e5m2_t, asc::te::zn_layout_ptn>(1, 1);
 }
 
 TEST(QgmmMxActivationQuantTest, KernelMxFp4E1M2E1M2NzOffset)
 {
-    RunKernelSmoke<fp4x2_e1m2_t, fp4x2_e1m2_t, fp4x2_e1m2_t, AscendC::Te::NZLayoutPtn>(0, 0);
+    RunKernelSmoke<fp4x2_e1m2_t, fp4x2_e1m2_t, fp4x2_e1m2_t, asc::te::nz_layout_ptn>(0, 0);
 }
 
 TEST(QgmmMxActivationQuantTest, KernelMxFp4E1M2E2M1ZnLength)
 {
-    RunKernelSmoke<fp4x2_e1m2_t, fp4x2_e2m1_t, fp4x2_e1m2_t, AscendC::Te::ZNLayoutPtn>(1, 0);
+    RunKernelSmoke<fp4x2_e1m2_t, fp4x2_e2m1_t, fp4x2_e1m2_t, asc::te::zn_layout_ptn>(1, 0);
 }
 
 TEST(QgmmMxActivationQuantTest, KernelMxFp4E2M1E1M2NzLengthDynamicDtypeRange)
 {
-    RunKernelSmoke<fp4x2_e2m1_t, fp4x2_e1m2_t, fp4x2_e2m1_t, AscendC::Te::NZLayoutPtn>(1, 2);
+    RunKernelSmoke<fp4x2_e2m1_t, fp4x2_e1m2_t, fp4x2_e2m1_t, asc::te::nz_layout_ptn>(1, 2);
 }
 
 TEST(QgmmMxActivationQuantTest, KernelMxFp4E2M1E2M1ZnOffset)
 {
-    RunKernelSmoke<fp4x2_e2m1_t, fp4x2_e2m1_t, fp4x2_e2m1_t, AscendC::Te::ZNLayoutPtn>(0, 0);
+    RunKernelSmoke<fp4x2_e2m1_t, fp4x2_e2m1_t, fp4x2_e2m1_t, asc::te::zn_layout_ptn>(0, 0);
 }

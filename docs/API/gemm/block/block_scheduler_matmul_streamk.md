@@ -24,7 +24,7 @@ class BlockSchedulerMatmulStreamK;
 
 **类型定义**：
 ```cpp
-using ProblemShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
+using ProblemShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
 ```
 
 **参数组成**：
@@ -38,7 +38,7 @@ using ProblemShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
 **使用示例**：
 ```cpp
 // 定义 ProblemShape 类型
-using ProblemShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
+using ProblemShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
 
 // 创建 ProblemShape 实例
 ProblemShape problemShape{1024, 1024, 512, 1};  // (M, N, K, Batch)

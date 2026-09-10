@@ -30,29 +30,29 @@
 namespace MatMulV3UT {
 
 template <typename A_TYPE, typename B_TYPE, typename C_TYPE, typename BIAS_TYPE, bool A_BC = false, bool B_BC = false>
-__aicore__ inline void MatMulIterBatchBroadcastWrapper(
-    GM_ADDR aGM, GM_ADDR bGM, GM_ADDR biasGM, GM_ADDR cGM, GM_ADDR workspaceGM,
-    const MatMulV3IterBatchTilingData& tilingData)
+__aicore__ inline void MatMulIterBatchBroadcastWrapper(GM_ADDR aGM, GM_ADDR bGM, GM_ADDR biasGM, GM_ADDR cGM,
+                                                       GM_ADDR workspaceGM,
+                                                       const MatMulV3IterBatchTilingData& tilingData)
 {
     using AType = A_TYPE;
     using BType = B_TYPE;
     using OutType = C_TYPE;
     using BiasType = BIAS_TYPE;
 
-    using LayoutA = AscendC::Te::NDExtLayoutPtn;
-    using LayoutB = AscendC::Te::NDExtLayoutPtn;
-    using LayoutC = AscendC::Te::NDExtLayoutPtn;
-    using LayoutBias = AscendC::Te::NDExtLayoutPtn;
+    using LayoutA = asc::te::nd_ext_layout_ptn;
+    using LayoutB = asc::te::nd_ext_layout_ptn;
+    using LayoutC = asc::te::nd_ext_layout_ptn;
+    using LayoutBias = asc::te::nd_ext_layout_ptn;
 
-    using ProblemShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
+    using ProblemShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
 
     using DispatchPolicy = Blaze::Gemm::MatmulIterBatchBroadcast<A_BC, B_BC>;
 
     using BlockScheduler = Blaze::Gemm::Block::BlockSchedulerIterBatchBroadcast<ProblemShape>;
     using BlockSchedulerParams = typename BlockScheduler::Params;
 
-    using BlockMmad = Blaze::Gemm::Block::BlockMmad<
-        DispatchPolicy, AType, LayoutA, BType, LayoutB, OutType, LayoutC, BiasType, LayoutBias>;
+    using BlockMmad = Blaze::Gemm::Block::BlockMmad<DispatchPolicy, AType, LayoutA, BType, LayoutB, OutType, LayoutC,
+                                                    BiasType, LayoutBias>;
 
     using BlockEpilogue = Blaze::Gemm::Block::BlockEpilogueEmpty;
 
@@ -65,19 +65,19 @@ __aicore__ inline void MatMulIterBatchBroadcastWrapper(
     Params params = {
         {static_cast<int64_t>(tilingData.m), static_cast<int64_t>(tilingData.n), static_cast<int64_t>(tilingData.k),
          static_cast<int64_t>(totalBatch)},
-        {aGM, bGM, cGM, biasGM, nullptr, workspaceGM, tilingData.mL1, tilingData.nL1, tilingData.kL1,
-         tilingData.baseM, tilingData.baseN, tilingData.baseK, tilingData.l1BufferNum, tilingData.l0cDB},
+        {aGM, bGM, cGM, biasGM, nullptr, workspaceGM, tilingData.mL1, tilingData.nL1, tilingData.kL1, tilingData.baseM,
+         tilingData.baseN, tilingData.baseK, tilingData.l1BufferNum, tilingData.l0cDB},
         {},
-        {static_cast<uint32_t>(tilingData.baseM), static_cast<uint32_t>(tilingData.baseN),
-         static_cast<uint32_t>(tilingData.baseK), static_cast<uint32_t>(tilingData.iterBatchL1),
-         static_cast<uint32_t>(tilingData.iterBatchL0), static_cast<uint32_t>(tilingData.broadcastAxisA),
+        {static_cast<uint32_t>(tilingData.baseM),          static_cast<uint32_t>(tilingData.baseN),
+         static_cast<uint32_t>(tilingData.baseK),          static_cast<uint32_t>(tilingData.iterBatchL1),
+         static_cast<uint32_t>(tilingData.iterBatchL0),    static_cast<uint32_t>(tilingData.broadcastAxisA),
          static_cast<uint32_t>(tilingData.broadcastAxisB), static_cast<uint32_t>(tilingData.aBatchDim0),
-         static_cast<uint32_t>(tilingData.aBatchDim1), static_cast<uint32_t>(tilingData.aBatchDim2),
-         static_cast<uint32_t>(tilingData.aBatchDim3), static_cast<uint32_t>(tilingData.bBatchDim0),
-         static_cast<uint32_t>(tilingData.bBatchDim1), static_cast<uint32_t>(tilingData.bBatchDim2),
-         static_cast<uint32_t>(tilingData.bBatchDim3), static_cast<uint32_t>(tilingData.cBatchDim0),
-         static_cast<uint32_t>(tilingData.cBatchDim1), static_cast<uint32_t>(tilingData.cBatchDim2),
-         static_cast<uint32_t>(tilingData.cBatchDim3), static_cast<uint8_t>(tilingData.isHf32)}};
+         static_cast<uint32_t>(tilingData.aBatchDim1),     static_cast<uint32_t>(tilingData.aBatchDim2),
+         static_cast<uint32_t>(tilingData.aBatchDim3),     static_cast<uint32_t>(tilingData.bBatchDim0),
+         static_cast<uint32_t>(tilingData.bBatchDim1),     static_cast<uint32_t>(tilingData.bBatchDim2),
+         static_cast<uint32_t>(tilingData.bBatchDim3),     static_cast<uint32_t>(tilingData.cBatchDim0),
+         static_cast<uint32_t>(tilingData.cBatchDim1),     static_cast<uint32_t>(tilingData.cBatchDim2),
+         static_cast<uint32_t>(tilingData.cBatchDim3),     static_cast<uint8_t>(tilingData.isHf32)}};
 
     MatmulKernel kernel;
     kernel(params);

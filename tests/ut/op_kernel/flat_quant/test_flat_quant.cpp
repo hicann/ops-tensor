@@ -123,17 +123,17 @@ void RunKernelSmoke(int64_t M, int64_t N, int64_t K, int64_t iterBatch, float ds
 
 TEST(FlatQuantBlazeTest, AssembleBf16Fp4)
 {
-    CheckPublicAssembly<bfloat16_t, fp4x2_e2m1_t, float, AscendC::Te::NDExtLayoutPtn>();
+    CheckPublicAssembly<bfloat16_t, fp4x2_e2m1_t, float, asc::te::nd_ext_layout_ptn>();
 }
 
 TEST(FlatQuantBlazeTest, KernelSmokeBasic)
 {
-    RunKernelSmoke<bfloat16_t, fp4x2_e2m1_t, float, AscendC::Te::NDExtLayoutPtn>(16, 16, 1, 1, 6.0f, 1.0f / 6.0f);
+    RunKernelSmoke<bfloat16_t, fp4x2_e2m1_t, float, asc::te::nd_ext_layout_ptn>(16, 16, 1, 1, 6.0f, 1.0f / 6.0f);
 }
 
 TEST(FlatQuantBlazeTest, KernelSmokeIterBatch)
 {
-    RunKernelSmoke<bfloat16_t, fp4x2_e2m1_t, float, AscendC::Te::NDExtLayoutPtn>(16, 16, 4, 2, 6.0f, 1.0f / 6.0f);
+    RunKernelSmoke<bfloat16_t, fp4x2_e2m1_t, float, asc::te::nd_ext_layout_ptn>(16, 16, 4, 2, 6.0f, 1.0f / 6.0f);
 }
 
 TEST(FlatQuantBlazeTest, KernelSmokeNoP2)
@@ -163,7 +163,7 @@ TEST(FlatQuantBlazeTest, KernelSmokeNoP2)
     tilingData->invDstTypeMax = 1.0f / 6.0f;
 
     AscendC::SetKernelMode(KernelMode::MIX_MODE);
-    auto fn = FlatQuantKernelEntry<bfloat16_t, fp4x2_e2m1_t, float, AscendC::Te::NDExtLayoutPtn>;
+    auto fn = FlatQuantKernelEntry<bfloat16_t, fp4x2_e2m1_t, float, asc::te::nd_ext_layout_ptn>;
     ASSERT_TRUE(KERNEL_RUN_KF(fn, BLOCK_NUM, x.Get(), p1.Get(), p2.Get(), out.Get(), scale.Get(), workspace.Get(),
                               tiling.Get()))
         << "FlatQuant Blaze kernel (noP2) execution failed";

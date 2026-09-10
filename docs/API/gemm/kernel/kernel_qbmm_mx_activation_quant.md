@@ -38,7 +38,7 @@ AIC + AIV 双核：
 
 ### UB 对齐要求
 - AIC 写入 UB 的结果需 32 元素对齐（`baseN` 按 32 对齐），满足 AIV 每 32 个元素做一次 MX 量化
-- UB Tensor 使用 `NDExtLayoutPtn`，行数为 `(baseM + 1) & ~1`（M 向 2 对齐）
+- UB Tensor 使用 `nd_ext_layout_ptn`，行数为 `(baseM + 1) & ~1`（M 向 2 对齐）
 
 ### DualDst 模式要求
 `BlockMmad` 的 DispatchPolicy 必须设置 `IsDualDst_ = true`：
@@ -167,7 +167,7 @@ __aicore__ inline void ProcessSingleBatch(
 功能：处理单个 Batch 的矩阵乘 + 激活量化计算。
 执行流程：
 1. 构建 Layout：A、B、ScaleA、ScaleB、Bias、C
-2. 创建 GM Tensor 与 UB Tensor（地址 0，`NDExtLayoutPtn`，行数 `(baseM+1)&~1`）
+2. 创建 GM Tensor 与 UB Tensor（地址 0，`nd_ext_layout_ptn`，行数 `(baseM+1)&~1`）
 3. 动态配置 L2 Cache
 4. Tile 循环处理：
    - 获取 tile 坐标 (mPos, nPos) 与形状 (baseM, baseN)
@@ -239,10 +239,10 @@ using BiasType = float;
 using OutType = fp8_e8m0_t;     // epilogue 输出类型
 
 // 定义 Layout
-using LayoutA = AscendC::Te::NDExtLayoutPtn;
-using LayoutB = AscendC::Te::NZLayoutPtn;
-using LayoutC = AscendC::Te::NDExtLayoutPtn;
-using LayoutBias = AscendC::Te::NDExtLayoutPtn;
+using LayoutA = asc::te::nd_ext_layout_ptn; // codespell:ignore te
+using LayoutB = asc::te::nz_layout_ptn; // codespell:ignore te
+using LayoutC = asc::te::nd_ext_layout_ptn; // codespell:ignore te
+using LayoutBias = asc::te::nd_ext_layout_ptn; // codespell:ignore te
 
 // 定义调度策略（IsDualDst_ = true）
 using DispatchPolicy = Blaze::Gemm::MatmulWithScaleMx<

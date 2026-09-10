@@ -31,8 +31,8 @@ namespace Block {
 template <class WorkspaceType_, class OutType_, class DispatchPolicy_>
 class BlockEpilogueMatmulStreamK {
 public:
-    using BlockShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
-    using BlockCoord = AscendC::Te::Coord<int64_t, int64_t, int64_t, int64_t>;
+    using BlockShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
+    using BlockCoord = asc::te::coord<int64_t, int64_t, int64_t, int64_t>;
 
     struct Params {
         GM_ADDR cGmAddr{nullptr};
@@ -98,14 +98,14 @@ public:
     __aicore__ inline void Init(Params const& params, BlockShape blockShapeInAiv, BlockShape tileL1ShapeInAiv,
                                 BlockCoord coordInAiv, uint64_t usedCoreNum, bool checkIsSkScene)
     {
-        m_ = AscendC::Te::Get<Blaze::Gemm::MNK_M>(blockShapeInAiv);
-        n_ = AscendC::Te::Get<Blaze::Gemm::MNK_N>(blockShapeInAiv);
-        mL1_ = AscendC::Te::Get<Blaze::Gemm::MNK_M>(tileL1ShapeInAiv);
-        nL1_ = AscendC::Te::Get<Blaze::Gemm::MNK_N>(tileL1ShapeInAiv);
-        mCnt_ = AscendC::Te::Get<Blaze::Gemm::MNK_M>(coordInAiv);
-        nCnt_ = AscendC::Te::Get<Blaze::Gemm::MNK_N>(coordInAiv);
-        kCnt_ = AscendC::Te::Get<Blaze::Gemm::MNK_K>(coordInAiv);
-        bCnt_ = AscendC::Te::Get<Blaze::Gemm::MNK_B>(coordInAiv);
+        m_ = asc::te::get<Blaze::Gemm::MNK_M>(blockShapeInAiv);
+        n_ = asc::te::get<Blaze::Gemm::MNK_N>(blockShapeInAiv);
+        mL1_ = asc::te::get<Blaze::Gemm::MNK_M>(tileL1ShapeInAiv);
+        nL1_ = asc::te::get<Blaze::Gemm::MNK_N>(tileL1ShapeInAiv);
+        mCnt_ = asc::te::get<Blaze::Gemm::MNK_M>(coordInAiv);
+        nCnt_ = asc::te::get<Blaze::Gemm::MNK_N>(coordInAiv);
+        kCnt_ = asc::te::get<Blaze::Gemm::MNK_K>(coordInAiv);
+        bCnt_ = asc::te::get<Blaze::Gemm::MNK_B>(coordInAiv);
         usedCoreNum_ = usedCoreNum;
         // Decrease tile size of per vector core to prevent data race of cube and vector
         aivMte2Num_ = checkIsSkScene ? AscendC::GetTaskRation() : AscendC::BLOCK_CUBE;

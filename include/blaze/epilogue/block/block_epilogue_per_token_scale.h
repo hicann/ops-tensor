@@ -109,12 +109,12 @@ template <class OutType, class FixpipeType>
 __aicore__ inline auto BlockEpiloguePerTokenScale<OutType, FixpipeType>::MakeLayout(int64_t rows, int64_t cols,
                                                                                     int64_t rowPitch)
 {
-    auto shape = AscendC::Te::MakeShape(AscendC::Te::MakeShape(AscendC::Std::Int<1>{}, rows),
-                                        AscendC::Te::MakeShape(AscendC::Std::Int<1>{}, cols));
-    auto stride = AscendC::Te::MakeStride(AscendC::Te::MakeStride(AscendC::Std::Int<0>{}, rowPitch),
-                                          AscendC::Te::MakeStride(AscendC::Std::Int<0>{}, AscendC::Std::Int<1>{}));
-    return AscendC::Te::MakePatternLayout<AscendC::Te::NDExtLayoutPtn, AscendC::Te::LayoutTraitDefault<float>>(shape,
-                                                                                                               stride);
+    auto shape = asc::te::make_shape(asc::te::make_shape(AscendC::Std::Int<1>{}, rows),
+                                     asc::te::make_shape(AscendC::Std::Int<1>{}, cols));
+    auto stride = asc::te::make_stride(asc::te::make_stride(AscendC::Std::Int<0>{}, rowPitch),
+                                       asc::te::make_stride(AscendC::Std::Int<0>{}, AscendC::Std::Int<1>{}));
+    return asc::te::make_pattern_layout<asc::te::nd_ext_layout_ptn, asc::te::layout_trait_default<float>>(shape,
+                                                                                                          stride);
 }
 
 template <class OutType, class FixpipeType>
@@ -175,41 +175,36 @@ template <class OutType, class FixpipeType>
 __aicore__ inline void BlockEpiloguePerTokenScale<OutType, FixpipeType>::CopyInputs(
     int64_t m, int64_t n, int64_t perTokenOffset, int64_t offsetOffset, int64_t rowSumOffset, uint64_t workspaceOffset)
 {
-    auto copyGM2UB = AscendC::Te::MakeCopy(AscendC::Te::CopyGM2UB{});
+    auto copyGM2UB = asc::te::make_copy(asc::te::copy_gm_to_ub{});
     const int64_t inputPitch = AlignElements<FixpipeType>(n);
-    auto inputUb = AscendC::Te::MakeTensor(
-        AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB, FixpipeType>(inputOffset_), MakeLayout(m, n, inputPitch));
-    auto inputGm = AscendC::Te::MakeTensor(
-        AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(reinterpret_cast<__gm__ FixpipeType*>(workspaceGmAddr_) +
-                                                           workspaceOffset),
-        MakeLayout(m, n, n));
-    AscendC::Te::Copy(copyGM2UB, inputUb, inputGm);
+    auto inputUb = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::ub, FixpipeType>(inputOffset_),
+                                        MakeLayout(m, n, inputPitch));
+    auto inputGm = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::gm>(
+                                            reinterpret_cast<__gm__ FixpipeType*>(workspaceGmAddr_) + workspaceOffset),
+                                        MakeLayout(m, n, n));
+    asc::te::copy(copyGM2UB, inputUb, inputGm);
 
-    auto perTokenUb = AscendC::Te::MakeTensor(
-        AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB, float>(perTokenOffset_),
-        MakeLayout(1, m, AlignElements<float>(m)));
-    auto perTokenGm = AscendC::Te::MakeTensor(
-        AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(reinterpret_cast<__gm__ float*>(perTokenScaleGmAddr_) +
-                                                           perTokenOffset),
-        MakeLayout(1, m, m));
-    AscendC::Te::Copy(copyGM2UB, perTokenUb, perTokenGm);
+    auto perTokenUb = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::ub, float>(perTokenOffset_),
+                                           MakeLayout(1, m, AlignElements<float>(m)));
+    auto perTokenGm = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::gm>(
+                                               reinterpret_cast<__gm__ float*>(perTokenScaleGmAddr_) + perTokenOffset),
+                                           MakeLayout(1, m, m));
+    asc::te::copy(copyGM2UB, perTokenUb, perTokenGm);
 
     if (withOffset_) {
-        auto rowSumUb = AscendC::Te::MakeTensor(
-            AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB, float>(rowSumOffset_),
-            MakeLayout(1, m, AlignElements<float>(m)));
-        auto rowSumGm = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(
-                                                    reinterpret_cast<__gm__ float*>(xRowSumGmAddr_) + rowSumOffset),
-                                                MakeLayout(1, m, m));
-        AscendC::Te::Copy(copyGM2UB, rowSumUb, rowSumGm);
+        auto rowSumUb = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::ub, float>(rowSumOffset_),
+                                             MakeLayout(1, m, AlignElements<float>(m)));
+        auto rowSumGm = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::gm>(
+                                                 reinterpret_cast<__gm__ float*>(xRowSumGmAddr_) + rowSumOffset),
+                                             MakeLayout(1, m, m));
+        asc::te::copy(copyGM2UB, rowSumUb, rowSumGm);
 
-        auto offsetUb = AscendC::Te::MakeTensor(
-            AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB, float>(offsetOffset_),
-            MakeLayout(1, n, AlignElements<float>(n)));
-        auto offsetGm = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(
-                                                    reinterpret_cast<__gm__ float*>(offsetGmAddr_) + offsetOffset),
-                                                MakeLayout(1, n, n));
-        AscendC::Te::Copy(copyGM2UB, offsetUb, offsetGm);
+        auto offsetUb = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::ub, float>(offsetOffset_),
+                                             MakeLayout(1, n, AlignElements<float>(n)));
+        auto offsetGm = asc::te::make_tensor(
+            asc::te::make_mem_ptr<asc::te::location::gm>(reinterpret_cast<__gm__ float*>(offsetGmAddr_) + offsetOffset),
+            MakeLayout(1, n, n));
+        asc::te::copy(copyGM2UB, offsetUb, offsetGm);
     }
 }
 
@@ -217,13 +212,13 @@ template <class OutType, class FixpipeType>
 __aicore__ inline void BlockEpiloguePerTokenScale<OutType, FixpipeType>::CopyOut(int64_t m, int64_t n,
                                                                                  int64_t outOffset)
 {
-    auto outputUb = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB, OutType>(outputOffset_),
-                                            MakeLayout(m, n, AlignElements<OutType>(n)));
-    auto outputGm = AscendC::Te::MakeTensor(
-        AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(reinterpret_cast<__gm__ OutType*>(outGmAddr_) + outOffset),
+    auto outputUb = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::ub, OutType>(outputOffset_),
+                                         MakeLayout(m, n, AlignElements<OutType>(n)));
+    auto outputGm = asc::te::make_tensor(
+        asc::te::make_mem_ptr<asc::te::location::gm>(reinterpret_cast<__gm__ OutType*>(outGmAddr_) + outOffset),
         MakeLayout(m, n, n_));
-    auto copyUB2GM = AscendC::Te::MakeCopy(AscendC::Te::CopyUB2GM{});
-    AscendC::Te::Copy(copyUB2GM, outputGm, outputUb);
+    auto copyUB2GM = asc::te::make_copy(asc::te::copy_ub_to_gm{});
+    asc::te::copy(copyUB2GM, outputGm, outputUb);
 }
 
 template <class OutType, class FixpipeType>

@@ -30,8 +30,8 @@ namespace Block {
 template <class ProblemShape_, uint64_t FullLoadMode_, class LayoutA_, class LayoutB_, class AType_>
 class BlockSchedulerQuantBatchMatmulV3 {
 public:
-    using BlockShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
-    using BlockCoord = AscendC::Te::Coord<int64_t, int64_t, int64_t, int64_t>;
+    using BlockShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
+    using BlockCoord = asc::te::coord<int64_t, int64_t, int64_t, int64_t>;
     using ProblemShape = ProblemShape_;
     using AType = AType_;
 
@@ -48,8 +48,8 @@ public:
 
     __aicore__ inline BlockSchedulerQuantBatchMatmulV3(const ProblemShape& shape, const Params& params)
     {
-        const int64_t m = AscendC::Te::Get<MNK_M>(shape);
-        const int64_t n = AscendC::Te::Get<MNK_N>(shape);
+        const int64_t m = asc::te::get<MNK_M>(shape);
+        const int64_t n = asc::te::get<MNK_N>(shape);
         baseM_ = static_cast<int64_t>(params.baseM);
         baseN_ = static_cast<int64_t>(params.baseN);
         mBlockNums_ = Blaze::Gemm::CeilDiv(m, baseM_);
@@ -238,8 +238,8 @@ public:
 
     __aicore__ inline void GetTileCoord(BlockCoord blockCoord, int64_t& mPos, int64_t& nPos)
     {
-        auto mBlockIdx = AscendC::Te::Get<MNK_M>(blockCoord);
-        auto nBlockIdx = AscendC::Te::Get<MNK_N>(blockCoord);
+        auto mBlockIdx = asc::te::get<MNK_M>(blockCoord);
+        auto nBlockIdx = asc::te::get<MNK_N>(blockCoord);
         mPos = mBlockIdx * baseM_ + mSplitAddrOffset_;
         nPos = nBlockIdx * baseN_ + nSplitAddrOffset_;
         if constexpr (!TRANS_A) {
@@ -279,8 +279,8 @@ private:
 
     __aicore__ inline void CalSingleCoreShapeByCoord(int64_t& singleCoreM, int64_t& singleCoreN, BlockCoord blockCoord)
     {
-        const int64_t mIdx = AscendC::Te::Get<MNK_M>(blockCoord);
-        const int64_t nIdx = AscendC::Te::Get<MNK_N>(blockCoord);
+        const int64_t mIdx = asc::te::get<MNK_M>(blockCoord);
+        const int64_t nIdx = asc::te::get<MNK_N>(blockCoord);
         if constexpr (!TRANS_A) {
             if (mIdx >= mBaseNormCnt_) {
                 singleCoreM = mIdx < mBlockNums_ - 1 ? mBaseTailMain_ : mBaseTailLast_;

@@ -11,8 +11,8 @@ Block 层后处理组件，用于矩阵乘计算后的额外处理。不同实�
 ### 类型别名
 | 类型 | 说明 |
 |------|------|
-| BlockShape | Block 形状类型 `AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>` |
-| BlockCoord | Block 坐标类型 `AscendC::Te::Coord<int64_t, int64_t, int64_t, int64_t>` |
+| BlockShape | Block 形状类型 `asc::te::shape<int64_t, int64_t, int64_t, int64_t>` |
+| BlockCoord | Block 坐标类型 `asc::te::coord<int64_t, int64_t, int64_t, int64_t>` |
 
 ### 核心数据结构
 

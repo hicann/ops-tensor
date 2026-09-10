@@ -11,8 +11,8 @@ Tile 级 GELU 激活组件，提供两种算法，供多个 Block Epilogue 复�
   （分段多项式近似）+ 寄存器组装
 
 采用两层设计：
-- **公共接口（`__aicore__`）**：接收 MakeTensor 构造的 UB 张量，内部经
-  `.Data().Get()` 提取 `__ubuf__` 指针后委托 Vf；入口含 static_assert
+- **公共接口（`__aicore__`）**：接收 `make_tensor` 构造的 UB 张量，内部经
+  `.data().get()` 提取 `__ubuf__` 指针后委托 Vf；入口含 static_assert
   类型/排布门禁与 `if ASCEND_IS_AIC` 早退
 - **私有实现（`__simd_vf__` / `__simd_callee__`）**：Reg API 寄存器级计算。
   `GeluTanhVf`（fp32 输入直接加载）与 `GeluTanhCastInVf`（16F 输入 unpack+加宽）
@@ -43,7 +43,7 @@ Tile 级 GELU 激活组件，提供两种算法，供多个 Block Epilogue 复�
 - **元素类型**：src 元素须等于 `DataTypeIn`，dst 元素须等于 `DataTypeOut`
   （GeluErf 的三块 temp 须为 `float`），防止张量传错被 reinterpret_cast 静默吞掉
 - **内存位置**：所有张量必须为 UB
-- **排布**：所有张量必须为 `NDExtLayoutPtn`（仅支持 ND）
+- **排布**：所有张量必须为 `nd_ext_layout_ptn`（仅支持 ND）
 - **行距**：src/dst/temp 的 rowPitch 均须为 `Gemm::Align32(n)` 元素
   （Vf 内按 `mIdx * nAligned` 计算行偏移）
 
@@ -105,10 +105,10 @@ const uint32_t nAligned = Gemm::Align32(static_cast<uint32_t>(nSize));
 auto layout = Gemm::MakeNDExtLayout(static_cast<int64_t>(mSize),
                                     static_cast<int64_t>(nSize),
                                     static_cast<int64_t>(nAligned));
-auto srcTensor = AscendC::Te::MakeTensor(
-    AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB, float>(0), layout);
-auto dstTensor = AscendC::Te::MakeTensor(
-    AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB, bfloat16_t>(geluResUbOffset_), layout);
+auto srcTensor = asc::te::make_tensor(
+    asc::te::make_mem_ptr<asc::te::location::ub, float>(0), layout);
+auto dstTensor = asc::te::make_tensor(
+    asc::te::make_mem_ptr<asc::te::location::ub, bfloat16_t>(geluResUbOffset_), layout);
 
 Blaze::Epilogue::Block::Gelu<bfloat16_t, float> gelu;
 gelu.GeluTanh(srcTensor, dstTensor, mSize, nSize);   // tanh 近似

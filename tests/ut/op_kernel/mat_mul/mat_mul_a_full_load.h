@@ -30,27 +30,26 @@
 namespace MatMulV3UT {
 
 template <typename A_TYPE, typename B_TYPE, typename C_TYPE, typename BIAS_TYPE>
-__aicore__ inline void MatMulAFullLoadWrapper(
-    GM_ADDR aGM, GM_ADDR bGM, GM_ADDR biasGM, GM_ADDR cGM, GM_ADDR workspaceGM,
-    const MatMulV3BasicTilingData& tilingData)
+__aicore__ inline void MatMulAFullLoadWrapper(GM_ADDR aGM, GM_ADDR bGM, GM_ADDR biasGM, GM_ADDR cGM,
+                                              GM_ADDR workspaceGM, const MatMulV3BasicTilingData& tilingData)
 {
     using AType = A_TYPE;
     using BType = B_TYPE;
     using OutType = C_TYPE;
     using BiasType = BIAS_TYPE;
 
-    using LayoutA = AscendC::Te::NDExtLayoutPtn;
-    using LayoutB = AscendC::Te::NDExtLayoutPtn;
-    using LayoutC = AscendC::Te::NDExtLayoutPtn;
-    using LayoutBias = AscendC::Te::NDExtLayoutPtn;
+    using LayoutA = asc::te::nd_ext_layout_ptn;
+    using LayoutB = asc::te::nd_ext_layout_ptn;
+    using LayoutC = asc::te::nd_ext_layout_ptn;
+    using LayoutBias = asc::te::nd_ext_layout_ptn;
 
-    using ProblemShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
+    using ProblemShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
 
     using BlockScheduler = Blaze::Gemm::Block::BlockSchedulerMatmulBasic<ProblemShape, Blaze::Gemm::A_FULL_LOAD_MODE>;
 
     using BlockMmad = Blaze::Gemm::Block::BlockMmad<
-        Blaze::Gemm::MatmulMultiBlockAFullLoad<Blaze::Gemm::A_FULL_LOAD_MODE, 0>,
-        AType, LayoutA, BType, LayoutB, OutType, LayoutC, BiasType, LayoutBias>;
+        Blaze::Gemm::MatmulMultiBlockAFullLoad<Blaze::Gemm::A_FULL_LOAD_MODE, 0>, AType, LayoutA, BType, LayoutB,
+        OutType, LayoutC, BiasType, LayoutBias>;
 
     using BlockEpilogue = Blaze::Gemm::Block::BlockEpilogueEmpty;
 
@@ -59,8 +58,8 @@ __aicore__ inline void MatMulAFullLoadWrapper(
     using Params = typename MatmulKernel::Params;
     Params params = {
         {static_cast<int64_t>(tilingData.m), static_cast<int64_t>(tilingData.n), static_cast<int64_t>(tilingData.k), 0},
-        {aGM, bGM, cGM, biasGM, tilingData.k, tilingData.mL1, tilingData.kL1,
-         tilingData.baseM, tilingData.baseN, tilingData.baseK, tilingData.l1BufferNum, tilingData.l0cDB},
+        {aGM, bGM, cGM, biasGM, tilingData.k, tilingData.mL1, tilingData.kL1, tilingData.baseM, tilingData.baseN,
+         tilingData.baseK, tilingData.l1BufferNum, tilingData.l0cDB},
         {},
         {static_cast<uint32_t>(tilingData.mL1), static_cast<uint32_t>(tilingData.nL1),
          static_cast<uint32_t>(tilingData.kL1), static_cast<uint32_t>(tilingData.baseM),
@@ -69,8 +68,8 @@ __aicore__ inline void MatMulAFullLoadWrapper(
          static_cast<uint32_t>(tilingData.mBaseTailSplitCnt), static_cast<uint32_t>(tilingData.nBaseTailSplitCnt),
          static_cast<uint32_t>(tilingData.mTailMain), static_cast<uint32_t>(tilingData.nTailMain),
          static_cast<uint8_t>(tilingData.isHf32), static_cast<uint32_t>(tilingData.l2CacheDisable),
-         static_cast<uint32_t>(tilingData.sliceM),
-         static_cast<uint32_t>(tilingData.srcNdStride), static_cast<uint32_t>(tilingData.innerBatch)}};
+         static_cast<uint32_t>(tilingData.sliceM), static_cast<uint32_t>(tilingData.srcNdStride),
+         static_cast<uint32_t>(tilingData.innerBatch)}};
 
     MatmulKernel kernel;
     kernel(params);

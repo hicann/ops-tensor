@@ -15,8 +15,8 @@ MX 量化 K 轴 Padding Tile，用于 L1 缓冲区的 K 轴尾部补零对齐。
 
 ### 布局支持
 支持 NZ 和 ZN 布局：
-- **NZLayoutPtn**：非转置布局
-- **ZNLayoutPtn**：转置布局
+- **nz_layout_ptn**：非转置布局
+- **zn_layout_ptn**：转置布局
 
 ### C0_SIZE 对齐
 K 轴需对齐到 C0_SIZE：
@@ -110,16 +110,16 @@ __aicore__ inline static void PadZero(const T& tensorL1, const U& tensorGm)
 | tensorGm | U | A 矩阵 GM Tensor（用于获取实际 K 维度） |
 
 执行流程：
-**NZLayoutPtn 场景**：
+**nz_layout_ptn 场景**：
 1. 判断是否为 FP4：FP4 不需补零（ND2NZ 自动处理）
 2. 判断补零范围：`kAxisL1Align - kAxis >= C0_SIZE`
 3. 计算 slice 坐标：从 `kAxisND2NZAlign` 开始
 4. 执行补零：`PadMxKL1Base::PadZero(sliceTensor, 1, mAlign, 0)`
 
-**ZNLayoutPtn 场景**：
+**zn_layout_ptn 场景**：
 1. 判断补零范围：`kAxis != kAxisL1Align`
 2. 计算迭代次数：`m1`（M 轴大分形个数）
-3. 计算 dstGap：`dstRowStride / C0_ELEMENT - kAxisL1Align + kAxis`
+3. 计算 dstGap：`dstRowStride / c0_element - kAxisL1Align + kAxis`
 4. 执行补零：`PadMxKL1Base::PadZero(sliceTensor, m1, kAxisL1Align - kAxis, dstGap)`
 
 ### PadMxKBL1::PadZero
@@ -135,13 +135,13 @@ __aicore__ inline static void PadZero(const T& tensorL1, const U& tensorGm)
 | tensorGm | U | B 矩阵 GM Tensor（用于获取实际 K 维度） |
 
 执行流程：
-**NZLayoutPtn 场景**：
+**nz_layout_ptn 场景**：
 1. 判断补零范围：`kAxis != kAxisL1Align`
 2. 计算迭代次数：`n1`（N 轴大分形个数）
 3. 计算 slice 坐标：从 `(kAxis, 0)` 开始
 4. 执行补零：`PadMxKL1Base::PadZero(sliceTensor, n1, kAxisL1Align - kAxis, kAxis)`
 
-**ZNLayoutPtn 场景**：
+**zn_layout_ptn 场景**：
 1. 判断是否为 FP4：FP4 不需补零
 2. 判断补零范围：`kAxisL1Align - kAxis >= C0_SIZE`
 3. 计算 slice 坐标：从 `(kAxisND2NZAlign, 0)` 开始
@@ -151,22 +151,22 @@ __aicore__ inline static void PadZero(const T& tensorL1, const U& tensorGm)
 
 ### A 矩阵 L1 Padding
 ```
-using LayoutA = AscendC::Te::NZLayoutPtn;
+using LayoutA = asc::te::nz_layout_ptn;
 using AType = fp4x2_e2m1_t;
 
-auto tensorAL1 = AscendC::Te::MakeTensor(...);  // L1 Tensor
-auto gmTileA = gmA.Slice(...);                  // GM Tensor（slice 到当前 tile）
+auto tensorAL1 = asc::te::make_tensor(...);  // L1 Tensor
+auto gmTileA = gmA.slice(...);                  // GM Tensor（slice 到当前 tile）
 
 Blaze::Gemm::Tile::PadMxKAL1::PadZero(tensorAL1, gmTileA);
 ```
 
 ### B 矩阵 L1 Padding
 ```
-using LayoutB = AscendC::Te::ZNLayoutPtn;
+using LayoutB = asc::te::zn_layout_ptn;
 using BType = fp8_e5m2_t;
 
-auto tensorBL1 = AscendC::Te::MakeTensor(...);  // L1 Tensor
-auto gmTileB = gmB.Slice(...);                  // GM Tensor（slice 到当前 tile）
+auto tensorBL1 = asc::te::make_tensor(...);  // L1 Tensor
+auto gmTileB = gmB.slice(...);                  // GM Tensor（slice 到当前 tile）
 
 Blaze::Gemm::Tile::PadMxKBL1::PadZero(tensorBL1, gmTileB);
 ```

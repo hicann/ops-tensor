@@ -32,25 +32,25 @@ struct MmadTraitMX {
 
 功能：MX Mmad Trait 定义，用于量化矩阵乘。
 
-### MmadTraits 特化
+### mmad_traits 特化
 ```
 template <>
-struct MmadTraits<MmadOperation, MmadTraitMX>
-    : public MmadTraits<MmadOperation, MmadTraitDefault, MmadOpWith, MmadTraitMX> {};
+struct mmad_traits<mmad_operation, MmadTraitMX>
+    : public mmad_traits<mmad_operation, mmad_trait_default, MmadOpWith, MmadTraitMX> {};
 ```
 
-功能：MmadTraits 针对 MmadTraitMX 的特化，继承默认 trait。
+功能：mmad_traits 针对 MmadTraitMX 的特化，继承默认 trait。
 
 ## 使用示例
 
 ### 在 BlockMmadMX 中使用
 ```
 // Mmad 计算（自动使用 MmadTraitMX）
-AscendC::Te::Mmad(
-    AscendC::Te::MmadAtom<
-        AscendC::Te::MmadTraits<
-            AscendC::Te::MmadOperation,
-            AscendC::Te::MmadTraitMX>>{},
+asc::te::mmad(
+    asc::te::mmad_atom<
+        asc::te::mmad_traits<
+            asc::te::mmad_operation,
+            Blaze::Gemm::Tile::MmadTraitMX>>{},
     tensorL0C, tensorAL0, tensorBL0);
 ```
 

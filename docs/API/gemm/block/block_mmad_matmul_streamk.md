@@ -257,9 +257,9 @@ using AType = half;
 using BType = half;
 using CType = float;
 using BiasType = float;
-using LayoutA = AscendC::Te::NDExtLayoutPtn;
-using LayoutB = AscendC::Te::NZLayoutPtn;
-using LayoutC = AscendC::Te::NDExtLayoutPtn;
+using LayoutA = asc::te::nd_ext_layout_ptn;
+using LayoutB = asc::te::nz_layout_ptn;
+using LayoutC = asc::te::nd_ext_layout_ptn;
 using LayoutBias = LayoutC;
 
 using DispatchPolicy = Blaze::Gemm::MatmulMultiBlockWithStreamK<Blaze::Gemm::MatMulL0C2Out::ON_THE_FLY>;
@@ -288,18 +288,18 @@ blockMmad.Init(problemShape, params);
 ### 组件执行
 ```
 // 准备 GM Tensor
-auto gmA = AscendC::Te::MakeTensor(...);
-auto gmB = AscendC::Te::MakeTensor(...);
-auto gmC = AscendC::Te::MakeTensor(...);          // DP 模式输出
-auto gmWorkspace = AscendC::Te::MakeTensor(...);  // SK 模式输出
-auto gmBias = AscendC::Te::MakeTensor(...);
+auto gmA = asc::te::make_tensor(...);
+auto gmB = asc::te::make_tensor(...);
+auto gmC = asc::te::make_tensor(...);          // DP 模式输出
+auto gmWorkspace = asc::te::make_tensor(...);  // SK 模式输出
+auto gmBias = asc::te::make_tensor(...);
 
 // Slice 到当前 tile
-auto gmBlockA = gmA.Slice(...);
-auto gmBlockB = gmB.Slice(...);
-auto gmBlockC = gmC.Slice(...);
-auto gmBlockWorkspace = gmWorkspace.Slice(...);
-auto gmBlockBias = gmBias.Slice(...);
+auto gmBlockA = gmA.slice(...);
+auto gmBlockB = gmB.slice(...);
+auto gmBlockC = gmC.slice(...);
+auto gmBlockWorkspace = gmWorkspace.slice(...);
+auto gmBlockBias = gmBias.slice(...);
 
 // 执行矩阵乘
 TupleShape tileShape{shapeM, shapeN, shapeK};

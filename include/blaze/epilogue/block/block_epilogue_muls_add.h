@@ -30,7 +30,7 @@ class BlockEpilogueMulsAdd {
 public:
     using OutputType = float;
     using BlockShape = AscendC::Shape<int64_t, int64_t, int64_t, int64_t>;
-    using ProblemShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
+    using ProblemShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
 
     struct Params {
         GM_ADDR resultGmAddr{nullptr};
@@ -61,10 +61,10 @@ public:
 
     __aicore__ inline void operator()(BlockShape const& blockShape, int64_t dstOffset)
     {
-        int64_t blockShapeM = AscendC::Te::Get<0>(blockShape);
-        int64_t blockShapeN = AscendC::Te::Get<1>(blockShape);
+        int64_t blockShapeM = asc::te::get<0>(blockShape);
+        int64_t blockShapeN = asc::te::get<1>(blockShape);
         int64_t alignN = Blaze::Gemm::CeilAlign(blockShapeN, static_cast<int64_t>(Blaze::Gemm::C0_SIZE_fp32));
-        int64_t n = AscendC::Te::Get<1>(problemShape_);
+        int64_t n = asc::te::get<1>(problemShape_);
 
         AscendC::WaitFlag<AscendC::HardEvent::V_MTE2>(EPILOGUE_ZERO_FLAG);
         AscendC::WaitFlag<AscendC::HardEvent::MTE3_V>(EPILOGUE_ZERO_FLAG);

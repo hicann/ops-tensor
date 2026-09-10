@@ -53,8 +53,8 @@ Fixpipe 模式矩阵乘后处理 Block，运行在 AIV（Vector）核。与 AIC�
 | DataTypeIn | 输入数据类型（模板参数 `DataTypeIn_`，UB 输入，来自 fixpipe） |
 | FusionOp | 融合算子（默认 `Gemm::Block::DefaultFusion`，仅拷贝） |
 | DispatchPolicy | 调度策略（模板参数，需含 `FUSED_OP_TYPE` 静态成员） |
-| BlockShape | Block 形状 `AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>` |
-| ProblemShape | 问题规模 `AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>` |
+| BlockShape | Block 形状 `asc::te::shape<int64_t, int64_t, int64_t, int64_t>` |
+| ProblemShape | 问题规模 `asc::te::shape<int64_t, int64_t, int64_t, int64_t>` |
 
 ## 特殊数据结构
 

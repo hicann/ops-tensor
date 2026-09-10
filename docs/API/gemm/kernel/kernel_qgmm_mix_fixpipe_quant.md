@@ -60,9 +60,9 @@ K 轴按照 `quantGroupSize` 切分，每个 K-group 对应一个长度为 N 的
 - `AType` / `BType` 仅支持 `int8_t`。
 - Fixpipe scale 类型仅支持 `uint64_t`。
 - `CType` 仅支持 `half`，`BiasType` 仅支持 `int32_t`。
-- `LayoutA` 仅支持 `NDExtLayoutPtn`。
-- `LayoutB` 仅支持 `NDExtLayoutPtn`、`DNExtLayoutPtn`、`NZLayoutPtn`、`ZNLayoutPtn`。
-- `LayoutC` / `LayoutBias` 支持 ND 类布局，不支持 `NZLayoutPtn`、`ZNLayoutPtn`。
+- `LayoutA` 仅支持 `nd_ext_layout_ptn`。
+- `LayoutB` 仅支持 `nd_ext_layout_ptn`、`dn_ext_layout_ptn`、`nz_layout_ptn`、`zn_layout_ptn`。
+- `LayoutC` / `LayoutBias` 支持 ND 类布局，不支持 `nz_layout_ptn`、`zn_layout_ptn`。
 - `BlockEpilogue::FixpipeType` 需与 `CType` 一致。
 - `quantMode` 仅使用 `PERCHANNEL_MODE` 或 `PERGROUP_MODE`。
 - per-group 模式下，算子侧应保证 `quantGroupSize` 和 scale 的 group 维度与 K 轴切分一致。

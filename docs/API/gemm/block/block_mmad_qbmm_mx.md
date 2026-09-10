@@ -110,16 +110,16 @@ Scale 因子固定为 `fp8_e8m0_t`（E8M0 浮点格式），用于量化数据�
 ### MXFP 对齐要求
 - K 轴需对齐到 `MXFP_DIVISOR_SIZE`（64）
 - Scale K 轴需对齐到 `MXFP_DIVISOR_SIZE × MXFP_MULTI_BASE_SIZE`（128）
-- L0C 布局固定使用 NZLayoutPtn
+- L0C 布局固定使用 nz_layout_ptn
 
 ### Mmad 计算模式
 使用 `MmadTraitMX` trait，支持量化数据的自动反量化：
 ```
-AscendC::Te::Mmad(
-    AscendC::Te::MmadAtom<
-        AscendC::Te::MmadTraits<
-            AscendC::Te::MmadOperation,
-            AscendC::Te::MmadTraitMX>>{},
+asc::te::mmad(
+    asc::te::mmad_atom<
+        asc::te::mmad_traits<
+            asc::te::mmad_operation,
+            Blaze::Gemm::Tile::MmadTraitMX>>{},
     tensorL0C, tensorAL0, tensorBL0);
 ```
 
@@ -259,10 +259,10 @@ using BiasType = float;
 using ScaleType = fp8_e8m0_t;
 
 // 定义 Layout
-using LayoutA = AscendC::Te::NDExtLayoutPtn;
-using LayoutB = AscendC::Te::NZLayoutPtn;
-using LayoutC = AscendC::Te::NDExtLayoutPtn;
-using LayoutBias = AscendC::Te::NDExtLayoutPtn;
+using LayoutA = asc::te::nd_ext_layout_ptn;
+using LayoutB = asc::te::nz_layout_ptn;
+using LayoutC = asc::te::nd_ext_layout_ptn;
+using LayoutBias = asc::te::nd_ext_layout_ptn;
 
 // 定义调度策略
 using DispatchPolicy = Blaze::Gemm::MatmulWithScaleMx<A_FULL_LOAD_MODE>;
@@ -286,20 +286,20 @@ blockMmad.Init(problemShape, l0TileShape, l1Params, isBias, dbL0C);
 ### 组件执行
 ```
 // 准备 GM Tensor（量化数据）
-auto gmA = AscendC::Te::MakeTensor(...);      // 量化数据
-auto gmB = AscendC::Te::MakeTensor(...);      // 量化数据
-auto gmScaleA = AscendC::Te::MakeTensor(...); // fp8_e8m0_t
-auto gmScaleB = AscendC::Te::MakeTensor(...); // fp8_e8m0_t
-auto gmBias = AscendC::Te::MakeTensor(...);
-auto gmC = AscendC::Te::MakeTensor(...);      // float 输出
+auto gmA = asc::te::make_tensor(...);      // 量化数据
+auto gmB = asc::te::make_tensor(...);      // 量化数据
+auto gmScaleA = asc::te::make_tensor(...); // fp8_e8m0_t
+auto gmScaleB = asc::te::make_tensor(...); // fp8_e8m0_t
+auto gmBias = asc::te::make_tensor(...);
+auto gmC = asc::te::make_tensor(...);      // float 输出
 
 // Slice 到当前 tile
-auto gmBlockA = gmA.Slice(...);
-auto gmBlockB = gmB.Slice(...);
-auto gmBlockScaleA = gmScaleA.Slice(...);
-auto gmBlockScaleB = gmScaleB.Slice(...);
-auto gmBlockBias = gmBias.Slice(...);
-auto gmBlockC = gmC.Slice(...);
+auto gmBlockA = gmA.slice(...);
+auto gmBlockB = gmB.slice(...);
+auto gmBlockScaleA = gmScaleA.slice(...);
+auto gmBlockScaleB = gmScaleB.slice(...);
+auto gmBlockBias = gmBias.slice(...);
+auto gmBlockC = gmC.slice(...);
 
 // 执行量化矩阵乘
 BlockShape singleShape{shapeM, shapeN, shapeK, 0};

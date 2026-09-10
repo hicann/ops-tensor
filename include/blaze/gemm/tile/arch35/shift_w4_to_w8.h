@@ -29,10 +29,10 @@ public:
     __aicore__ inline ShiftW4ToW8(const Weight4BitTensorType& weight4BitTensor,
                                   const Weight8BitTensorType& weight8BitTensor)
     {
-        using SrcLayoutPattern = AscendC::Te::GetLayoutPattern<typename Weight4BitTensorType::layoutType>;
-        using DstLayoutPattern = AscendC::Te::GetLayoutPattern<typename Weight8BitTensorType::layoutType>;
-        constexpr bool IS_ZN_WEIGHT = AscendC::Std::is_same_v<SrcLayoutPattern, AscendC::Te::ZNLayoutPtn>;
-        constexpr bool IS_DN_WEIGHT = AscendC::Std::is_same_v<SrcLayoutPattern, AscendC::Te::DNExtLayoutPtn>;
+        using SrcLayoutPattern = asc::te::get_layout_pattern<typename Weight4BitTensorType::layout_type>;
+        using DstLayoutPattern = asc::te::get_layout_pattern<typename Weight8BitTensorType::layout_type>;
+        constexpr bool IS_ZN_WEIGHT = AscendC::Std::is_same_v<SrcLayoutPattern, asc::te::zn_layout_ptn>;
+        constexpr bool IS_DN_WEIGHT = AscendC::Std::is_same_v<SrcLayoutPattern, asc::te::dn_ext_layout_ptn>;
         constexpr bool IS_ZN_OUTPUT = AscendC::Std::is_same_v<DstLayoutPattern, Weight8BitZnToZnUbLayoutPtn>;
         constexpr bool
             IS_DN_OUTPUT = AscendC::Std::is_same_v<DstLayoutPattern, Blaze::Gemm::Weight8BitDnToZnUbLayoutPtn>;
@@ -56,9 +56,9 @@ public:
                                   const Weight8BitTensorType& weight8BitTensor, const BiasInTensor& biasInTensor,
                                   const BiasOutTensor& biasOutTensor, bool processBias)
     {
-        using SrcLayoutPattern = AscendC::Te::GetLayoutPattern<typename Weight4BitTensorType::layoutType>;
-        using DstLayoutPattern = AscendC::Te::GetLayoutPattern<typename Weight8BitTensorType::layoutType>;
-        static_assert(AscendC::Std::is_same_v<SrcLayoutPattern, AscendC::Te::ZNLayoutPtn>,
+        using SrcLayoutPattern = asc::te::get_layout_pattern<typename Weight4BitTensorType::layout_type>;
+        using DstLayoutPattern = asc::te::get_layout_pattern<typename Weight8BitTensorType::layout_type>;
+        static_assert(AscendC::Std::is_same_v<SrcLayoutPattern, asc::te::zn_layout_ptn>,
                       "Fused MX bias conversion requires ZN FP4 weight input");
         static_assert(AscendC::Std::is_same_v<DstLayoutPattern, Weight8BitZnToZnUbLayoutPtn>,
                       "Fused MX bias conversion requires the ZN W8 UB layout");
@@ -71,14 +71,14 @@ public:
 
         ShiftW4ToW8Params weightParams = MakeWeightParams(weight4BitTensor, weight8BitTensor);
 
-        using BiasType = typename AscendC::Te::GetAttributeElementType<typename BiasInTensor::elementType*>;
+        using BiasType = typename asc::te::get_attribute_element_type<typename BiasInTensor::element_type*>;
         typename ScaleMxBias<BiasType>::ScaleMxBiasParams biasParams{};
         if (processBias) {
             constexpr uint64_t VECTOR_ELEMENTS = static_cast<uint64_t>(asc_get_vf_len()) / sizeof(BiasType);
-            uint64_t biasElementCount = static_cast<uint64_t>(AscendC::Te::GetTotalColumnShape(biasInTensor.Layout()));
+            uint64_t biasElementCount = static_cast<uint64_t>(asc::te::get_total_column_shape(biasInTensor.layout()));
             biasParams.loopNum = static_cast<uint16_t>(CeilDiv(biasElementCount, VECTOR_ELEMENTS));
-            biasParams.biasInAddr = (__ubuf__ BiasType*)biasInTensor.Data().Get();
-            biasParams.biasOutAddr = (__ubuf__ BiasType*)biasOutTensor.Data().Get();
+            biasParams.biasInAddr = (__ubuf__ BiasType*)biasInTensor.data().get();
+            biasParams.biasOutAddr = (__ubuf__ BiasType*)biasOutTensor.data().get();
             ShiftW4ToW8AndScaleBiasVf<BiasType, true>(weightParams, biasParams);
         } else {
             ShiftW4ToW8AndScaleBiasVf<BiasType, false>(weightParams, biasParams);
@@ -119,12 +119,12 @@ private:
                                                          const Weight8BitTensorType& weight8BitTensor) const
     {
         ShiftW4ToW8Params params;
-        params.weight4BitPhyAddr = (__ubuf__ InType*)weight4BitTensor.Data().Get();
-        params.weight8BitPhyAddr = (__ubuf__ OutType*)weight8BitTensor.Data().Get();
-        params.loopKNum = AscendC::Std::get<1>(AscendC::Std::get<0>(weight4BitTensor.Layout().Shape()));
-        params.nRealSizeAlign = AscendC::Std::get<1>(AscendC::Std::get<1>(weight4BitTensor.Layout().Shape())) *
+        params.weight4BitPhyAddr = (__ubuf__ InType*)weight4BitTensor.data().get();
+        params.weight8BitPhyAddr = (__ubuf__ OutType*)weight8BitTensor.data().get();
+        params.loopKNum = AscendC::Std::get<1>(AscendC::Std::get<0>(weight4BitTensor.layout().shape()));
+        params.nRealSizeAlign = AscendC::Std::get<1>(AscendC::Std::get<1>(weight4BitTensor.layout().shape())) *
                                 BLOCK_CUBE;
-        params.innerDstStride = AscendC::Std::get<1>(AscendC::Std::get<1>(weight8BitTensor.Layout().Stride()));
+        params.innerDstStride = AscendC::Std::get<1>(AscendC::Std::get<1>(weight8BitTensor.layout().stride()));
         params.innerLoopNum = (params.nRealSizeAlign * C0_SIZE_B8) / static_cast<uint64_t>(asc_get_vf_len());
         params.loopKDstStride = params.innerLoopNum * params.innerDstStride;
         return params;
@@ -134,7 +134,7 @@ private:
     __aicore__ inline void ShiftW4ToW8ZnImpl(const Weight4BitTensorType& weight4BitTensor,
                                              const Weight8BitTensorType& weight8BitTensor)
     {
-        using DstLayoutPattern = AscendC::Te::GetLayoutPattern<typename Weight8BitTensorType::layoutType>;
+        using DstLayoutPattern = asc::te::get_layout_pattern<typename Weight8BitTensorType::layout_type>;
         static_assert(AscendC::Std::is_same_v<DstLayoutPattern, Weight8BitZnToZnUbLayoutPtn>,
                       "ZN FP4 conversion requires the MX FP8 ZN UB layout");
         static_assert(AscendC::IsSameType<OutType, fp8_e4m3fn_t>::value, "OutType must be fp8_e4m3fn_t");
@@ -149,15 +149,15 @@ private:
     __aicore__ inline void ShiftW4ToW8DnImpl(const Weight4BitTensorType& weight4BitTensor,
                                              const Weight8BitTensorType& weight8BitTensor)
     {
-        using DstLayoutPattern = AscendC::Te::GetLayoutPattern<typename Weight8BitTensorType::layoutType>;
+        using DstLayoutPattern = asc::te::get_layout_pattern<typename Weight8BitTensorType::layout_type>;
         static_assert(AscendC::Std::is_same_v<DstLayoutPattern, Blaze::Gemm::Weight8BitDnToZnUbLayoutPtn>,
                       "DN FP4 conversion requires the MX DN-to-ZN destination layout");
         static_assert(AscendC::IsSameType<OutType, fp8_e4m3fn_t>::value, "OutType must be fp8_e4m3fn_t");
         static_assert(AscendC::IsSameType<InType, fp4x2_e2m1_t>::value, "InType must be fp4x2_e2m1_t");
 
-        const auto& inputLayout = weight4BitTensor.Layout();
-        auto inputShape = inputLayout.Shape();
-        auto inputStride = inputLayout.Stride();
+        const auto& inputLayout = weight4BitTensor.layout();
+        auto inputShape = inputLayout.shape();
+        auto inputStride = inputLayout.stride();
         uint64_t kSize = static_cast<uint64_t>(AscendC::Std::get<1>(AscendC::Std::get<0>(inputShape)));
         uint64_t nSize = static_cast<uint64_t>(AscendC::Std::get<1>(AscendC::Std::get<1>(inputShape)));
         uint64_t nAlign = Align16(nSize);
@@ -183,8 +183,8 @@ private:
                                                    kAlign32 / VECTOR_REG_WIDTH_FOR_4BITS * VECTOR_REG_WIDTH_BYTES);
         params.inputRowStrideBytes = static_cast<uint32_t>(AscendC::Std::get<1>(AscendC::Std::get<1>(inputStride)) >>
                                                            1U);
-        params.weight4BitPhyAddr = (__ubuf__ int8_t*)weight4BitTensor.Data().Get();
-        params.weight8BitPhyAddr = (__ubuf__ OutType*)weight8BitTensor.Data().Get();
+        params.weight4BitPhyAddr = (__ubuf__ int8_t*)weight4BitTensor.data().get();
+        params.weight8BitPhyAddr = (__ubuf__ OutType*)weight8BitTensor.data().get();
         params.weight8BitPhyAddr1 = params.weight8BitPhyAddr + VECTOR_REG_WIDTH_BYTES * params.dataBlockStride;
 
         asc_vf_call<ShiftW4DnToW8Vf>(params);

@@ -80,8 +80,8 @@ public:
     using DataTypeOut = DataTypeOut_;
     using DataTypeScale = DataTypeScale_;
     using FusionOp = FusionOp_;
-    using BlockShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t, int64_t, int64_t>;
-    using ProblemShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
+    using BlockShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t, int64_t, int64_t>;
+    using ProblemShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
 
     struct Params {
         GM_ADDR outGmAddr{nullptr};
@@ -167,9 +167,9 @@ __aicore__ inline void BlockEpilogueFlatQuant<DataTypeIn_, DataTypeOut_, DataTyp
     scaleGlobal_.SetGlobalBuffer(reinterpret_cast<__gm__ int8_t*>(params.scaleGmAddr));
     problemShape_ = params.problemShape;
 
-    shape_.m = AscendC::Te::Get<Gemm::MNK_M>(problemShape_);
-    shape_.n = AscendC::Te::Get<Gemm::MNK_N>(problemShape_);
-    shape_.k = AscendC::Te::Get<Gemm::MNK_B>(problemShape_);
+    shape_.m = asc::te::get<Gemm::MNK_M>(problemShape_);
+    shape_.n = asc::te::get<Gemm::MNK_N>(problemShape_);
+    shape_.k = asc::te::get<Gemm::MNK_B>(problemShape_);
     dstTypeMax_ = params.dstTypeMax;
     invDstTypeMax_ = params.invDstTypeMax;
     if (dstTypeMax_ == Constant::SIX_FLOAT) {

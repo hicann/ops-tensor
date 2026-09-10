@@ -21,6 +21,7 @@
 #else
 #include "kernel_operator.h"
 #endif
+#include "tensor_api/utils/utils.h"
 
 namespace Blaze {
 namespace Gemm {

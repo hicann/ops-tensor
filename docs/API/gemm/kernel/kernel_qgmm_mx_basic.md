@@ -34,18 +34,18 @@ Kernel 编译期通过 `static_assert` 校验模板组合：
 
 - `AType` / `BType` 仅支持同 bit-width 的 MXFP8 组合（`fp8_e4m3fn_t`、`fp8_e5m2_t`）或 MXFP4 组合（`fp4x2_e2m1_t`、`fp4x2_e1m2_t`）。
 - `CType` 支持 `half`、`bfloat16_t`、`float`；`BiasType` 仅支持 `float`。
-- `LayoutA` 仅支持 `NDExtLayoutPtn`、`DNExtLayoutPtn`。
-- `LayoutB` 仅支持 `NDExtLayoutPtn`、`DNExtLayoutPtn`、`NZLayoutPtn`、`ZNLayoutPtn`。
-- `LayoutC` / `LayoutBias` 支持 ND 类布局，不支持 `NZLayoutPtn`、`ZNLayoutPtn`。
+- `LayoutA` 仅支持 `nd_ext_layout_ptn`、`dn_ext_layout_ptn`。
+- `LayoutB` 仅支持 `nd_ext_layout_ptn`、`dn_ext_layout_ptn`、`nz_layout_ptn`、`zn_layout_ptn`。
+- `LayoutC` / `LayoutBias` 支持 ND 类布局，不支持 `nz_layout_ptn`、`zn_layout_ptn`。
 
 ### SwiGLU MX 融合路径约束
 `KernelGmmSwiGluMixMx` 路径复用 QGMM MX 的 Cube 计算并在 AIV 侧完成 SwiGLU 与 MX 输出量化。当前该路径仅支持 MXFP8 输入：
 
 - `AType` / `BType` 仅支持 MXFP8（`fp8_e4m3fn_t`、`fp8_e5m2_t`）。
 - `CType` / `BiasType` 仅支持 `float`。
-- `LayoutA` 仅支持 `NDExtLayoutPtn`。
-- `LayoutB` 仅支持 `NDExtLayoutPtn`、`DNExtLayoutPtn`。
-- `LayoutC` / `LayoutBias` 支持 ND 类布局，不支持 `NZLayoutPtn`、`ZNLayoutPtn`。
+- `LayoutA` 仅支持 `nd_ext_layout_ptn`。
+- `LayoutB` 仅支持 `nd_ext_layout_ptn`、`dn_ext_layout_ptn`。
+- `LayoutC` / `LayoutBias` 支持 ND 类布局，不支持 `nz_layout_ptn`、`zn_layout_ptn`。
 
 ## 特殊类型别名
 
@@ -176,7 +176,7 @@ __aicore__ inline void ProcessSingleGroup(BlockScheduler& scheduler, uint32_t gr
 
 ### 组件组装
 ```cpp
-using ProblemShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
+using ProblemShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
 using DispatchPolicy = Blaze::Gemm::GroupedMatmulWithScaleMx<0>;
 using BlockMmad = Blaze::Gemm::Block::BlockMmad<
     DispatchPolicy, AType, LayoutA, BType, LayoutB, CType, LayoutC, BiasType, LayoutBias>;

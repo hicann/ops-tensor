@@ -59,10 +59,10 @@ public:
     using L0CType = typename BlockMmad::L0CType;
     using LayoutA = typename BlockMmad::LayoutA;
     using LayoutB = typename BlockMmad::LayoutB;
-    using BlockShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
+    using BlockShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
 
-    using MakeLayoutA = AscendC::Te::FrameLayoutFormat<LayoutA, AscendC::Std::Int<AscendC::Te::C0_ELEMENT<AType>>>;
-    using MakeLayoutB = AscendC::Te::FrameLayoutFormat<LayoutB, AscendC::Std::Int<AscendC::Te::C0_ELEMENT<BType>>>;
+    using MakeLayoutA = asc::te::frame_layout_format<LayoutA, AscendC::Std::Int<asc::te::c0_element<AType>>>;
+    using MakeLayoutB = asc::te::frame_layout_format<LayoutB, AscendC::Std::Int<asc::te::c0_element<BType>>>;
 
     struct Params {
         ProblemShape problemShape;
@@ -90,9 +90,9 @@ private:
 
     __aicore__ inline void Init(Params& params)
     {
-        m_ = AscendC::Te::Get<MNK_M>(params.problemShape);
-        n_ = AscendC::Te::Get<MNK_N>(params.problemShape);
-        k_ = AscendC::Te::Get<MNK_K>(params.problemShape);
+        m_ = asc::te::get<MNK_M>(params.problemShape);
+        n_ = asc::te::get<MNK_N>(params.problemShape);
+        k_ = asc::te::get<MNK_K>(params.problemShape);
         params.mmadParams.k = static_cast<uint64_t>(k_);
         xGmAddr_ = reinterpret_cast<__gm__ AType*>(params.mmadParams.xGmAddr);
         wHighGmAddr_ = reinterpret_cast<__gm__ BType*>(params.mmadParams.wHighGmAddr);
@@ -152,30 +152,29 @@ private:
                     AscendC::CrossCoreWaitFlag<AIC_SYNC_AIV_MODE_4, PIPE_FIX>(AIV_SYNC_AIC_FLAG + flagOffset);
                 }
 
-                auto gmA = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(xGmAddr_),
-                                                   layoutA);
-                auto gmBHigh = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(wHighGmAddr_),
-                                                       layoutBHigh);
-                auto gmBLow = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(wLowGmAddr_),
-                                                      layoutBLow);
+                auto gmA = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::gm>(xGmAddr_), layoutA);
+                auto gmBHigh = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::gm>(wHighGmAddr_),
+                                                    layoutBHigh);
+                auto gmBLow = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::gm>(wLowGmAddr_),
+                                                   layoutBLow);
 
                 auto curNUbAlign = CeilAlign(curN, static_cast<int64_t>(C0_SIZE_fp32));
 
                 constexpr uint64_t UB_HALF_BYTES = AscendC::TOTAL_UB_SIZE / DOUBLE_BUFFER_COUNT;
 
-                auto layoutUBLow = AscendC::Te::MakeFrameLayout<AscendC::Te::NDExtLayoutPtn,
-                                                                AscendC::Std::Int<C0_SIZE_L0C>>(curM, curNUbAlign);
-                auto ubBlockCLow = AscendC::Te::MakeTensor(
-                    AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB, L0CType>(0), layoutUBLow);
+                auto layoutUBLow = asc::te::make_frame_layout<asc::te::nd_ext_layout_ptn,
+                                                              AscendC::Std::Int<C0_SIZE_L0C>>(curM, curNUbAlign);
+                auto ubBlockCLow = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::ub, L0CType>(0),
+                                                        layoutUBLow);
 
-                auto layoutUBHigh = AscendC::Te::MakeFrameLayout<AscendC::Te::NDExtLayoutPtn,
-                                                                 AscendC::Std::Int<C0_SIZE_L0C>>(curM, curNUbAlign);
-                auto ubBlockCHigh = AscendC::Te::MakeTensor(
-                    AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB, L0CType>(UB_HALF_BYTES), layoutUBHigh);
+                auto layoutUBHigh = asc::te::make_frame_layout<asc::te::nd_ext_layout_ptn,
+                                                               AscendC::Std::Int<C0_SIZE_L0C>>(curM, curNUbAlign);
+                auto ubBlockCHigh = asc::te::make_tensor(
+                    asc::te::make_mem_ptr<asc::te::location::ub, L0CType>(UB_HALF_BYTES), layoutUBHigh);
 
-                auto gmBlockA = gmA.Slice(AscendC::Te::MakeCoord(mPos, kPos), AscendC::Te::MakeShape(curM, k_));
-                auto gmBlockBHigh = gmBHigh.Slice(AscendC::Te::MakeCoord(kPos, nPos), AscendC::Te::MakeShape(k_, curN));
-                auto gmBlockBLow = gmBLow.Slice(AscendC::Te::MakeCoord(kPos, nPos), AscendC::Te::MakeShape(k_, curN));
+                auto gmBlockA = gmA.slice(asc::te::make_coord(mPos, kPos), asc::te::make_shape(curM, k_));
+                auto gmBlockBHigh = gmBHigh.slice(asc::te::make_coord(kPos, nPos), asc::te::make_shape(k_, curN));
+                auto gmBlockBLow = gmBLow.slice(asc::te::make_coord(kPos, nPos), asc::te::make_shape(k_, curN));
 
                 blockMmadOp_(gmBlockA, gmBlockBHigh, gmBlockBLow, ubBlockCHigh, ubBlockCLow, singleShape,
                              useSubBlockOne);

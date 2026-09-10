@@ -43,10 +43,10 @@ include 列表保持**字母序**。未注册的 Tile 对 Block 层不可见
 
 // BlockEpilogue 实现内部
 auto layout = Gemm::MakeNDExtLayout(mSize, nSize, nAligned);
-auto srcTensor = AscendC::Te::MakeTensor(
-    AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB, float>(0), layout);
-auto dstTensor = AscendC::Te::MakeTensor(
-    AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB, bfloat16_t>(dstOffset), layout);
+auto srcTensor = asc::te::make_tensor(
+    asc::te::make_mem_ptr<asc::te::location::ub, float>(0), layout);
+auto dstTensor = asc::te::make_tensor(
+    asc::te::make_mem_ptr<asc::te::location::ub, bfloat16_t>(dstOffset), layout);
 Blaze::Epilogue::Block::Gelu<bfloat16_t, float> gelu;
 gelu.GeluTanh(srcTensor, dstTensor, mSize, nSize);
 ```

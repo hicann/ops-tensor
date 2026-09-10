@@ -34,22 +34,21 @@
 namespace QBMMUT {
 
 template <typename AType, typename BType, typename CType, typename BiasType,
-    uint64_t FullLoadMode = Blaze::Gemm::NONE_FULL_LOAD_MODE>
-__aicore__ inline void QBMMMxWrapper(
-    GM_ADDR x1GM, GM_ADDR x2GM, GM_ADDR pertokenScaleGM, GM_ADDR scaleGM, GM_ADDR biasGM, GM_ADDR yGM,
-    const QBMMV3TilingData& tilingData)
+          uint64_t FullLoadMode = Blaze::Gemm::NONE_FULL_LOAD_MODE>
+__aicore__ inline void QBMMMxWrapper(GM_ADDR x1GM, GM_ADDR x2GM, GM_ADDR pertokenScaleGM, GM_ADDR scaleGM,
+                                     GM_ADDR biasGM, GM_ADDR yGM, const QBMMV3TilingData& tilingData)
 {
-    using LayoutA = AscendC::Te::NDExtLayoutPtn;
-    using LayoutB = AscendC::Te::NDExtLayoutPtn;
-    using LayoutC = AscendC::Te::NDExtLayoutPtn;
-    using LayoutBias = AscendC::Te::NDExtLayoutPtn;
-    using ProblemShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
+    using LayoutA = asc::te::nd_ext_layout_ptn;
+    using LayoutB = asc::te::nd_ext_layout_ptn;
+    using LayoutC = asc::te::nd_ext_layout_ptn;
+    using LayoutBias = asc::te::nd_ext_layout_ptn;
+    using ProblemShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
 
     using DispatchPolicy = Blaze::Gemm::MatmulWithScaleMx<FullLoadMode, false>;
-    using BlockScheduler = Blaze::Gemm::Block::BlockSchedulerQuantBatchMatmulV3<
-        ProblemShape, FullLoadMode, LayoutA, LayoutB, AType>;
-    using BlockMmad = Blaze::Gemm::Block::BlockMmad<
-        DispatchPolicy, AType, LayoutA, BType, LayoutB, CType, LayoutC, BiasType, LayoutBias>;
+    using BlockScheduler = Blaze::Gemm::Block::BlockSchedulerQuantBatchMatmulV3<ProblemShape, FullLoadMode, LayoutA,
+                                                                                LayoutB, AType>;
+    using BlockMmad = Blaze::Gemm::Block::BlockMmad<DispatchPolicy, AType, LayoutA, BType, LayoutB, CType, LayoutC,
+                                                    BiasType, LayoutBias>;
     using BlockEpilogue = Blaze::Gemm::Block::BlockEpilogueEmpty;
     using QBMMKernel = Blaze::Gemm::Kernel::GemmUniversal<ProblemShape, BlockMmad, BlockEpilogue, BlockScheduler>;
     using Params = typename QBMMKernel::Params;
@@ -92,23 +91,22 @@ __aicore__ inline void QBMMMxWrapper(
 }
 
 template <typename AType, typename BType, typename CType, typename BiasType,
-    uint64_t FullLoadMode = Blaze::Gemm::NONE_FULL_LOAD_MODE>
-__aicore__ inline void QBMMMxWithoutBatchWrapper(
-    GM_ADDR x1GM, GM_ADDR x2GM, GM_ADDR pertokenScaleGM, GM_ADDR scaleGM, GM_ADDR biasGM, GM_ADDR yGM,
-    const QBMMV3TilingData& tilingData)
+          uint64_t FullLoadMode = Blaze::Gemm::NONE_FULL_LOAD_MODE>
+__aicore__ inline void QBMMMxWithoutBatchWrapper(GM_ADDR x1GM, GM_ADDR x2GM, GM_ADDR pertokenScaleGM, GM_ADDR scaleGM,
+                                                 GM_ADDR biasGM, GM_ADDR yGM, const QBMMV3TilingData& tilingData)
 {
-    using LayoutA = AscendC::Te::NDExtLayoutPtn;
-    using LayoutB = AscendC::Te::NDExtLayoutPtn;
-    using LayoutC = AscendC::Te::NDExtLayoutPtn;
-    using LayoutBias = AscendC::Te::NDExtLayoutPtn;
-    using ProblemShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
+    using LayoutA = asc::te::nd_ext_layout_ptn;
+    using LayoutB = asc::te::nd_ext_layout_ptn;
+    using LayoutC = asc::te::nd_ext_layout_ptn;
+    using LayoutBias = asc::te::nd_ext_layout_ptn;
+    using ProblemShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
 
-    using DispatchPolicy = Blaze::Gemm::MatmulWithScaleMx<
-        FullLoadMode, false, Blaze::Gemm::KernelMmadWithScaleMxWithoutBatch>;
-    using BlockScheduler = Blaze::Gemm::Block::BlockSchedulerQuantBatchMatmulV3<
-        ProblemShape, FullLoadMode, LayoutA, LayoutB, AType>;
-    using BlockMmad = Blaze::Gemm::Block::BlockMmad<
-        DispatchPolicy, AType, LayoutA, BType, LayoutB, CType, LayoutC, BiasType, LayoutBias>;
+    using DispatchPolicy = Blaze::Gemm::MatmulWithScaleMx<FullLoadMode, false,
+                                                          Blaze::Gemm::KernelMmadWithScaleMxWithoutBatch>;
+    using BlockScheduler = Blaze::Gemm::Block::BlockSchedulerQuantBatchMatmulV3<ProblemShape, FullLoadMode, LayoutA,
+                                                                                LayoutB, AType>;
+    using BlockMmad = Blaze::Gemm::Block::BlockMmad<DispatchPolicy, AType, LayoutA, BType, LayoutB, CType, LayoutC,
+                                                    BiasType, LayoutBias>;
     using BlockEpilogue = Blaze::Gemm::Block::BlockEpilogueEmpty;
     using QBMMKernel = Blaze::Gemm::Kernel::GemmUniversal<ProblemShape, BlockMmad, BlockEpilogue, BlockScheduler>;
     using Params = typename QBMMKernel::Params;
@@ -140,43 +138,40 @@ __aicore__ inline void QBMMMxWithoutBatchWrapper(
 } // namespace QBMMUT
 
 template <class DTYPE_X1, class DTYPE_X2, class DTYPE_Y, class DTYPE_BIAS>
-__global__ __aicore__ void qbmm_mx_kernel_entry(
-    GM_ADDR x1GM, GM_ADDR x2GM, GM_ADDR pertokenScaleGM, GM_ADDR scaleGM, GM_ADDR biasGM, GM_ADDR yGM,
-    GM_ADDR tilingGM)
+__global__ __aicore__ void qbmm_mx_kernel_entry(GM_ADDR x1GM, GM_ADDR x2GM, GM_ADDR pertokenScaleGM, GM_ADDR scaleGM,
+                                                GM_ADDR biasGM, GM_ADDR yGM, GM_ADDR tilingGM)
 {
     const auto* tilingData = reinterpret_cast<const QBMMV3TilingData*>(tilingGM);
-    QBMMUT::QBMMMxWrapper<DTYPE_X1, DTYPE_X2, DTYPE_Y, DTYPE_BIAS>(
+    QBMMUT::QBMMMxWrapper<DTYPE_X1, DTYPE_X2, DTYPE_Y, DTYPE_BIAS>(x1GM, x2GM, pertokenScaleGM, scaleGM, biasGM, yGM,
+                                                                   *tilingData);
+}
+
+template <class DTYPE_X1, class DTYPE_X2, class DTYPE_Y, class DTYPE_BIAS>
+__global__ __aicore__ void qbmm_mx_without_batch_kernel_entry(GM_ADDR x1GM, GM_ADDR x2GM, GM_ADDR pertokenScaleGM,
+                                                              GM_ADDR scaleGM, GM_ADDR biasGM, GM_ADDR yGM,
+                                                              GM_ADDR tilingGM)
+{
+    const auto* tilingData = reinterpret_cast<const QBMMV3TilingData*>(tilingGM);
+    QBMMUT::QBMMMxWithoutBatchWrapper<DTYPE_X1, DTYPE_X2, DTYPE_Y, DTYPE_BIAS>(x1GM, x2GM, pertokenScaleGM, scaleGM,
+                                                                               biasGM, yGM, *tilingData);
+}
+
+template <class DTYPE_X1, class DTYPE_X2, class DTYPE_Y, class DTYPE_BIAS>
+__global__ __aicore__ void qbmm_mx_a_full_load_kernel_entry(GM_ADDR x1GM, GM_ADDR x2GM, GM_ADDR pertokenScaleGM,
+                                                            GM_ADDR scaleGM, GM_ADDR biasGM, GM_ADDR yGM,
+                                                            GM_ADDR tilingGM)
+{
+    const auto* tilingData = reinterpret_cast<const QBMMV3TilingData*>(tilingGM);
+    QBMMUT::QBMMMxWrapper<DTYPE_X1, DTYPE_X2, DTYPE_Y, DTYPE_BIAS, Blaze::Gemm::A_FULL_LOAD_MODE>(
         x1GM, x2GM, pertokenScaleGM, scaleGM, biasGM, yGM, *tilingData);
 }
 
 template <class DTYPE_X1, class DTYPE_X2, class DTYPE_Y, class DTYPE_BIAS>
-__global__ __aicore__ void qbmm_mx_without_batch_kernel_entry(
-    GM_ADDR x1GM, GM_ADDR x2GM, GM_ADDR pertokenScaleGM, GM_ADDR scaleGM, GM_ADDR biasGM, GM_ADDR yGM,
-    GM_ADDR tilingGM)
+__global__ __aicore__ void qbmm_mx_without_batch_a_full_load_kernel_entry(GM_ADDR x1GM, GM_ADDR x2GM,
+                                                                          GM_ADDR pertokenScaleGM, GM_ADDR scaleGM,
+                                                                          GM_ADDR biasGM, GM_ADDR yGM, GM_ADDR tilingGM)
 {
     const auto* tilingData = reinterpret_cast<const QBMMV3TilingData*>(tilingGM);
-    QBMMUT::QBMMMxWithoutBatchWrapper<DTYPE_X1, DTYPE_X2, DTYPE_Y, DTYPE_BIAS>(
-        x1GM, x2GM, pertokenScaleGM, scaleGM, biasGM, yGM, *tilingData);
-}
-
-template <class DTYPE_X1, class DTYPE_X2, class DTYPE_Y, class DTYPE_BIAS>
-__global__ __aicore__ void qbmm_mx_a_full_load_kernel_entry(
-    GM_ADDR x1GM, GM_ADDR x2GM, GM_ADDR pertokenScaleGM, GM_ADDR scaleGM, GM_ADDR biasGM, GM_ADDR yGM,
-    GM_ADDR tilingGM)
-{
-    const auto* tilingData = reinterpret_cast<const QBMMV3TilingData*>(tilingGM);
-    QBMMUT::QBMMMxWrapper<
-        DTYPE_X1, DTYPE_X2, DTYPE_Y, DTYPE_BIAS, Blaze::Gemm::A_FULL_LOAD_MODE>(
-        x1GM, x2GM, pertokenScaleGM, scaleGM, biasGM, yGM, *tilingData);
-}
-
-template <class DTYPE_X1, class DTYPE_X2, class DTYPE_Y, class DTYPE_BIAS>
-__global__ __aicore__ void qbmm_mx_without_batch_a_full_load_kernel_entry(
-    GM_ADDR x1GM, GM_ADDR x2GM, GM_ADDR pertokenScaleGM, GM_ADDR scaleGM, GM_ADDR biasGM, GM_ADDR yGM,
-    GM_ADDR tilingGM)
-{
-    const auto* tilingData = reinterpret_cast<const QBMMV3TilingData*>(tilingGM);
-    QBMMUT::QBMMMxWithoutBatchWrapper<
-        DTYPE_X1, DTYPE_X2, DTYPE_Y, DTYPE_BIAS, Blaze::Gemm::A_FULL_LOAD_MODE>(
+    QBMMUT::QBMMMxWithoutBatchWrapper<DTYPE_X1, DTYPE_X2, DTYPE_Y, DTYPE_BIAS, Blaze::Gemm::A_FULL_LOAD_MODE>(
         x1GM, x2GM, pertokenScaleGM, scaleGM, biasGM, yGM, *tilingData);
 }

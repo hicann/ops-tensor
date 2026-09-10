@@ -106,10 +106,10 @@ public:
     using DataTypeIn = DataTypeIn_;
 
     // shape
-    using BlockShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
-    using BaseOffset = AscendC::Te::Coord<int64_t, int64_t, int64_t, int64_t>;
-    using BlockCoord = AscendC::Te::Coord<int64_t, int64_t, int64_t, int64_t, int64_t>;
-    using ProblemShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
+    using BlockShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
+    using BaseOffset = asc::te::coord<int64_t, int64_t, int64_t, int64_t>;
+    using BlockCoord = asc::te::coord<int64_t, int64_t, int64_t, int64_t, int64_t>;
+    using ProblemShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
 
 public:
     __aicore__ inline void Init(Params const& params);
@@ -263,9 +263,9 @@ __aicore__ inline void BlockEpilogueGeluMxQuant<DataTypeOut_, DataTypeIn_>::Upda
     const BlockCoord& baseOffset)
 {
     if ASCEND_IS_AIV {
-        quantOutputGmAddr_ = reinterpret_cast<__gm__ int8_t*>(params_->yGmAddr) + AscendC::Te::Get<Y_IDX>(baseOffset);
+        quantOutputGmAddr_ = reinterpret_cast<__gm__ int8_t*>(params_->yGmAddr) + asc::te::get<Y_IDX>(baseOffset);
         quantScaleGmAddr_ = reinterpret_cast<__gm__ int8_t*>(params_->yScaleGmAddr) +
-                            AscendC::Te::Get<Y_SCALE_IDX>(baseOffset);
+                            asc::te::get<Y_SCALE_IDX>(baseOffset);
     }
 }
 
@@ -273,7 +273,7 @@ template <typename DataTypeOut_, typename DataTypeIn_>
 __aicore__ inline void BlockEpilogueGeluMxQuant<DataTypeOut_, DataTypeIn_>::UpdateNextProblem(
     const ProblemShape& problemShape)
 {
-    n_ = AscendC::Te::Get<Gemm::MNK_N>(problemShape);
+    n_ = asc::te::get<Gemm::MNK_N>(problemShape);
     scaleN_ = Gemm::CeilDiv(static_cast<uint64_t>(n_), static_cast<uint64_t>(BLOCK_SIZE));
     scaleNAlign_ = Gemm::CeilAlign(scaleN_, MX_SCALE_ALIGN_SIZE);
 }
@@ -295,19 +295,19 @@ __aicore__ inline void BlockEpilogueGeluMxQuant<DataTypeOut_, DataTypeIn_>::Copy
 
     auto ubLayout = Gemm::MakeNDExtLayout(static_cast<int64_t>(blockCount), nValid, nUbAligned);
     auto gmLayout = Gemm::MakeNDExtLayout(static_cast<int64_t>(blockCount), nValid, gmRowPitch);
-    auto outUb = AscendC::Te::MakeTensor(
-        AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB, int8_t>(quantOutputUbOffset_), ubLayout);
+    auto outUb = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::ub, int8_t>(quantOutputUbOffset_),
+                                      ubLayout);
     if constexpr (AscendC::IsSameType<DataTypeOut, fp4x2_e2m1_t>::value) {
         if (static_cast<int64_t>(singleN_) % OUT_ELE_NUM_ONE_BLK != 0) {
-            outUb = AscendC::Te::MakeTensor(
-                AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB, int8_t>(geluResUbOffset_), ubLayout);
+            outUb = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::ub, int8_t>(geluResUbOffset_),
+                                         ubLayout);
         }
     }
-    auto outGm = AscendC::Te::MakeTensor(
-        AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(quantOutputGmAddr_ + gmOffset), gmLayout);
+    auto outGm = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::gm>(quantOutputGmAddr_ + gmOffset),
+                                      gmLayout);
 
-    auto copyUB2GM = AscendC::Te::MakeCopy(AscendC::Te::CopyUB2GM{});
-    AscendC::Te::Copy(copyUB2GM, outGm, outUb);
+    auto copyUB2GM = asc::te::make_copy(asc::te::copy_ub_to_gm{});
+    asc::te::copy(copyUB2GM, outGm, outUb);
 }
 
 template <typename DataTypeOut_, typename DataTypeIn_>
@@ -320,13 +320,13 @@ __aicore__ inline void BlockEpilogueGeluMxQuant<DataTypeOut_, DataTypeIn_>::Copy
 
     auto ubLayout = Gemm::MakeNDExtLayout(static_cast<int64_t>(blockCount), nValid, nUbAligned);
     auto gmLayout = Gemm::MakeNDExtLayout(static_cast<int64_t>(blockCount), nValid, gmRowPitch);
-    auto outUb = AscendC::Te::MakeTensor(
-        AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB, int8_t>(quantScaleBlockOutputUbOffset_), ubLayout);
-    auto outGm = AscendC::Te::MakeTensor(
-        AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(quantScaleGmAddr_ + gmOffset), gmLayout);
+    auto outUb = asc::te::make_tensor(
+        asc::te::make_mem_ptr<asc::te::location::ub, int8_t>(quantScaleBlockOutputUbOffset_), ubLayout);
+    auto outGm = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::gm>(quantScaleGmAddr_ + gmOffset),
+                                      gmLayout);
 
-    auto copyUB2GM = AscendC::Te::MakeCopy(AscendC::Te::CopyUB2GM{});
-    AscendC::Te::Copy(copyUB2GM, outGm, outUb);
+    auto copyUB2GM = asc::te::make_copy(asc::te::copy_ub_to_gm{});
+    asc::te::copy(copyUB2GM, outGm, outUb);
 }
 
 template <typename DataTypeOut_, typename DataTypeIn_>
@@ -793,17 +793,17 @@ __aicore__ inline void BlockEpilogueGeluMxQuant<DataTypeOut_, DataTypeIn_>::VFDo
     }
     auto layout = Gemm::MakeNDExtLayout(static_cast<int64_t>(mSize), static_cast<int64_t>(nSize),
                                         static_cast<int64_t>(nAligned));
-    auto srcTensor = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB, DataTypeIn>(0), layout);
-    auto dstTensor = AscendC::Te::MakeTensor(
-        AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB, bfloat16_t>(geluResUbOffset_), layout);
+    auto srcTensor = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::ub, DataTypeIn>(0), layout);
+    auto dstTensor = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::ub, bfloat16_t>(geluResUbOffset_),
+                                          layout);
     Gelu<bfloat16_t, DataTypeIn> gelu;
     if (params_->geluAlg == GeluAlg::ERF) {
-        auto erfTensor = AscendC::Te::MakeTensor(
-            AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB, float>(erfTmpUbOffset_), layout);
-        auto fp32Tensor = AscendC::Te::MakeTensor(
-            AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB, float>(fp32TmpUbOffset_), layout);
-        auto geluFp32Tensor = AscendC::Te::MakeTensor(
-            AscendC::Te::MakeMemPtr<AscendC::Te::Location::UB, float>(geluFp32TmpUbOffset_), layout);
+        auto erfTensor = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::ub, float>(erfTmpUbOffset_),
+                                              layout);
+        auto fp32Tensor = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::ub, float>(fp32TmpUbOffset_),
+                                               layout);
+        auto geluFp32Tensor = asc::te::make_tensor(
+            asc::te::make_mem_ptr<asc::te::location::ub, float>(geluFp32TmpUbOffset_), layout);
         gelu.GeluErf(srcTensor, dstTensor, erfTensor, fp32Tensor, geluFp32Tensor, mSize, nSize);
     } else {
         gelu.GeluTanh(srcTensor, dstTensor, mSize, nSize);
@@ -942,8 +942,8 @@ template <typename DataTypeOut_, typename DataTypeIn_>
 __aicore__ inline void BlockEpilogueGeluMxQuant<DataTypeOut_, DataTypeIn_>::operator()(const BlockShape& blockShape,
                                                                                        const BlockCoord& blockCoord)
 {
-    singleM_ = AscendC::Te::Get<Gemm::MNK_M>(blockShape);
-    singleN_ = AscendC::Te::Get<Gemm::MNK_N>(blockShape);
+    singleM_ = asc::te::get<Gemm::MNK_M>(blockShape);
+    singleN_ = asc::te::get<Gemm::MNK_N>(blockShape);
     scaleBlockN_ = Gemm::CeilDiv(static_cast<uint64_t>(singleN_), static_cast<uint64_t>(BLOCK_SIZE));
     blockCoord_ = blockCoord;
     auto halfSingleM = Gemm::CeilDiv(static_cast<uint64_t>(singleM_), static_cast<uint64_t>(AscendC::GetTaskRation()));
@@ -959,9 +959,9 @@ __aicore__ inline void BlockEpilogueGeluMxQuant<DataTypeOut_, DataTypeIn_>::oper
     elementAfterReduce_ = AscendC::VECTOR_REG_WIDTH / UBBlockSize_;
 
     VFDoGeluForMX(singleMInVec);
-    int64_t yOffset = static_cast<int64_t>(AscendC::Te::Get<Y_IDX>(blockCoord)) +
+    int64_t yOffset = static_cast<int64_t>(asc::te::get<Y_IDX>(blockCoord)) +
                       static_cast<int64_t>(subBlockIdx_ * halfSingleM * n_);
-    int64_t yScaleOffset = static_cast<int64_t>(AscendC::Te::Get<Y_SCALE_IDX>(blockCoord)) +
+    int64_t yScaleOffset = static_cast<int64_t>(asc::te::get<Y_SCALE_IDX>(blockCoord)) +
                            static_cast<int64_t>(subBlockIdx_ * halfSingleM * scaleNAlign_);
     AscendC::PipeBarrier<PIPE_V>();
     if constexpr (AscendC::IsSameType<DataTypeOut, fp4x2_e2m1_t>::value) {

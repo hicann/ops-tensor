@@ -164,7 +164,7 @@ template <typename L1Tensors, typename SlotsTuple, typename L0Shape>
 __aicore__ inline auto CopyL1ToL0(const L1Tensors& l1Tensors, const L0Shape& l0Shape,
                                   const Gemm::BufferSlot& l0Slot, const SlotsTuple& slotsTuple)
 ```
-功能：L1→L0A/L0B 数据搬运，A 矩阵使用 NZLayoutPtn，B 矩阵使用 ZNLayoutPtn。返回 L0A/L0B Tensor tuple。
+功能：L1→L0A/L0B 数据搬运，A 矩阵使用 nz_layout_ptn，B 矩阵使用 zn_layout_ptn。返回 L0A/L0B Tensor tuple。
 
 参数说明：
 | 参数 | 说明 |
@@ -218,9 +218,9 @@ using AType = bfloat16_t;
 using BType = bfloat16_t;
 using CType = bfloat16_t;
 using OutType = bfloat16_t;
-using LayoutA = AscendC::Te::NDExtLayoutPtn;
-using LayoutB = AscendC::Te::NDExtLayoutPtn;
-using LayoutC = AscendC::Te::NDExtLayoutPtn;
+using LayoutA = asc::te::nd_ext_layout_ptn;
+using LayoutB = asc::te::nd_ext_layout_ptn;
+using LayoutC = asc::te::nd_ext_layout_ptn;
 using LayoutOut = LayoutC;
 
 using DispatchPolicy = Blaze::Attention::BlockFlatQuant<>;

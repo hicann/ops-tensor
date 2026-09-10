@@ -239,7 +239,7 @@ static int64_t CalcNZElementCount(int64_t k, int64_t n, const std::string& dtype
 /* Device-side kernel wrapper (template-based)                                */
 /* ========================================================================== */
 
-using ProblemShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
+using ProblemShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
 
 template <class AType, class BType, class CType, class LayoutA, class LayoutB, uint64_t FullLoadMode>
 __global__ __aicore__ void quant_matmul_activation_quant_kernel(GM_ADDR aGm, GM_ADDR bGm, GM_ADDR biasGm,
@@ -254,8 +254,8 @@ __global__ __aicore__ void quant_matmul_activation_quant_kernel(GM_ADDR aGm, GM_
     using OutType = CType;
     using MatmulOutType = float;
     using BiasType = float;
-    using LayoutC = AscendC::Te::NDExtLayoutPtn;
-    using LayoutBias = AscendC::Te::NDExtLayoutPtn;
+    using LayoutC = asc::te::nd_ext_layout_ptn;
+    using LayoutBias = asc::te::nd_ext_layout_ptn;
     using DispatchPolicy = Blaze::Gemm::MatmulWithScaleMx<FullLoadMode, false,
                                                           Blaze::Gemm::KernelMmadWithScaleMxActivationQuant,
                                                           Blaze::Gemm::L0C2UB_MODE_DUAL_DST_SPLIT_M>;
@@ -329,10 +329,10 @@ struct LaunchParams {
 template <class A_TYPE, class B_TYPE, bool TransA, bool TransB, bool IsNzFormat, uint64_t FullLoadMode>
 void LaunchKernel(const LaunchParams& p)
 {
-    using LAYOUT_A = std::conditional_t<TransA, AscendC::Te::DNExtLayoutPtn, AscendC::Te::NDExtLayoutPtn>;
+    using LAYOUT_A = std::conditional_t<TransA, asc::te::dn_ext_layout_ptn, asc::te::nd_ext_layout_ptn>;
     using LAYOUT_B = std::conditional_t<
-        IsNzFormat, std::conditional_t<TransB, AscendC::Te::ZNLayoutPtn, AscendC::Te::NZLayoutPtn>,
-        std::conditional_t<TransB, AscendC::Te::DNExtLayoutPtn, AscendC::Te::NDExtLayoutPtn>>;
+        IsNzFormat, std::conditional_t<TransB, asc::te::zn_layout_ptn, asc::te::nz_layout_ptn>,
+        std::conditional_t<TransB, asc::te::dn_ext_layout_ptn, asc::te::nd_ext_layout_ptn>>;
 
     LAUNCH_KERNEL_IMPL(FullLoadMode);
 }

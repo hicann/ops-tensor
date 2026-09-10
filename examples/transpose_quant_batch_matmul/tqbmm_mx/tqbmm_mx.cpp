@@ -17,7 +17,7 @@
  * Blaze::Gemm::Block::BlockMmad (block_mmad_qbmm_mx.h).
  *
  * This example handles the transpose scenario:
- *   x1: perm [1,0,2], effective shape [m, batch, k], layout NDExtLayoutPtn
+ *   x1: perm [1,0,2], effective shape [m, batch, k], layout nd_ext_layout_ptn
  *   x2: [batch, k, n] or [batch, n, k]
  *   x1Scale is expected to be pre-transposed to [batch, m, G, 2] layout.
  */
@@ -142,7 +142,7 @@ static size_t ElementCountToBytes(int64_t count, const std::string& dtype)
     return static_cast<size_t>(count) * DtypeSize(dtype);
 }
 
-using ProblemShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
+using ProblemShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
 
 template <class AType, class BType, class CType, class LayoutA, class LayoutB, uint64_t FullLoadMode>
 __global__ __aicore__ void tqbmm_mx_example_kernel(GM_ADDR aGm, GM_ADDR bGm, GM_ADDR biasGm, GM_ADDR scaleAGm,
@@ -154,8 +154,8 @@ __global__ __aicore__ void tqbmm_mx_example_kernel(GM_ADDR aGm, GM_ADDR bGm, GM_
     KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_MIX_AIC_1_2);
     AscendC::InitSocState();
     using BiasType = float;
-    using LayoutC = AscendC::Te::NDExtLayoutPtn;
-    using LayoutBias = AscendC::Te::NDExtLayoutPtn;
+    using LayoutC = asc::te::nd_ext_layout_ptn;
+    using LayoutBias = asc::te::nd_ext_layout_ptn;
     using DispatchPolicy = Blaze::Gemm::MatmulWithScaleMx<FullLoadMode, false, Blaze::Gemm::KernelMmadMultiBlockTQBMM>;
     using BlockScheduler = Blaze::Gemm::Block::BlockSchedulerQuantBatchMatmulV3<ProblemShape, FullLoadMode, LayoutA,
                                                                                 LayoutB, AType>;
@@ -219,8 +219,8 @@ struct LaunchParams {
 template <class A_TYPE, class B_TYPE, class C_TYPE, bool TransB, uint64_t FullLoadMode>
 void LaunchKernel(const LaunchParams& p)
 {
-    using LAYOUT_A = AscendC::Te::NDExtLayoutPtn;
-    using LAYOUT_B = std::conditional_t<TransB, AscendC::Te::DNExtLayoutPtn, AscendC::Te::NDExtLayoutPtn>;
+    using LAYOUT_A = asc::te::nd_ext_layout_ptn;
+    using LAYOUT_B = std::conditional_t<TransB, asc::te::dn_ext_layout_ptn, asc::te::nd_ext_layout_ptn>;
     LAUNCH_TQBMM_KERNEL(FullLoadMode);
 }
 

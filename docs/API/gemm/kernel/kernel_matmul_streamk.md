@@ -195,14 +195,14 @@ using BType = half;                                    // B 矩阵数据类型
 using CType = float;                                   // C 矩阵计算类型（L0C 累加）
 using OutType = half;                                  // C 矩阵输出类型
 using BiasType = float;                                // Bias 数据类型（可选）
-using LayoutA = AscendC::Te::NDExtLayoutPtn;         // A 矩阵布局（NDExt 支持 stride）
-using LayoutB = AscendC::Te::NZLayoutPtn;             // B 矩阵布局（NZ 格式，权重优化）
-using LayoutC = AscendC::Te::NDExtLayoutPtn;          // C 矩阵布局（NDExt 支持 stride）
+using LayoutA = asc::te::nd_ext_layout_ptn;         // A 矩阵布局（NDExt 支持 stride）
+using LayoutB = asc::te::nz_layout_ptn;             // B 矩阵布局（NZ 格式，权重优化）
+using LayoutC = asc::te::nd_ext_layout_ptn;          // C 矩阵布局（NDExt 支持 stride）
 using LayoutBias = LayoutC;                            // Bias 布局
 
 // ============== 2. ProblemShape 定义 ==============
 // 形状：(m, n, k, batch)，batch=0 或 1 表示单 batch
-using ProblemShape = AscendC::Te::Shape<int64_t, int64_t, int64_t, int64_t>;
+using ProblemShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
 
 // ============== 3. BlockScheduler 组装 ==============
 // StreamK 使用专门的 BlockSchedulerStreamK

@@ -67,10 +67,10 @@ void Fill(GM_ADDR addr, size_t count, T value)
 template <typename LayoutB>
 constexpr size_t WeightElements()
 {
-    if constexpr (std::is_same_v<LayoutB, AscendC::Te::NZLayoutPtn>) {
+    if constexpr (std::is_same_v<LayoutB, asc::te::nz_layout_ptn>) {
         return GROUP_NUM * AlignUp(K, 16U) * AlignUp(N, 32U);
     }
-    if constexpr (std::is_same_v<LayoutB, AscendC::Te::ZNLayoutPtn>) {
+    if constexpr (std::is_same_v<LayoutB, asc::te::zn_layout_ptn>) {
         return GROUP_NUM * AlignUp(K, 32U) * AlignUp(N, 16U);
     }
     return GROUP_NUM * static_cast<size_t>(K) * N;
@@ -146,7 +146,7 @@ class GmmFixpipeQuantTest : public testing::Test {};
 
 TEST_F(GmmFixpipeQuantTest, TemplateContracts)
 {
-    using Layout = AscendC::Te::NDExtLayoutPtn;
+    using Layout = asc::te::nd_ext_layout_ptn;
     using Policy = Blaze::Gemm::MatmulWithScaleFixpipeQuant<0UL, false,
                                                             Blaze::Gemm::KernelGroupedMmadWithScaleFixpipeQuant>;
     using BTypeTuple = AscendC::Std::tuple<int8_t, uint64_t>;
@@ -161,12 +161,12 @@ TEST_F(GmmFixpipeQuantTest, TemplateContracts)
     SUCCEED();
 }
 
-TEST_F(GmmFixpipeQuantTest, PerChannelNdWithOffsetSmoke) { RunKernelSmoke<AscendC::Te::NDExtLayoutPtn>(false, true); }
+TEST_F(GmmFixpipeQuantTest, PerChannelNdWithOffsetSmoke) { RunKernelSmoke<asc::te::nd_ext_layout_ptn>(false, true); }
 
-TEST_F(GmmFixpipeQuantTest, PerChannelNzN16Smoke) { RunKernelSmoke<AscendC::Te::NZLayoutPtn>(false, false); }
+TEST_F(GmmFixpipeQuantTest, PerChannelNzN16Smoke) { RunKernelSmoke<asc::te::nz_layout_ptn>(false, false); }
 
-TEST_F(GmmFixpipeQuantTest, PerGroupNdSmoke) { RunKernelSmoke<AscendC::Te::NDExtLayoutPtn>(true, false); }
+TEST_F(GmmFixpipeQuantTest, PerGroupNdSmoke) { RunKernelSmoke<asc::te::nd_ext_layout_ptn>(true, false); }
 
-TEST_F(GmmFixpipeQuantTest, PerGroupNzN16Smoke) { RunKernelSmoke<AscendC::Te::NZLayoutPtn>(true, false); }
+TEST_F(GmmFixpipeQuantTest, PerGroupNzN16Smoke) { RunKernelSmoke<asc::te::nz_layout_ptn>(true, false); }
 
-TEST_F(GmmFixpipeQuantTest, PerChannelTransposedNzSmoke) { RunKernelSmoke<AscendC::Te::ZNLayoutPtn>(false, false); }
+TEST_F(GmmFixpipeQuantTest, PerChannelTransposedNzSmoke) { RunKernelSmoke<asc::te::zn_layout_ptn>(false, false); }

@@ -52,9 +52,9 @@
  *   auto& l0Slot = bufMgr.GetL0Slot(l0Idx);
  *
  *   { auto lk = aSlot.LockMte2();
- *     MakeTensor(MakeMemPtr<L1, AType>(aSlot.Addr()), ...); }
+ *     make_tensor(make_mem_ptr<L1, AType>(aSlot.Addr()), ...); }
  *   { auto lk = btSlot.LockMte1();
- *     MakeTensor(MakeMemPtr<BIAS, float>(btSlot.Addr()), ...); }
+ *     make_tensor(make_mem_ptr<BIAS, float>(btSlot.Addr()), ...); }
  */
 
 #pragma once
