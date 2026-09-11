@@ -52,7 +52,6 @@ public:
     static constexpr bool TRANS_B = IsTrans<LayoutB>::value;
     static constexpr bool WEIGHT_NZ_FORMAT = IsWeightNz<LayoutB>::value;
     static constexpr bool IS_INT8_OUT = AscendC::Std::is_same_v<CType, signed char>;
-    static constexpr bool IS_GROUPED_MATMUL = AscendC::Std::is_same_v<KernelSchedule_, KernelGroupedMmadNoQuant>;
     // AL1 Layout
     using MakeLayoutAL1 = AscendC::Std::conditional_t<
         TRANS_A, asc::te::frame_layout_format<asc::te::zn_layout_ptn, asc::te::layout_trait_default<AType>>,
@@ -151,15 +150,9 @@ public:
         gmScalePtr_ = gmScalePtr;
         curNOut_ = static_cast<uint64_t>(curN);
 
-        const uint64_t currentKL1 = Blaze::Gemm::Min(oriK, kL1_);
-        // GMM reuses one BlockMmad instance across groups whose K values may differ. Keep the configured kL1_
-        // unchanged so that a small-K group does not reduce the L1 K tile of subsequent groups.
-        if constexpr (!IS_GROUPED_MATMUL) {
-            kL1_ = currentKL1;
-        }
-        kL1Iter_ = Blaze::Gemm::CeilDiv(oriK, currentKL1);
+        kL1Iter_ = Blaze::Gemm::CeilDiv(oriK, kL1_);
         for (uint64_t iter0 = 0; iter0 < kL1Iter_; ++iter0) {
-            auto curKL1 = (iter0 + 1 == kL1Iter_) ? (oriK - currentKL1 * iter0) : currentKL1;
+            auto curKL1 = (iter0 + 1 == kL1Iter_) ? (oriK - kL1_ * iter0) : kL1_;
             uint64_t l1BufId = abL1LoopCnt_ & (l1Stages_ - 1);
             uint64_t btBufId = abL1LoopCnt_ & 0x1;
 
