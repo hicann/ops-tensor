@@ -74,6 +74,12 @@ public:
         return groupEndBlock_;
     }
 
+    __aicore__ inline int64_t GetFirstBlockIdx(int64_t blockIdx)
+    {
+        // Map the physical core to its first task in the current group's virtual interval.
+        return blockIdx >= groupStartBlock_ ? blockIdx : blockIdx + blockNum_;
+    }
+
     __aicore__ inline int64_t GetCoreNums() { return Min(groupEndBlock_, blockNum_); }
 
     template <bool TransB_ = false, class BType_>
@@ -101,6 +107,16 @@ public:
             return splitValue;
         }
         return groupValue;
+    }
+
+    // Advance the output offset without updating block scheduling state.
+    __aicore__ inline int64_t UpdateNextOutputOffset(const ProblemShape& problemShape)
+    {
+        const int64_t currentCOffset = singleY_ ? nextCOffset_ : 0;
+        const int64_t problemM = Max(AscendC::Te::Get<MNK_M>(problemShape), static_cast<int64_t>(0));
+        const int64_t problemN = Max(AscendC::Te::Get<MNK_N>(problemShape), static_cast<int64_t>(0));
+        nextCOffset_ += problemM * problemN;
+        return currentCOffset;
     }
 
     __aicore__ inline GroupCoord UpdateNextGroup(const ProblemShape& problemShape)

@@ -150,7 +150,6 @@ public:
         gmScalePtr_ = gmScalePtr;
         curNOut_ = static_cast<uint64_t>(curN);
 
-        kL1_ = Blaze::Gemm::Min(oriK, kL1_);
         kL1Iter_ = Blaze::Gemm::CeilDiv(oriK, kL1_);
         for (uint64_t iter0 = 0; iter0 < kL1Iter_; ++iter0) {
             auto curKL1 = (iter0 + 1 == kL1Iter_) ? (oriK - kL1_ * iter0) : kL1_;
