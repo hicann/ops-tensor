@@ -315,50 +315,11 @@ private:
     }
 
 public:
-    template <typename TensorA, typename TensorB, typename TScale, typename TensorBias, typename TensorC>
-    __aicore__ inline void operator()(TensorA gmA, TensorB gmB, TScale scaleGlobal, TensorBias gmBias, TensorC gmC,
-                                      BlockShape singleShape, uint32_t quantGroupSize, uint32_t quantGroupNum)
+    // A new GM K slice requires the corresponding K-dependent loop state.
+    __aicore__ inline void UpdateParamsForKSlice(uint64_t curK)
     {
-        ProcessPerGroup(gmA, gmB, scaleGlobal, gmBias, gmC, singleShape, quantGroupSize, quantGroupNum);
-    }
-
-private:
-    // Per-group dequantization requires each K-group partial result to be
-    // converted by its own scale before the partials are accumulated.
-    template <typename TensorA, typename TensorB, typename TScale, typename TensorBias, typename TensorC>
-    __aicore__ inline void ProcessPerGroup(TensorA gmA, TensorB gmB, TScale scaleGlobal, TensorBias gmBias, TensorC gmC,
-                                           BlockShape singleShape, uint32_t quantGroupSize, uint32_t quantGroupNum)
-    {
-        static_assert(IS_GROUPED_FIXPIPE, "ProcessPerGroup is only available for grouped fixpipe kernels.");
-        const uint64_t fullK = static_cast<uint64_t>(asc::te::get<IDX_K_IDX>(singleShape));
-        const uint64_t curM = static_cast<uint64_t>(asc::te::get<IDX_M_TILEIDX>(singleShape));
-        const uint64_t curN = static_cast<uint64_t>(asc::te::get<IDX_N_TILEIDX>(singleShape));
-
-        for (uint32_t groupIdx = 0; groupIdx < quantGroupNum; ++groupIdx) {
-            const uint64_t kOffset = static_cast<uint64_t>(groupIdx) * quantGroupSize;
-            const uint64_t curK = Min(fullK - kOffset, static_cast<uint64_t>(quantGroupSize));
-            auto gmGroupA = gmA.slice(asc::te::make_coord(0UL, kOffset), asc::te::make_shape(curM, curK));
-            auto gmGroupB = gmB.slice(asc::te::make_coord(kOffset, 0UL), asc::te::make_shape(curK, curN));
-            auto gmGroupScale = scaleGlobal.slice(asc::te::make_coord(static_cast<uint64_t>(groupIdx), 0UL),
-                                                  asc::te::make_shape(1UL, curN));
-            const BlockShape groupShape{static_cast<int64_t>(curM), static_cast<int64_t>(curN),
-                                        static_cast<int64_t>(curK), 0};
-
-            UpdateKLoop(curK);
-            if (groupIdx == 1U) {
-                // Group 0 initializes C with a normal FixPipe write. Keep
-                // atomic-add enabled for all remaining groups and restore the
-                // state only after the final group has completed.
-                AscendC::PipeBarrier<PIPE_FIX>();
-                AscendC::SetAtomicAdd<CType>();
-            }
-            operator()(gmGroupA, gmGroupB, gmGroupScale, gmBias, gmC, groupShape);
-        }
-        if (quantGroupNum > 1U) {
-            AscendC::PipeBarrier<PIPE_FIX>();
-            AscendC::SetAtomicNone();
-        }
-        UpdateKLoop(fullK);
+        static_assert(IS_GROUPED_FIXPIPE, "UpdateParamsForKSlice is only supported by grouped fixpipe kernels.");
+        UpdateKLoop(curK);
     }
 
 private:

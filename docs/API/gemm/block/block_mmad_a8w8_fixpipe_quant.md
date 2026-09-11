@@ -248,6 +248,24 @@ __aicore__ inline void operator()(
 
 返回值：无。
 
+### UpdateParamsForKSlice函数
+
+```cpp
+__aicore__ inline void UpdateParamsForKSlice(uint64_t curK);
+```
+
+功能：Kernel 切换到新的 GM K 分片时，刷新 BlockMmad 中依赖 K 的 L1 循环状态。A 全载模式下同时
+重置 A 的 L1 缓存复用计数，避免跨 per-group A 分片复用缓存数据。
+
+| 参数 | 说明 |
+|------|------|
+| curK | 当前 GM K 分片的有效 K 长度。 |
+
+约束：仅当调度类型为 `KernelGroupedMmadWithScaleFixpipeQuant` 时可用。每次处理 K 分片前调用；
+全部分片处理完成后，调用方应传入完整 K 以恢复后续 block 的循环状态。
+
+返回值：无。
+
 ## 事件同步
 
 | 事件 | 用途 |

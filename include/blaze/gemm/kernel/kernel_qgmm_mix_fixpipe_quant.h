@@ -147,6 +147,9 @@ private:
     __aicore__ inline void SetSchedulerTailAlign(BlockScheduler& scheduler);
     __aicore__ inline bool IsLastGroupAndNeedSplit(const BlockScheduler& scheduler) const;
     __aicore__ inline void ProcessSingleGroup(BlockScheduler& scheduler, uint32_t groupIdx);
+    template <class TensorA, class TensorB, class TensorScale, class TensorBias, class TensorC>
+    __aicore__ inline void ProcessPerGroup(const TensorA& gmA, const TensorB& gmB, const TensorScale& gmScale,
+                                           const TensorBias& gmBias, const TensorC& gmC, const BlockShape& blockShape);
 
     template <class TensorA, class TensorB>
     __aicore__ inline void ProcessOneBlock(const TensorA& gmA, const TensorB& gmB, const BlockShape& blockShape,
@@ -386,6 +389,43 @@ __aicore__ inline void GemmUniversal<GMM_FIXPIPE_TEM_PARAMS>::ProcessSingleGroup
 }
 
 GMM_FIXPIPE_TEMPLATE_DEF
+template <class TensorA, class TensorB, class TensorScale, class TensorBias, class TensorC>
+__aicore__ inline void GemmUniversal<GMM_FIXPIPE_TEM_PARAMS>::ProcessPerGroup(const TensorA& gmA, const TensorB& gmB,
+                                                                              const TensorScale& gmScale,
+                                                                              const TensorBias& gmBias,
+                                                                              const TensorC& gmC,
+                                                                              const BlockShape& blockShape)
+{
+    const uint64_t fullK = static_cast<uint64_t>(asc::te::get<IDX_K_IDX>(blockShape));
+    const uint64_t curM = static_cast<uint64_t>(asc::te::get<IDX_M_TILEIDX>(blockShape));
+    const uint64_t curN = static_cast<uint64_t>(asc::te::get<IDX_N_TILEIDX>(blockShape));
+
+    for (uint32_t groupIdx = 0; groupIdx < quantGroupNum_; ++groupIdx) {
+        const uint64_t kOffset = static_cast<uint64_t>(groupIdx) * quantGroupSize_;
+        const uint64_t curK = Min(fullK - kOffset, static_cast<uint64_t>(quantGroupSize_));
+        auto gmGroupA = gmA.slice(asc::te::make_coord(0UL, kOffset), asc::te::make_shape(curM, curK));
+        auto gmGroupB = gmB.slice(asc::te::make_coord(kOffset, 0UL), asc::te::make_shape(curK, curN));
+        auto gmGroupScale = gmScale.slice(asc::te::make_coord(static_cast<uint64_t>(groupIdx), 0UL),
+                                          asc::te::make_shape(1UL, curN));
+        const BlockShape groupShape{static_cast<int64_t>(curM), static_cast<int64_t>(curN), static_cast<int64_t>(curK),
+                                    0};
+
+        mmOp_.UpdateParamsForKSlice(curK);
+        if (groupIdx == 1U) {
+            // Group 0 initializes C with a normal FixPipe write. Keep atomic-add enabled for all remaining groups.
+            AscendC::PipeBarrier<PIPE_FIX>();
+            AscendC::SetAtomicAdd<CType>();
+        }
+        mmOp_(gmGroupA, gmGroupB, gmGroupScale, gmBias, gmC, groupShape);
+    }
+    if (quantGroupNum_ > 1U) {
+        AscendC::PipeBarrier<PIPE_FIX>();
+        AscendC::SetAtomicNone();
+    }
+    mmOp_.UpdateParamsForKSlice(fullK);
+}
+
+GMM_FIXPIPE_TEMPLATE_DEF
 template <class TensorA, class TensorB>
 __aicore__ inline void GemmUniversal<GMM_FIXPIPE_TEM_PARAMS>::ProcessOneBlock(const TensorA& gmA, const TensorB& gmB,
                                                                               const BlockShape& blockShape,
@@ -419,8 +459,7 @@ __aicore__ inline void GemmUniversal<GMM_FIXPIPE_TEM_PARAMS>::ProcessOneBlock(co
         auto gmBlockScale = gmScale.slice(asc::te::make_coord(static_cast<int64_t>(0), nPos),
                                           asc::te::make_shape(static_cast<int64_t>(quantGroupNum_), curN));
         if (isPerGroup_) {
-            mmOp_(gmBlockA, gmBlockB, gmBlockScale, gmUnusedBias, gmWorkspace, blockShape, quantGroupSize_,
-                  quantGroupNum_);
+            ProcessPerGroup(gmBlockA, gmBlockB, gmBlockScale, gmUnusedBias, gmWorkspace, blockShape);
         } else {
             mmOp_(gmBlockA, gmBlockB, gmBlockScale, gmUnusedBias, gmWorkspace, blockShape);
         }
