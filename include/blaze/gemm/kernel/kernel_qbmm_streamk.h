@@ -94,6 +94,25 @@ private:
     using LayoutB = typename BlockMmadOp::LayoutB;
     using LayoutC = typename BlockMmadOp::LayoutC;
 
+    static_assert(
+        (IsFp8<AType>() && IsFp8<BType>()) || (IsFp4<AType>() && IsFp4<BType>()),
+        "QBMM MX StreamK: AType/BType must each be fp8_e4m3fn_t/fp8_e5m2_t, or each be fp4x2_e2m1_t/fp4x2_e1m2_t.");
+    static_assert(AscendC::Std::is_one_of_v<CType, half, bfloat16_t, float>,
+                  "QBMM MX StreamK: BlockMmad::CType must be half/bfloat16_t/float.");
+    static_assert(AscendC::Std::is_same_v<typename BlockEpilogue::OutType, CType>,
+                  "QBMM MX StreamK: BlockEpilogue::OutType must match BlockMmad::CType.");
+    static_assert(AscendC::Std::is_same_v<typename BlockEpilogue::WorkspaceType, float>,
+                  "QBMM MX StreamK: BlockEpilogue::WorkspaceType must be float.");
+    static_assert(AscendC::Std::is_one_of_v<LayoutA, asc::te::nd_ext_layout_ptn, asc::te::dn_ext_layout_ptn>,
+                  "QBMM MX StreamK: LayoutA must be nd_ext_layout_ptn/dn_ext_layout_ptn.");
+    static_assert(AscendC::Std::is_one_of_v<LayoutB, asc::te::nd_ext_layout_ptn, asc::te::dn_ext_layout_ptn,
+                                            asc::te::nz_layout_ptn, asc::te::zn_layout_ptn>,
+                  "QBMM MX StreamK: LayoutB must be nd_ext_layout_ptn/dn_ext_layout_ptn/nz_layout_ptn/zn_layout_ptn.");
+    // Preserve the ND/DN C Tensor layouts supported by the L0C copy path.
+    // A supplied epilogue must use the same output layout.
+    static_assert(AscendC::Std::is_one_of_v<LayoutC, asc::te::nd_ext_layout_ptn, asc::te::dn_ext_layout_ptn>,
+                  "QBMM MX StreamK: LayoutC must be nd_ext_layout_ptn/dn_ext_layout_ptn.");
+
     static constexpr bool TRANS_A = IsTrans<LayoutA>::value;
     static constexpr bool TRANS_B = IsTrans<LayoutB>::value;
     static constexpr int32_t C0_SIZE = IsFp4<AType>() ? C0_SIZE_B4 : C0_SIZE_B8;

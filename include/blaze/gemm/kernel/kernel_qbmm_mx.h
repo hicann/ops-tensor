@@ -68,9 +68,15 @@ public:
                       AscendC::Std::is_one_of_v<CType, half, bfloat16_t, float> &&
                       AscendC::Std::is_same_v<BiasType, float>,
                   "Unsupported (AType, BType, CType, BiasType) combination");
-    static_assert(!AscendC::Std::is_one_of_v<LayoutA, asc::te::nz_layout_ptn, asc::te::zn_layout_ptn> &&
-                      !AscendC::Std::is_one_of_v<LayoutC, asc::te::nz_layout_ptn, asc::te::zn_layout_ptn>,
-                  "LayoutA and LayoutC cannot be NZLayoutPtn or ZNLayoutPtn");
+    static_assert(AscendC::Std::is_one_of_v<LayoutA, asc::te::nd_ext_layout_ptn, asc::te::dn_ext_layout_ptn>,
+                  "QBMM MX: LayoutA must be nd_ext_layout_ptn/dn_ext_layout_ptn.");
+    static_assert(AscendC::Std::is_one_of_v<LayoutB, asc::te::nd_ext_layout_ptn, asc::te::dn_ext_layout_ptn,
+                                            asc::te::nz_layout_ptn, asc::te::zn_layout_ptn>,
+                  "QBMM MX: LayoutB must be nd_ext_layout_ptn/dn_ext_layout_ptn/nz_layout_ptn/zn_layout_ptn.");
+    // Preserve the ND/DN C Tensor layouts supported by the L0C copy path.
+    // A supplied epilogue must use the same output layout.
+    static_assert(AscendC::Std::is_one_of_v<LayoutC, asc::te::nd_ext_layout_ptn, asc::te::dn_ext_layout_ptn>,
+                  "QBMM MX: LayoutC must be nd_ext_layout_ptn/dn_ext_layout_ptn.");
 
     struct QBMMTiling {
         uint32_t batchA1;

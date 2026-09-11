@@ -18,10 +18,23 @@ AIC + AIV 双核：
 - `ASCEND_IS_AIV`：执行 dequant 向量后处理，写最终结果到 GM。
 
 ### 量化格式支持
-- 输入 A/B 为 int8（A8W8），L0C 累加为 int32。
-- x2Scale：per-channel / per-tensor；x1Scale：per-token / per-tensor（可选）。
-- bias：可选，按运行时 `biasDtype`（DT_FLOAT / DT_FLOAT16 / DT_BF16）解释（见 epilogue 文档）。
-- 权重支持 ND 与 WeightNz（FRACTAL_NZ）两种布局。
+
+Kernel 在模板实例化时通过 `static_assert` 校验以下组合：
+
+- A/B 支持 `int8_t` 同型、`hifloat8_t` 同型，以及 `fp8_e4m3fn_t` / `fp8_e5m2_t` 的 FP8 组合；
+- BlockEpilogue 输出支持 `half`、`bfloat16_t` 和 `float`；
+- `LayoutA` 支持 ND/DN，`LayoutB` 支持 ND/DN/NZ/ZN；
+- BlockEpilogue 的 L0C 类型必须与 BlockMmad 一致。
+
+本次 dtype/format 校验不增加 bias 类型、`LayoutBias` 或 scale 类型约束，也不按 A/B 类型限制
+bias/scale 组合。`BlockEpilogueDequant` 仍根据 `Params::biasDtype` 分派实际 bias 搬运；
+scale 的有效类型和量化模式由原有实现及调用方保证。
+
+`BlockMmad` 的 `LayoutC` 是占位标签，不参与实际输出布局选择，本次不新增其断言。
+真实的 L0C→UB 和 epilogue 写回仍使用实现中构造的 ND 布局；这不表示支持 DN 物理输出。
+
+x2Scale 支持 per-channel / per-tensor，x1Scale 支持 per-token / per-tensor（可选）。不在上述范围内的
+dtype 或 format 组合会在 Kernel 入口产生明确的编译错误。
 
 ### BlockScheduler 限制
 仅支持 `BlockSchedulerQbmm`，支持 4 维 Batch 切分与尾块切分（mTailTile / nTailTile）。

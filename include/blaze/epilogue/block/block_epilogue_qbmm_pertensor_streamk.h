@@ -66,13 +66,13 @@ public:
 
     __aicore__ inline BlockEpilogueQbmmPertensorStreamK()
     {
-        AscendC::SetFlag<AscendC::HardEvent::V_MTE2>(2);
+        AscendC::SetFlag<AscendC::HardEvent::V_MTE2>(BIAS_EVENT_ID);
         AscendC::SetFlag<AscendC::HardEvent::MTE3_V>(0);
         AscendC::SetFlag<AscendC::HardEvent::MTE3_V>(1);
     }
     __aicore__ inline ~BlockEpilogueQbmmPertensorStreamK()
     {
-        AscendC::WaitFlag<AscendC::HardEvent::V_MTE2>(2);
+        AscendC::WaitFlag<AscendC::HardEvent::V_MTE2>(BIAS_EVENT_ID);
         AscendC::WaitFlag<AscendC::HardEvent::MTE3_V>(0);
         AscendC::WaitFlag<AscendC::HardEvent::MTE3_V>(1);
     }
@@ -86,16 +86,18 @@ public:
     static constexpr uint32_t DATA_BLOCK = 32U;
     static constexpr uint32_t OUT_ALIGN = DATA_BLOCK / sizeof(OutType);
     static constexpr uint32_t DEQ_SCALE_MUL_MASK = 0xFFFFE000U;
+    static constexpr uint16_t BIAS_EVENT_ID = 2U;
 
     __aicore__ inline static float DecodeMaskedDequantScale(uint32_t scaleBits)
     {
         scaleBits &= DEQ_SCALE_MUL_MASK;
-        return Blaze::Gemm::BitsToFloat32(scaleBits);
+        return *reinterpret_cast<float*>(&scaleBits);
     }
 
     __aicore__ inline static float MergeAndMaskDequantScale(float x2Scale, float x1Scale)
     {
-        return DecodeMaskedDequantScale(Blaze::Gemm::Float32ToBits(x2Scale * x1Scale));
+        const float dequantScale = x2Scale * x1Scale;
+        return DecodeMaskedDequantScale(*reinterpret_cast<const uint32_t*>(&dequantScale));
     }
 
 private:
@@ -299,8 +301,9 @@ private:
         // combined value when bias is not handled by the AIV. A post-dequant bias selects the MIX semantics:
         // keep both FP32 scales unmasked, multiply them in X2/X1 order, and add bias last.
         if (!isBias_) {
-            x2ScaleScalar_ = hasX1Scale_ ? MergeAndMaskDequantScale(x2ScaleScalar_, x1ScaleScalar_) :
-                                           DecodeMaskedDequantScale(Blaze::Gemm::Float32ToBits(x2ScaleScalar_));
+            x2ScaleScalar_ = hasX1Scale_ ?
+                                 MergeAndMaskDequantScale(x2ScaleScalar_, x1ScaleScalar_) :
+                                 DecodeMaskedDequantScale(*reinterpret_cast<const uint32_t*>(&x2ScaleScalar_));
         }
         SetupUbLayout(localM, localN, rowStride);
     }
@@ -316,13 +319,13 @@ private:
             x2Scale.SetGlobalBuffer(reinterpret_cast<__gm__ uint16_t*>(scaleGmAddr_));
             uint16_t raw = x2Scale.GetValue(0);
             uint32_t bits = static_cast<uint32_t>(raw) << 16;
-            return Blaze::Gemm::BitsToFloat32(bits);
+            return *reinterpret_cast<float*>(&bits);
         } else if constexpr (IsSameType<X2ScaleType, uint64_t>::value || IsSameType<X2ScaleType, int64_t>::value) {
             AscendC::GlobalTensor<X2ScaleType> x2Scale;
             x2Scale.SetGlobalBuffer(reinterpret_cast<__gm__ X2ScaleType*>(scaleGmAddr_));
             X2ScaleType rawScale = x2Scale.GetValue(0);
             uint32_t bits = static_cast<uint32_t>(static_cast<uint64_t>(rawScale));
-            return Blaze::Gemm::BitsToFloat32(bits);
+            return *reinterpret_cast<float*>(&bits);
         }
         return 1.0F;
     }
@@ -379,7 +382,7 @@ private:
     __aicore__ inline void CopyBiasToUb(int64_t localN, int64_t offsetBias)
     {
         if (isBias_) {
-            AscendC::WaitFlag<AscendC::HardEvent::V_MTE2>(2);
+            AscendC::WaitFlag<AscendC::HardEvent::V_MTE2>(BIAS_EVENT_ID);
             if (biasDtype_ == DT_FLOAT) {
                 CopyBiasToUbTyped<float>(localN, offsetBias);
             } else if (biasDtype_ == DT_FLOAT16) {
@@ -387,8 +390,8 @@ private:
             } else {
                 CopyBiasToUbTyped<bfloat16_t>(localN, offsetBias);
             }
-            AscendC::SetFlag<AscendC::HardEvent::MTE2_V>(2);
-            AscendC::WaitFlag<AscendC::HardEvent::MTE2_V>(2);
+            AscendC::SetFlag<AscendC::HardEvent::MTE2_V>(BIAS_EVENT_ID);
+            AscendC::WaitFlag<AscendC::HardEvent::MTE2_V>(BIAS_EVENT_ID);
         }
     }
 
@@ -397,7 +400,7 @@ private:
         // The workspace reduction and auxiliary inputs reuse the same UB region. Wait until the
         // previous dequant iteration has finished consuming bias before MTE2 overwrites it.
         if (isBias_) {
-            AscendC::WaitFlag<AscendC::HardEvent::V_MTE2>(2);
+            AscendC::WaitFlag<AscendC::HardEvent::V_MTE2>(BIAS_EVENT_ID);
         }
     }
 
@@ -405,7 +408,7 @@ private:
     {
         // Do not let bias GM2UB overwrite K partials before the vector reduction completes.
         if (isBias_) {
-            AscendC::SetFlag<AscendC::HardEvent::V_MTE2>(2);
+            AscendC::SetFlag<AscendC::HardEvent::V_MTE2>(BIAS_EVENT_ID);
         }
     }
 
@@ -583,7 +586,7 @@ private:
     __aicore__ inline void ResetAuxCopyFlags()
     {
         if (isBias_) {
-            AscendC::SetFlag<AscendC::HardEvent::V_MTE2>(2);
+            AscendC::SetFlag<AscendC::HardEvent::V_MTE2>(BIAS_EVENT_ID);
         }
     }
 

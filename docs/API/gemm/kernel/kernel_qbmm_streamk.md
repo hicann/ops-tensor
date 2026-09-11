@@ -11,6 +11,14 @@ QBMM MX StreamK Kernel 是面向 MxFP4/MxFP8 量化矩阵乘的 `GemmUniversal` 
 ### 量化格式支持
 支持 MX 量化输入，A/B 矩阵可使用 MxFP4 或 MxFP8 数据类型，Scale 张量使用 `fp8_e8m0_t` 类型。
 
+Kernel 通过 `static_assert` 要求 A/B 为同 bit-width 的 MxFP4 或 MxFP8 组合，C 为 `half`、
+`bfloat16_t` 或 `float`；BlockEpilogue 输出必须与 C 一致，workspace 必须为 `float`。
+`LayoutA` 支持 ND/DN，`LayoutB` 支持 ND/DN/NZ/ZN，`LayoutC` 支持 `nd_ext_layout_ptn` / `dn_ext_layout_ptn`。
+本次不增加 bias 类型、`LayoutBias` 或 scale 校验。
+
+ND/DN 白名单保留 L0C 搬运路径支持的 C Tensor 布局；自定义 BlockEpilogue 必须与输出布局一致。
+模板校验通过不等同于任意后处理组件均支持 DN 输出。
+
 ### Scale 因子要求
 必须提供两个 Scale 因子：
 - `scaleAGmAddr`：A 矩阵的 per-token scale，对应算子输入 `perTokenScale`

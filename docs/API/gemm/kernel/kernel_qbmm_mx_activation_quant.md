@@ -10,7 +10,17 @@
 
 ### 量化格式支持
 支持以下量化数据类型：
-- **MxFP8**：`fp8_e5m2_t`、`fp8_e4m3fn_t`、`fp4x2_e2m1_t`（8-bit 浮点）
+- **MxFP4**：`fp4x2_e2m1_t`、`fp4x2_e1m2_t`
+- **MxFP8**：`fp8_e5m2_t`、`fp8_e4m3fn_t`
+
+Kernel 通过 `static_assert` 要求 A/B 为同 bit-width 的 MxFP4 或 MxFP8 组合，
+`LayoutA` 支持 ND/DN，`LayoutB` 支持 ND/DN/NZ/ZN。
+本次不增加 bias 类型、`LayoutBias` 或 scale 校验。
+
+实际中间结果写入固定的 float ND UB，并交给 epilogue 处理；GM C 视图的 `LayoutC` / `CType`
+不决定该写回路径，本次不新增这两个参数及 `BlockEpilogue::DataTypeIn == CType` 的断言。
+也不新增 epilogue 输出与 A 同 bit-width 的全局限制：单 batch 与多 batch 的偏移路径不同，
+有效运行组合仍由原有实现和调用方保证，模板实例化通过不等于任意跨 bit-width 组合均已验证支持。
 
 ### Scale 因子要求
 必须提供两个 Scale 因子：

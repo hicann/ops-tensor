@@ -207,14 +207,29 @@ TEST_F(QBMMPertensorStreamKTest, TemplateContracts)
     using Fp8Mmad = Blaze::Gemm::Block::BlockMmad<DispatchPolicy, fp8_e4m3fn_t, Layout,
                                                   AscendC::Std::tuple<fp8_e5m2_t, uint64_t>, Layout, float, Layout,
                                                   float, Layout>;
+    using Fp8Epilogue = Blaze::Epilogue::Block::BlockEpilogueQbmmPertensorStreamK<
+        typename Fp8Mmad::WorkspaceType, float, DispatchPolicy, uint64_t, float>;
+    using Fp8Kernel = Blaze::Gemm::Kernel::GemmUniversal<ProblemShape, Fp8Mmad, Fp8Epilogue, Scheduler>;
     using Fp8PostBiasMmad = Blaze::Gemm::Block::BlockMmad<DispatchPolicy, fp8_e4m3fn_t, Layout,
                                                           AscendC::Std::tuple<fp8_e4m3fn_t, float>, Layout, float,
                                                           Layout, float, Layout>;
+    using Fp8PostBiasEpilogue = Blaze::Epilogue::Block::BlockEpilogueQbmmPertensorStreamK<
+        typename Fp8PostBiasMmad::WorkspaceType, float, DispatchPolicy, float, float>;
+    using Fp8PostBiasKernel = Blaze::Gemm::Kernel::GemmUniversal<ProblemShape, Fp8PostBiasMmad, Fp8PostBiasEpilogue,
+                                                                 Scheduler>;
     using Int8Fp32PostBiasMmad = Blaze::Gemm::Block::BlockMmad<
         DispatchPolicy, int8_t, Layout, AscendC::Std::tuple<int8_t, float>, Layout, bfloat16_t, Layout, float, Layout>;
+    using Int8Fp32PostBiasEpilogue = Blaze::Epilogue::Block::BlockEpilogueQbmmPertensorStreamK<
+        typename Int8Fp32PostBiasMmad::WorkspaceType, bfloat16_t, DispatchPolicy, float, float>;
+    using Int8Fp32PostBiasKernel = Blaze::Gemm::Kernel::GemmUniversal<ProblemShape, Int8Fp32PostBiasMmad,
+                                                                      Int8Fp32PostBiasEpilogue, Scheduler>;
     using Int8Bf16PostBiasMmad = Blaze::Gemm::Block::BlockMmad<DispatchPolicy, int8_t, Layout,
                                                                AscendC::Std::tuple<int8_t, bfloat16_t>, Layout,
                                                                bfloat16_t, Layout, bfloat16_t, Layout>;
+    using Int8Bf16PostBiasEpilogue = Blaze::Epilogue::Block::BlockEpilogueQbmmPertensorStreamK<
+        typename Int8Bf16PostBiasMmad::WorkspaceType, bfloat16_t, DispatchPolicy, bfloat16_t, float>;
+    using Int8Bf16PostBiasKernel = Blaze::Gemm::Kernel::GemmUniversal<ProblemShape, Int8Bf16PostBiasMmad,
+                                                                      Int8Bf16PostBiasEpilogue, Scheduler>;
 
     static_assert(
         std::is_same_v<typename DispatchPolicy::ScheduleType, Blaze::Gemm::KernelQbmmPertensorMultiBlockStreamK>);
@@ -229,6 +244,10 @@ TEST_F(QBMMPertensorStreamKTest, TemplateContracts)
     static_assert(!Int8Bf16PostBiasMmad::BIAS_IN_MMAD);
     static_assert(std::is_same_v<typename Int8Epilogue::WorkspaceType, typename Int8Mmad::WorkspaceType>);
     static_assert(std::is_same_v<typename Int8Kernel::BlockMmad, Int8Mmad>);
+    static_assert(std::is_same_v<typename Fp8Kernel::BlockMmad, Fp8Mmad>);
+    static_assert(std::is_same_v<typename Fp8PostBiasKernel::BlockMmad, Fp8PostBiasMmad>);
+    static_assert(std::is_same_v<typename Int8Fp32PostBiasKernel::BlockMmad, Int8Fp32PostBiasMmad>);
+    static_assert(std::is_same_v<typename Int8Bf16PostBiasKernel::BlockMmad, Int8Bf16PostBiasMmad>);
 
     SUCCEED();
 }
@@ -245,7 +264,7 @@ TEST_F(QBMMPertensorStreamKTest, SingleScaleWithoutPostBiasIsMaskedBeforeMultipl
 
     constexpr uint32_t rawScaleBits = 0x3F812345U;
     const float maskedScale = Epilogue::DecodeMaskedDequantScale(rawScaleBits);
-    const uint32_t actualBits = Blaze::Gemm::Float32ToBits(maskedScale);
+    const uint32_t actualBits = *reinterpret_cast<const uint32_t*>(&maskedScale);
 
     EXPECT_EQ(actualBits, rawScaleBits & Epilogue::DEQ_SCALE_MUL_MASK);
 }
@@ -265,8 +284,8 @@ TEST_F(QBMMPertensorStreamKTest, DoubleScaleWithoutPostBiasMergesBeforeMask)
     constexpr float x1Scale = 0.987653F;
     const float actual = Epilogue::MergeAndMaskDequantScale(x2Scale, x1Scale);
     const float merged = x2Scale * x1Scale;
-    const uint32_t mergedBits = Blaze::Gemm::Float32ToBits(merged);
-    const uint32_t actualBits = Blaze::Gemm::Float32ToBits(actual);
+    const uint32_t mergedBits = *reinterpret_cast<const uint32_t*>(&merged);
+    const uint32_t actualBits = *reinterpret_cast<const uint32_t*>(&actual);
 
     EXPECT_EQ(actualBits, mergedBits & Epilogue::DEQ_SCALE_MUL_MASK);
 }
@@ -283,8 +302,8 @@ TEST_F(QBMMPertensorStreamKTest, PostBiasScaleDecodePreservesFullPrecision)
                                                                                DispatchPolicy, float, float>;
 
     constexpr uint32_t rawScaleBits = 0x3F812345U;
-    const float rawScale = Blaze::Gemm::BitsToFloat32(rawScaleBits);
-    const uint32_t actualBits = Blaze::Gemm::Float32ToBits(rawScale);
+    const float rawScale = *reinterpret_cast<const float*>(&rawScaleBits);
+    const uint32_t actualBits = *reinterpret_cast<const uint32_t*>(&rawScale);
 
     EXPECT_EQ(actualBits, rawScaleBits);
     EXPECT_NE(actualBits, rawScaleBits & Epilogue::DEQ_SCALE_MUL_MASK);

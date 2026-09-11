@@ -9,7 +9,7 @@ Fixpipe 量化 Batch Matmul Kernel，仅支持 AIC 计算。该 Kernel 组合 `B
 ## 特殊约束
 
 ### 量化格式支持
-Kernel 对 A/B、C/Bias 的数据类型组合执行编译期校验，支持范围如下：
+Kernel 保留原有的 A/B、C/Bias 数据类型组合编译期校验，支持范围如下：
 
 | AType | BType | CType | BiasType | L0C 累加类型 |
 |-------|-------|-------|----------|---------------|
@@ -24,15 +24,16 @@ FP8 A/B 支持 E4M3FN、E5M2 的同型或混合组合。Bias 为可选输入，�
 | Layout | Kernel 编译期约束 |
 |--------|-------------------|
 | `LayoutA` | 支持 `nd_ext_layout_ptn` 和 `dn_ext_layout_ptn` |
-| `LayoutB` | Kernel 层不执行编译期校验，由 BlockMmad 和 Tensor API 的数据搬运路径约束 |
+| `LayoutB` | 支持 `nd_ext_layout_ptn`、`dn_ext_layout_ptn`、`nz_layout_ptn` 和 `zn_layout_ptn` |
 | `LayoutC` | 仅支持 `nd_ext_layout_ptn` |
 
-`LayoutA` 的 ND/DN 分别用于表达 A 矩阵不转置/转置的数据排布；输出 C 固定使用 ND 数据排布。
+`LayoutA` 的 ND/DN 分别用于表达 A 矩阵不转置/转置的数据排布。以上不支持的 dtype 或 layout
+组合会在 Kernel 模板实例化时通过 `static_assert` 给出明确的编译错误。
 
 ### Scale 因子要求
 Scale 模式由 `x1QuantMode` 和 `x2QuantMode` 决定，取值来自 `QuantMode`：
 
-Kernel 对 `ScaleGmType` 执行编译期类型校验，支持 `uint64_t`、`int64_t`、`bfloat16_t` 和 `float`。该校验只覆盖所有模式允许类型的并集；调用方仍须根据下表中的量化模式传入匹配的 Scale 数据类型和数据布局。
+Kernel 保留原有的 `ScaleGmType` 编译期类型校验，支持 `uint64_t`、`int64_t`、`bfloat16_t` 和 `float`。该校验只覆盖所有模式允许类型的并集；调用方仍须根据下表中的量化模式传入匹配的 Scale 数据类型和数据布局。
 
 | 枚举值 | 取值 | 说明 |
 |--------|------|------|

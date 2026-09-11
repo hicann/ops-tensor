@@ -4,6 +4,10 @@
 ## 功能说明
 MIX 模板量化 Matmul Kernel（无 Batch 变体），与 [kernel_qbmm_mix](./kernel_qbmm_mix.md) 对称，裁剪掉 4 维 Batch 广播路径，提供轻量化的单 Batch 调度。**AIC（cube）+ AIV（vector）双核协同**：AIC 做 int32 矩阵乘并 fixpipe（NoQuant）搬 L0C→UB，AIV 在向量上做 dequant + x2Scale [* x1Scale] + bias，输出 bf16/fp16/fp32。支持 int8（per-token / per-channel / per-tensor）与 WeightNz（FRACTAL_NZ）。
 
+Bias 的编译期 `BiasType` 和运行时 `Params::biasDtype` 是不同的约束：实际 bias 类型仍由 epilogue
+在运行时分派。本次不新增 bias 或 scale 校验，也不约束占位 `LayoutC` / `LayoutBias` 标签。
+实际输出仍由 Kernel 和 epilogue 构造的 ND 布局决定，不由这些标签选择。
+
 **继承自**：[Kernel Matmul 基础框架](./kernel.md)
 **配套组件**：[block_mmad_a8w8_mix](../block/block_mmad_a8w8_mix.md) + [block_epilogue_dequant](../../epilogue/block/block_epilogue_dequant.md)
 
@@ -19,7 +23,8 @@ MIX 模板量化 Matmul Kernel（无 Batch 变体），与 [kernel_qbmm_mix](./k
 ## 特殊约束
 - AIC + AIV 双核（同带 Batch 版本）。
 - 仅支持 `BlockSchedulerQbmm`，单 Batch；支持尾块切分（mTailTile / nTailTile）。
-- 量化与权重格式约束同 [kernel_qbmm_mix](./kernel_qbmm_mix.md)。
+- A/B、输出 dtype、BlockEpilogue L0C 类型一致性和 A/B layout 的编译期 `static_assert` 约束同
+  [kernel_qbmm_mix](./kernel_qbmm_mix.md)。
 
 ## 特殊数据结构
 
