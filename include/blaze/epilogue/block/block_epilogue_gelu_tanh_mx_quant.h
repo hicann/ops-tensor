@@ -724,7 +724,8 @@ private:
         auto srcTensor = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::ub, DataTypeIn>(0), layout);
         auto dstTensor = asc::te::make_tensor(
             asc::te::make_mem_ptr<asc::te::location::ub, bfloat16_t>(activationUbOffset), layout);
-        Gelu<bfloat16_t, DataTypeIn> gelu;
+        // kPreciseDiv=true 误差补偿除法
+        Gelu<bfloat16_t, DataTypeIn, /*kPreciseDiv=*/true> gelu;
         gelu.GeluTanh(srcTensor, dstTensor, mSize, static_cast<uint16_t>(singleN_));
     }
 

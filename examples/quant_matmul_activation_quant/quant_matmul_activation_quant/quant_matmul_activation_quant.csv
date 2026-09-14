@@ -38,3 +38,4 @@ nd_fp4e2m1_transA,64,128,128,0,fp4_e2m1,fp4_e2m1,true,false,"(ND,ND)",64,128,64,
 nd_fp4e2m1_afl_bias,64,128,128,128,fp4_e2m1,fp4_e2m1,false,false,"(ND,ND)",64,128,64,64,64,2,2,true
 nd_fp4e2m1_dbl0c2,128,256,256,0,fp4_e2m1,fp4_e2m1,false,false,"(ND,ND)",128,128,128,128,128,2,2,false
 nd_large_fp4e2m1,256,512,256,0,fp4_e2m1,fp4_e2m1,false,false,"(ND,ND)",128,128,128,256,256,2,1,false
+perf_test,3888,4096,24576,0,fp4_e2m1,fp4_e2m1,false,false,"(ND,ND)",256,256,256,512,4096,2,1,false

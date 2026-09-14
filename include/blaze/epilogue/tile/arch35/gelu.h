@@ -38,8 +38,12 @@ namespace Block {
 //     - fp32 output     : stored directly, no narrowing cast
 //     - bf16 output     : narrowed with CT_32F_TO_16F (NO_SAT)
 //     - half output     : narrowed with CT_32F_TO_16F_SAT (clamps at 65504)
+//   kPreciseDiv: per-caller division mode (gelu_tanh lineage = true:
+//   error-compensation DivPrecisionImpl; gelu_mx lineage = false: plain vdiv).
+//   Both lineages are golden-verified with their own mode, so the divergence
+//   is parameterized instead of silently unified (design doc D6).
 // ---------------------------------------------------------------------------
-template <typename DataTypeOut_, typename DataTypeIn_>
+template <typename DataTypeOut_, typename DataTypeIn_, bool kPreciseDiv_ = false>
 class Gelu {
 public:
     using DataTypeOut = DataTypeOut_;
@@ -99,9 +103,13 @@ private:
                                                                  CT_32F_TO_16F_SAT :
                                                                  CT_32F_TO_16F;
 
+    // Division mode selected per instantiation. {ZEROING, false} is bit-identical
+    // to the default Div<float> template (GetDivSpecificMode(MaskMergeMode) maps to
+    // {ZEROING, false, INTRINSIC} -> plain vdiv); true switches to the
+    // error-compensation precision division (2-3x instruction count per Div).
     static constexpr AscendC::Reg::DivSpecificMode GELU_DIV_MODE = {
         AscendC::Reg::MaskMergeMode::ZEROING,
-        true,
+        kPreciseDiv_,
     };
 
     static constexpr AscendC::ErfConfig GELU_ERF_CONFIG = {AscendC::ErfAlgo::SUBSECTION_POLYNOMIAL_APPROXIMATION};
@@ -246,10 +254,11 @@ private:
 // ===========================================================================
 // GeluTanh – public high-level
 // ===========================================================================
-template <typename DataTypeOut_, typename DataTypeIn_>
+template <typename DataTypeOut_, typename DataTypeIn_, bool kPreciseDiv_>
 template <typename SrcTensor, typename DstTensor>
-__aicore__ inline void Gelu<DataTypeOut_, DataTypeIn_>::GeluTanh(const SrcTensor& srcTensor, const DstTensor& dstTensor,
-                                                                 uint16_t mSize, uint16_t nSize)
+__aicore__ inline void Gelu<DataTypeOut_, DataTypeIn_, kPreciseDiv_>::GeluTanh(const SrcTensor& srcTensor,
+                                                                               const DstTensor& dstTensor,
+                                                                               uint16_t mSize, uint16_t nSize)
 {
     using SrcElementType = asc::te::get_attribute_element_type<typename SrcTensor::element_type*>;
     using DstElementType = asc::te::get_attribute_element_type<typename DstTensor::element_type*>;
@@ -293,13 +302,11 @@ __aicore__ inline void Gelu<DataTypeOut_, DataTypeIn_>::GeluTanh(const SrcTensor
 // ===========================================================================
 // GeluErf – public high-level
 // ===========================================================================
-template <typename DataTypeOut_, typename DataTypeIn_>
+template <typename DataTypeOut_, typename DataTypeIn_, bool kPreciseDiv_>
 template <typename SrcTensor, typename DstTensor, typename ErfTensor, typename Fp32Tensor, typename GeluFp32Tensor>
-__aicore__ inline void Gelu<DataTypeOut_, DataTypeIn_>::GeluErf(const SrcTensor& srcTensor, const DstTensor& dstTensor,
-                                                                const ErfTensor& erfTensor,
-                                                                const Fp32Tensor& fp32Tensor,
-                                                                const GeluFp32Tensor& geluFp32Tensor, uint16_t mSize,
-                                                                uint16_t nSize)
+__aicore__ inline void Gelu<DataTypeOut_, DataTypeIn_, kPreciseDiv_>::GeluErf(
+    const SrcTensor& srcTensor, const DstTensor& dstTensor, const ErfTensor& erfTensor, const Fp32Tensor& fp32Tensor,
+    const GeluFp32Tensor& geluFp32Tensor, uint16_t mSize, uint16_t nSize)
 {
     using SrcElementType = asc::te::get_attribute_element_type<typename SrcTensor::element_type*>;
     using DstElementType = asc::te::get_attribute_element_type<typename DstTensor::element_type*>;
