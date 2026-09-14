@@ -11,7 +11,7 @@
 # See LICENSE in the root of the software repository for the full text of the License.
 # ----------------------------------------------------------------------------------------------------------
 
-"""Generate deterministic HiFloat8/BF16 and Int8/Int32 inputs and golden results."""
+"""Generate deterministic Cube and per-tensor StreamK inputs and golden results."""
 
 import argparse
 import os
@@ -19,8 +19,6 @@ import os
 os.environ["TORCH_DEVICE_BACKEND_AUTOLOAD"] = "0"
 
 import numpy as np
-import torch
-from en_dtypes import hifloat8
 
 
 DEQ_SCALE_MASK = np.uint32(0xFFFFE000)
@@ -58,40 +56,63 @@ def generate(args):
     c_type = args.c_type.lower()
     bias_type = args.bias_type.lower()
     scale_type = args.x2_scale_type.lower()
+    is_pertensor_streamk = args.kernel_variant == "pertensor_streamk"
     is_hifloat8 = (
         a_type in ("hifloat8", "hifloat8_t")
         and b_type in ("hifloat8", "hifloat8_t")
         and c_type in ("bfloat16", "bfloat16_t", "bf16")
         and bias_type in ("float", "float32")
     )
-    is_int8 = (
+    is_int8_input = (
         a_type in ("int8", "int8_t")
         and b_type in ("int8", "int8_t")
-        and c_type in ("int32", "int32_t")
         and bias_type in ("int32", "int32_t")
+    )
+    is_int8 = is_int8_input and c_type in ("int32", "int32_t")
+    is_int8_streamk = (
+        is_pertensor_streamk
+        and is_int8_input
+        and c_type in ("float16", "float16_t", "half")
     )
     valid_hifloat8_mode = (
         x2_mode == "pertensor" and x1_mode in ("default", "pertensor")
     ) or (x1_mode == "default" and x2_mode == "perchannel")
     valid_int8_mode = x1_mode == "default" and x2_mode == "default"
+    valid_int8_streamk_mode = x1_mode == "default" and x2_mode == "pertensor"
     valid_hifloat8_scale = scale_type in (
         ("uint64", "uint64_t") if x2_mode == "perchannel" else ("float", "float32")
     )
     if not (
-        (is_hifloat8 and valid_hifloat8_mode and valid_hifloat8_scale)
-        or (is_int8 and valid_int8_mode and scale_type in ("float", "float32"))
+        (
+            not is_pertensor_streamk
+            and (
+                (is_hifloat8 and valid_hifloat8_mode and valid_hifloat8_scale)
+                or (is_int8 and valid_int8_mode and scale_type in ("float", "float32"))
+            )
+        )
+        or (
+            is_int8_streamk
+            and valid_int8_streamk_mode
+            and scale_type in ("float", "float32")
+        )
     ):
         raise ValueError("unsupported dtype, quant mode, or x2ScaleType combination")
     if min(args.batch, args.m, args.k, args.n) <= 0:
         raise ValueError("batch/M/K/N must be positive")
     if args.bias not in (0, args.n):
         raise ValueError("bias must be 0 or N")
+    if is_pertensor_streamk and (
+        args.batch != 1 or args.bias != 0 or args.trans_a or args.trans_b
+    ):
+        raise ValueError(
+            "pertensor_streamk requires batch=1, no bias, and no transpose"
+        )
     os.makedirs(args.output_dir, exist_ok=True)
     rng = np.random.default_rng(20260803)
     scale_a = np.array([1.0], dtype=np.float32)
     scale_b = np.array([1.0], dtype=np.float32)
 
-    if is_int8:
+    if is_int8 or is_int8_streamk:
         logical_a = rng.integers(
             -8, 9, size=(args.batch, args.m, args.k), dtype=np.int8
         )
@@ -104,6 +125,9 @@ def generate(args):
         golden = np.matmul(logical_a.astype(np.int32), logical_b.astype(np.int32))
         if args.bias:
             golden += bias.reshape(1, 1, args.n)
+        if is_int8_streamk:
+            scale_b = np.array([0.5], dtype=np.float32)
+            golden = (golden.astype(np.float32) * scale_b[0]).astype(np.float16)
         stored_a = logical_a.transpose(0, 2, 1) if args.trans_a else logical_a
         stored_b = logical_b.transpose(0, 2, 1) if args.trans_b else logical_b
         stored_a.copy().tofile(os.path.join(args.output_dir, "input_a.bin"))
@@ -111,8 +135,13 @@ def generate(args):
         scale_a.tofile(os.path.join(args.output_dir, "scale_a.bin"))
         scale_b.tofile(os.path.join(args.output_dir, "scale_b.bin"))
         bias.tofile(os.path.join(args.output_dir, "bias.bin"))
-        golden.astype(np.int32).tofile(os.path.join(args.output_dir, "golden_c.bin"))
+        golden.astype(np.float16 if is_int8_streamk else np.int32).tofile(
+            os.path.join(args.output_dir, "golden_c.bin")
+        )
         return
+
+    import torch
+    from en_dtypes import hifloat8
 
     logical_a = rng.integers(8, 30, size=(args.batch, args.m, args.k), dtype=np.uint8)
     logical_b = rng.integers(8, 30, size=(args.batch, args.k, args.n), dtype=np.uint8)
@@ -171,6 +200,11 @@ def main():
     parser.add_argument("--x1-quant-mode", required=True)
     parser.add_argument("--x2-quant-mode", required=True)
     parser.add_argument("--x2-scale-type", required=True)
+    parser.add_argument(
+        "--kernel-variant",
+        default="batch",
+        choices=("batch", "without_batch", "pertensor_streamk"),
+    )
     parser.add_argument("--output-dir", required=True)
     generate(parser.parse_args())
 

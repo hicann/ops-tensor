@@ -28,11 +28,16 @@ tests/ut/op_kernel/
 │       └── gen_data.py
 │
 ├── quant_batch_matmul/           # QuantBatchMatmul 算子 Kernel UT
-│   ├── quant_batch_matmul.cpp   # Kernel 入口
-│   ├── qbmm_cube.h              # Cube 实现的 Wrapper
-│   ├── qbmm_streamk.h           # StreamK 实现的 Wrapper
-│   ├── test_qbmm_streamk.cpp    # GTest 测试用例
-│   └── CMakeLists.txt
+│   ├── qbmm_cpu_debug_stub.h   # CPU Debug 兼容定义
+│   ├── qbmm_cube.h              # Cube / per-tensor StreamK Wrapper
+│   ├── qbmm_mix.h               # MIX / MIX without-batch Wrapper
+│   ├── qbmm_mx.h                # MX / L0C PingPong / MX StreamK Wrapper
+│   ├── qbmm_tiling_data.h       # 公共 Tiling 数据结构
+│   ├── qbmm_ut_fill_helpers.h   # 公共 Params 填充辅助函数
+│   ├── test_quant_batch_matmul.cpp # GTest 测试用例
+│   ├── CMakeLists.txt
+│   └── qbmm_data/
+│       └── gen_data.py          # smoke 用例输入数据生成脚本
 │
 └── kernel_ut_runner.h            # UT 运行器（捕获子进程失败）
 ```
@@ -47,9 +52,10 @@ mkdir my_operator
 cd my_operator
 ```
 
-### 2. 编写 Kernel 入口（统一调度）
+### 2. 编写 Kernel 入口（统一或按实现拆分）
 
-参考 `mat_mul.cpp` 或 `quant_batch_matmul.cpp`，创建统一入口文件：
+可参考 `mat_mul.cpp` 创建统一入口文件，也可参考 `qbmm_cube.h`、`qbmm_mix.h`
+和 `qbmm_mx.h` 按实现类型拆分 Wrapper 与 Kernel 入口：
 
 ```cpp
 // my_operator.cpp
@@ -340,8 +346,9 @@ ASSERT_TRUE(KERNEL_RUN_KF(kernelFunc, blockNum, args...));
 支持的测试类型：
 
 - INT8 A8W8 Cube
-- MXFP8 StreamK
-- MXFP4 L0C Pingpong
+- INT8 A8W8 MIX
+- MXFP8 / MXFP4 MatMul
+- INT8 / FP8 StreamK
 
 ## 八、更多信息
 

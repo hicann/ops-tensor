@@ -19,6 +19,12 @@
 
 namespace Blaze::Epilogue::Tile {
 
+constexpr AscendC::Reg::DivSpecificMode RMS_SOFTMAX_DIV_0ULP_FTZ_TRUE_MODE = {
+    AscendC::Reg::MaskMergeMode::ZEROING,
+    true,
+    AscendC::DivAlgo::PRECISION_0ULP_FTZ_TRUE,
+};
+
 class RmsSoftmax {
 public:
     template <typename SumSquareTensor, typename DotTensor, typename MaxTensor, typename SumTensor>
@@ -85,7 +91,7 @@ private:
         AscendC::Reg::Adds<float, float, AscendC::Reg::MaskMergeMode::ZEROING>(sumSquareReg, sumSquareReg, epsilon,
                                                                                validMask);
         AscendC::Reg::Sqrt<float, AscendC::Reg::MaskMergeMode::ZEROING>(rmsReg, sumSquareReg, validMask);
-        AscendC::Reg::Div<float, AscendC::Reg::MaskMergeMode::ZEROING>(normalizedReg, dotReg, rmsReg, validMask);
+        AscendC::Reg::Div<float, &RMS_SOFTMAX_DIV_0ULP_FTZ_TRUE_MODE>(normalizedReg, dotReg, rmsReg, validMask);
         AscendC::Reg::Reduce<AscendC::Reg::ReduceType::MAX, float, float, AscendC::Reg::MaskMergeMode::ZEROING>(
             maxReg, normalizedReg, validMask);
         AscendC::Reg::Duplicate<float, AscendC::Reg::HighLowPart::LOWEST, AscendC::Reg::MaskMergeMode::ZEROING>(

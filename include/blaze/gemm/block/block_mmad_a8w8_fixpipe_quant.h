@@ -138,8 +138,12 @@ public:
         } else if (params.quantMode == QuantMode::PERCHANNEL_MODE) {
             x2ScaleL1OneBuffer = baseN_ * sizeof(uint64_t);
         }
-        uint64_t biasL1OneBuffer = IS_GROUPED_FIXPIPE ? GetBiasL1Bytes(baseN_, isBias_) :
-                                                        (isBias_ ? baseN_ * sizeof(BiasType) : 0UL);
+        uint64_t biasL1OneBuffer = 0UL;
+        if constexpr (IS_GROUPED_FIXPIPE) {
+            biasL1OneBuffer = GetBiasL1Bytes(baseN_, isBias_);
+        } else if (isBias_) {
+            biasL1OneBuffer = baseN_ * sizeof(BiasType);
+        }
         if constexpr (DispatchPolicy::FULL_LOAD_MODE == A_FULL_LOAD_MODE) {
             kBL1_ = kBL1;
             kAL1_ = kBL1_;
@@ -164,7 +168,11 @@ public:
         }
         const uint64_t aL1OneBuffer = GetAL1BufferSize();
         const uint64_t bL1OneBuffer = GetBL1BufferSize();
-        GetL1BufferOffset(aL1OneBuffer, bL1OneBuffer, x2ScaleL1OneBuffer, biasL1OneBuffer);
+        if constexpr (DispatchPolicy::FULL_LOAD_MODE == NONE_FULL_LOAD_MODE) {
+            InitNoneFullLoadL1BufferOffsets(aL1OneBuffer, bL1OneBuffer, x2ScaleL1OneBuffer, biasL1OneBuffer);
+        } else {
+            InitAFullLoadL1BufferOffsets(aL1OneBuffer, bL1OneBuffer, x2ScaleL1OneBuffer, biasL1OneBuffer);
+        }
     }
 
     // Compatibility overload for existing callers of the original multi-argument Init interface.
@@ -220,7 +228,7 @@ private:
         asc::te::mmad_params mmadParams;
         mmadParams.m = static_cast<uint16_t>(curML1);
         mmadParams.n = static_cast<uint16_t>(curNL1);
-        constexpr uint64_t halfL0cSize = AscendC::TOTAL_L0C_SIZE / DOUBLE_BUFFER_COUNT;
+        constexpr uint64_t halfL0cSize = AscendC::TOTAL_L0C_SIZE >> 1;
         uint64_t l0cOffset = (l0cPingPong_ & 1) * halfL0cSize;
         uint16_t scaleL1BufId = scaleLoopCnt_ & 1;
         uint16_t biasBufId = biasLoopCnt_ & 1;
@@ -384,20 +392,6 @@ private:
         TRANS_B, asc::te::frame_layout_format<asc::te::zn_layout_ptn, AscendC::Std::Int<C0_SIZE>>,
         asc::te::frame_layout_format<asc::te::nz_layout_ptn, AscendC::Std::Int<C0_SIZE>>>;
 
-    template <typename TensorBiasL1>
-    __aicore__ inline auto PrepareMmadBias(const TensorBiasL1& tensorBiasL1, uint64_t curNL1, uint16_t biasBufId,
-                                           bool needBias)
-    {
-        auto layoutBt = asc::te::make_frame_layout<asc::te::nd_ext_layout_ptn>(1UL, CeilAlign(curNL1, BLOCK_CUBE));
-        auto tensorBt = asc::te::make_tensor(
-            asc::te::make_mem_ptr<asc::te::location::bias, BiasType>(baseN_ * biasBufId * sizeof(BiasType)), layoutBt);
-        if (needBias) {
-            auto copyL12BT = asc::te::make_copy(asc::te::copy_l1_to_biastable{});
-            asc::te::copy(copyL12BT, tensorBt, tensorBiasL1);
-        }
-        return tensorBt;
-    }
-
     __aicore__ inline static uint64_t GetAL1Bytes(uint64_t baseM, uint64_t kAL1)
     {
         return (TRANS_A ? CeilAlign(baseM, C0_SIZE) * CeilAlign(kAL1, BLOCK_CUBE) :
@@ -435,14 +429,11 @@ private:
         }
     }
 
-    __aicore__ inline static uint64_t GetScaleL1Bytes(uint64_t baseN)
-    {
-        return CeilAlign(baseN * sizeof(uint64_t), BLOCK_BYTE_SIZE);
-    }
+    __aicore__ inline static uint64_t GetScaleL1Bytes(uint64_t baseN) { return Align32(baseN * sizeof(uint64_t)); }
 
     __aicore__ inline static uint64_t GetBiasL1Bytes(uint64_t baseN, bool hasBias)
     {
-        return hasBias ? CeilAlign(baseN * sizeof(BiasType), BLOCK_BYTE_SIZE) : 0UL;
+        return hasBias ? Align32(baseN * sizeof(BiasType)) : 0UL;
     }
 
     template <typename C1Tensor, typename TensorAL0, typename TensorBL0, typename TensorBt>
@@ -460,45 +451,83 @@ private:
         asc::te::mmad(MmadAtomT{}.with(params), c1Local, l0aLocal, l0bLocal);
     }
 
-    __aicore__ inline void GetL1BufferOffset(uint64_t aL1OneBuffer, uint64_t bL1OneBuffer, uint64_t x2ScaleL1OneBuffer,
-                                             uint64_t biasL1OneBuffer)
+    __aicore__ inline uint16_t GetL1BufferId(uint64_t loopCnt)
+    {
+        // Three-buffer mode is not power-of-two, so bitmask wrapping would skip buffer 1.
+        return static_cast<uint16_t>(l1BufNum_ == TRIPLE_BUFFER_COUNT ? loopCnt % TRIPLE_BUFFER_COUNT :
+                                                                        (loopCnt & (l1BufNum_ - 1)));
+    }
+
+    __aicore__ inline void InitNoneFullLoadL1BufferOffsets(uint64_t aL1OneBuffer, uint64_t bL1OneBuffer,
+                                                           uint64_t x2ScaleL1OneBuffer, uint64_t biasL1OneBuffer)
     {
         constexpr uint64_t halfL1Size = AscendC::TOTAL_L1_SIZE >> 1;
-        uint64_t l1HalfBufNum = l1BufNum_ >> 1;
-        if constexpr (DispatchPolicy::FULL_LOAD_MODE == NONE_FULL_LOAD_MODE) {
-            if constexpr (IS_GROUPED_FIXPIPE) {
-                if (l1BufNum_ == DOUBLE_BUFFER_COUNT) {
-                    // Each fixed GMM stage occupies one complete half of L1.
-                    for (uint16_t bufferId = 0; bufferId < DOUBLE_BUFFER_COUNT; ++bufferId) {
-                        const uint64_t stageBase = halfL1Size * bufferId;
-                        l1BufferAOffset_[bufferId] = stageBase;
-                        l1BufferBOffset_[bufferId] = stageBase + aL1OneBuffer;
-                        l1BufferX2ScaleOffset_[bufferId] = l1BufferBOffset_[bufferId] + bL1OneBuffer;
-                        l1BufferBiasOffset_[bufferId] = l1BufferX2ScaleOffset_[bufferId] + x2ScaleL1OneBuffer;
-                    }
-                    return;
+        if (l1BufNum_ == TRIPLE_BUFFER_COUNT) {
+            // L1 space: A0|A2|B0|B2|scale0|bias0|...|A1|B1|scale1|bias1
+            l1BufferAOffset_[0] = 0UL;
+            l1BufferAOffset_[THIRD_BUFFER_ID] = l1BufferAOffset_[0] + aL1OneBuffer;
+            l1BufferBOffset_[0] = l1BufferAOffset_[THIRD_BUFFER_ID] + aL1OneBuffer;
+            l1BufferBOffset_[THIRD_BUFFER_ID] = l1BufferBOffset_[0] + bL1OneBuffer;
+            l1BufferX2ScaleOffset_[0] = l1BufferBOffset_[THIRD_BUFFER_ID] + bL1OneBuffer;
+            l1BufferBiasOffset_[0] = l1BufferX2ScaleOffset_[0] + x2ScaleL1OneBuffer;
+            l1BufferAOffset_[1] = Max(halfL1Size, l1BufferBiasOffset_[0] + biasL1OneBuffer);
+            l1BufferBOffset_[1] = l1BufferAOffset_[1] + aL1OneBuffer;
+            l1BufferX2ScaleOffset_[1] = l1BufferBOffset_[1] + bL1OneBuffer;
+            l1BufferBiasOffset_[1] = l1BufferX2ScaleOffset_[1] + x2ScaleL1OneBuffer;
+            return;
+        }
+        if constexpr (IS_GROUPED_FIXPIPE) {
+            if (l1BufNum_ == DOUBLE_BUFFER_COUNT) {
+                // Each fixed GMM stage occupies one complete half of L1.
+                for (uint16_t bufferId = 0; bufferId < DOUBLE_BUFFER_COUNT; ++bufferId) {
+                    const uint64_t stageBase = halfL1Size * bufferId;
+                    l1BufferAOffset_[bufferId] = stageBase;
+                    l1BufferBOffset_[bufferId] = stageBase + aL1OneBuffer;
+                    l1BufferX2ScaleOffset_[bufferId] = l1BufferBOffset_[bufferId] + bL1OneBuffer;
+                    l1BufferBiasOffset_[bufferId] = l1BufferX2ScaleOffset_[bufferId] + x2ScaleL1OneBuffer;
                 }
+                return;
             }
-            for (uint16_t bufferId = 0; bufferId < l1BufNum_; bufferId++) {
-                uint64_t l1Offset = halfL1Size * (bufferId & 1);
-                l1BufferAOffset_[bufferId] = l1Offset + aL1OneBuffer * (bufferId >> 1);
-                l1BufferBOffset_[bufferId] = l1Offset + aL1OneBuffer * l1HalfBufNum + bL1OneBuffer * (bufferId >> 1);
-            }
-            for (uint16_t bufferId = 0; bufferId < SCALE_BUFFER_NUM; bufferId++) {
-                l1BufferX2ScaleOffset_[bufferId] = l1BufferBOffset_[bufferId] + bL1OneBuffer * l1HalfBufNum;
-                l1BufferBiasOffset_[bufferId] = l1BufferX2ScaleOffset_[bufferId] + x2ScaleL1OneBuffer;
-            }
-        } else {
-            l1BufferAOffset_[0] = bL1OneBuffer * l1HalfBufNum + x2ScaleL1OneBuffer + biasL1OneBuffer;
-            uint64_t b1Offset = l1BufferAOffset_[0] + aL1OneBuffer >= halfL1Size ? l1BufferAOffset_[0] + aL1OneBuffer :
-                                                                                   halfL1Size;
-            for (uint16_t bufferId = 0; bufferId < l1BufNum_; bufferId++) {
-                l1BufferBOffset_[bufferId] = b1Offset * (bufferId & 1) + bL1OneBuffer * (bufferId >> 1);
-            }
-            for (uint16_t bufferId = 0; bufferId < SCALE_BUFFER_NUM; bufferId++) {
-                l1BufferX2ScaleOffset_[bufferId] = l1BufferBOffset_[bufferId] + bL1OneBuffer * l1HalfBufNum;
-                l1BufferBiasOffset_[bufferId] = l1BufferX2ScaleOffset_[bufferId] + x2ScaleL1OneBuffer;
-            }
+        }
+        const uint64_t l1HalfBufNum = l1BufNum_ >> 1;
+        for (uint16_t bufferId = 0; bufferId < l1BufNum_; bufferId++) {
+            const uint64_t l1Offset = halfL1Size * (bufferId & 1);
+            l1BufferAOffset_[bufferId] = l1Offset + aL1OneBuffer * (bufferId >> 1);
+            l1BufferBOffset_[bufferId] = l1Offset + aL1OneBuffer * l1HalfBufNum + bL1OneBuffer * (bufferId >> 1);
+        }
+        for (uint16_t bufferId = 0; bufferId < SCALE_BUFFER_NUM; bufferId++) {
+            l1BufferX2ScaleOffset_[bufferId] = l1BufferBOffset_[bufferId] + bL1OneBuffer * l1HalfBufNum;
+            l1BufferBiasOffset_[bufferId] = l1BufferX2ScaleOffset_[bufferId] + x2ScaleL1OneBuffer;
+        }
+    }
+
+    __aicore__ inline void InitAFullLoadL1BufferOffsets(uint64_t aL1OneBuffer, uint64_t bL1OneBuffer,
+                                                        uint64_t x2ScaleL1OneBuffer, uint64_t biasL1OneBuffer)
+    {
+        constexpr uint64_t halfL1Size = AscendC::TOTAL_L1_SIZE >> 1;
+        if (l1BufNum_ == TRIPLE_BUFFER_COUNT) {
+            // L1 space: B0|B2|scale0|bias0|A|...|B1|scale1|bias1
+            l1BufferBOffset_[0] = 0UL;
+            l1BufferBOffset_[THIRD_BUFFER_ID] = l1BufferBOffset_[0] + bL1OneBuffer;
+            l1BufferX2ScaleOffset_[0] = l1BufferBOffset_[THIRD_BUFFER_ID] + bL1OneBuffer;
+            l1BufferBiasOffset_[0] = l1BufferX2ScaleOffset_[0] + x2ScaleL1OneBuffer;
+            l1BufferAOffset_[0] = l1BufferBiasOffset_[0] + biasL1OneBuffer;
+            l1BufferBOffset_[1] = Max(halfL1Size, l1BufferAOffset_[0] + aL1OneBuffer);
+            l1BufferX2ScaleOffset_[1] = l1BufferBOffset_[1] + bL1OneBuffer;
+            l1BufferBiasOffset_[1] = l1BufferX2ScaleOffset_[1] + x2ScaleL1OneBuffer;
+            return;
+        }
+        const uint64_t l1HalfBufNum = l1BufNum_ >> 1;
+        l1BufferAOffset_[0] = bL1OneBuffer * l1HalfBufNum + x2ScaleL1OneBuffer + biasL1OneBuffer;
+        const uint64_t b1Offset = l1BufferAOffset_[0] + aL1OneBuffer >= halfL1Size ?
+                                      l1BufferAOffset_[0] + aL1OneBuffer :
+                                      halfL1Size;
+        for (uint16_t bufferId = 0; bufferId < l1BufNum_; bufferId++) {
+            l1BufferBOffset_[bufferId] = b1Offset * (bufferId & 1) + bL1OneBuffer * (bufferId >> 1);
+        }
+        for (uint16_t bufferId = 0; bufferId < SCALE_BUFFER_NUM; bufferId++) {
+            l1BufferX2ScaleOffset_[bufferId] = l1BufferBOffset_[bufferId] + bL1OneBuffer * l1HalfBufNum;
+            l1BufferBiasOffset_[bufferId] = l1BufferX2ScaleOffset_[bufferId] + x2ScaleL1OneBuffer;
         }
     }
 
@@ -509,13 +538,24 @@ private:
                                    bool isL1LastRound, uint32_t initMode, uint64_t kL1OuterIdx, uint64_t kL1InnerIdx,
                                    uint16_t biasBufId)
     {
+        const uint64_t baseK = baseK_;
+        const uint64_t kL0Iter = CeilDiv(curInnerKL1, baseK);
+        const bool needBiasInL1 = processBias_ && kL1OuterIdx == 0 && kL1InnerIdx == 0;
+        const bool initCMatrixInL1 = kL1OuterIdx == 0 && (initMode == L0_INIT_MODE_ABL1 || kL1InnerIdx == 0);
+        constexpr uint64_t halfL0Size = AscendC::TOTAL_L0A_SIZE >> 1;
+        uint64_t l0PingPong = l0PingPong_;
+
         auto copyL12L0A = asc::te::make_copy(asc::te::copy_l1_to_l0a{});
         auto copyL12L0B = asc::te::make_copy(asc::te::copy_l1_to_l0b{});
-        uint64_t kL0Iter = CeilDiv(curInnerKL1, baseK_);
+        auto layoutBt = asc::te::make_frame_layout<asc::te::nd_ext_layout_ptn>(1UL, Align16(curNL1));
+        const uint64_t biasBtOffset = baseN_ * biasBufId * sizeof(BiasType);
+        auto tensorBt = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::bias, BiasType>(biasBtOffset),
+                                             layoutBt);
+
         for (uint16_t iter1 = 0; iter1 < kL0Iter; ++iter1) {
-            uint64_t curKL0 = (iter1 == kL0Iter - 1) ? (curInnerKL1 - iter1 * baseK_) : baseK_;
-            constexpr uint64_t halfL0Size = AscendC::TOTAL_L0A_SIZE / DOUBLE_BUFFER_COUNT;
-            const uint64_t l0PingPongId = l0PingPong_ & 0x1;
+            const uint64_t kL0Offset = static_cast<uint64_t>(iter1) * baseK;
+            const uint64_t curKL0 = Min(baseK, curInnerKL1 - kL0Offset);
+            const uint64_t l0PingPongId = l0PingPong & 1;
             const uint64_t l0Offset = halfL0Size * l0PingPongId;
 
             auto layoutAL0 = asc::te::make_frame_layout<asc::te::nz_layout_ptn, asc::te::layout_trait_default<AType>>(
@@ -530,16 +570,19 @@ private:
             const uint16_t mte1WaitMFlag = static_cast<uint16_t>(l0PingPongId + M_MTE1_FLAG_0);
             WaitFlag<HardEvent::M_MTE1>(mte1WaitMFlag);
 
-            auto aL1Sub = tensorAL1.slice(asc::te::make_coord(0, aKPrefix + iter1 * baseK_),
+            auto aL1Sub = tensorAL1.slice(asc::te::make_coord(0, aKPrefix + kL0Offset),
                                           asc::te::make_shape(curML1, curKL0));
             asc::te::copy(copyL12L0A, l0aLocal, aL1Sub);
 
-            bool needBias = processBias_ && kL1OuterIdx == 0 && kL1InnerIdx == 0 && iter1 == 0;
-            auto bL1Sub = tensorBL1.slice(asc::te::make_coord(bKPrefix + iter1 * baseK_, 0),
+            auto bL1Sub = tensorBL1.slice(asc::te::make_coord(bKPrefix + kL0Offset, 0),
                                           asc::te::make_shape(curKL0, curNL1));
             asc::te::copy(copyL12L0B, l0bLocal, bL1Sub);
 
-            auto tensorBt = PrepareMmadBias(tensorBiasL1, curNL1, biasBufId, needBias);
+            const bool needBias = needBiasInL1 && iter1 == 0;
+            if (needBias) {
+                auto copyL12BT = asc::te::make_copy(asc::te::copy_l1_to_biastable{});
+                asc::te::copy(copyL12BT, tensorBt, tensorBiasL1);
+            }
 
             SetFlag<HardEvent::MTE1_M>(l0PingPongId);
             WaitFlag<HardEvent::MTE1_M>(l0PingPongId);
@@ -547,15 +590,14 @@ private:
             mmadParams.k = static_cast<uint16_t>(curKL0);
             mmadParams.unit_flag = (isL1LastRound && iter1 + 1 == kL0Iter) ? asc::te::unit_flag_mode::enable_update :
                                                                              asc::te::unit_flag_mode::enable_keep;
-            mmadParams.init_with_zero = (initMode == L0_INIT_MODE_ABL1) ?
-                                            (kL1OuterIdx == 0 && iter1 == 0) :
-                                            (kL1OuterIdx == 0 && kL1InnerIdx == 0 && iter1 == 0);
+            mmadParams.init_with_zero = initCMatrixInL1 && iter1 == 0;
 
             ExecuteMmad(mmadParams, c1Local, l0aLocal, l0bLocal, tensorBt, needBias);
 
             SetFlag<HardEvent::M_MTE1>(mte1WaitMFlag);
-            l0PingPong_++;
+            l0PingPong++;
         }
+        l0PingPong_ = l0PingPong;
     }
 
     template <typename TensorA, typename TensorB, typename C1Tensor, typename TensorBiasL1>
@@ -564,46 +606,56 @@ private:
                                        uint16_t biasBufId)
     {
         auto copyGM2L1 = asc::te::make_copy(asc::te::copy_gm_to_l1{});
+        const uint64_t k = k_;
+        const uint64_t kL1 = kL1_;
+        const uint64_t kAL1 = kAL1_;
+        const uint64_t kBL1 = kBL1_;
+        const uint64_t kL1Iter = kL1Iter_;
+        const uint64_t aL1KStride = CeilAlign(curML1, TRANS_A ? C0_SIZE : BLOCK_CUBE);
+        uint64_t abL1LoopCnt = abL1LoopCnt_;
 
-        for (uint64_t iter0 = 0; iter0 < kL1Iter_; ++iter0) {
-            uint64_t curKL1 = (iter0 == kL1Iter_ - 1) ? (k_ - iter0 * kL1_) : kL1_;
-            uint16_t l1BufId = abL1LoopCnt_ & (l1BufNum_ - 1);
+        for (uint64_t iter0 = 0; iter0 < kL1Iter; ++iter0) {
+            const uint64_t curKL1 = (iter0 == kL1Iter - 1) ? (k - iter0 * kL1) : kL1;
+            const uint16_t l1BufId = GetL1BufferId(abL1LoopCnt);
             WaitFlag<HardEvent::MTE1_MTE2>(l1BufId);
 
-            uint64_t offsetAL1 = l1BufferAOffset_[l1BufId];
-            auto layoutAL1 = MakeLayoutAL1{}(curML1, curKL1);
+            uint64_t offsetAL1;
             if constexpr (DispatchPolicy::FULL_LOAD_MODE == A_FULL_LOAD_MODE) {
-                offsetAL1 = l1BufferAOffset_[0] + iter0 * kL1_ * CeilAlign(curML1, TRANS_A ? C0_SIZE : BLOCK_CUBE);
+                offsetAL1 = l1BufferAOffset_[0] + iter0 * kL1 * aL1KStride;
+            } else {
+                offsetAL1 = l1BufferAOffset_[l1BufId];
             }
+            auto layoutAL1 = MakeLayoutAL1{}(curML1, curKL1);
             auto tensorAL1 = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::l1, AType>(offsetAL1),
                                                   layoutAL1);
             if constexpr (DispatchPolicy::FULL_LOAD_MODE == NONE_FULL_LOAD_MODE) {
-                auto gmTileA = gmA.slice(asc::te::make_coord(0UL, iter0 * kAL1_), asc::te::make_shape(curML1, curKL1));
+                auto gmTileA = gmA.slice(asc::te::make_coord(0UL, iter0 * kAL1), asc::te::make_shape(curML1, curKL1));
                 asc::te::copy(copyGM2L1, tensorAL1, gmTileA);
             } else {
-                if (abL1LoopCnt_ < kL1Iter_) {
-                    auto gmTileA = gmA.slice(asc::te::make_coord(0UL, iter0 * kL1_),
+                if (abL1LoopCnt < kL1Iter) {
+                    auto gmTileA = gmA.slice(asc::te::make_coord(0UL, iter0 * kL1),
                                              asc::te::make_shape(curML1, curKL1));
                     asc::te::copy(copyGM2L1, tensorAL1, gmTileA);
                 }
             }
 
-            uint64_t offsetBL1 = l1BufferBOffset_[l1BufId];
+            const uint64_t offsetBL1 = l1BufferBOffset_[l1BufId];
             auto layoutBL1 = MakeLayoutBL1{}(curKL1, curNL1);
             auto tensorBL1 = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::l1, BType>(offsetBL1),
                                                   layoutBL1);
-            auto gmTileB = gmB.slice(asc::te::make_coord(iter0 * kBL1_, 0UL), asc::te::make_shape(curKL1, curNL1));
+            auto gmTileB = gmB.slice(asc::te::make_coord(iter0 * kBL1, 0UL), asc::te::make_shape(curKL1, curNL1));
             asc::te::copy(copyGM2L1, tensorBL1, gmTileB);
 
             SetFlag<HardEvent::MTE2_MTE1>(l1BufId);
             WaitFlag<HardEvent::MTE2_MTE1>(l1BufId);
 
             Iterate(mmadParams, tensorAL1, tensorBL1, tensorBiasL1, c1Local, curML1, curNL1, curKL1, 0UL, 0UL,
-                    iter0 == kL1Iter_ - 1, L0_INIT_MODE_ABL1, iter0, 0UL, biasBufId);
+                    iter0 == kL1Iter - 1, L0_INIT_MODE_ABL1, iter0, 0UL, biasBufId);
 
             SetFlag<HardEvent::MTE1_MTE2>(l1BufId);
-            abL1LoopCnt_++;
+            abL1LoopCnt++;
         }
+        abL1LoopCnt_ = abL1LoopCnt;
     }
 
     template <typename TensorA, typename TensorB, typename C1Tensor, typename TensorBiasL1>

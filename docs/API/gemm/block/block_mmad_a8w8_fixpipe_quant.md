@@ -2,7 +2,7 @@
 > [代码位置](../../../../include/blaze/gemm/block/block_mmad_a8w8_fixpipe_quant.h)
 
 ## 功能说明
-Fixpipe 量化矩阵乘 Block，基于 Tensor API 实现，仅支持 AIC 计算。该组件执行由 `AType/BType` 指定的量化 A/B Cube Mmad 累加，并根据调度策略选择 L0C 输出方式：普通 QBMM 和 StreamK 的 DP block 通过 Fixpipe 反量化写入 C GM，StreamK 的 SK block 将原始累加值写入 workspace，等待 AIV 归约后统一反量化。文件名沿用 A8W8 路径命名，但实际输入类型不限定为 `int8_t`。
+量化矩阵乘 Block，基于 Tensor API 实现，仅支持 AIC 计算。该组件执行由 `AType/BType` 指定的量化 A/B Cube Mmad 累加，并根据调度策略选择 L0C 输出方式：普通 QBMM 和 StreamK 的 Data Parallel（DP）block 通过 Fixpipe 反量化写入 C GM，StreamK（SK）block 将当前 K 分片的累加结果写入 workspace，等待 AIV 归约后统一反量化。文件名沿用 A8W8 路径命名，但实际输入类型不限定为 `int8_t`。
 
 **继承自**：[Block Mmad 基础框架](./block_mmad.md)
 
@@ -14,10 +14,17 @@ Fixpipe 量化矩阵乘 Block，基于 Tensor API 实现，仅支持 AIC 计算�
 - `MatmulWithScaleFixpipeQuant<A_FULL_LOAD_MODE>`（A 矩阵全载模式）
 - `MatmulWithScaleFixpipeQuant<0, true>`（Atomic Add 非全载模式）
 - `MatmulWithScaleFixpipeQuant<A_FULL_LOAD_MODE, true>`（Atomic Add A 矩阵全载模式）
+- `MatmulWithScaleFixpipeQuant<FullLoadMode, AtomicAdd, KernelMmadWithScaleFixpipeQuantWithoutBatch>`
+  （Batch 固定为 1；`FullLoadMode` 支持非全载/A 全载，`AtomicAdd` 支持开启或关闭）
 - `MatmulWithScaleFixpipeQuant<0, false, KernelQbmmPertensorMultiBlockStreamK>`（QBMM per-tensor StreamK，DP/SK 混合输出）
 - `MatmulWithScaleFixpipeQuant<0, false, KernelGroupedMmadWithScaleFixpipeQuant>`（GMM Fixpipe per-channel/per-group）
 
-`MatmulWithScaleFixpipeQuant` 默认使用 `KernelMmadWithScaleFixpipeQuant`，不编译 workspace 输出分支；传入 `KernelQbmmPertensorMultiBlockStreamK` 后，Block 通过 `ScheduleType` 编译期判断开启 raw workspace 输出能力。Atomic Add 标志由 Kernel 层读取并配置，Block 内部不直接设置 atomic 状态。
+`MatmulWithScaleFixpipeQuant` 默认使用 `KernelMmadWithScaleFixpipeQuant`。当 `ScheduleType` 为
+`KernelMmadWithScaleFixpipeQuantWithoutBatch` 时，Block 的计算与输出逻辑不变；对应 Kernel 仅处理
+Batch 为 1 的场景，不执行多 Batch 广播和地址换算。这两种调度都将结果写入 C GM，不启用
+workspace 输出；只有 `KernelQbmmPertensorMultiBlockStreamK` 调度会在编译期启用原始累加结果的
+workspace 输出路径。
+Atomic Add 标志由 Kernel 层读取并配置，Block 内部不直接设置 atomic 状态。
 
 不支持 `MatmulWithScaleMx`、`GroupedMatmulWithScaleMx` 或 `MatmulMultiBlockBasic`。
 
@@ -64,12 +71,12 @@ Fixpipe 反量化使用 X2 scale，支持两类输入方式：
 StreamK SK block 输出到 workspace GM：
 - workspace 类型与 `L0CType` 相同；
 - 搬出时不传入 scale，不执行反量化；
-- 当前 K 分片的 raw partial 由 `BlockEpilogueQbmmPertensorStreamK` 归约后统一反量化。
+- 当前 K 分片的累加结果由 `BlockEpilogueQbmmPertensorStreamK` 归约后统一反量化。
 
 ### L1 切分要求
 - `kAL1`：A 矩阵 L1 K 轴切分大小。
 - `kBL1`：B 矩阵 L1 K 轴切分大小。
-- `l1BufNum` 支持 2 或 4 缓冲。
+- `l1BufNum` 支持 2、3 或 4 缓冲。
 - 非全载模式下，当 `l1BufNum == 2` 时支持 `kAL1` 与 `kBL1` 不同，并按 A/B 的 K-L1 大小选择复用策略。
 - A 全载模式下，A 常驻 L1，`kAL1` 跟随 `kBL1`，适用于 A 分片复用收益明显的场景。
 - 注意：kAL1与kBL1不相等时必须满足整数倍关系。
@@ -158,7 +165,7 @@ __aicore__ inline void Init(const Params& params);
 
 返回值：无。
 
-非全载模式下，`l1BufNum == 2` 时可分别使用 `kAL1/kBL1`；`l1BufNum != 2` 时使用统一 K-L1 窗口。A 全载模式下，A 常驻 L1，适用于 A 分片复用收益明显的场景。
+非全载模式下，`l1BufNum == 2` 时可分别使用 `kAL1/kBL1`；`l1BufNum` 为 3 或 4 时使用统一 K-L1 窗口。A 全载模式下，A 常驻 L1，适用于 A 分片复用收益明显的场景。
 
 ### 兼容Init函数
 
@@ -380,9 +387,12 @@ Fixpipe 搬出并完成反量化
 - `kAL1 > kBL1`：复用 A，适合 A 搬运压力较大或 A 全载收益明显的场景。
 - `kBL1 > kAL1`：复用 B，适合 B 搬运压力较大或 B 数据复用较高的场景。
 
-### L1 缓冲数量
+### L1 buffer 数量
 - `l1BufNum = 2`：支持 A/B 不同 K-L1 窗口。
-- `l1BufNum = 4`：提高数据搬运流水并行度，但内部统一使用 `min(kAL1, kBL1)`。
+- `l1BufNum = 3`：使用三个 L1 buffer，相比四缓冲减少 L1 占用；K-L1 窗口统一为
+  `min(kAL1, kBL1)`。
+- `l1BufNum = 4`：使用四个 L1 buffer，提高数据搬运流水并行度；K-L1 窗口统一为
+  `min(kAL1, kBL1)`。
 
 ### Scale 模式选择
 - per-tensor scale 使用 scalar 传入，搬运开销最低。

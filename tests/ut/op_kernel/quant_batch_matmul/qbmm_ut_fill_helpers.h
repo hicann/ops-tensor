@@ -54,6 +54,7 @@ __aicore__ inline void FillQbmmTileParams(QbmmParams& qbmmParams, const QBMMV3Ti
     qbmmParams.baseK = tilingData.baseK_qbmm;
     qbmmParams.isBias = tilingData.isBias;
     qbmmParams.dbL0C = tilingData.dbL0C;
+    qbmmParams.bMustHitL2 = tilingData.weightMustHitL2;
 }
 
 template <typename SchParams>

@@ -50,7 +50,7 @@ static_assert(E_BUFFER_FREE_FLAG + E_BUFFER_NUM <= MODE4_LOCAL_FLAG_COUNT,
 struct TypedGmParams {
     __gm__ float* blockResidual{nullptr};
     __gm__ float* effectiveQuery{nullptr};
-    __gm__ int64_t* validBlocks{nullptr};
+    __gm__ uint64_t* validBlocks{nullptr};
     __gm__ float* softmaxMax{nullptr};
     __gm__ float* weightedOutput{nullptr};
     __gm__ float* softmaxSum{nullptr};
@@ -173,7 +173,7 @@ private:
     {
         gm_.blockResidual = reinterpret_cast<__gm__ float*>(params.mm1Params.bGmAddr);
         gm_.effectiveQuery = reinterpret_cast<__gm__ float*>(params.mm1Params.aGmAddr);
-        gm_.validBlocks = reinterpret_cast<__gm__ int64_t*>(params.epilogueParams.validBlocksGmAddr);
+        gm_.validBlocks = reinterpret_cast<__gm__ uint64_t*>(params.epilogueParams.validBlocksGmAddr);
         gm_.softmaxMax = reinterpret_cast<__gm__ float*>(params.epilogueParams.softmaxMaxGmAddr);
         gm_.weightedOutput = reinterpret_cast<__gm__ float*>(params.epilogueParams.weightedOutputGmAddr);
         gm_.softmaxSum = reinterpret_cast<__gm__ float*>(params.epilogueParams.softmaxSumGmAddr);
@@ -191,23 +191,19 @@ private:
         blockEpilogue_.Init(params.epilogueParams);
     }
 
-    __aicore__ inline int64_t ReadValidBlocks() const
+    __aicore__ inline uint64_t ReadValidBlocks() const
     {
         auto tensor = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::gm>(gm_.validBlocks),
-                                           Gemm::MakeNDExtLayout<int64_t>(1, 1, 1));
+                                           Gemm::MakeNDExtLayout<uint64_t>(1, 1, 1));
         return tensor[asc::te::make_coord(static_cast<int64_t>(0), static_cast<int64_t>(0))];
     }
 
     __aicore__ inline uint32_t GetValidN() const
     {
-        const int64_t validBlocks = ReadValidBlocks();
-        if (validBlocks <= 0) {
-            return 0U;
-        }
-        const uint64_t positiveValidBlocks = static_cast<uint64_t>(validBlocks);
+        const uint64_t validBlocks = ReadValidBlocks();
         const uint64_t totalN = static_cast<uint64_t>(
             asc::te::get<BlockAttnResPrepareDetail::N_DIM_INDEX>(*problemShape_));
-        return static_cast<uint32_t>(positiveValidBlocks < totalN ? positiveValidBlocks : totalN);
+        return static_cast<uint32_t>(validBlocks < totalN ? validBlocks : totalN);
     }
 
     // AIC and its sibling AIVs share one workspace slice and therefore use the same logical core index.

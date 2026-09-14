@@ -14,7 +14,7 @@ QBMM MX StreamK Kernel 是面向 MxFP4/MxFP8 量化矩阵乘的 `GemmUniversal` 
 Kernel 通过 `static_assert` 要求 A/B 为同 bit-width 的 MxFP4 或 MxFP8 组合，C 为 `half`、
 `bfloat16_t` 或 `float`；BlockEpilogue 输出必须与 C 一致，workspace 必须为 `float`。
 `LayoutA` 支持 ND/DN，`LayoutB` 支持 ND/DN/NZ/ZN，`LayoutC` 支持 `nd_ext_layout_ptn` / `dn_ext_layout_ptn`。
-本次不增加 bias 类型、`LayoutBias` 或 scale 校验。
+Kernel 不额外校验 bias 类型、`LayoutBias` 或 scale。
 
 ND/DN 白名单保留 L0C 搬运路径支持的 C Tensor 布局；自定义 BlockEpilogue 必须与输出布局一致。
 模板校验通过不等同于任意后处理组件均支持 DN 输出。
@@ -217,7 +217,7 @@ tileNum = (mTileNum * nTileNum - tailMNTileNum) + tailMNTileNum * skKTileNum;
 ## 调用示例
 
 完整可编译、可运行并带 golden 校验的示例见
-[quant_batch_matmul_kernel_api](../../../../examples/quant_batch_matmul/quant_batch_matmul_kernel_api/README.md)，
+[quant_batch_matmul_mx](../../../../examples/quant_batch_matmul/quant_batch_matmul_mx/README.md)，
 对应 CSV 场景为 `qbmm_mx_streamk`。
 
 ### 组件组装

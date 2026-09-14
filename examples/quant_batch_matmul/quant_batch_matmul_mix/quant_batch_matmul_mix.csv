@@ -1,0 +1,3 @@
+casename,variant,m,k,n,output_dtype
+qbmm_mix,batch,16,64,16,float16
+qbmm_mix_without_batch,without_batch,16,64,16,float16

@@ -1,1 +1,0 @@
-ops_example_add_executable(quant_batch_matmul_cube quant_batch_matmul_cube/quant_batch_matmul_cube.cpp)

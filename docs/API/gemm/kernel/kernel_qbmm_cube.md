@@ -2,7 +2,10 @@
 > [代码位置](../../../../include/blaze/gemm/kernel/kernel_qbmm_cube.h)
 
 ## 功能说明
-Fixpipe 量化 Batch Matmul Kernel，仅支持 AIC 计算。该 Kernel 组合 `BlockMmadA8W8FixpipeQuant` 与 `BlockSchedulerQuantBatchMatmulV3`，完成量化 A/B 矩阵乘、Batch 广播、Bias 处理、scale 反量化与 GM 输出。`BlockMmadA8W8FixpipeQuant` 沿用 A8W8 路径命名，实际输入类型由 `AType/BType` 决定。
+该 Kernel 面向支持 Batch 广播的量化矩阵乘场景，仅在 AIC 上执行。Kernel 由
+`BlockMmadA8W8FixpipeQuant` 与 `BlockSchedulerQuantBatchMatmulV3` 组装，完成量化 A/B 矩阵乘、
+Batch 广播和 Bias 处理，并通过 Fixpipe 搬出结果、按需执行 scale 反量化。
+`BlockMmadA8W8FixpipeQuant` 沿用 A8W8 路径命名，实际输入类型由 `AType/BType` 决定。
 
 **继承自**：[Kernel Matmul 基础框架](./kernel.md)
 
@@ -322,7 +325,8 @@ Scale 的处理分为 Kernel 准备和 Block 搬出两个阶段。Kernel 根据 
 ### Block 与 L1 配置
 - `baseM/baseN/baseK` 应与 BlockMmad 的 L0/L1 切分匹配。
 - `kAL1/kBL1` 可根据 A/B 复用关系配置；详见 [Block Mmad A8W8 Fixpipe Quant](../block/block_mmad_a8w8_fixpipe_quant.md)。
-- `nBufferNum = 4` 可提高搬运流水并行度，`nBufferNum = 2` 支持 A/B 不同 K-L1 窗口。
+- `nBufferNum = 4` 侧重提高搬运流水并行度，`nBufferNum = 3` 相比四缓冲减少 L1 占用，
+  `nBufferNum = 2` 支持 A/B 使用不同的 K-L1 窗口。
 
 ### Batch 广播
 - 多 Batch 场景下，A/B/C 的 4 维 Batch 参数需满足广播关系。

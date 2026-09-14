@@ -17,13 +17,13 @@ import numpy as np
 
 @dataclass
 class QbmmGenConfig:
-    output_dir: str = './'
-    x1_mode: str = 'default'      # 激活(x1)量化模式：default / pertoken / pertensor
-    x2_mode: str = 'pertensor'    # 权重(x2)量化模式：perchannel / pertensor
-    bias: bool = False            # 是否生成 bias.bin 并计入 golden
-    bias_dtype: str = 'float16'   # bias 张量 dtype：float16 / float32 / bfloat16
-    scale_dtype: str = 'uint64'   # x2 scale(scale.bin) 编码：uint64 / float32
-    out_dtype: str = 'float16'    # golden 输出 dtype：float16 / float32
+    output_dir: str = "./"
+    x1_mode: str = "default"  # 激活(x1)量化模式：default / pertoken / pertensor
+    x2_mode: str = "pertensor"  # 权重(x2)量化模式：perchannel / pertensor
+    bias: bool = False  # 是否生成 bias.bin 并计入 golden
+    bias_dtype: str = "float16"  # bias 张量 dtype：float16 / float32 / bfloat16 / int32
+    scale_dtype: str = "uint64"  # x2 scale(scale.bin) 编码：uint64 / float32
+    out_dtype: str = "float16"  # golden 输出 dtype：float16 / float32
 
 
 def _fp32_to_bf16_u16(arr_fp32):
@@ -35,14 +35,16 @@ def _fp32_to_bf16_u16(arr_fp32):
 
 
 def _write_bias(bias_fp32, bias_dtype, path):
-    if bias_dtype == 'float32':
+    if bias_dtype == "float32":
         bias_fp32.astype(np.float32).tofile(path)
-    elif bias_dtype == 'float16':
+    elif bias_dtype == "float16":
         bias_fp32.astype(np.float16).tofile(path)
-    elif bias_dtype == 'bfloat16':
+    elif bias_dtype == "bfloat16":
         _fp32_to_bf16_u16(bias_fp32).tofile(path)
+    elif bias_dtype == "int32":
+        bias_fp32.astype(np.int32).tofile(path)
     else:
-        raise ValueError('unsupported bias_dtype: ' + bias_dtype)
+        raise ValueError("unsupported bias_dtype: " + bias_dtype)
 
 
 def gen_qbmm_data(m, n, k, cfg=None):
@@ -55,20 +57,21 @@ def gen_qbmm_data(m, n, k, cfg=None):
     b = np.random.randint(-128, 127, size=(k, n), dtype=np.int8)
 
     # x1 激活 scale：per-token=M 向量 / per-tensor=标量 / default=占位标量（epilogue 忽略）。取 1.0 便于对照。
-    if cfg.x1_mode == 'pertoken':
+    if cfg.x1_mode == "pertoken":
         x1_scale = np.ones(m, dtype=np.float32)
     else:
         x1_scale = np.array([1.0], dtype=np.float32)
 
     # x2 权重 scale：per-channel=N 向量 / per-tensor=标量。
-    if cfg.x2_mode == 'perchannel':
+    if cfg.x2_mode == "perchannel":
         x2_scale_fp32 = np.ones(n, dtype=np.float32)
     else:
         x2_scale_fp32 = np.array([1.0], dtype=np.float32)
 
     # fixpipe 路径：scale 以 uint64 编码 1.0f（0x3F80000000000000）；MIX 路径：float32。
-    if cfg.scale_dtype == 'uint64':
-        scale_out = np.array([0x3F80000000000000], dtype=np.uint64)
+    if cfg.scale_dtype == "uint64":
+        scale_count = n if cfg.x2_mode == "perchannel" else 1
+        scale_out = np.full(scale_count, 0x3F80000000000000, dtype=np.uint64)
     else:
         scale_out = x2_scale_fp32.astype(np.float32)
 
@@ -79,49 +82,91 @@ def gen_qbmm_data(m, n, k, cfg=None):
     a_fp32 = a.astype(np.float32)
     b_fp32 = b.astype(np.float32)
     c_fp32 = np.matmul(a_fp32, b_fp32)
-    c_fp32 = c_fp32 * x1_scale.reshape(-1, 1) if cfg.x1_mode == 'pertoken' else c_fp32 * x1_scale[0]
-    c_fp32 = c_fp32 * x2_scale_fp32.reshape(1, -1) if cfg.x2_mode == 'perchannel' else c_fp32 * x2_scale_fp32[0]
+    c_fp32 = (
+        c_fp32 * x1_scale.reshape(-1, 1)
+        if cfg.x1_mode == "pertoken"
+        else c_fp32 * x1_scale[0]
+    )
+    c_fp32 = (
+        c_fp32 * x2_scale_fp32.reshape(1, -1)
+        if cfg.x2_mode == "perchannel"
+        else c_fp32 * x2_scale_fp32[0]
+    )
     if cfg.bias:
         c_fp32 = c_fp32 + bias_fp32.reshape(1, -1)
-    with np.errstate(over='ignore'):
-        golden = c_fp32.astype(np.float16 if cfg.out_dtype == 'float16' else np.float32)
+    with np.errstate(over="ignore"):
+        golden = c_fp32.astype(np.float16 if cfg.out_dtype == "float16" else np.float32)
 
-    a.tofile(os.path.join(cfg.output_dir, 'input_a.bin'))
-    b.tofile(os.path.join(cfg.output_dir, 'input_b.bin'))
-    x1_scale.tofile(os.path.join(cfg.output_dir, 'pertoken_scale.bin'))
-    scale_out.tofile(os.path.join(cfg.output_dir, 'scale.bin'))
-    _write_bias(bias_fp32, cfg.bias_dtype, os.path.join(cfg.output_dir, 'bias.bin'))
-    golden.tofile(os.path.join(cfg.output_dir, 'golden_c.bin'))
+    a.tofile(os.path.join(cfg.output_dir, "input_a.bin"))
+    b.tofile(os.path.join(cfg.output_dir, "input_b.bin"))
+    x1_scale.tofile(os.path.join(cfg.output_dir, "pertoken_scale.bin"))
+    scale_out.tofile(os.path.join(cfg.output_dir, "scale.bin"))
+    _write_bias(bias_fp32, cfg.bias_dtype, os.path.join(cfg.output_dir, "bias.bin"))
+    golden.tofile(os.path.join(cfg.output_dir, "golden_c.bin"))
 
     return a, b, x1_scale, scale_out, golden
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Generate QBMM A8W8 test data')
-    parser.add_argument('--m', type=int, required=True, help='M dimension')
-    parser.add_argument('--n', type=int, required=True, help='N dimension')
-    parser.add_argument('--k', type=int, required=True, help='K dimension')
-    parser.add_argument('--output_dir', type=str, default='./')
-    parser.add_argument('--x1_mode', type=str, default='default',
-                        choices=['default', 'pertoken', 'pertensor'], help='activation(x1) quant mode')
-    parser.add_argument('--x2_mode', type=str, default='pertensor',
-                        choices=['perchannel', 'pertensor'], help='weight(x2) quant mode')
-    parser.add_argument('--bias', action='store_true', help='generate bias.bin and include bias in golden')
-    parser.add_argument('--bias_dtype', type=str, default='float16',
-                        choices=['float16', 'float32', 'bfloat16'], help='bias tensor dtype')
-    parser.add_argument('--scale_dtype', type=str, default='uint64',
-                        choices=['uint64', 'float32'], help='x2 scale(scale.bin) encoding')
-    parser.add_argument('--out_dtype', type=str, default='float16',
-                        choices=['float16', 'float32'], help='golden output dtype')
+    parser = argparse.ArgumentParser(description="Generate QBMM A8W8 test data")
+    parser.add_argument("--m", type=int, required=True, help="M dimension")
+    parser.add_argument("--n", type=int, required=True, help="N dimension")
+    parser.add_argument("--k", type=int, required=True, help="K dimension")
+    parser.add_argument("--output_dir", type=str, default="./")
+    parser.add_argument(
+        "--x1_mode",
+        type=str,
+        default="default",
+        choices=["default", "pertoken", "pertensor"],
+        help="activation(x1) quant mode",
+    )
+    parser.add_argument(
+        "--x2_mode",
+        type=str,
+        default="pertensor",
+        choices=["perchannel", "pertensor"],
+        help="weight(x2) quant mode",
+    )
+    parser.add_argument(
+        "--bias",
+        action="store_true",
+        help="generate bias.bin and include bias in golden",
+    )
+    parser.add_argument(
+        "--bias_dtype",
+        type=str,
+        default="float16",
+        choices=["float16", "float32", "bfloat16", "int32"],
+        help="bias tensor dtype",
+    )
+    parser.add_argument(
+        "--scale_dtype",
+        type=str,
+        default="uint64",
+        choices=["uint64", "float32"],
+        help="x2 scale(scale.bin) encoding",
+    )
+    parser.add_argument(
+        "--out_dtype",
+        type=str,
+        default="float16",
+        choices=["float16", "float32"],
+        help="golden output dtype",
+    )
 
     args = parser.parse_args()
 
     cfg = QbmmGenConfig(
-        output_dir=args.output_dir, x1_mode=args.x1_mode, x2_mode=args.x2_mode,
-        bias=args.bias, bias_dtype=args.bias_dtype, scale_dtype=args.scale_dtype,
-        out_dtype=args.out_dtype)
+        output_dir=args.output_dir,
+        x1_mode=args.x1_mode,
+        x2_mode=args.x2_mode,
+        bias=args.bias,
+        bias_dtype=args.bias_dtype,
+        scale_dtype=args.scale_dtype,
+        out_dtype=args.out_dtype,
+    )
     gen_qbmm_data(args.m, args.n, args.k, cfg)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

@@ -2,10 +2,14 @@
 > [代码位置](../../../../include/blaze/gemm/kernel/kernel_qbmm_mix_without_batch.h)
 
 ## 功能说明
-MIX 模板量化 Matmul Kernel（无 Batch 变体），与 [kernel_qbmm_mix](./kernel_qbmm_mix.md) 对称，裁剪掉 4 维 Batch 广播路径，提供轻量化的单 Batch 调度。**AIC（cube）+ AIV（vector）双核协同**：AIC 做 int32 矩阵乘并 fixpipe（NoQuant）搬 L0C→UB，AIV 在向量上做 dequant + x2Scale [* x1Scale] + bias，输出 bf16/fp16/fp32。支持 int8（per-token / per-channel / per-tensor）与 WeightNz（FRACTAL_NZ）。
+该 Kernel 面向 Batch 为 1 的 A8W8 MIX 量化矩阵乘场景，与
+[kernel_qbmm_mix](./kernel_qbmm_mix.md) 使用相同的计算流程，但不执行 4 维 Batch 广播和地址换算。
+**AIC（cube）+ AIV（vector）双核协同**：AIC 完成 int32 矩阵乘，并通过 Fixpipe（NoQuant）将
+L0C 结果搬入 UB；AIV 执行反量化和 Bias 计算，输出 bf16/fp16/fp32。输入支持 int8 的
+per-token、per-channel 和 per-tensor 量化模式，以及 WeightNz（FRACTAL_NZ）格式。
 
 Bias 的编译期 `BiasType` 和运行时 `Params::biasDtype` 是不同的约束：实际 bias 类型仍由 epilogue
-在运行时分派。本次不新增 bias 或 scale 校验，也不约束占位 `LayoutC` / `LayoutBias` 标签。
+在运行时分派。Kernel 不额外校验 bias 或 scale，也不约束占位 `LayoutC` / `LayoutBias` 标签。
 实际输出仍由 Kernel 和 epilogue 构造的 ND 布局决定，不由这些标签选择。
 
 **继承自**：[Kernel Matmul 基础框架](./kernel.md)
@@ -15,8 +19,8 @@ Bias 的编译期 `BiasType` 和运行时 `Params::biasDtype` 是不同的约束
 | 维度 | kernel_qbmm_mix | kernel_qbmm_mix_without_batch |
 |------|-----------------|-------------------------------|
 | 类名 | `GemmUniversal<...>`（SFINAE 特化） | `GemmUniversal<...>`（`KernelMmadWithScaleMixWithoutBatch` 特化） |
-| Batch | 4 维 Batch 广播 + 尾块 latch | 仅单 Batch，无 Batch 偏移逻辑 |
-| 尾块切分 | 跨 Batch latch（needUpdateTail_ + restBatch） | 单轮判断即可 |
+| Batch | 4 维 Batch 广播并跨 Batch 维护尾块状态 | 仅单 Batch，无 Batch 偏移逻辑 |
+| 尾块切分 | 通过 `needUpdateTail_` 和 `restBatch` 跨 Batch 更新 | 单轮判断即可 |
 | QBMMTiling | batchA/B/C 等 12 个字段 | 仅包含 B 的 L2 Cache 控制字段 |
 | 偏移计算 | 含 `batchCOffset_` | `mPos * n + nPos` |
 
@@ -79,7 +83,7 @@ __aicore__ inline void Run(const Params& params, BlockScheduler& bs)
 ## 调用示例
 
 完整可编译、可运行并带 golden 校验的示例见
-[quant_batch_matmul_kernel_api](../../../../examples/quant_batch_matmul/quant_batch_matmul_kernel_api/README.md)，
+[quant_batch_matmul_mix](../../../../examples/quant_batch_matmul/quant_batch_matmul_mix/README.md)，
 对应 CSV 场景为 `qbmm_mix_without_batch`。
 
 以下示例与带 Batch 版本使用相同的 MMAD、Scheduler 和 Epilogue 组件，但通过

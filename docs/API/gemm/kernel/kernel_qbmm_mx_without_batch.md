@@ -4,7 +4,9 @@
 
 ## 功能说明
 
-MX 量化单 Batch Matmul Kernel，仅支持 AIC 计算，支持 MxFP4/MxFP8 量化格式。该实现面向无 Batch 广播的标量路径，复用 `BlockMmadMX` 和 `BlockSchedulerQbmm`，裁剪多 Batch 地址偏移和广播循环。
+该 Kernel 面向 Batch 为 1 的 MX 量化矩阵乘场景，仅在 AIC 上执行，支持 MxFP4/MxFP8
+量化格式。Kernel 由 `BlockMmadMX` 和 `BlockSchedulerQbmm` 组装；由于 Batch 固定为 1，调度过程
+不执行多 Batch 地址换算和广播循环。
 
 **相关实现**：[Kernel Qbmm Mx](./kernel_qbmm_mx.md)
 
@@ -20,7 +22,7 @@ MX 量化单 Batch Matmul Kernel，仅支持 AIC 计算，支持 MxFP4/MxFP8 量
 A/B、C dtype 和 A/B/C layout 的编译期 `static_assert` 约束为：A/B 必须为
 同 bit-width 的 MxFP4 或 MxFP8 组合，C 支持 `half` / `bfloat16_t` / `float`；
 `LayoutA` 支持 ND/DN，`LayoutB` 支持 ND/DN/NZ/ZN，`LayoutC` 支持 `nd_ext_layout_ptn` / `dn_ext_layout_ptn`。
-与带 Batch 的 MX Kernel 不同，此处不增加 bias 类型、`LayoutBias` 或 scale 校验。
+Kernel 不额外校验 bias 类型、`LayoutBias` 或 scale。
 
 ND/DN 白名单保留 L0C 搬运路径支持的 C Tensor 布局；自定义 BlockEpilogue 必须与输出布局一致。
 模板校验通过不等同于任意后处理组件均支持 DN 输出。
@@ -134,7 +136,7 @@ __aicore__ inline void SetBL2Cache(
 ## 调用示例
 
 完整可编译、可运行并带 golden 校验的示例见
-[quant_batch_matmul_kernel_api](../../../../examples/quant_batch_matmul/quant_batch_matmul_kernel_api/README.md)，
+[quant_batch_matmul_mx](../../../../examples/quant_batch_matmul/quant_batch_matmul_mx/README.md)，
 对应 CSV 场景为 `qbmm_mx_without_batch`。
 
 ```cpp
@@ -176,6 +178,5 @@ kernel(params);
 
 ## 适用场景
 
-- 单 Batch MX 量化推理
-- 不需要 Batch 广播的标量路径
+- Batch 固定为 1 且无需广播的 MX 量化推理
 - 希望减少多 Batch 分支和地址偏移开销的 QBMM MX 场景

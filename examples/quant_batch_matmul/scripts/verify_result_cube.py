@@ -11,7 +11,7 @@
 # See LICENSE in the root of the software repository for the full text of the License.
 # ----------------------------------------------------------------------------------------------------------
 
-"""Compare BF16 with the HiFloat8 policy or compare Int32 exactly."""
+"""Compare BF16/FP16 outputs numerically or compare Int32 exactly."""
 
 import argparse
 import os
@@ -25,7 +25,6 @@ from metrics import write_metrics_json
 os.environ["TORCH_DEVICE_BACKEND_AUTOLOAD"] = "0"
 
 import numpy as np
-import torch
 
 
 POINT_ERROR_TOL = 1e-1
@@ -49,6 +48,10 @@ def _write_metrics_json(status, max_abs_diff, error_ratio, ratio_tol, elements):
     )
 
 
+def _bfloat16_to_float32(values):
+    return np.left_shift(values.astype(np.uint32), np.uint32(16)).view(np.float32)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("golden")
@@ -61,11 +64,21 @@ def main():
 
     dtype = args.dtype.lower()
     is_int32 = dtype in ("int32", "int32_t")
-    if not is_int32 and dtype not in ("bfloat16", "bfloat16_t", "bf16"):
+    is_float16 = dtype in ("float16", "float16_t", "half")
+    if (
+        not is_int32
+        and not is_float16
+        and dtype
+        not in (
+            "bfloat16",
+            "bfloat16_t",
+            "bf16",
+        )
+    ):
         print(f"unsupported output dtype: {args.dtype}")
         return 1
 
-    file_dtype = np.int32 if is_int32 else np.uint16
+    file_dtype = np.int32 if is_int32 else (np.float16 if is_float16 else np.uint16)
     golden = np.fromfile(args.golden, dtype=file_dtype)
     actual = np.fromfile(args.actual, dtype=file_dtype)
     if golden.shape != actual.shape:
@@ -100,31 +113,33 @@ def main():
         return 0
 
     shape = (args.batch, args.m, args.n)
-    golden_tensor = torch.from_numpy(golden).view(torch.bfloat16).reshape(shape).float()
-    actual_tensor = torch.from_numpy(actual).view(torch.bfloat16).reshape(shape).float()
-    abs_diff = torch.abs(actual_tensor - golden_tensor)
+    if is_float16:
+        golden_values = golden.reshape(shape).astype(np.float32)
+        actual_values = actual.reshape(shape).astype(np.float32)
+    else:
+        golden_values = _bfloat16_to_float32(golden).reshape(shape)
+        actual_values = _bfloat16_to_float32(actual).reshape(shape)
+    abs_diff = np.abs(actual_values - golden_values)
     finite_mask = (
-        torch.isfinite(golden_tensor)
-        & torch.isfinite(actual_tensor)
-        & torch.isfinite(abs_diff)
+        np.isfinite(golden_values) & np.isfinite(actual_values) & np.isfinite(abs_diff)
     )
-    abs_golden = torch.abs(golden_tensor)
-    rel_diff = torch.where(
-        abs_golden > 0,
-        abs_diff / abs_golden,
-        torch.where(
-            abs_diff == 0,
-            torch.zeros_like(abs_diff),
-            torch.full_like(abs_diff, float("inf")),
-        ),
+    abs_golden = np.abs(golden_values)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        rel_diff = np.where(
+            abs_golden > 0,
+            abs_diff / abs_golden,
+            np.where(abs_diff == 0, np.zeros_like(abs_diff), np.inf),
+        )
+    point_error_count = int(
+        np.count_nonzero((rel_diff > POINT_ERROR_TOL) | ~finite_mask)
     )
-    point_error_count = int(((rel_diff > POINT_ERROR_TOL) | ~finite_mask).sum().item())
     ratio_error_count = int(
-        ((abs_diff > RATIO_POINT_ERROR_TOL) | ~finite_mask).sum().item()
+        np.count_nonzero((abs_diff > RATIO_POINT_ERROR_TOL) | ~finite_mask)
     )
     error_ratio = ratio_error_count / expected_size if expected_size else 0.0
 
-    print(f"max abs diff: {abs_diff.max().item() if expected_size else 0.0}")
+    max_abs_diff = float(abs_diff.max()) if expected_size else 0.0
+    print(f"max abs diff: {max_abs_diff}")
     print(f"point error count(>{POINT_ERROR_TOL}): {point_error_count}/{expected_size}")
     print(
         f"ratio error count(>{RATIO_POINT_ERROR_TOL}): {ratio_error_count}/{expected_size}, "
@@ -133,16 +148,17 @@ def main():
     if point_error_count != 0 or error_ratio > ERROR_RATIO_TOL:
         _write_metrics_json(
             "fail",
-            float(abs_diff.max().item()) if expected_size else 0.0,
+            max_abs_diff,
             float(error_ratio),
             float(ERROR_RATIO_TOL),
             expected_size,
         )
         return 1
-    print(f"PASS: verified {expected_size} BF16 elements")
+    output_label = "FP16" if is_float16 else "BF16"
+    print(f"PASS: verified {expected_size} {output_label} elements")
     _write_metrics_json(
         "pass",
-        float(abs_diff.max().item()) if expected_size else 0.0,
+        max_abs_diff,
         float(error_ratio),
         float(ERROR_RATIO_TOL),
         expected_size,

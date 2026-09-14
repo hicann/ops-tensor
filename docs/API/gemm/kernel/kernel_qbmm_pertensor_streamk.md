@@ -6,7 +6,8 @@
 QBMM per-tensor StreamK 的独立 `GemmUniversal` 特化，负责组装和协调：
 
 - `BlockSchedulerMatmulStreamK`：划分 M/N tile 和 K 分片；
-- 复用 `block_mmad_a8w8_fixpipe_quant.h` 中的 QBMM BlockMmad：DP 随路反量化写 C，SK 写 raw partial；
+- 复用 `block_mmad_a8w8_fixpipe_quant.h` 中的 QBMM BlockMmad：Data Parallel（DP）block 直接反量化
+  并写入 C，StreamK（SK）block 将当前 K 分片的累加结果写入 workspace；
 - `BlockEpilogueQbmmPertensorStreamK`：AIV 归约并反量化；
 - AIC→AIV 跨核同步。
 
@@ -54,7 +55,7 @@ Kernel 在模板实例化入口通过 `static_assert` 校验：
 - BlockMmad 与 BlockEpilogue 的输出和 workspace 类型必须一致；
 - `LayoutA` 支持 ND/DN，`LayoutB` 支持 ND/DN/NZ/ZN，`LayoutC` 仅支持 `nd_ext_layout_ptn`。
 
-本次不增加 bias 类型、`LayoutBias`、scale 类型或 bias/scale 配对校验。scale 的存储类型、
+Kernel 不额外校验 bias 类型、`LayoutBias`、scale 类型或 bias/scale 配对关系。scale 的存储类型、
 实际启用的量化模式及 MMAD/Epilogue 参数仍须遵循下文所述的数据流要求；通过模板校验不代表
 任意 bias/scale 组合都具备运行时支持。
 
@@ -119,7 +120,7 @@ __aicore__ inline void operator()(Params const& params);
 3. 使用 `GetActualBlockIdx()` 调整尾部 StreamK block 的执行顺序；
 4. Slice 当前 A/B/C/bias tile；
 5. 为 SK K 分片建立 workspace tensor；
-6. 调用共享 BlockMmad：DP 经 Fixpipe 反量化写 C，SK 写出 raw partial；
+6. 调用共享 BlockMmad：DP 经 Fixpipe 反量化写 C，SK 将当前 K 分片的累加结果写入 workspace；
 7. 所有 AIC 完成后设置 AIC→AIV flag。
 
 ### AIV 流程
@@ -164,25 +165,25 @@ Kernel wrapper 根据 `BlockMmad::BIAS_IN_MMAD` 将 bias 唯一分配到 MMAD �
 MMAD bias 只在 StreamK 的第 0 个 K 分片累加一次，其余分片不重复累加。
 
 int8 单路 FP32/BF16 scale 的同类型 bias，以及 FP8/HiFloat8 双 FP32 scale 的
-FP32 bias，都属于反量化域。all-SK 调度下每个 block 都先将 raw accumulator
-写入 workspace，AIV 统一执行：
+FP32 bias，都在反量化后处理。全 SK（all-SK）调度下，每个 block 都先将未反量化的累加结果
+写入 workspace，再由 AIV 统一执行：
 
 ```text
-INT8: reduce(raw partials) × X2 scale + same-dtype bias → cast/store
-FP8/HiFloat8: reduce(raw partials) × X2 FP32 scale × X1 FP32 scale + FP32 bias → cast/store
+INT8: 归约(分块累加结果) × X2 scale + 同类型 bias → 类型转换并写回
+FP8/HiFloat8: 归约(分块累加结果) × X2 FP32 scale × X1 FP32 scale + FP32 bias → 类型转换并写回
 ```
 
-DP block 通过 Fixpipe 直接写 C，不进入 AIV epilogue，因此 host 对该组合增加
+DP block 通过 Fixpipe 直接写 C，不进入 AIV epilogue，因此 Host 对该组合增加
 all-SK 约束。候选调度一旦包含 DP block，就回退非 StreamK MIX，避免漏加 bias
 或在输出 cast 之后才加 bias。
 
-无 post-dequant bias 的双 FP32 scale 与纯 Cube 通路一致：DP 和 SK 都先合并 X2/X1 scale，
+无反量化后 Bias（post-dequant bias）的双 FP32 scale 与纯 Cube 通路一致：DP 和 SK 都先合并 X2/X1 scale，
 再对合并结果应用一次 Fixpipe 掩码。因此该场景允许 DP+SK 混合调度。
 
 ## 组件组装示例
 
 完整可编译、可运行并带 golden 校验的示例见
-[quant_batch_matmul_kernel_api](../../../../examples/quant_batch_matmul/quant_batch_matmul_kernel_api/README.md)，
+[quant_batch_matmul_cube](../../../../examples/quant_batch_matmul/quant_batch_matmul_cube/README.md)，
 对应 CSV 场景为 `qbmm_pertensor_streamk`。
 
 ```cpp
@@ -256,11 +257,11 @@ X1 per-tensor 标量，而不是 shape 为 `{M}` 的 per-token scale。Bias 必�
 AIC:
                          ┌─ DP → Fixpipe dequant → C GM
 A/B GM → L1/L0 → Mmad ──┤
-                         └─ SK → raw L0C → workspace
+                         └─ SK → 未反量化的 L0C 结果 → workspace
                                               │
                                               └─ AIC→AIV flag
 AIV:
-workspace → split-K reduction → X2 scale → X1 scale → post-dequant bias → cast → C GM
+workspace → split-K 归约 → X2 scale → X1 scale → 反量化后 Bias → 类型转换 → C GM
 ```
 
 ## 约束

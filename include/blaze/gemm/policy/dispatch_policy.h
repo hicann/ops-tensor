@@ -26,6 +26,7 @@ struct KernelMmadWithScaleMxWithoutBatch {};           // Multi-block with Mx sc
 struct KernelGroupedMmadWithScaleMxActivationQuant {}; // Grouped Mx matmul with AIV activation and quantization
 struct KernelMmadWithScaleMxActivationQuant {};        // Multi-block with Mx scale, AIC+AIV fusion (gelu + mx quant)
 struct KernelMmadWithScaleFixpipeQuant {};             // Multi-block with fixpipe quant scale (A8W8 fixpipe)
+struct KernelMmadWithScaleFixpipeQuantWithoutBatch {}; // Multi-block with fixpipe quant scale, without batch broadcast
 struct KernelGroupedMmadWithScaleFixpipeQuant {};      // Grouped S8S4 with fixpipe per-channel/per-group scale
 struct KernelMmadWithScaleMix {};                      // Multi-block with fixpipe mix scale (WeightNZ)
 struct KernelMmadWithScaleMixWithoutBatch {};          // Multi-block with fixpipe mix scale (WeightNZ), without batch

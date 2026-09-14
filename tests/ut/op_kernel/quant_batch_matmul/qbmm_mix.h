@@ -37,31 +37,30 @@ namespace QBMMUT {
 
 // MIX 路径的公共类型装配：AIC 侧 int8 GEMM（int32 L0C→UB），AIV 侧反量化。
 template <typename AType, typename BType, typename OutType, typename X2ScaleType, typename X1ScaleType,
-          typename BiasType, uint64_t FullLoadMode = Blaze::Gemm::NONE_FULL_LOAD_MODE>
+          typename BiasType, uint64_t FullLoadMode = Blaze::Gemm::NONE_FULL_LOAD_MODE,
+          typename LayoutA_ = asc::te::nd_ext_layout_ptn, typename LayoutB_ = asc::te::nd_ext_layout_ptn,
+          typename LayoutC_ = asc::te::nd_ext_layout_ptn, typename ScheduleType_ = Blaze::Gemm::KernelMmadWithScaleMix>
 struct QBMMMixTypes {
-    using LayoutA = asc::te::nd_ext_layout_ptn;
-    using LayoutB = asc::te::nd_ext_layout_ptn;
-    using LayoutC = asc::te::nd_ext_layout_ptn;
-    using LayoutBias = asc::te::nd_ext_layout_ptn;
+    using LayoutA = LayoutA_;
+    using LayoutB = LayoutB_;
+    using LayoutC = LayoutC_;
 
     using ProblemShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
     using BlockShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
 
-    // BTypeTuple 第 1 个元素为权重类型；第 2 个元素在 MIX mmad 中未使用（scale 在 epilogue 施加）。
-    using BTypeTuple = AscendC::Std::tuple<BType, uint64_t>;
+    using BTypeTuple = AscendC::Std::tuple<BType, X2ScaleType>;
 
-    using DispatchPolicy = Blaze::Gemm::MatmulWithScaleMix<FullLoadMode, false>;
+    using DispatchPolicy = Blaze::Gemm::MatmulWithScaleMix<FullLoadMode, false, ScheduleType_>;
 
     using BlockScheduler = Blaze::Gemm::Block::BlockSchedulerQuantBatchMatmulV3<ProblemShape, FullLoadMode, LayoutA,
                                                                                 LayoutB, AType>;
 
-    // CType 占位为 int32_t（UB 累加器类型），MIX mmad 类模板体内未直接引用该形参。
-    using BlockMmad = Blaze::Gemm::Block::BlockMmad<DispatchPolicy, AType, LayoutA, BTypeTuple, LayoutB, int32_t,
-                                                    LayoutC, BiasType, LayoutBias>;
+    using BlockMmad = Blaze::Gemm::Block::BlockMmad<DispatchPolicy, AType, LayoutA, BTypeTuple, LayoutB, OutType,
+                                                    LayoutC, BiasType, LayoutC>;
 
-    // BiasType 对 int8 输入编译期固定为 int32_t，实际 bias dtype 由 epilogueParams.biasDtype 运行时解释。
-    using BlockEpilogue = Blaze::Epilogue::Block::BlockEpilogueDequant<OutType, int32_t, X2ScaleType, X1ScaleType,
-                                                                       int32_t>;
+    using BlockEpilogue = Blaze::Epilogue::Block::BlockEpilogueDequant<OutType, BiasType, X2ScaleType, X1ScaleType,
+                                                                       typename BlockMmad::L0CType>;
+    using Kernel = Blaze::Gemm::Kernel::GemmUniversal<ProblemShape, BlockMmad, BlockEpilogue, BlockScheduler>;
 };
 
 // 用 tilingData 填充 MIX BlockMmad::Params（aGm/bGm + 全套 tile/L1/L0C 配置）。
@@ -108,9 +107,7 @@ __aicore__ inline void QBMMMixWrapper(GM_ADDR x1GM, GM_ADDR x2GM, GM_ADDR pertok
                                       GM_ADDR biasGM, GM_ADDR yGM, const QBMMV3TilingData& tilingData)
 {
     using Types = QBMMMixTypes<AType, BType, OutType, X2ScaleType, X1ScaleType, BiasType, FullLoadMode>;
-    using QBMMKernel = Blaze::Gemm::Kernel::GemmUniversal<typename Types::ProblemShape, typename Types::BlockMmad,
-                                                          typename Types::BlockEpilogue,
-                                                          typename Types::BlockScheduler>;
+    using QBMMKernel = typename Types::Kernel;
     using Params = typename QBMMKernel::Params;
 
     Params params;
@@ -133,22 +130,20 @@ template <typename AType, typename BType, typename OutType, typename X2ScaleType
 __aicore__ inline void QBMMMixWithoutBatchWrapper(GM_ADDR x1GM, GM_ADDR x2GM, GM_ADDR pertokenScaleGM, GM_ADDR scaleGM,
                                                   GM_ADDR biasGM, GM_ADDR yGM, const QBMMV3TilingData& tilingData)
 {
-    using Types = QBMMMixTypes<AType, BType, OutType, X2ScaleType, X1ScaleType, BiasType, FullLoadMode>;
-    using DispatchPolicy = Blaze::Gemm::MatmulWithScaleMix<FullLoadMode, false,
-                                                           Blaze::Gemm::KernelMmadWithScaleMixWithoutBatch>;
-    using BlockMmad = Blaze::Gemm::Block::BlockMmad<DispatchPolicy, AType, typename Types::LayoutA,
-                                                    typename Types::BTypeTuple, typename Types::LayoutB, int32_t,
-                                                    typename Types::LayoutC, BiasType, typename Types::LayoutBias>;
-    using QBMMKernel = Blaze::Gemm::Kernel::GemmUniversal<
-        typename Types::ProblemShape, BlockMmad, typename Types::BlockEpilogue, typename Types::BlockScheduler>;
+    using Types = QBMMMixTypes<AType, BType, OutType, X2ScaleType, X1ScaleType, BiasType, FullLoadMode,
+                               asc::te::nd_ext_layout_ptn, asc::te::nd_ext_layout_ptn, asc::te::nd_ext_layout_ptn,
+                               Blaze::Gemm::KernelMmadWithScaleMixWithoutBatch>;
+    using QBMMKernel = typename Types::Kernel;
     using Params = typename QBMMKernel::Params;
 
     Params params;
-    params.problemShape = {tilingData.m, tilingData.n, tilingData.k, tilingData.b};
+    params.problemShape = {tilingData.m, tilingData.n, tilingData.k, 1L};
     FillMixMmadParams(params.mmParams, x1GM, x2GM, tilingData);
+    params.mmParams.problemShape = params.problemShape;
     FillQbmmSchParams(params.schParams, tilingData);
 
     FillEpilogueParams(params.epilogueParams, pertokenScaleGM, scaleGM, biasGM, yGM, tilingData);
+    params.qbmmParams.bMustHitL2 = tilingData.weightMustHitL2;
 
     QBMMKernel kernel;
     kernel(params);

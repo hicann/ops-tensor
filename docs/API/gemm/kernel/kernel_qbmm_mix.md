@@ -2,7 +2,10 @@
 > [代码位置](../../../../include/blaze/gemm/kernel/kernel_qbmm_mix.h)
 
 ## 功能说明
-MIX 模板量化 Batch Matmul Kernel，**AIC（cube）+ AIV（vector）双核协同**：AIC 做原始 int32 矩阵乘并经 fixpipe（NoQuant）把 L0C 结果搬到 UB，AIV 在向量上做反量化后处理（dequant + x2Scale [* x1Scale] + bias），输出 bf16/fp16/fp32。支持 int8（per-token / per-channel / per-tensor）量化与 WeightNz（FRACTAL_NZ）权重格式，支持多 Batch 维度与尾块切分（tail-split），复刻原 `QuantBmmPertokenRegbaseKernel` / `AL1FullLoad` 的调度逻辑。
+该 Kernel 面向支持 Batch 广播的 MIX 量化矩阵乘场景，采用 AIC（cube）与 AIV（vector）双核协同：
+AIC 完成矩阵乘，并通过 Fixpipe（NoQuant）将 L0C 中的 int32 累加结果搬入 UB；AIV 执行反量化和
+Bias 计算，输出 bf16/fp16/fp32。Kernel 支持多 Batch 和尾块切分，调度行为与
+`QuantBmmPertokenRegbaseKernel` / `AL1FullLoad` 保持一致。
 
 **继承自**：[Kernel Matmul 基础框架](./kernel.md)
 **配套组件**：[block_mmad_a8w8_mix](../block/block_mmad_a8w8_mix.md)（AIC 矩阵乘）+ [block_epilogue_dequant](../../epilogue/block/block_epilogue_dequant.md)（AIV 反量化）
@@ -26,11 +29,11 @@ Kernel 在模板实例化时通过 `static_assert` 校验以下组合：
 - `LayoutA` 支持 ND/DN，`LayoutB` 支持 ND/DN/NZ/ZN；
 - BlockEpilogue 的 L0C 类型必须与 BlockMmad 一致。
 
-本次 dtype/format 校验不增加 bias 类型、`LayoutBias` 或 scale 类型约束，也不按 A/B 类型限制
+dtype/format 校验不包含 bias 类型、`LayoutBias` 或 scale 类型约束，也不按 A/B 类型限制
 bias/scale 组合。`BlockEpilogueDequant` 仍根据 `Params::biasDtype` 分派实际 bias 搬运；
 scale 的有效类型和量化模式由原有实现及调用方保证。
 
-`BlockMmad` 的 `LayoutC` 是占位标签，不参与实际输出布局选择，本次不新增其断言。
+`BlockMmad` 的 `LayoutC` 是占位标签，不参与实际输出布局选择，因此不对其增加编译期断言。
 真实的 L0C→UB 和 epilogue 写回仍使用实现中构造的 ND 布局；这不表示支持 DN 物理输出。
 
 x2Scale 支持 per-channel / per-tensor，x1Scale 支持 per-token / per-tensor（可选）。不在上述范围内的
@@ -132,7 +135,9 @@ __aicore__ inline void Run(const Params& params)
 __aicore__ inline void ProcessWithBatch(const Params& params, BlockScheduler& bs)
 ```
 功能：4 维 Batch 循环，逐 Batch 更新 A/B/C 偏移并调用 `ProcessSingleBatch`。
-说明：进入除法前对 `batchC1..C4 == 0` 做防御（除零即返回）；尾块更新（needUpdateTail_）跨 Batch latch，并计入剩余 Batch 的 tile 数（`restBatch * GetTotalCnt()`），保证多 Batch + tail-split 不会错位。
+说明：进入除法前对 `batchC1..C4 == 0` 做防御（除零即返回）；尾块更新状态
+`needUpdateTail_` 会跨 Batch 保持，并计入剩余 Batch 的 tile 数（`restBatch * GetTotalCnt()`），
+保证多 Batch + tail-split 不会错位。
 
 ### ProcessSingleBatch函数
 ```
@@ -153,7 +158,7 @@ __aicore__ inline void ProcessSingleBatch(
 ## 调用示例
 
 完整可编译、可运行并带 golden 校验的示例见
-[quant_batch_matmul_kernel_api](../../../../examples/quant_batch_matmul/quant_batch_matmul_kernel_api/README.md)，
+[quant_batch_matmul_mix](../../../../examples/quant_batch_matmul/quant_batch_matmul_mix/README.md)，
 对应 CSV 场景为 `qbmm_mix`。
 
 以下示例以单路 `int8` 输入、`bfloat16_t` 输出为例。GM 地址和切分参数由上层 host tiling
@@ -260,9 +265,10 @@ AIV:  UB(int32) × x2Scale [× x1Scale] + bias --VF dequant--> GM(bf16/fp16/fp32
 - `nBufferNum`：2 或 4，平衡 L1 容量与流水线并行度。
 - `dbL0C > 1`：启用 L0C ping-pong，重叠 AIC 计算与 AIV 后处理。
 - A 全载模式（`A_FULL_LOAD_MODE`）：A 常驻 L1，适用于大 K、小 M。
-- 多 Batch + 尾块场景依赖 needUpdateTail_ latch + restBatch，勿单独裁剪。
+- 多 Batch 与尾块场景由 `needUpdateTail_` 和 `restBatch` 共同维护调度状态；修改其中一条
+  处理路径时，需要同步检查另一条路径的状态更新逻辑。
 
 ## 适用场景
-- int8 量化 Batch Matmul（per-token / per-channel / per-tensor）。
+- 支持多 Batch 的 int8 量化 Matmul（per-token / per-channel / per-tensor）。
 - WeightNz（FRACTAL_NZ）权重布局下的量化 MatMul。
 - 带 bias（bf16/fp16/fp32）的量化推理。

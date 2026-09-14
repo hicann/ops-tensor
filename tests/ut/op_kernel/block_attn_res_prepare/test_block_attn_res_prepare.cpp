@@ -15,6 +15,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <limits>
 #include <type_traits>
 
 #include "block_attn_res_prepare.h"
@@ -152,7 +153,7 @@ void FillInputs(float* residual, float* query, uint64_t totalT, uint64_t totalN,
     }
 }
 
-void RunKernelSmoke(const Params& inputParams, int64_t validN)
+void RunKernelSmoke(const Params& inputParams, uint64_t validN)
 {
     constexpr uint32_t BLOCK_NUM = 1U;
     const uint64_t totalS = static_cast<uint64_t>(asc::te::get<0>(inputParams.problemShape));
@@ -167,7 +168,7 @@ void RunKernelSmoke(const Params& inputParams, int64_t validN)
 
     GmBuffer residual(residualElems * sizeof(float));
     GmBuffer query(queryElems * sizeof(float));
-    GmBuffer validBlocks(sizeof(int64_t));
+    GmBuffer validBlocks(sizeof(uint64_t));
     GmBuffer softmaxMax(statElems * sizeof(float));
     GmBuffer weightedOutput(outputElems * sizeof(float));
     GmBuffer softmaxSum(statElems * sizeof(float));
@@ -186,7 +187,7 @@ void RunKernelSmoke(const Params& inputParams, int64_t validN)
     auto* residualData = reinterpret_cast<float*>(residual.Get());
     auto* queryData = reinterpret_cast<float*>(query.Get());
     FillInputs(residualData, queryData, totalT, totalN, totalS, totalD);
-    *reinterpret_cast<int64_t*>(validBlocks.Get()) = validN;
+    *reinterpret_cast<uint64_t*>(validBlocks.Get()) = validN;
     std::fill_n(reinterpret_cast<float*>(softmaxMax.Get()), statElems, 0.0F);
     std::fill_n(reinterpret_cast<float*>(weightedOutput.Get()), outputElems, 0.0F);
     std::fill_n(reinterpret_cast<float*>(softmaxSum.Get()), statElems, 0.0F);
@@ -396,9 +397,14 @@ TEST_F(BlockAttnResPrepareTest, UnalignedDTailUsesAlignedMm1L1Capacity)
     RunKernelSmoke(params, 1);
 }
 
-TEST_F(BlockAttnResPrepareTest, Int64ValidBlocksAboveInt32MaxClampsToTotalN)
+TEST_F(BlockAttnResPrepareTest, Uint64ValidBlocksAboveInt32MaxClampsToTotalN)
 {
-    RunKernelSmoke(MakeParams(), 2147483648LL);
+    RunKernelSmoke(MakeParams(), 2147483648ULL);
+}
+
+TEST_F(BlockAttnResPrepareTest, Uint64MaxMinusTwoClampsToTotalN)
+{
+    RunKernelSmoke(MakeParams(), std::numeric_limits<uint64_t>::max() - 2U);
 }
 
 TEST_F(BlockAttnResPrepareTest, GroupedTokensUseDoubleBufferedPipelineSmoke)

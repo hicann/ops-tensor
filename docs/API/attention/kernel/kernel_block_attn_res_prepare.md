@@ -134,4 +134,4 @@ AIC: MM2(E * V) -> numerator GM
 同一逻辑组的一个 AIC 和两个 AIV 共享一段 per-core workspace。Kernel 使用三组握手：dot ready、E ready、
 E buffer free。MM2 通过 Fixpipe 直接写最终 GM。
 
-`validBlocks <= 0` 时跳过 Cube，仅由 AIV0 把 `numerator`、`logitMax`、`expSum` 写 0。
+`validBlocks == 0` 时跳过 Cube，仅由 AIV0 把 `numerator`、`logitMax`、`expSum` 写 0。

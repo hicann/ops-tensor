@@ -162,7 +162,7 @@ void FreeBuffers(DeviceBuffers& buffers)
     }
 }
 
-int Run(int64_t validN)
+int Run(uint64_t validN)
 {
     const size_t residualBytes = static_cast<size_t>(TOTAL_T) * TOTAL_N * TOTAL_D * sizeof(float);
     const size_t queryBytes = static_cast<size_t>(TOTAL_S) * TOTAL_D * sizeof(float);
@@ -214,10 +214,10 @@ int main(int argc, const char** argv)
         std::cerr << "Usage: " << argv[0] << " <valid_blocks>" << std::endl;
         return 1;
     }
-    const int64_t validN = std::atoll(argv[1]);
-    if (validN < 0 || validN > static_cast<int64_t>(TOTAL_N)) {
+    const int64_t parsedValidN = std::atoll(argv[1]);
+    if (parsedValidN < 0 || parsedValidN > static_cast<int64_t>(TOTAL_N)) {
         std::cerr << "valid_blocks must be in [0, " << TOTAL_N << "]." << std::endl;
         return 1;
     }
-    return Run(validN);
+    return Run(static_cast<uint64_t>(parsedValidN));
 }

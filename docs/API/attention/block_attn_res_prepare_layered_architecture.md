@@ -5,7 +5,7 @@
 本文描述 Phase 1 混合 AIC+AIV 模板在 ops-tensor 中的公共组件。算子原型、Host Tiling、外部 Kernel
 入口和 TilingData 位于 ops-transformer。
 
-- 数据输入输出和中间计算均为 FP32，`validBlocks` 为 INT64；
+- 数据输入输出和中间计算均为 FP32，`validBlocks` 为 UINT64；
 - 问题形状统一为 `[S,N,D,T]`；
 - Attention 模板使用仓内 `AttentionUniversal`，不继承或特化 `GemmUniversal`；
 - 两个矩阵乘复用 GEMM 的基础 `BlockMmad`，由 tuple 组合，不新增算子专用 MMAD。
@@ -139,5 +139,5 @@ Kernel 先创建 `[usedCoreNum,workspacePerCoreElems]` GM Tensor，再按逻辑�
 
 ## 9. 空输入
 
-`validBlocks <= 0` 时不执行 MM1/MM2。AIV0 遍历本逻辑核的输出 block，把 `numerator`、`logitMax` 和
+`validBlocks == 0` 时不执行 MM1/MM2。AIV0 遍历本逻辑核的输出 block，把 `numerator`、`logitMax` 和
 `expSum` 全部写 0；兄弟 AIV 空闲。纯 AIV 模板和混合模板使用相同契约。

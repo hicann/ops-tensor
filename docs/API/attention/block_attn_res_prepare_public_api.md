@@ -91,7 +91,7 @@ struct BlockEpilogueBlockAttnResPrepare::Params {
 | `Init(params)` | 保存 Epilogue 参数，建立 UB 区域布局并计算 `1 / D` |
 | `ReduceV(vTensor)` | 分 D tile 搬入 `V[validN,D]`，累计每个 N 行的平方和 |
 | `FinalizeSoftmax(dotTensor, eWorkspaceTensor, maxTensor, sumTensor)` | RMS 归一化 dot，计算 softmax，并写 E/max/sum |
-| `ProcessEmptyInput(outputTensor, maxTensor, sumTensor)` | `validN <= 0` 时把 numerator/max/sum 全部写 0 |
+| `ProcessEmptyInput(outputTensor, maxTensor, sumTensor)` | `validN == 0` 时把 numerator/max/sum 全部写 0 |
 
 这些接口只接收带 Layout 的 Tensor；调用方不传 UB offset、长度或 stride 标量。
 
@@ -142,8 +142,8 @@ Tile API 均以 Tensor 为参数，不暴露 UB 地址布局。
 ## 7. 输入输出契约
 
 - `blockResidual`、`pseudoQuery`、`numerator`、`logitMax`、`expSum` 均为 FP32；
-- `validBlocks` 为 INT64，并裁剪到 `[0,N]`；
+- `validBlocks` 为 UINT64，并裁剪到 `[0,N]`；
 - `0 < N <= VECTOR_REG_WIDTH / sizeof(float)`，当前 Ascend 950 为 `N <= 64`；
 - `D > 0`、`baseD > 0`、`dTileNum > 0`，且 `vUbBufferNum` 必须为 2；
-- `validBlocks <= 0` 时不执行 Cube，`numerator`、`logitMax`、`expSum` 全部输出 0；
+- `validBlocks == 0` 时不执行 Cube，`numerator`、`logitMax`、`expSum` 全部输出 0；
 - 非空输入执行 `Q * V^T -> RMS/softmax -> E * V`。

@@ -76,6 +76,7 @@ struct QBMMV3TilingData {
     uint32_t baseK_qbmm;
     uint32_t isBias;
     uint32_t dbL0C;
+    uint32_t weightMustHitL2{1U};
 
     // BlockEpilogueDequant 额外字段（MIX 路径）：bias 运行时 dtype 代码（ge::DataType，如 DT_FLOAT/DT_FLOAT16/DT_BF16）
     uint32_t biasDtype;
@@ -83,6 +84,9 @@ struct QBMMV3TilingData {
 #pragma pack(pop)
 
 namespace QBMMUT {
+
+constexpr uint32_t GE_DT_FLOAT = 0U;
+constexpr uint32_t GE_DT_INT32 = 3U;
 
 #pragma pack(push, 8)
 struct QBMML0CPingpongTilingData {
@@ -97,6 +101,8 @@ struct QBMML0CPingpongTilingData {
     uint32_t scaleKL1;
     uint32_t nBufferNum;
     uint32_t dbL0C;
+    uint32_t isBias{0U};
+    uint32_t weightMustHitL2{1U};
 };
 
 struct QBMMStreamKTilingData {
@@ -112,6 +118,23 @@ struct QBMMStreamKTilingData {
     uint32_t kL1;
     uint32_t scaleKL1;
     uint32_t dbL0C;
+    uint32_t isBias{0U};
+    uint32_t weightMustHitL2{1U};
+};
+
+struct QBMMPertensorStreamKTilingData {
+    int64_t m;
+    int64_t n;
+    int64_t k;
+    int64_t b;
+    uint32_t usedCoreNum;
+    uint32_t baseM;
+    uint32_t baseN;
+    uint32_t baseK;
+    uint32_t singleCoreK;
+    uint32_t kL1;
+    uint32_t isBias;
+    uint32_t biasDtype;
 };
 #pragma pack(pop)
 

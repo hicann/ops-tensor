@@ -10,7 +10,7 @@
 
 /**
  * @file quant_batch_matmul_mx.cpp
- * @brief Unified MX Quant Batch MatMul example supporting multiple dtypes and transposes.
+ * @brief Unified MX Quant Batch MatMul example covering batch, L0C ping-pong, and StreamK variants.
  *
  * Exercises Blaze::Gemm::Kernel::GemmUniversal (kernel_qbmm_mx.h specialization)
  * with Blaze::Gemm::MatmulWithScaleMx dispatch policy and
@@ -33,13 +33,19 @@
 #include <vector>
 
 #include "acl/acl.h"
+#include "kernel_basic_intf.h"
+
+#include "blaze/epilogue/block/block_epilogue_matmul_streamk.h"
 #include "blaze/epilogue/block/block_epilogue_empty.h"
 #include "blaze/gemm/block/block_mmad_qbmm_mx.h"
+#include "blaze/gemm/block/block_mmad_qbmm_mx_l0c_pingpong.h"
+#include "blaze/gemm/block/block_scheduler_matmul_streamk.h"
 #include "blaze/gemm/block/block_scheduler_qbmm.h"
 #include "blaze/gemm/kernel/kernel_qbmm_mx.h"
+#include "blaze/gemm/kernel/kernel_qbmm_mx_without_batch.h"
+#include "blaze/gemm/kernel/kernel_qbmm_streamk.h"
 #include "blaze/gemm/policy/dispatch_policy.h"
 #include "data_utils.h"
-#include "kernel_basic_intf.h"
 #include "platform/platform_ascendc.h"
 
 /* ========================================================================== */
@@ -51,47 +57,58 @@ static constexpr uint64_t MXFP_DIVISOR_SIZE = 64UL;
 static constexpr int64_t BLOCK_16 = 16L;
 static constexpr uint64_t C0_SIZE_B8 = 32UL;
 static constexpr uint64_t C0_SIZE_B4 = 64UL;
+static constexpr uint64_t STREAMK_WORKSPACE_TILE_BYTES = 256UL * 256UL * sizeof(float);
+static constexpr uint64_t STREAMK_WORKSPACE_OVERHEAD_BYTES = 20UL * 1024UL * 1024UL;
+static constexpr uint32_t L2_CACHE_DEFAULT_VALUE = 0U;
 
 /* ========================================================================== */
 /* Macros                                                                     */
 /* ========================================================================== */
 
-#define LAUNCH_KERNEL_IMPL(FULL_LOAD_MODE)                                                                     \
-    quant_batch_matmul_mx_kernel<A_TYPE, B_TYPE, C_TYPE, LAYOUT_A, LAYOUT_B, FULL_LOAD_MODE>                   \
+#define LAUNCH_KERNEL_IMPL(FULL_LOAD_MODE, WITHOUT_BATCH)                                                      \
+    quant_batch_matmul_mx_kernel<A_TYPE, B_TYPE, C_TYPE, LAYOUT_A, LAYOUT_B, FULL_LOAD_MODE, WITHOUT_BATCH>    \
         <<<p.blockNum, 0, p.stream>>>(p.dA, p.dB, p.dBias, p.dScaleA, p.dScaleB, p.dC, p.m, p.k, p.n, p.baseM, \
                                       p.baseN, p.baseK, p.kL1, p.scaleKL1, p.l1BufferNum, p.dbL0C, p.biasElements)
 
-#define DISPATCH_TRANS(A_TYPE, B_TYPE, C_TYPE, TRANS_A, TRANS_B, IS_NZ, FULL_LOAD_MODE)                      \
-    do {                                                                                                     \
-        if (TRANS_A) {                                                                                       \
-            if (TRANS_B) {                                                                                   \
-                if (IS_NZ) {                                                                                 \
-                    LaunchKernel<A_TYPE, B_TYPE, C_TYPE, true, true, true, FULL_LOAD_MODE>(launchParams);    \
-                } else {                                                                                     \
-                    LaunchKernel<A_TYPE, B_TYPE, C_TYPE, true, true, false, FULL_LOAD_MODE>(launchParams);   \
-                }                                                                                            \
-            } else {                                                                                         \
-                if (IS_NZ) {                                                                                 \
-                    LaunchKernel<A_TYPE, B_TYPE, C_TYPE, true, false, true, FULL_LOAD_MODE>(launchParams);   \
-                } else {                                                                                     \
-                    LaunchKernel<A_TYPE, B_TYPE, C_TYPE, true, false, false, FULL_LOAD_MODE>(launchParams);  \
-                }                                                                                            \
-            }                                                                                                \
-        } else {                                                                                             \
-            if (TRANS_B) {                                                                                   \
-                if (IS_NZ) {                                                                                 \
-                    LaunchKernel<A_TYPE, B_TYPE, C_TYPE, false, true, true, FULL_LOAD_MODE>(launchParams);   \
-                } else {                                                                                     \
-                    LaunchKernel<A_TYPE, B_TYPE, C_TYPE, false, true, false, FULL_LOAD_MODE>(launchParams);  \
-                }                                                                                            \
-            } else {                                                                                         \
-                if (IS_NZ) {                                                                                 \
-                    LaunchKernel<A_TYPE, B_TYPE, C_TYPE, false, false, true, FULL_LOAD_MODE>(launchParams);  \
-                } else {                                                                                     \
-                    LaunchKernel<A_TYPE, B_TYPE, C_TYPE, false, false, false, FULL_LOAD_MODE>(launchParams); \
-                }                                                                                            \
-            }                                                                                                \
-        }                                                                                                    \
+#define DISPATCH_TRANS(A_TYPE, B_TYPE, C_TYPE, TRANS_A, TRANS_B, IS_NZ, FULL_LOAD_MODE, WITHOUT_BATCH)        \
+    do {                                                                                                      \
+        if (TRANS_A) {                                                                                        \
+            if (TRANS_B) {                                                                                    \
+                if (IS_NZ) {                                                                                  \
+                    LaunchKernel<A_TYPE, B_TYPE, C_TYPE, true, true, true, FULL_LOAD_MODE, WITHOUT_BATCH>(    \
+                        launchParams);                                                                        \
+                } else {                                                                                      \
+                    LaunchKernel<A_TYPE, B_TYPE, C_TYPE, true, true, false, FULL_LOAD_MODE, WITHOUT_BATCH>(   \
+                        launchParams);                                                                        \
+                }                                                                                             \
+            } else {                                                                                          \
+                if (IS_NZ) {                                                                                  \
+                    LaunchKernel<A_TYPE, B_TYPE, C_TYPE, true, false, true, FULL_LOAD_MODE, WITHOUT_BATCH>(   \
+                        launchParams);                                                                        \
+                } else {                                                                                      \
+                    LaunchKernel<A_TYPE, B_TYPE, C_TYPE, true, false, false, FULL_LOAD_MODE, WITHOUT_BATCH>(  \
+                        launchParams);                                                                        \
+                }                                                                                             \
+            }                                                                                                 \
+        } else {                                                                                              \
+            if (TRANS_B) {                                                                                    \
+                if (IS_NZ) {                                                                                  \
+                    LaunchKernel<A_TYPE, B_TYPE, C_TYPE, false, true, true, FULL_LOAD_MODE, WITHOUT_BATCH>(   \
+                        launchParams);                                                                        \
+                } else {                                                                                      \
+                    LaunchKernel<A_TYPE, B_TYPE, C_TYPE, false, true, false, FULL_LOAD_MODE, WITHOUT_BATCH>(  \
+                        launchParams);                                                                        \
+                }                                                                                             \
+            } else {                                                                                          \
+                if (IS_NZ) {                                                                                  \
+                    LaunchKernel<A_TYPE, B_TYPE, C_TYPE, false, false, true, FULL_LOAD_MODE, WITHOUT_BATCH>(  \
+                        launchParams);                                                                        \
+                } else {                                                                                      \
+                    LaunchKernel<A_TYPE, B_TYPE, C_TYPE, false, false, false, FULL_LOAD_MODE, WITHOUT_BATCH>( \
+                        launchParams);                                                                        \
+                }                                                                                             \
+            }                                                                                                 \
+        }                                                                                                     \
     } while (0)
 
 /* ========================================================================== */
@@ -116,6 +133,10 @@ struct CliArgs {
     int64_t l1Buffers = 2;
     int64_t dbL0C = 1;
     bool aFullLoad = false;
+    bool withoutBatch = false;
+    bool l0cPingPong = false;
+    bool streamK = false;
+    std::string kernelVariant = "batch";
     std::string format = "(ND,ND)";
 };
 
@@ -127,11 +148,11 @@ static bool ParseBool(const char* s)
 
 static bool ParseCliArgs(int argc, const char** argv, CliArgs& args)
 {
-    if (argc != 19) {
+    if (argc != 20) {
         std::fprintf(stderr,
                      "Usage: %s <m> <k> <n> <bias> <a_dtype> <b_dtype> <c_dtype>"
                      " <transA> <transB> <format> <base_m> <base_n> <base_k> <tile_k_l1> <scale_k_l1>"
-                     " <l1_buffers> <db_l0c> <a_full_load>\n",
+                     " <l1_buffers> <db_l0c> <a_full_load> <kernel_variant>\n",
                      argv[0]);
         return false;
     }
@@ -155,6 +176,15 @@ static bool ParseCliArgs(int argc, const char** argv, CliArgs& args)
     args.l1Buffers = std::atoll(argv[16]);
     args.dbL0C = std::atoll(argv[17]);
     args.aFullLoad = ParseBool(argv[18]);
+    args.kernelVariant = argv[19];
+    if (args.kernelVariant != "batch" && args.kernelVariant != "without_batch" &&
+        args.kernelVariant != "l0c_pingpong" && args.kernelVariant != "streamk") {
+        std::fprintf(stderr, "Error: kernel_variant must be batch, without_batch, l0c_pingpong, or streamk.\n");
+        return false;
+    }
+    args.withoutBatch = args.kernelVariant == "without_batch";
+    args.l0cPingPong = args.kernelVariant == "l0c_pingpong";
+    args.streamK = args.kernelVariant == "streamk";
 
     // Validation
     if (args.m <= 0 || args.k <= 0 || args.n <= 0) {
@@ -187,6 +217,27 @@ static bool ParseCliArgs(int argc, const char** argv, CliArgs& args)
     if (args.cDtype != "float16" && args.cDtype != "bfloat16" && args.cDtype != "float32") {
         std::fprintf(stderr, "Error: C dtype must be float16, bfloat16, or float32 (got '%s').\n", args.cDtype.c_str());
         return false;
+    }
+    if (args.l0cPingPong) {
+        const bool validL0cPingPong = args.aDtype == "fp8_e4m3" && args.bDtype == "fp8_e4m3" &&
+                                      args.cDtype == "float16" && !args.transA && !args.transB &&
+                                      args.format == "(ND,ND)" && args.bias == 0 && args.dbL0C == 2 &&
+                                      args.scaleKL1 == args.kL1;
+        if (!validL0cPingPong) {
+            std::fprintf(stderr, "Error: l0c_pingpong requires fp8_e4m3*fp8_e4m3 -> float16, ND/ND, no transpose, "
+                                 "no bias, db_l0c=2, and scale_k_l1=tile_k_l1.\n");
+            return false;
+        }
+    }
+    if (args.streamK) {
+        const bool validStreamK = args.aDtype == "fp8_e4m3" && args.bDtype == "fp8_e5m2" && args.cDtype == "float16" &&
+                                  !args.transA && !args.transB && args.format == "(ND,ND)" && args.bias == 0 &&
+                                  !args.aFullLoad && args.k % static_cast<int64_t>(MXFP_DIVISOR_SIZE) == 0;
+        if (!validStreamK) {
+            std::fprintf(stderr, "Error: streamk requires fp8_e4m3*fp8_e5m2 -> float16, ND/ND, no transpose, "
+                                 "no bias, a_full_load=false, and K aligned to 64.\n");
+            return false;
+        }
     }
     return true;
 }
@@ -245,7 +296,7 @@ static int64_t CalcNZElementCount(int64_t k, int64_t n, const std::string& dtype
 
 using ProblemShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
 
-template <class AType, class BType, class CType, class LayoutA, class LayoutB, uint64_t FullLoadMode>
+template <class AType, class BType, class CType, class LayoutA, class LayoutB, uint64_t FullLoadMode, bool WithoutBatch>
 __global__ __aicore__ void quant_batch_matmul_mx_kernel(GM_ADDR aGm, GM_ADDR bGm, GM_ADDR biasGm, GM_ADDR scaleAGm,
                                                         GM_ADDR scaleBGm, GM_ADDR cGm, int64_t m, int64_t k, int64_t n,
                                                         uint64_t baseM, uint64_t baseN, uint64_t baseK, uint64_t kL1,
@@ -257,7 +308,9 @@ __global__ __aicore__ void quant_batch_matmul_mx_kernel(GM_ADDR aGm, GM_ADDR bGm
     using BiasType = float;
     using LayoutC = asc::te::nd_ext_layout_ptn;
     using LayoutBias = asc::te::nd_ext_layout_ptn;
-    using DispatchPolicy = Blaze::Gemm::MatmulWithScaleMx<FullLoadMode, false>;
+    using ScheduleType = AscendC::Std::conditional_t<WithoutBatch, Blaze::Gemm::KernelMmadWithScaleMxWithoutBatch,
+                                                     Blaze::Gemm::KernelMmadWithScaleMx>;
+    using DispatchPolicy = Blaze::Gemm::MatmulWithScaleMx<FullLoadMode, false, ScheduleType>;
     using BlockScheduler = Blaze::Gemm::Block::BlockSchedulerQuantBatchMatmulV3<ProblemShape, FullLoadMode, LayoutA,
                                                                                 LayoutB, AType>;
     using BlockMmad = Blaze::Gemm::Block::BlockMmad<DispatchPolicy, AType, LayoutA, BType, LayoutB, CType, LayoutC,
@@ -269,24 +322,103 @@ __global__ __aicore__ void quant_batch_matmul_mx_kernel(GM_ADDR aGm, GM_ADDR bGm
     params.mmadParams = {aGm, bGm, cGm, biasGm, scaleAGm, scaleBGm};
     params.l1Params = {kL1, scaleKL1, l1BufferNum};
     params.schParams = {static_cast<int64_t>(baseM), static_cast<int64_t>(baseN), 1, 1, 1, 1, 0, 0};
-    params.qbmmParams = {1,
-                         1,
-                         1,
-                         1,
-                         1,
-                         1,
-                         1,
-                         1,
-                         1,
-                         1,
-                         1,
-                         1,
-                         0,
-                         static_cast<uint32_t>(baseM),
-                         static_cast<uint32_t>(baseN),
-                         static_cast<uint32_t>(baseK),
-                         biasElements != 0U ? 1U : 0U,
-                         static_cast<uint32_t>(dbL0C)};
+    if constexpr (!WithoutBatch) {
+        params.qbmmParams.batchA1 = 1U;
+        params.qbmmParams.batchA2 = 1U;
+        params.qbmmParams.batchA3 = 1U;
+        params.qbmmParams.batchA4 = 1U;
+        params.qbmmParams.batchB1 = 1U;
+        params.qbmmParams.batchB2 = 1U;
+        params.qbmmParams.batchB3 = 1U;
+        params.qbmmParams.batchB4 = 1U;
+        params.qbmmParams.batchC1 = 1U;
+        params.qbmmParams.batchC2 = 1U;
+        params.qbmmParams.batchC3 = 1U;
+        params.qbmmParams.batchC4 = 1U;
+        params.qbmmParams.biasThreeDim = 0U;
+    }
+    params.qbmmParams.baseM = static_cast<uint32_t>(baseM);
+    params.qbmmParams.baseN = static_cast<uint32_t>(baseN);
+    params.qbmmParams.baseK = static_cast<uint32_t>(baseK);
+    params.qbmmParams.isBias = biasElements != 0U ? 1U : 0U;
+    params.qbmmParams.dbL0C = static_cast<uint32_t>(dbL0C);
+    params.qbmmParams.bMustHitL2 = 1U;
+    Kernel kernel;
+    kernel(params);
+}
+
+template <uint64_t FullLoadMode>
+__global__ __aicore__ void quant_batch_matmul_mx_l0c_pingpong_kernel(GM_ADDR aGm, GM_ADDR bGm, GM_ADDR scaleAGm,
+                                                                     GM_ADDR scaleBGm, GM_ADDR cGm, int64_t m,
+                                                                     int64_t k, int64_t n, uint64_t baseM,
+                                                                     uint64_t baseN, uint64_t baseK, uint64_t kL1,
+                                                                     uint64_t l1BufferNum)
+{
+    KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_AIC_ONLY);
+    AscendC::InitSocState();
+    using AType = fp8_e4m3fn_t;
+    using BType = fp8_e4m3fn_t;
+    using Layout = asc::te::nd_ext_layout_ptn;
+    using DispatchPolicy = Blaze::Gemm::MatmulWithScaleMxL0CPingpong<FullLoadMode, false>;
+    using BlockScheduler = Blaze::Gemm::Block::BlockSchedulerQuantBatchMatmulV3<ProblemShape, FullLoadMode, Layout,
+                                                                                Layout, AType>;
+    using BlockMmad = Blaze::Gemm::Block::BlockMmad<DispatchPolicy, AType, Layout, BType, Layout, half, Layout, float,
+                                                    Layout>;
+    using Kernel = Blaze::Gemm::Kernel::GemmUniversal<ProblemShape, BlockMmad, Blaze::Gemm::Block::BlockEpilogueEmpty,
+                                                      BlockScheduler>;
+
+    typename Kernel::Params params{};
+    params.problemShape = {m, n, k, 1};
+    params.mmadParams = {aGm, bGm, cGm, nullptr, scaleAGm, scaleBGm};
+    params.l1Params = {kL1, kL1, l1BufferNum};
+    params.schParams = {static_cast<int64_t>(baseM), static_cast<int64_t>(baseN), 1, 1, 1, 1, 0, 0};
+    params.qbmmParams.batchA1 = 1U;
+    params.qbmmParams.batchA2 = 1U;
+    params.qbmmParams.batchA3 = 1U;
+    params.qbmmParams.batchA4 = 1U;
+    params.qbmmParams.batchB1 = 1U;
+    params.qbmmParams.batchB2 = 1U;
+    params.qbmmParams.batchB3 = 1U;
+    params.qbmmParams.batchB4 = 1U;
+    params.qbmmParams.batchC1 = 1U;
+    params.qbmmParams.batchC2 = 1U;
+    params.qbmmParams.batchC3 = 1U;
+    params.qbmmParams.batchC4 = 1U;
+    params.qbmmParams.biasThreeDim = 0U;
+    params.qbmmParams.baseM = static_cast<uint32_t>(baseM);
+    params.qbmmParams.baseN = static_cast<uint32_t>(baseN);
+    params.qbmmParams.baseK = static_cast<uint32_t>(baseK);
+    params.qbmmParams.isBias = 0U;
+    params.qbmmParams.dbL0C = 2U;
+    params.qbmmParams.bMustHitL2 = 1U;
+    Kernel kernel;
+    kernel(params);
+}
+
+__global__ __aicore__ void quant_batch_matmul_mx_streamk_kernel(GM_ADDR aGm, GM_ADDR bGm, GM_ADDR scaleAGm,
+                                                                GM_ADDR scaleBGm, GM_ADDR cGm, GM_ADDR workspaceGm,
+                                                                int64_t m, int64_t k, int64_t n, uint32_t usedCoreNum)
+{
+    KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_MIX_AIC_1_2);
+    AscendC::InitSocState();
+    using AType = fp8_e4m3fn_t;
+    using BType = fp8_e5m2_t;
+    using Layout = asc::te::nd_ext_layout_ptn;
+    using DispatchPolicy = Blaze::Gemm::MatmulWithScaleMx<Blaze::Gemm::NONE_FULL_LOAD_MODE, false,
+                                                          Blaze::Gemm::KernelQbmmMultiBlockStreamK>;
+    using EpiloguePolicy = Blaze::Gemm::MatmulMultiBlockWithStreamK<>;
+    using BlockMmad = Blaze::Gemm::Block::BlockMmad<DispatchPolicy, AType, Layout, BType, Layout, half, Layout, float,
+                                                    Layout>;
+    using BlockEpilogue = Blaze::Epilogue::Block::BlockEpilogueMatmulStreamK<float, half, EpiloguePolicy>;
+    using BlockScheduler = Blaze::Gemm::Block::BlockSchedulerMatmulStreamK<ProblemShape>;
+    using Kernel = Blaze::Gemm::Kernel::GemmUniversal<ProblemShape, BlockMmad, BlockEpilogue, BlockScheduler>;
+
+    Kernel::Params params{};
+    params.problemShape = {m, n, k, 1};
+    params.mmadParams = {aGm, bGm, cGm, nullptr, scaleAGm, scaleBGm};
+    params.epilogueParams = {cGm, workspaceGm};
+    params.schParams = {usedCoreNum, m, 32, 64, 64, 64, 0U, L2_CACHE_DEFAULT_VALUE};
+    params.qbmmParams = {64U, 1U, 1U};
     Kernel kernel;
     kernel(params);
 }
@@ -311,7 +443,8 @@ struct LaunchParams {
     aclrtStream stream;
 };
 
-template <class A_TYPE, class B_TYPE, class C_TYPE, bool TransA, bool TransB, bool IsNzFormat, uint64_t FullLoadMode>
+template <class A_TYPE, class B_TYPE, class C_TYPE, bool TransA, bool TransB, bool IsNzFormat, uint64_t FullLoadMode,
+          bool WithoutBatch>
 void LaunchKernel(const LaunchParams& p)
 {
     using BiasType = float;
@@ -320,32 +453,61 @@ void LaunchKernel(const LaunchParams& p)
         IsNzFormat, std::conditional_t<TransB, asc::te::zn_layout_ptn, asc::te::nz_layout_ptn>,
         std::conditional_t<TransB, asc::te::dn_ext_layout_ptn, asc::te::nd_ext_layout_ptn>>;
 
-    LAUNCH_KERNEL_IMPL(FullLoadMode);
+    LAUNCH_KERNEL_IMPL(FullLoadMode, WithoutBatch);
 }
 
-template <class A_TYPE, class B_TYPE, uint64_t FullLoadMode>
+template <class A_TYPE, class B_TYPE, uint64_t FullLoadMode, bool WithoutBatch>
 void LaunchByC(const CliArgs& args, bool isNzFormat, const LaunchParams& launchParams)
 {
     if (args.cDtype == "float32") {
-        DISPATCH_TRANS(A_TYPE, B_TYPE, float, args.transA, args.transB, isNzFormat, FullLoadMode);
+        DISPATCH_TRANS(A_TYPE, B_TYPE, float, args.transA, args.transB, isNzFormat, FullLoadMode, WithoutBatch);
     } else if (args.cDtype == "float16") {
-        DISPATCH_TRANS(A_TYPE, B_TYPE, half, args.transA, args.transB, isNzFormat, FullLoadMode);
+        DISPATCH_TRANS(A_TYPE, B_TYPE, half, args.transA, args.transB, isNzFormat, FullLoadMode, WithoutBatch);
     } else if (args.cDtype == "bfloat16") {
-        DISPATCH_TRANS(A_TYPE, B_TYPE, bfloat16_t, args.transA, args.transB, isNzFormat, FullLoadMode);
+        DISPATCH_TRANS(A_TYPE, B_TYPE, bfloat16_t, args.transA, args.transB, isNzFormat, FullLoadMode, WithoutBatch);
     } else {
         std::fprintf(stderr, "Unsupported C dtype: %s\n", args.cDtype.c_str());
         std::exit(1);
     }
 }
 
-template <class A_TYPE, class B_TYPE>
+template <class A_TYPE, class B_TYPE, bool WithoutBatch>
 void LaunchByFullLoad(const CliArgs& args, bool isNzFormat, const LaunchParams& launchParams)
 {
     if (args.aFullLoad) {
-        LaunchByC<A_TYPE, B_TYPE, Blaze::Gemm::A_FULL_LOAD_MODE>(args, isNzFormat, launchParams);
+        LaunchByC<A_TYPE, B_TYPE, Blaze::Gemm::A_FULL_LOAD_MODE, WithoutBatch>(args, isNzFormat, launchParams);
     } else {
-        LaunchByC<A_TYPE, B_TYPE, Blaze::Gemm::NONE_FULL_LOAD_MODE>(args, isNzFormat, launchParams);
+        LaunchByC<A_TYPE, B_TYPE, Blaze::Gemm::NONE_FULL_LOAD_MODE, WithoutBatch>(args, isNzFormat, launchParams);
     }
+}
+
+void LaunchWithoutBatch(const CliArgs& args, const LaunchParams& launchParams)
+{
+    if (args.aFullLoad) {
+        LaunchKernel<fp8_e4m3fn_t, fp8_e4m3fn_t, half, false, false, false, Blaze::Gemm::A_FULL_LOAD_MODE, true>(
+            launchParams);
+    } else {
+        LaunchKernel<fp8_e4m3fn_t, fp8_e4m3fn_t, half, false, false, false, Blaze::Gemm::NONE_FULL_LOAD_MODE, true>(
+            launchParams);
+    }
+}
+
+void LaunchL0cPingPong(const CliArgs& args, const LaunchParams& p)
+{
+    if (args.aFullLoad) {
+        quant_batch_matmul_mx_l0c_pingpong_kernel<Blaze::Gemm::A_FULL_LOAD_MODE><<<p.blockNum, 0, p.stream>>>(
+            p.dA, p.dB, p.dScaleA, p.dScaleB, p.dC, p.m, p.k, p.n, p.baseM, p.baseN, p.baseK, p.kL1, p.l1BufferNum);
+    } else {
+        quant_batch_matmul_mx_l0c_pingpong_kernel<Blaze::Gemm::NONE_FULL_LOAD_MODE><<<p.blockNum, 0, p.stream>>>(
+            p.dA, p.dB, p.dScaleA, p.dScaleB, p.dC, p.m, p.k, p.n, p.baseM, p.baseN, p.baseK, p.kL1, p.l1BufferNum);
+    }
+}
+
+void LaunchStreamK(const LaunchParams& p, uint8_t* workspace)
+{
+    const uint32_t usedCoreNum = static_cast<uint32_t>(p.blockNum);
+    quant_batch_matmul_mx_streamk_kernel<<<p.blockNum, 0, p.stream>>>(p.dA, p.dB, p.dScaleA, p.dScaleB, p.dC, workspace,
+                                                                      p.m, p.k, p.n, usedCoreNum);
 }
 
 } // namespace
@@ -426,6 +588,8 @@ static void Run(const CliArgs& args)
     uint8_t* deviceBias{nullptr};
     uint8_t* deviceScaleA{nullptr};
     uint8_t* deviceScaleB{nullptr};
+    uint8_t* deviceWorkspace{nullptr};
+    size_t workspaceSize = 0U;
 
     ACL_CHECK(aclrtMalloc(reinterpret_cast<void**>(&deviceA), aSize, ACL_MEM_MALLOC_HUGE_FIRST));
     ACL_CHECK(aclrtMalloc(reinterpret_cast<void**>(&deviceB), bSize, ACL_MEM_MALLOC_HUGE_FIRST));
@@ -433,6 +597,11 @@ static void Run(const CliArgs& args)
     ACL_CHECK(aclrtMalloc(reinterpret_cast<void**>(&deviceBias), biasSize, ACL_MEM_MALLOC_HUGE_FIRST));
     ACL_CHECK(aclrtMalloc(reinterpret_cast<void**>(&deviceScaleA), scaleASize, ACL_MEM_MALLOC_HUGE_FIRST));
     ACL_CHECK(aclrtMalloc(reinterpret_cast<void**>(&deviceScaleB), scaleBSize, ACL_MEM_MALLOC_HUGE_FIRST));
+    if (args.streamK) {
+        workspaceSize = static_cast<size_t>(blockNum) * STREAMK_WORKSPACE_TILE_BYTES + STREAMK_WORKSPACE_OVERHEAD_BYTES;
+        ACL_CHECK(aclrtMalloc(reinterpret_cast<void**>(&deviceWorkspace), workspaceSize, ACL_MEM_MALLOC_HUGE_FIRST));
+        ACL_CHECK(aclrtMemset(deviceWorkspace, workspaceSize, 0, workspaceSize));
+    }
 
     ACL_CHECK(aclrtMemcpy(deviceA, aSize, hostA.data(), aSize, ACL_MEMCPY_HOST_TO_DEVICE));
     ACL_CHECK(aclrtMemcpy(deviceB, bSize, hostB.data(), bSize, ACL_MEMCPY_HOST_TO_DEVICE));
@@ -458,6 +627,7 @@ static void Run(const CliArgs& args)
     std::cout << "  l1Buffers: " << args.l1Buffers << std::endl;
     std::cout << "  dbL0C    : " << args.dbL0C << std::endl;
     std::cout << "  AFullLoad: " << (args.aFullLoad ? "true" : "false") << std::endl;
+    std::cout << "  Kernel   : " << args.kernelVariant << std::endl;
     std::cout << "  Format   : " << args.format << std::endl;
     std::cout << "  BlockNum : " << blockNum << std::endl;
     std::cout << "============================================================" << std::endl;
@@ -482,16 +652,31 @@ static void Run(const CliArgs& args)
                                  static_cast<uint64_t>(args.bias),
                                  stream};
 
-    if (args.aDtype == "fp8_e4m3" && args.bDtype == "fp8_e4m3") {
-        LaunchByFullLoad<fp8_e4m3fn_t, fp8_e4m3fn_t>(args, isNzFormat, launchParams);
+    if (args.l0cPingPong) {
+        LaunchL0cPingPong(args, launchParams);
+    } else if (args.streamK) {
+        LaunchStreamK(launchParams, deviceWorkspace);
+    } else if (args.withoutBatch) {
+        const bool supportedWithoutBatch = args.aDtype == "fp8_e4m3" && args.bDtype == "fp8_e4m3" &&
+                                           args.cDtype == "float16" && !args.transA && !args.transB && !isNzFormat &&
+                                           args.bias == 0;
+        if (!supportedWithoutBatch) {
+            std::fprintf(stderr,
+                         "The without_batch example is fixed to fp8_e4m3*fp8_e4m3, float16, ND/ND, no transpose, "
+                         "and no bias.\n");
+            std::exit(1);
+        }
+        LaunchWithoutBatch(args, launchParams);
+    } else if (args.aDtype == "fp8_e4m3" && args.bDtype == "fp8_e4m3") {
+        LaunchByFullLoad<fp8_e4m3fn_t, fp8_e4m3fn_t, false>(args, isNzFormat, launchParams);
     } else if (args.aDtype == "fp8_e4m3" && args.bDtype == "fp8_e5m2") {
-        LaunchByFullLoad<fp8_e4m3fn_t, fp8_e5m2_t>(args, isNzFormat, launchParams);
+        LaunchByFullLoad<fp8_e4m3fn_t, fp8_e5m2_t, false>(args, isNzFormat, launchParams);
     } else if (args.aDtype == "fp8_e5m2" && args.bDtype == "fp8_e4m3") {
-        LaunchByFullLoad<fp8_e5m2_t, fp8_e4m3fn_t>(args, isNzFormat, launchParams);
+        LaunchByFullLoad<fp8_e5m2_t, fp8_e4m3fn_t, false>(args, isNzFormat, launchParams);
     } else if (args.aDtype == "fp8_e5m2" && args.bDtype == "fp8_e5m2") {
-        LaunchByFullLoad<fp8_e5m2_t, fp8_e5m2_t>(args, isNzFormat, launchParams);
+        LaunchByFullLoad<fp8_e5m2_t, fp8_e5m2_t, false>(args, isNzFormat, launchParams);
     } else if (args.aDtype == "fp4_e2m1" && args.bDtype == "fp4_e2m1") {
-        LaunchByFullLoad<fp4x2_e2m1_t, fp4x2_e2m1_t>(args, isNzFormat, launchParams);
+        LaunchByFullLoad<fp4x2_e2m1_t, fp4x2_e2m1_t, false>(args, isNzFormat, launchParams);
     } else {
         std::fprintf(stderr,
                      "Unsupported A/B dtype combination: a=%s b=%s.\n"
@@ -518,6 +703,9 @@ static void Run(const CliArgs& args)
     ACL_CHECK(aclrtFree(deviceBias));
     ACL_CHECK(aclrtFree(deviceScaleA));
     ACL_CHECK(aclrtFree(deviceScaleB));
+    if (deviceWorkspace != nullptr) {
+        ACL_CHECK(aclrtFree(deviceWorkspace));
+    }
 }
 
 /* ========================================================================== */
