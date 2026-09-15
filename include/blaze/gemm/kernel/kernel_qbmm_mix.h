@@ -24,7 +24,6 @@
 #include "kernel_operator_intf.h"
 #endif
 #include "blaze/gemm/utils/common_utils.h"
-#include "blaze/gemm/block/block_scheduler_qbmm.h"
 #include "tensor_api/tensor.h"
 
 namespace Blaze {
