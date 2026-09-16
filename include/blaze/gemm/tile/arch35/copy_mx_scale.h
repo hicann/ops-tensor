@@ -59,7 +59,8 @@ struct CopyGM2UBMxScale {
         uint64_t dstNStride = AscendC::Std::get<1>(AscendC::Std::get<1>(dstLayout.stride()));
         asc_copy_gm2ub_align(reinterpret_cast<__ubuf__ uint8_t*>(dst.data().get()),
                              reinterpret_cast<__gm__ uint8_t*>(src.data().get()), nSize, scaleKSize, 0, 0, false,
-                             src.engine().get_cache_mode(), srcNStride, dstNStride);
+                             static_cast<asc_load_l2_cache_mode>(src.engine().get_cache_mode()), srcNStride,
+                             dstNStride);
     }
 };
 

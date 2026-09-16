@@ -50,7 +50,7 @@ private:
         const auto& dstLayout = dst.layout();
         const auto& srcLayout = src.layout();
 
-        uint8_t cacheMode = src.engine().get_cache_mode();
+        asc_load_l2_cache_mode cacheMode = static_cast<asc_load_l2_cache_mode>(src.engine().get_cache_mode());
         auto srcShape = asc::te::get_shape(srcLayout);
         auto srcStrideTuple = asc::te::get_stride(srcLayout);
         auto dstStrideTuple = asc::te::get_stride(dstLayout);
@@ -74,7 +74,7 @@ private:
     {
         const auto& dstLayout = dst.layout();
         const auto& srcLayout = src.layout();
-        uint8_t cacheMode = src.engine().get_cache_mode();
+        asc_load_l2_cache_mode cacheMode = static_cast<asc_load_l2_cache_mode>(src.engine().get_cache_mode());
 
         // Get shape and stride
         auto srcShape = asc::te::get_shape(srcLayout);
