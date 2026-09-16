@@ -151,43 +151,48 @@ __aicore__ inline void QBMMMixWithoutBatchWrapper(GM_ADDR x1GM, GM_ADDR x2GM, GM
 
 } // namespace QBMMUT
 
-template <class DTYPE_X1, class DTYPE_X2, class DTYPE_Y, class DTYPE_BIAS>
+template <class DTYPE_X1, class DTYPE_X2, class DTYPE_Y, class DTYPE_BIAS, class X2_SCALE_TYPE = float,
+          class X1_SCALE_TYPE = float>
 __global__ __aicore__ void qbmm_mix_kernel_entry(GM_ADDR x1GM, GM_ADDR x2GM, GM_ADDR pertokenScaleGM, GM_ADDR scaleGM,
                                                  GM_ADDR biasGM, GM_ADDR yGM, GM_ADDR tilingGM)
 {
     const auto* tilingData = reinterpret_cast<const QBMMV3TilingData*>(tilingGM);
-    QBMMUT::QBMMMixWrapper<DTYPE_X1, DTYPE_X2, DTYPE_Y, float, float, DTYPE_BIAS>(x1GM, x2GM, pertokenScaleGM, scaleGM,
-                                                                                  biasGM, yGM, *tilingData);
+    QBMMUT::QBMMMixWrapper<DTYPE_X1, DTYPE_X2, DTYPE_Y, X2_SCALE_TYPE, X1_SCALE_TYPE, DTYPE_BIAS>(
+        x1GM, x2GM, pertokenScaleGM, scaleGM, biasGM, yGM, *tilingData);
 }
 
-template <class DTYPE_X1, class DTYPE_X2, class DTYPE_Y, class DTYPE_BIAS>
+template <class DTYPE_X1, class DTYPE_X2, class DTYPE_Y, class DTYPE_BIAS, class X2_SCALE_TYPE = float,
+          class X1_SCALE_TYPE = float>
 __global__ __aicore__ void qbmm_mix_without_batch_kernel_entry(GM_ADDR x1GM, GM_ADDR x2GM, GM_ADDR pertokenScaleGM,
                                                                GM_ADDR scaleGM, GM_ADDR biasGM, GM_ADDR yGM,
                                                                GM_ADDR tilingGM)
 {
     const auto* tilingData = reinterpret_cast<const QBMMV3TilingData*>(tilingGM);
-    QBMMUT::QBMMMixWithoutBatchWrapper<DTYPE_X1, DTYPE_X2, DTYPE_Y, float, float, DTYPE_BIAS>(
+    QBMMUT::QBMMMixWithoutBatchWrapper<DTYPE_X1, DTYPE_X2, DTYPE_Y, X2_SCALE_TYPE, X1_SCALE_TYPE, DTYPE_BIAS>(
         x1GM, x2GM, pertokenScaleGM, scaleGM, biasGM, yGM, *tilingData);
 }
 
-template <class DTYPE_X1, class DTYPE_X2, class DTYPE_Y, class DTYPE_BIAS>
+template <class DTYPE_X1, class DTYPE_X2, class DTYPE_Y, class DTYPE_BIAS, class X2_SCALE_TYPE = float,
+          class X1_SCALE_TYPE = float>
 __global__ __aicore__ void qbmm_mix_a_full_load_kernel_entry(GM_ADDR x1GM, GM_ADDR x2GM, GM_ADDR pertokenScaleGM,
                                                              GM_ADDR scaleGM, GM_ADDR biasGM, GM_ADDR yGM,
                                                              GM_ADDR tilingGM)
 {
     const auto* tilingData = reinterpret_cast<const QBMMV3TilingData*>(tilingGM);
-    QBMMUT::QBMMMixWrapper<DTYPE_X1, DTYPE_X2, DTYPE_Y, float, float, DTYPE_BIAS, Blaze::Gemm::A_FULL_LOAD_MODE>(
-        x1GM, x2GM, pertokenScaleGM, scaleGM, biasGM, yGM, *tilingData);
+    QBMMUT::QBMMMixWrapper<DTYPE_X1, DTYPE_X2, DTYPE_Y, X2_SCALE_TYPE, X1_SCALE_TYPE, DTYPE_BIAS,
+                           Blaze::Gemm::A_FULL_LOAD_MODE>(x1GM, x2GM, pertokenScaleGM, scaleGM, biasGM, yGM,
+                                                          *tilingData);
 }
 
-template <class DTYPE_X1, class DTYPE_X2, class DTYPE_Y, class DTYPE_BIAS>
+template <class DTYPE_X1, class DTYPE_X2, class DTYPE_Y, class DTYPE_BIAS, class X2_SCALE_TYPE = float,
+          class X1_SCALE_TYPE = float>
 __global__ __aicore__ void qbmm_mix_without_batch_a_full_load_kernel_entry(GM_ADDR x1GM, GM_ADDR x2GM,
                                                                            GM_ADDR pertokenScaleGM, GM_ADDR scaleGM,
                                                                            GM_ADDR biasGM, GM_ADDR yGM,
                                                                            GM_ADDR tilingGM)
 {
     const auto* tilingData = reinterpret_cast<const QBMMV3TilingData*>(tilingGM);
-    QBMMUT::QBMMMixWithoutBatchWrapper<DTYPE_X1, DTYPE_X2, DTYPE_Y, float, float, DTYPE_BIAS,
+    QBMMUT::QBMMMixWithoutBatchWrapper<DTYPE_X1, DTYPE_X2, DTYPE_Y, X2_SCALE_TYPE, X1_SCALE_TYPE, DTYPE_BIAS,
                                        Blaze::Gemm::A_FULL_LOAD_MODE>(x1GM, x2GM, pertokenScaleGM, scaleGM, biasGM, yGM,
                                                                       *tilingData);
 }

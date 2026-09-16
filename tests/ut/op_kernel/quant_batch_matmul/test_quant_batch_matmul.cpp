@@ -71,6 +71,16 @@ struct MixCaseCfg {
     const char* genArgs; // 传给 gen_data.py 的量化模式参数
     int64_t batch = 1;
     bool biasThreeDim = false;
+    uint32_t kAL1 = 0;  // 0 keeps the legacy full-K L1 tile.
+    uint32_t kBL1 = 0;  // 0 mirrors kAL1.
+    uint32_t baseM = 0; // 0 keeps the legacy single M tile.
+    uint32_t baseN = 0; // 0 keeps the legacy single N tile.
+    uint32_t mTailTile = 1;
+    uint32_t nTailTile = 1;
+    uint32_t mBaseTailSplitCnt = 1;
+    uint32_t nBaseTailSplitCnt = 1;
+    int64_t mTailMain = 0;
+    int64_t nTailMain = 0;
 };
 
 struct CubeCaseCfg {
@@ -94,6 +104,7 @@ struct CubeCaseCfg {
     bool biasThreeDim = false;
     size_t scaleElemSize = sizeof(uint64_t);
     uint32_t dbL0C = 1;
+    uint32_t kBL1 = 0; // 0 mirrors kL1; nonzero values exercise asymmetric A/B L1 K splits.
 };
 
 struct MxCaseCfg {
@@ -122,6 +133,7 @@ struct L0CPingpongCaseCfg {
     uint32_t kL1;
     uint32_t nBufferNum;
     uint32_t blockNum;
+    int64_t batch = 1;
 };
 
 struct StreamKCaseCfg {
@@ -129,6 +141,22 @@ struct StreamKCaseCfg {
     int64_t N;
     int64_t K;
     uint32_t blockNum;
+};
+
+struct PertensorStreamKCaseCfg {
+    int64_t M;
+    int64_t N;
+    int64_t K;
+    uint32_t blockNum;
+    uint32_t baseM = 16U;
+    uint32_t baseN = 16U;
+    uint32_t baseK = 64U;
+    uint32_t singleCoreK = 64U;
+    uint32_t kL1 = 64U;
+    bool hasX1Scale = false;
+    bool isBias = false;
+    uint32_t biasDtype = GE_DT_FLOAT;
+    size_t biasElemSize = sizeof(float);
 };
 
 size_t GetMxScaleKLen(int64_t k) { return static_cast<size_t>((k + 63) / 64) * 2UL; }
@@ -183,6 +211,34 @@ private:
     GM_ADDR addr_{nullptr};
 };
 
+template <typename ScaleType>
+void FillMixScaleOnes(GM_ADDR scaleGM, size_t count)
+{
+    if constexpr (std::is_same_v<ScaleType, float>) {
+        FillGmValues<float>(scaleGM, count, 1.0F);
+    } else if constexpr (std::is_same_v<ScaleType, bfloat16_t>) {
+        constexpr uint16_t BF16_ONE_BITS = 0x3F80U;
+        FillGmValues<uint16_t>(scaleGM, count, BF16_ONE_BITS);
+    } else if constexpr (std::is_same_v<ScaleType, half>) {
+        constexpr uint16_t FP16_ONE_BITS = 0x3C00U;
+        FillGmValues<uint16_t>(scaleGM, count, FP16_ONE_BITS);
+    }
+}
+
+template <typename ScaleType>
+void FillPertensorStreamKScaleOne(GM_ADDR scaleGM)
+{
+    if constexpr (std::is_same_v<ScaleType, float>) {
+        FillGmValues<float>(scaleGM, 1U, 1.0F);
+    } else if constexpr (std::is_same_v<ScaleType, bfloat16_t>) {
+        constexpr uint16_t BF16_ONE_BITS = 0x3F80U;
+        FillGmValues<uint16_t>(scaleGM, 1U, BF16_ONE_BITS);
+    } else if constexpr (std::is_same_v<ScaleType, uint64_t> || std::is_same_v<ScaleType, int64_t>) {
+        constexpr uint64_t FIXPIPE_SCALE_ONE = 0x000000003F800000UL;
+        FillGmValues<ScaleType>(scaleGM, 1U, static_cast<ScaleType>(FIXPIPE_SCALE_ONE));
+    }
+}
+
 // 未指定切分时保留单 tile 默认值；显式配置用于多 tile 和 L1 buffer 回绕测试。
 void FillCubeTiling(QBMMV3TilingData* tilingData, const CubeCaseCfg& caseCfg)
 {
@@ -223,7 +279,7 @@ void FillCubeTiling(QBMMV3TilingData* tilingData, const CubeCaseCfg& caseCfg)
     tilingData->x1QuantMode = caseCfg.x1QuantMode;
     tilingData->x2QuantMode = caseCfg.x2QuantMode;
     tilingData->kAL1 = caseCfg.kL1 == 0 ? static_cast<uint32_t>(caseCfg.K) : caseCfg.kL1;
-    tilingData->kBL1 = tilingData->kAL1;
+    tilingData->kBL1 = caseCfg.kBL1 == 0 ? tilingData->kAL1 : caseCfg.kBL1;
     tilingData->nBufferNum = caseCfg.nBufferNum;
     tilingData->baseM_qbmm = static_cast<uint32_t>(tilingData->baseM);
     tilingData->baseN_qbmm = static_cast<uint32_t>(tilingData->baseN);
@@ -248,14 +304,14 @@ void FillMixTiling(QBMMV3TilingData* tilingData, const MixCaseCfg& caseCfg)
     tilingData->scaleAGmAddr = 0;
     tilingData->scaleBGmAddr = 0;
 
-    tilingData->baseM = caseCfg.M;
-    tilingData->baseN = caseCfg.N;
-    tilingData->mTailTile = 1;
-    tilingData->nTailTile = 1;
-    tilingData->mBaseTailSplitCnt = 1;
-    tilingData->nBaseTailSplitCnt = 1;
-    tilingData->mTailMain = 0;
-    tilingData->nTailMain = 0;
+    tilingData->baseM = caseCfg.baseM == 0 ? caseCfg.M : caseCfg.baseM;
+    tilingData->baseN = caseCfg.baseN == 0 ? caseCfg.N : caseCfg.baseN;
+    tilingData->mTailTile = caseCfg.mTailTile;
+    tilingData->nTailTile = caseCfg.nTailTile;
+    tilingData->mBaseTailSplitCnt = caseCfg.mBaseTailSplitCnt;
+    tilingData->nBaseTailSplitCnt = caseCfg.nBaseTailSplitCnt;
+    tilingData->mTailMain = caseCfg.mTailMain;
+    tilingData->nTailMain = caseCfg.nTailMain;
 
     tilingData->batchA1 = 1;
     tilingData->batchA2 = 1;
@@ -272,11 +328,11 @@ void FillMixTiling(QBMMV3TilingData* tilingData, const MixCaseCfg& caseCfg)
     tilingData->biasThreeDim = caseCfg.biasThreeDim ? 1U : 0U;
     tilingData->x1QuantMode = caseCfg.x1QuantMode;
     tilingData->x2QuantMode = caseCfg.x2QuantMode;
-    tilingData->kAL1 = static_cast<uint32_t>(caseCfg.K);
-    tilingData->kBL1 = static_cast<uint32_t>(caseCfg.K);
+    tilingData->kAL1 = caseCfg.kAL1 == 0 ? static_cast<uint32_t>(caseCfg.K) : caseCfg.kAL1;
+    tilingData->kBL1 = caseCfg.kBL1 == 0 ? tilingData->kAL1 : caseCfg.kBL1;
     tilingData->nBufferNum = 2;
-    tilingData->baseM_qbmm = static_cast<uint32_t>(caseCfg.M);
-    tilingData->baseN_qbmm = static_cast<uint32_t>(caseCfg.N);
+    tilingData->baseM_qbmm = static_cast<uint32_t>(tilingData->baseM);
+    tilingData->baseN_qbmm = static_cast<uint32_t>(tilingData->baseN);
     tilingData->baseK_qbmm = static_cast<uint32_t>(caseCfg.K);
     tilingData->isBias = caseCfg.isBias ? 1 : 0;
     tilingData->dbL0C = 1;
@@ -449,8 +505,8 @@ void RunCubeSmoke(Func kernelFunc, const CubeCaseCfg& cfg)
     RunTypedCubeSmoke<int8_t, int8_t>(kernelFunc, cfg);
 }
 
-template <typename Func>
-void RunMixSmoke(Func kernelFunc, const MixCaseCfg& cfg)
+template <typename AType, typename BType, typename X2ScaleType, typename Func>
+void RunTypedMixSmoke(Func kernelFunc, const MixCaseCfg& cfg, bool loadGeneratedData = true)
 {
     const int64_t M = cfg.M;
     const int64_t N = cfg.N;
@@ -458,10 +514,10 @@ void RunMixSmoke(Func kernelFunc, const MixCaseCfg& cfg)
     const size_t batchCount = static_cast<size_t>(cfg.batch);
     const size_t x1ScaleCount = cfg.x1QuantMode == QM_PERTOKEN ? static_cast<size_t>(M) : 1UL;
     const size_t x2ScaleCount = cfg.x2QuantMode == QM_PERCHANNEL ? static_cast<size_t>(N) : 1UL;
-    const size_t x1SingleBatchSize = static_cast<size_t>(M) * K * sizeof(int8_t);
-    const size_t x2SingleBatchSize = static_cast<size_t>(K) * N * sizeof(int8_t);
+    const size_t x1SingleBatchSize = static_cast<size_t>(M) * K * sizeof(AType);
+    const size_t x2SingleBatchSize = static_cast<size_t>(K) * N * sizeof(BType);
     const size_t pertokenScaleSingleBatchSize = x1ScaleCount * sizeof(float);
-    const size_t scaleSingleBatchSize = x2ScaleCount * sizeof(float);
+    const size_t scaleSingleBatchSize = x2ScaleCount * sizeof(X2ScaleType);
     const size_t biasSingleBatchSize = static_cast<size_t>(N) * cfg.biasElemSize;
     const size_t x1Size = x1SingleBatchSize * batchCount;
     const size_t x2Size = x2SingleBatchSize * batchCount;
@@ -488,29 +544,40 @@ void RunMixSmoke(Func kernelFunc, const MixCaseCfg& cfg)
 
     FillGmBuffer(x1GM.Get(), x1Size, 0U);
     FillGmBuffer(x2GM.Get(), x2Size, 0U);
-    FillGmBuffer(pertokenScaleGM.Get(), pertokenScaleSize, 0U);
-    FillGmBuffer(scaleGM.Get(), scaleSize, 0U);
+    FillGmValues<float>(pertokenScaleGM.Get(), x1ScaleCount * batchCount, 1.0F);
+    FillMixScaleOnes<X2ScaleType>(scaleGM.Get(), x2ScaleCount * batchCount);
     FillGmBuffer(biasGM.Get(), biasSize, 0U);
     FillGmBuffer(yGM.Get(), ySize, 0U);
 
-    std::string dataDir = std::string(UT_KERNEL_SRC_DIR) + "/quant_batch_matmul/qbmm_data";
-    ASSERT_NO_FATAL_FAILURE(RunGenData(dataDir, M, N, K, cfg.genArgs));
+    if (loadGeneratedData) {
+        if constexpr (std::is_same_v<AType, int8_t> && std::is_same_v<BType, int8_t>) {
+            std::string dataDir = std::string(UT_KERNEL_SRC_DIR) + "/quant_batch_matmul/qbmm_data";
+            ASSERT_NO_FATAL_FAILURE(RunGenData(dataDir, M, N, K, cfg.genArgs));
 
-    ASSERT_NO_FATAL_FAILURE(ReadBinToGm(dataDir + "/input_a.bin", x1GM.Get(), x1SingleBatchSize, "input_a.bin"));
-    ASSERT_NO_FATAL_FAILURE(ReadBinToGm(dataDir + "/input_b.bin", x2GM.Get(), x2SingleBatchSize, "input_b.bin"));
-    ASSERT_NO_FATAL_FAILURE(ReadBinToGm(dataDir + "/pertoken_scale.bin", pertokenScaleGM.Get(),
-                                        pertokenScaleSingleBatchSize, "pertoken_scale.bin"));
-    ASSERT_NO_FATAL_FAILURE(ReadBinToGm(dataDir + "/scale.bin", scaleGM.Get(), scaleSingleBatchSize, "scale.bin"));
+            ASSERT_NO_FATAL_FAILURE(
+                ReadBinToGm(dataDir + "/input_a.bin", x1GM.Get(), x1SingleBatchSize, "input_a.bin"));
+            ASSERT_NO_FATAL_FAILURE(
+                ReadBinToGm(dataDir + "/input_b.bin", x2GM.Get(), x2SingleBatchSize, "input_b.bin"));
+            ASSERT_NO_FATAL_FAILURE(ReadBinToGm(dataDir + "/pertoken_scale.bin", pertokenScaleGM.Get(),
+                                                pertokenScaleSingleBatchSize, "pertoken_scale.bin"));
+            if constexpr (std::is_same_v<X2ScaleType, float>) {
+                ASSERT_NO_FATAL_FAILURE(
+                    ReadBinToGm(dataDir + "/scale.bin", scaleGM.Get(), scaleSingleBatchSize, "scale.bin"));
+            }
+            if (cfg.isBias) {
+                ASSERT_NO_FATAL_FAILURE(
+                    ReadBinToGm(dataDir + "/bias.bin", biasGM.Get(), biasSingleBatchSize, "bias.bin"));
+            }
+        }
+    }
+
     ReplicateGmBatch(x1GM.Get(), x1SingleBatchSize, cfg.batch);
     ReplicateGmBatch(x2GM.Get(), x2SingleBatchSize, cfg.batch);
     ReplicateGmBatch(pertokenScaleGM.Get(), pertokenScaleSingleBatchSize, cfg.batch);
     ReplicateGmBatch(scaleGM.Get(), scaleSingleBatchSize, cfg.batch);
 
-    if (cfg.isBias) {
-        ASSERT_NO_FATAL_FAILURE(ReadBinToGm(dataDir + "/bias.bin", biasGM.Get(), biasSingleBatchSize, "bias.bin"));
-        if (cfg.biasThreeDim) {
-            ReplicateGmBatch(biasGM.Get(), biasSingleBatchSize, cfg.batch);
-        }
+    if (cfg.isBias && cfg.biasThreeDim) {
+        ReplicateGmBatch(biasGM.Get(), biasSingleBatchSize, cfg.batch);
     }
 
     QBMMV3TilingData* tilingData = reinterpret_cast<QBMMV3TilingData*>(tilingGM.Get());
@@ -524,17 +591,58 @@ void RunMixSmoke(Func kernelFunc, const MixCaseCfg& cfg)
     ASSERT_TRUE(ok) << "Kernel execution failed: one or more cores exited with non-zero status";
 }
 
+template <typename Func>
+void RunMixSmoke(Func kernelFunc, const MixCaseCfg& cfg)
+{
+    RunTypedMixSmoke<int8_t, int8_t, float>(kernelFunc, cfg);
+}
+
+struct RuntimeBiasCase {
+    uint32_t dtype;
+    size_t elemSize;
+};
+
+template <typename AType, typename BType, typename X2ScaleType, typename Func>
+void RunMixRuntimeModes(Func kernelFunc, int64_t k, size_t outElemSize)
+{
+    constexpr uint32_t X1_QUANT_MODES[] = {QM_DEFAULT, QM_PERTENSOR, QM_PERTOKEN};
+    constexpr uint32_t X2_QUANT_MODES[] = {QM_PERTENSOR, QM_PERCHANNEL};
+    constexpr RuntimeBiasCase BIAS_CASES[] = {
+        {GE_DT_FLOAT, sizeof(float)}, {GE_DT_FLOAT16, sizeof(half)}, {GE_DT_BF16, sizeof(bfloat16_t)}};
+
+    for (uint32_t x1QuantMode : X1_QUANT_MODES) {
+        for (uint32_t x2QuantMode : X2_QUANT_MODES) {
+            MixCaseCfg noBiasCfg{16,          16, k, 1, x1QuantMode, x2QuantMode, false, GE_DT_FLOAT, sizeof(float),
+                                 outElemSize, ""};
+            {
+                SCOPED_TRACE(testing::Message()
+                             << "x1QuantMode=" << x1QuantMode << ", x2QuantMode=" << x2QuantMode << ", without bias");
+                ASSERT_NO_FATAL_FAILURE((RunTypedMixSmoke<AType, BType, X2ScaleType>(kernelFunc, noBiasCfg, false)));
+            }
+
+            for (const auto& biasCase : BIAS_CASES) {
+                MixCaseCfg biasCfg{
+                    16, 16, k, 1, x1QuantMode, x2QuantMode, true, biasCase.dtype, biasCase.elemSize, outElemSize, ""};
+                SCOPED_TRACE(testing::Message() << "x1QuantMode=" << x1QuantMode << ", x2QuantMode=" << x2QuantMode
+                                                << ", biasDtype=" << biasCase.dtype);
+                ASSERT_NO_FATAL_FAILURE((RunTypedMixSmoke<AType, BType, X2ScaleType>(kernelFunc, biasCfg, false)));
+            }
+        }
+    }
+}
+
 template <typename AType, typename BType, uint64_t FullLoadMode = Blaze::Gemm::NONE_FULL_LOAD_MODE,
           bool WithoutBatch = false>
 void RunMxL0CPingpongSmoke(const L0CPingpongCaseCfg& cfg)
 {
     const size_t scaleKLen = GetMxScaleKLen(cfg.K);
-    const size_t x1Size = GetMxInputSize<AType>(cfg.M * cfg.K);
-    const size_t x2Size = GetMxInputSize<BType>(cfg.K * cfg.N);
-    const size_t pertokenScaleSize = static_cast<size_t>(cfg.M) * scaleKLen * sizeof(AscendC::fp8_e8m0_t);
-    const size_t scaleSize = scaleKLen * static_cast<size_t>(cfg.N) * sizeof(AscendC::fp8_e8m0_t);
+    const size_t batchCount = static_cast<size_t>(WithoutBatch ? 1 : cfg.batch);
+    const size_t x1Size = GetMxInputSize<AType>(cfg.M * cfg.K) * batchCount;
+    const size_t x2Size = GetMxInputSize<BType>(cfg.K * cfg.N) * batchCount;
+    const size_t pertokenScaleSize = static_cast<size_t>(cfg.M) * scaleKLen * sizeof(AscendC::fp8_e8m0_t) * batchCount;
+    const size_t scaleSize = scaleKLen * static_cast<size_t>(cfg.N) * sizeof(AscendC::fp8_e8m0_t) * batchCount;
     const size_t biasSize = static_cast<size_t>(cfg.N) * sizeof(float);
-    const size_t ySize = static_cast<size_t>(cfg.M) * cfg.N * sizeof(half);
+    const size_t ySize = static_cast<size_t>(cfg.M) * cfg.N * sizeof(half) * batchCount;
 
     GmBuffer x1GM(x1Size);
     GmBuffer x2GM(x2Size);
@@ -561,7 +669,10 @@ void RunMxL0CPingpongSmoke(const L0CPingpongCaseCfg& cfg)
 
     auto* tilingData = reinterpret_cast<QBMMUT::QBMML0CPingpongTilingData*>(tilingGM.Get());
     *tilingData = QBMMUT::QBMML0CPingpongTilingData{
-        cfg.M, cfg.N, cfg.K, 1, cfg.baseM, cfg.baseN, cfg.baseK, cfg.kL1, cfg.kL1, cfg.nBufferNum, 2U, 0U, 1U};
+        cfg.M,     cfg.N,          cfg.K,     static_cast<int64_t>(batchCount),
+        cfg.baseM, cfg.baseN,      cfg.baseK, cfg.kL1,
+        cfg.kL1,   cfg.nBufferNum, 2U,        0U,
+        1U};
 
     AscendC::SetKernelMode(KernelMode::MIX_MODE);
 
@@ -636,65 +747,21 @@ void RunMxStreamKSmoke(const StreamKCaseCfg& cfg)
     ASSERT_TRUE(ok) << "QBMM MX StreamK kernel execution failed";
 }
 
-void RunInt8PertensorStreamKSmoke()
+template <typename AType, typename BType, typename X2ScaleType, typename OutType, typename BiasType>
+void RunPertensorStreamKSmoke(const PertensorStreamKCaseCfg& cfg)
 {
-    constexpr int64_t M = 16;
-    constexpr int64_t N = 16;
-    constexpr int64_t K = 128;
-    constexpr uint32_t BLOCK_NUM = 2U;
-    const size_t workspaceSize = BLOCK_NUM * PERTENSOR_STREAMK_WORKSPACE_TILE_SIZE + STREAMK_WORKSPACE_OVERHEAD;
+    const size_t x1Size = static_cast<size_t>(cfg.M * cfg.K) * sizeof(AType);
+    const size_t x2Size = static_cast<size_t>(cfg.K * cfg.N) * sizeof(BType);
+    const size_t biasSize = static_cast<size_t>(cfg.N) * cfg.biasElemSize;
+    const size_t outSize = static_cast<size_t>(cfg.M * cfg.N) * sizeof(OutType);
+    const size_t workspaceSize = cfg.blockNum * PERTENSOR_STREAMK_WORKSPACE_TILE_SIZE + STREAMK_WORKSPACE_OVERHEAD;
 
-    GmBuffer x1GM(static_cast<size_t>(M * K) * sizeof(int8_t));
-    GmBuffer x2GM(static_cast<size_t>(K * N) * sizeof(int8_t));
-    GmBuffer scaleGM(sizeof(float));
-    GmBuffer biasGM(static_cast<size_t>(N) * sizeof(int32_t));
-    GmBuffer yGM(static_cast<size_t>(M * N) * sizeof(bfloat16_t));
-    GmBuffer workspaceGM(workspaceSize);
-    GmBuffer tilingGM(sizeof(QBMMUT::QBMMPertensorStreamKTilingData));
-
-    ASSERT_NE(x1GM.Get(), nullptr);
-    ASSERT_NE(x2GM.Get(), nullptr);
-    ASSERT_NE(scaleGM.Get(), nullptr);
-    ASSERT_NE(biasGM.Get(), nullptr);
-    ASSERT_NE(yGM.Get(), nullptr);
-    ASSERT_NE(workspaceGM.Get(), nullptr);
-    ASSERT_NE(tilingGM.Get(), nullptr);
-
-    FillGmValues<int8_t>(x1GM.Get(), static_cast<size_t>(M * K), 1);
-    FillGmValues<int8_t>(x2GM.Get(), static_cast<size_t>(K * N), 1);
-    FillGmValues<float>(scaleGM.Get(), 1U, 1.0F);
-    FillGmBuffer(biasGM.Get(), static_cast<size_t>(N) * sizeof(int32_t), 0U);
-    FillGmBuffer(yGM.Get(), static_cast<size_t>(M * N) * sizeof(bfloat16_t), 0U);
-    FillGmBuffer(workspaceGM.Get(), workspaceSize, 0U);
-
-    auto* tilingData = reinterpret_cast<QBMMUT::QBMMPertensorStreamKTilingData*>(tilingGM.Get());
-    *tilingData = {M, N, K, 1, BLOCK_NUM, 16, 16, 64, 64, 64, 0, QBMMUT::GE_DT_FLOAT};
-
-    AscendC::SetKernelMode(KernelMode::MIX_MODE);
-    auto kernelFunc = qbmm_pertensor_streamk_kernel_entry<int8_t, int8_t, float, bfloat16_t, int32_t>;
-    const bool ok = KERNEL_RUN_KF(kernelFunc, BLOCK_NUM, x1GM.Get(), x2GM.Get(), nullptr, scaleGM.Get(), biasGM.Get(),
-                                  yGM.Get(), workspaceGM.Get(), tilingGM.Get());
-
-    ASSERT_TRUE(ok) << "QBMM per-tensor StreamK kernel execution failed";
-    // tikicpulib does not model the RegTensor dequantization numerics. Validate the mixed-kernel pipeline and
-    // synchronization here; scalar scale encoding is covered by the focused tests below.
-}
-
-void RunFp8DoubleScalePostBiasStreamKSmoke()
-{
-    constexpr int64_t M = 16;
-    constexpr int64_t N = 16;
-    constexpr int64_t K = 128;
-    constexpr uint32_t BLOCK_NUM = 2U;
-    constexpr float BIAS_VALUE = 1.25F;
-    const size_t workspaceSize = BLOCK_NUM * PERTENSOR_STREAMK_WORKSPACE_TILE_SIZE + STREAMK_WORKSPACE_OVERHEAD;
-
-    GmBuffer x1GM(static_cast<size_t>(M * K) * sizeof(fp8_e4m3fn_t));
-    GmBuffer x2GM(static_cast<size_t>(K * N) * sizeof(fp8_e4m3fn_t));
+    GmBuffer x1GM(x1Size);
+    GmBuffer x2GM(x2Size);
     GmBuffer perTokenScaleGM(sizeof(float));
-    GmBuffer scaleGM(sizeof(float));
-    GmBuffer biasGM(static_cast<size_t>(N) * sizeof(float));
-    GmBuffer yGM(static_cast<size_t>(M * N) * sizeof(float));
+    GmBuffer scaleGM(sizeof(X2ScaleType));
+    GmBuffer biasGM(biasSize);
+    GmBuffer yGM(outSize);
     GmBuffer workspaceGM(workspaceSize);
     GmBuffer tilingGM(sizeof(QBMMUT::QBMMPertensorStreamKTilingData));
 
@@ -707,25 +774,46 @@ void RunFp8DoubleScalePostBiasStreamKSmoke()
     ASSERT_NE(workspaceGM.Get(), nullptr);
     ASSERT_NE(tilingGM.Get(), nullptr);
 
-    FillGmBuffer(x1GM.Get(), static_cast<size_t>(M * K) * sizeof(fp8_e4m3fn_t), 0U);
-    FillGmBuffer(x2GM.Get(), static_cast<size_t>(K * N) * sizeof(fp8_e4m3fn_t), 0U);
-    FillGmValues<float>(perTokenScaleGM.Get(), 1U, 3.0F);
-    FillGmValues<float>(scaleGM.Get(), 1U, 2.0F);
-    FillGmValues<float>(biasGM.Get(), static_cast<size_t>(N), BIAS_VALUE);
-    FillGmValues<float>(yGM.Get(), static_cast<size_t>(M * N), 0.0F);
+    FillGmBuffer(x1GM.Get(), x1Size, 0U);
+    FillGmBuffer(x2GM.Get(), x2Size, 0U);
+    FillGmValues<float>(perTokenScaleGM.Get(), 1U, 1.0F);
+    FillPertensorStreamKScaleOne<X2ScaleType>(scaleGM.Get());
+    FillGmBuffer(biasGM.Get(), biasSize, 0U);
+    FillGmBuffer(yGM.Get(), outSize, 0U);
     FillGmBuffer(workspaceGM.Get(), workspaceSize, 0U);
 
     auto* tilingData = reinterpret_cast<QBMMUT::QBMMPertensorStreamKTilingData*>(tilingGM.Get());
-    *tilingData = {M, N, K, 1, BLOCK_NUM, 16, 16, 64, 64, 64, 1, QBMMUT::GE_DT_FLOAT};
+    *tilingData = {cfg.M,     cfg.N,     cfg.K,           1,       cfg.blockNum,         cfg.baseM,
+                   cfg.baseN, cfg.baseK, cfg.singleCoreK, cfg.kL1, cfg.isBias ? 1U : 0U, cfg.biasDtype};
 
     AscendC::SetKernelMode(KernelMode::MIX_MODE);
-    auto kernelFunc = qbmm_pertensor_streamk_kernel_entry<fp8_e4m3fn_t, fp8_e4m3fn_t, float, float, float>;
-    const bool ok = KERNEL_RUN_KF(kernelFunc, BLOCK_NUM, x1GM.Get(), x2GM.Get(), perTokenScaleGM.Get(), scaleGM.Get(),
+    auto kernelFunc = qbmm_pertensor_streamk_kernel_entry<AType, BType, X2ScaleType, OutType, BiasType>;
+    GM_ADDR x1ScaleGM = cfg.hasX1Scale ? perTokenScaleGM.Get() : nullptr;
+    const bool ok = KERNEL_RUN_KF(kernelFunc, cfg.blockNum, x1GM.Get(), x2GM.Get(), x1ScaleGM, scaleGM.Get(),
                                   biasGM.Get(), yGM.Get(), workspaceGM.Get(), tilingGM.Get());
 
-    ASSERT_TRUE(ok) << "QBMM double-scale post-dequant bias StreamK kernel execution failed";
-    // tikicpulib does not model the RegTensor dequantization/bias numerics. Validate the mixed-kernel pipeline and
-    // synchronization here; scale merge/masking semantics are covered by the focused tests below.
+    ASSERT_TRUE(ok) << "QBMM per-tensor StreamK kernel execution failed";
+    // tikicpulib does not model RegTensor dequantization numerics. These cases validate that the production
+    // GemmUniversal assembly, scheduler, AIC/AIV synchronization, and valid bias placement execute together.
+}
+
+template <typename AType, typename BType, typename X2ScaleType, typename OutType, typename BiasType>
+void RunPertensorStreamKPostBiasModes(PertensorStreamKCaseCfg cfg)
+{
+    constexpr RuntimeBiasCase BIAS_CASES[] = {
+        {GE_DT_FLOAT, sizeof(float)}, {GE_DT_FLOAT16, sizeof(half)}, {GE_DT_BF16, sizeof(bfloat16_t)}};
+    constexpr bool X1_SCALE_MODES[] = {false, true};
+    cfg.isBias = true;
+
+    for (bool hasX1Scale : X1_SCALE_MODES) {
+        cfg.hasX1Scale = hasX1Scale;
+        for (const auto& biasCase : BIAS_CASES) {
+            cfg.biasDtype = biasCase.dtype;
+            cfg.biasElemSize = biasCase.elemSize;
+            SCOPED_TRACE(testing::Message() << "hasX1Scale=" << hasX1Scale << ", biasDtype=" << biasCase.dtype);
+            ASSERT_NO_FATAL_FAILURE((RunPertensorStreamKSmoke<AType, BType, X2ScaleType, OutType, BiasType>(cfg)));
+        }
+    }
 }
 
 void RunBatchInputRejectedSmoke()
@@ -884,6 +972,44 @@ TEST_F(QBMMV3Test, Test_INT8_A8W8_PERTENSOR_AFullLoad)
     RunCubeSmoke(kernelFunc, cfg);
 }
 
+TEST_F(QBMMV3Test, Test_INT8_A8W8_PERTENSOR_X1Scale_MultiBatch)
+{
+    CubeCaseCfg cfg{16,
+                    16,
+                    64,
+                    1,
+                    QM_PERTENSOR,
+                    QM_PERTENSOR,
+                    false,
+                    GE_DT_FLOAT,
+                    sizeof(int32_t),
+                    sizeof(half),
+                    "--x1_mode pertensor --x2_mode pertensor --scale_dtype float32"};
+    cfg.batch = 2;
+    cfg.scaleElemSize = sizeof(float);
+    auto kernelFunc = qbmm_cube_kernel_entry<int8_t, int8_t, half, int32_t>;
+    RunCubeSmoke(kernelFunc, cfg);
+}
+
+TEST_F(QBMMV3Test, Test_INT8_A8W8_PERTENSOR_X1Scale_MultiBatch_AFullLoad)
+{
+    CubeCaseCfg cfg{16,
+                    16,
+                    64,
+                    1,
+                    QM_PERTENSOR,
+                    QM_PERTENSOR,
+                    false,
+                    GE_DT_FLOAT,
+                    sizeof(int32_t),
+                    sizeof(half),
+                    "--x1_mode pertensor --x2_mode pertensor --scale_dtype float32"};
+    cfg.batch = 2;
+    cfg.scaleElemSize = sizeof(float);
+    auto kernelFunc = qbmm_cube_a_full_load_kernel_entry<int8_t, int8_t, half, int32_t>;
+    RunCubeSmoke(kernelFunc, cfg);
+}
+
 TEST_F(QBMMV3Test, Test_INT8_A8W8_PERCHANNEL_MultiBatchWithThreeDimBias)
 {
     CubeCaseCfg cfg{16,
@@ -900,6 +1026,113 @@ TEST_F(QBMMV3Test, Test_INT8_A8W8_PERCHANNEL_MultiBatchWithThreeDimBias)
     cfg.batch = 2;
     cfg.biasThreeDim = true;
     auto kernelFunc = qbmm_cube_kernel_entry<int8_t, int8_t, half, int32_t>;
+    RunCubeSmoke(kernelFunc, cfg);
+}
+
+TEST_F(QBMMV3Test, Test_FIXPIPE_BlockMmad_AL1SplitBL1)
+{
+    CubeCaseCfg cfg{16,
+                    16,
+                    96,
+                    1,
+                    QM_DEFAULT,
+                    QM_PERCHANNEL,
+                    true,
+                    GE_DT_INT32,
+                    sizeof(int32_t),
+                    sizeof(half),
+                    "--x2_mode perchannel --bias --bias_dtype int32"};
+    cfg.kL1 = 64;
+    cfg.kBL1 = 32;
+    cfg.baseK = 32;
+    auto kernelFunc = qbmm_cube_kernel_entry<int8_t, int8_t, half, int32_t>;
+    RunCubeSmoke(kernelFunc, cfg);
+}
+
+TEST_F(QBMMV3Test, Test_FIXPIPE_BlockMmad_BL1SplitAL1)
+{
+    CubeCaseCfg cfg{16,
+                    16,
+                    96,
+                    1,
+                    QM_DEFAULT,
+                    QM_PERCHANNEL,
+                    true,
+                    GE_DT_INT32,
+                    sizeof(int32_t),
+                    sizeof(half),
+                    "--x2_mode perchannel --bias --bias_dtype int32"};
+    cfg.kL1 = 32;
+    cfg.kBL1 = 64;
+    cfg.baseK = 32;
+    auto kernelFunc = qbmm_cube_kernel_entry<int8_t, int8_t, half, int32_t>;
+    RunCubeSmoke(kernelFunc, cfg);
+}
+
+TEST_F(QBMMV3Test, Test_FIXPIPE_BlockMmad_AsymmetricL1_WithoutBatch_U64Scale)
+{
+    CubeCaseCfg cfg{16,
+                    16,
+                    96,
+                    1,
+                    QM_DEFAULT,
+                    QM_PERCHANNEL,
+                    false,
+                    GE_DT_FLOAT,
+                    sizeof(int32_t),
+                    sizeof(half),
+                    "--x2_mode perchannel"};
+    cfg.baseK = 32;
+    auto kernelFunc = qbmm_cube_without_batch_kernel_entry<int8_t, int8_t, half, int32_t>;
+
+    cfg.kL1 = 64;
+    cfg.kBL1 = 32;
+    RunCubeSmoke(kernelFunc, cfg);
+
+    cfg.kL1 = 32;
+    cfg.kBL1 = 64;
+    RunCubeSmoke(kernelFunc, cfg);
+}
+
+TEST_F(QBMMV3Test, Test_FIXPIPE_BlockMmad_AsymmetricL1_WithoutBatch_FloatScale)
+{
+    CubeCaseCfg cfg{16,
+                    16,
+                    96,
+                    1,
+                    QM_DEFAULT,
+                    QM_PERCHANNEL,
+                    false,
+                    GE_DT_FLOAT,
+                    sizeof(int32_t),
+                    sizeof(half),
+                    "--x2_mode perchannel"};
+    cfg.baseK = 32;
+    auto kernelFunc = qbmm_cube_without_batch_kernel_entry<int8_t, int8_t, half, int32_t, float>;
+
+    cfg.kL1 = 64;
+    cfg.kBL1 = 32;
+    RunCubeSmoke(kernelFunc, cfg);
+
+    cfg.kL1 = 32;
+    cfg.kBL1 = 64;
+    RunCubeSmoke(kernelFunc, cfg);
+}
+
+TEST_F(QBMMV3Test, Test_FIXPIPE_BlockMmad_PerChannel_AFullLoad)
+{
+    CubeCaseCfg cfg{16,
+                    16,
+                    64,
+                    1,
+                    QM_DEFAULT,
+                    QM_PERCHANNEL,
+                    false,
+                    GE_DT_FLOAT,
+                    sizeof(int32_t),
+                    sizeof(half),
+                    "--x2_mode perchannel"};
+    auto kernelFunc = qbmm_cube_a_full_load_kernel_entry<int8_t, int8_t, half, int32_t>;
     RunCubeSmoke(kernelFunc, cfg);
 }
 
@@ -995,6 +1228,23 @@ TEST_F(QBMMV3Test, Test_INT8_A8W8_PERTENSOR_WithoutBatch_TripleBuffer_AFullLoad)
     // Reuse the resident A tile across three N tiles on the same core.
     cfg.baseN = 32;
     cfg.baseK = 32;
+    auto kernelFunc = qbmm_cube_without_batch_a_full_load_kernel_entry<int8_t, int8_t, half, int32_t>;
+    RunCubeSmoke(kernelFunc, cfg);
+}
+
+TEST_F(QBMMV3Test, Test_INT8_A8W8_PERCHANNEL_WithoutBatch_AFullLoad)
+{
+    CubeCaseCfg cfg{16,
+                    16,
+                    64,
+                    1,
+                    QM_DEFAULT,
+                    QM_PERCHANNEL,
+                    false,
+                    GE_DT_FLOAT,
+                    sizeof(int32_t),
+                    sizeof(half),
+                    "--x2_mode perchannel"};
     auto kernelFunc = qbmm_cube_without_batch_a_full_load_kernel_entry<int8_t, int8_t, half, int32_t>;
     RunCubeSmoke(kernelFunc, cfg);
 }
@@ -1132,6 +1382,24 @@ TEST_F(QBMMV3Test, Test_HIFLOAT8_A8W8_PERTENSOR_WithoutBatch_AFullLoad_QuadBuffe
     RunTypedCubeSmoke<hifloat8_t, hifloat8_t>(kernelFunc, cfg);
 }
 
+TEST_F(QBMMV3Test, Test_FP8_A8W8_PERCHANNEL_WithoutBatch_AFullLoad)
+{
+    CubeCaseCfg cfg{16, 16, 64, 1, QM_DEFAULT, QM_PERCHANNEL, false, GE_DT_FLOAT, sizeof(float), sizeof(bfloat16_t),
+                    ""};
+    auto kernelFunc = qbmm_cube_without_batch_a_full_load_kernel_entry<fp8_e4m3fn_t, fp8_e4m3fn_t, bfloat16_t, float,
+                                                                       float>;
+    RunTypedCubeSmoke<fp8_e4m3fn_t, fp8_e4m3fn_t>(kernelFunc, cfg);
+}
+
+TEST_F(QBMMV3Test, Test_HIFLOAT8_A8W8_PERCHANNEL_WithoutBatch_AFullLoad)
+{
+    CubeCaseCfg cfg{16, 16, 64, 1, QM_DEFAULT, QM_PERCHANNEL, false, GE_DT_FLOAT, sizeof(float), sizeof(bfloat16_t),
+                    ""};
+    auto
+        kernelFunc = qbmm_cube_without_batch_a_full_load_kernel_entry<hifloat8_t, hifloat8_t, bfloat16_t, float, float>;
+    RunTypedCubeSmoke<hifloat8_t, hifloat8_t>(kernelFunc, cfg);
+}
+
 TEST_F(QBMMV3Test, Test_MX_FP8_BlockMmadDoubleBuffer)
 {
     using MxType = fp8_e4m3fn_t;
@@ -1143,6 +1411,7 @@ TEST_F(QBMMV3Test, Test_MX_FP8_BlockMmadDoubleBuffer_AFullLoad)
 {
     using MxType = fp8_e4m3fn_t;
     MxCaseCfg cfg{64, 128, 128, 1, 64, 128, 64, 64, 64, 2, false};
+    cfg.batch = 2;
     RunMxSmoke<MxType, MxType, float, float, Blaze::Gemm::A_FULL_LOAD_MODE>(cfg);
 }
 
@@ -1201,6 +1470,7 @@ TEST_F(QBMMV3Test, Test_MX_FP8_L0CPingpong)
 {
     using MxType = fp8_e4m3fn_t;
     L0CPingpongCaseCfg cfg{64, 128, 128, 64, 128, 64, 64, 2, 1};
+    cfg.batch = 2;
     RunMxL0CPingpongSmoke<MxType, MxType>(cfg);
 }
 
@@ -1208,6 +1478,7 @@ TEST_F(QBMMV3Test, Test_MX_FP8_L0CPingpong_AFullLoad)
 {
     using MxType = fp8_e4m3fn_t;
     L0CPingpongCaseCfg cfg{64, 128, 128, 64, 128, 64, 64, 2, 1};
+    cfg.batch = 2;
     RunMxL0CPingpongSmoke<MxType, MxType, Blaze::Gemm::A_FULL_LOAD_MODE>(cfg);
 }
 
@@ -1236,6 +1507,7 @@ TEST_F(QBMMV3Test, Test_MX_FP4_L0CPingpongSplitN)
 {
     using MxType = fp4x2_e2m1_t;
     L0CPingpongCaseCfg cfg{128, 256, 128, 128, 256, 64, 64, 2, 1};
+    cfg.batch = 2;
     RunMxL0CPingpongSmoke<MxType, MxType>(cfg);
 }
 
@@ -1245,16 +1517,15 @@ TEST_F(QBMMV3Test, Test_MX_FP8_StreamK)
     RunMxStreamKSmoke(cfg);
 }
 
-// ===================== MIX A8W8 dequant 路径用例矩阵（4.3）=====================
-// 均为 smoke 测试：KERNEL_RUN_KF 仅检测 kernel 是否崩溃（与 PR #61 一致，不读回 golden 比对）。
+// ===================== MIX 完整 kernel 路径用例 =====================
+// 均通过 QBMMMixWrapper 装配并由 KERNEL_RUN_KF 执行，不直接调用 block epilogue。
 
-// 最典型：激活 per-token + 权重 per-channel，双向量 scale，half 输出。
-TEST_F(QBMMV3Test, Test_MIX_A8W8_PerChannel_PerToken)
+TEST_F(QBMMV3Test, Test_MIX_BlockScheduler_TailSplit)
 {
-    MixCaseCfg cfg{16,
+    MixCaseCfg cfg{64,
+                   64,
                    16,
-                   16,
-                   1,
+                   24,
                    QM_PERTOKEN,
                    QM_PERCHANNEL,
                    false,
@@ -1262,8 +1533,148 @@ TEST_F(QBMMV3Test, Test_MIX_A8W8_PerChannel_PerToken)
                    sizeof(float),
                    sizeof(half),
                    "--x1_mode pertoken --x2_mode perchannel --scale_dtype float32"};
+    cfg.baseM = 64;
+    cfg.baseN = 64;
+    cfg.mTailTile = 4;
+    cfg.nTailTile = 4;
     auto kernelFunc = qbmm_mix_kernel_entry<int8_t, int8_t, half, int32_t>;
     RunMixSmoke(kernelFunc, cfg);
+}
+
+TEST_F(QBMMV3Test, Test_MIX_BlockScheduler_TailSplit_AFullLoad)
+{
+    MixCaseCfg cfg{256,
+                   64,
+                   16,
+                   24,
+                   QM_PERTOKEN,
+                   QM_PERCHANNEL,
+                   false,
+                   GE_DT_FLOAT,
+                   sizeof(float),
+                   sizeof(half),
+                   "--x1_mode pertoken --x2_mode perchannel --scale_dtype float32"};
+    cfg.baseM = 64;
+    cfg.baseN = 64;
+    cfg.nTailTile = 4;
+    auto kernelFunc = qbmm_mix_a_full_load_kernel_entry<int8_t, int8_t, half, int32_t>;
+    RunMixSmoke(kernelFunc, cfg);
+}
+
+TEST_F(QBMMV3Test, Test_MIX_BlockScheduler_MultiBatchNonWrappedRound)
+{
+    MixCaseCfg cfg{104,
+                   80,
+                   16,
+                   24,
+                   QM_PERTOKEN,
+                   QM_PERCHANNEL,
+                   false,
+                   GE_DT_FLOAT,
+                   sizeof(float),
+                   sizeof(half),
+                   "--x1_mode pertoken --x2_mode perchannel --scale_dtype float32"};
+    cfg.batch = 2;
+    cfg.baseM = 16;
+    cfg.baseN = 16;
+    cfg.mBaseTailSplitCnt = 2;
+    cfg.mTailMain = 12;
+    auto kernelFunc = qbmm_mix_kernel_entry<int8_t, int8_t, half, int32_t>;
+    RunMixSmoke(kernelFunc, cfg);
+}
+
+TEST_F(QBMMV3Test, Test_MIX_BlockScheduler_MultiBatchWrappedRoundAndSwat)
+{
+    MixCaseCfg cfg{224,
+                   48,
+                   16,
+                   24,
+                   QM_PERTOKEN,
+                   QM_PERCHANNEL,
+                   false,
+                   GE_DT_FLOAT,
+                   sizeof(float),
+                   sizeof(half),
+                   "--x1_mode pertoken --x2_mode perchannel --scale_dtype float32"};
+    cfg.batch = 2;
+    cfg.baseM = 16;
+    cfg.baseN = 16;
+    auto kernelFunc = qbmm_mix_kernel_entry<int8_t, int8_t, half, int32_t>;
+    RunMixSmoke(kernelFunc, cfg);
+}
+
+TEST_F(QBMMV3Test, Test_MIX_BlockMmad_AL1SplitBL1)
+{
+    MixCaseCfg cfg{16,
+                   16,
+                   96,
+                   1,
+                   QM_DEFAULT,
+                   QM_PERCHANNEL,
+                   false,
+                   GE_DT_FLOAT,
+                   sizeof(float),
+                   sizeof(half),
+                   "--x1_mode default --x2_mode perchannel --scale_dtype float32"};
+    cfg.kAL1 = 64;
+    cfg.kBL1 = 32;
+    auto kernelFunc = qbmm_mix_kernel_entry<int8_t, int8_t, half, int32_t>;
+    RunMixSmoke(kernelFunc, cfg);
+}
+
+TEST_F(QBMMV3Test, Test_MIX_BlockMmad_BL1SplitAL1)
+{
+    MixCaseCfg cfg{16,
+                   16,
+                   96,
+                   1,
+                   QM_DEFAULT,
+                   QM_PERCHANNEL,
+                   false,
+                   GE_DT_FLOAT,
+                   sizeof(float),
+                   sizeof(half),
+                   "--x1_mode default --x2_mode perchannel --scale_dtype float32"};
+    cfg.kAL1 = 32;
+    cfg.kBL1 = 64;
+    auto kernelFunc = qbmm_mix_kernel_entry<int8_t, int8_t, half, int32_t>;
+    RunMixSmoke(kernelFunc, cfg);
+}
+
+TEST_F(QBMMV3Test, Test_MIX_A8W8_RuntimeModes_OutputFloat)
+{
+    auto kernelFunc = qbmm_mix_kernel_entry<int8_t, int8_t, float, int32_t>;
+    RunMixRuntimeModes<int8_t, int8_t, float>(kernelFunc, 16, sizeof(float));
+}
+
+TEST_F(QBMMV3Test, Test_MIX_BlockMmad_AsymmetricL1_WithoutBatch)
+{
+    MixCaseCfg cfg{16,
+                   16,
+                   96,
+                   1,
+                   QM_DEFAULT,
+                   QM_PERCHANNEL,
+                   false,
+                   GE_DT_FLOAT,
+                   sizeof(float),
+                   sizeof(half),
+                   "--x1_mode default --x2_mode perchannel --scale_dtype float32"};
+    auto kernelFunc = qbmm_mix_without_batch_kernel_entry<int8_t, int8_t, half, int32_t>;
+
+    cfg.kAL1 = 64;
+    cfg.kBL1 = 32;
+    RunMixSmoke(kernelFunc, cfg);
+
+    cfg.kAL1 = 32;
+    cfg.kBL1 = 64;
+    RunMixSmoke(kernelFunc, cfg);
+}
+
+TEST_F(QBMMV3Test, Test_MIX_A8W8_RuntimeModes_OutputFP16)
+{
+    auto kernelFunc = qbmm_mix_kernel_entry<int8_t, int8_t, half, int32_t>;
+    RunMixRuntimeModes<int8_t, int8_t, float>(kernelFunc, 16, sizeof(half));
 }
 
 TEST_F(QBMMV3Test, Test_MIX_A8W8_PerChannel_PerToken_AFullLoad)
@@ -1279,6 +1690,7 @@ TEST_F(QBMMV3Test, Test_MIX_A8W8_PerChannel_PerToken_AFullLoad)
                    sizeof(float),
                    sizeof(half),
                    "--x1_mode pertoken --x2_mode perchannel --scale_dtype float32"};
+    cfg.batch = 2;
     auto kernelFunc = qbmm_mix_a_full_load_kernel_entry<int8_t, int8_t, half, int32_t>;
     RunMixSmoke(kernelFunc, cfg);
 }
@@ -1302,94 +1714,22 @@ TEST_F(QBMMV3Test, Test_MIX_A8W8_MultiBatchWithThreeDimBias)
     RunMixSmoke(kernelFunc, cfg);
 }
 
-// 仅权重 scale：激活 DEFAULT（epilogue 忽略 x1 scale）+ 权重 per-channel，half 输出。
-TEST_F(QBMMV3Test, Test_MIX_A8W8_PerChannel_NoPtScale)
+TEST_F(QBMMV3Test, Test_MIX_A8W8_RuntimeModes_BF16Scale_OutputFloat)
 {
-    MixCaseCfg cfg{16,
-                   16,
-                   16,
-                   1,
-                   QM_DEFAULT,
-                   QM_PERCHANNEL,
-                   false,
-                   GE_DT_FLOAT,
-                   sizeof(float),
-                   sizeof(half),
-                   "--x1_mode default --x2_mode perchannel --scale_dtype float32"};
-    auto kernelFunc = qbmm_mix_kernel_entry<int8_t, int8_t, half, int32_t>;
-    RunMixSmoke(kernelFunc, cfg);
+    auto kernelFunc = qbmm_mix_kernel_entry<int8_t, int8_t, float, int32_t, bfloat16_t>;
+    RunMixRuntimeModes<int8_t, int8_t, bfloat16_t>(kernelFunc, 16, sizeof(float));
 }
 
-// 权重标量 scale：激活 per-token + 权重 per-tensor，half 输出。
-TEST_F(QBMMV3Test, Test_MIX_A8W8_PerTensor_PerToken)
+TEST_F(QBMMV3Test, Test_MIX_A8W8_RuntimeModes_OutputBF16)
 {
-    MixCaseCfg cfg{16,
-                   16,
-                   16,
-                   1,
-                   QM_PERTOKEN,
-                   QM_PERTENSOR,
-                   false,
-                   GE_DT_FLOAT,
-                   sizeof(float),
-                   sizeof(half),
-                   "--x1_mode pertoken --x2_mode pertensor --scale_dtype float32"};
-    auto kernelFunc = qbmm_mix_kernel_entry<int8_t, int8_t, half, int32_t>;
-    RunMixSmoke(kernelFunc, cfg);
-}
-
-TEST_F(QBMMV3Test, Test_MIX_A8W8_PerTensor_X1PerTensor_BF16Bias_OutputFloat)
-{
-    MixCaseCfg cfg{16,
-                   16,
-                   16,
-                   1,
-                   QM_PERTENSOR,
-                   QM_PERTENSOR,
-                   true,
-                   GE_DT_BF16,
-                   sizeof(bfloat16_t),
-                   sizeof(float),
-                   "--x1_mode pertensor --x2_mode pertensor --scale_dtype float32 --bias --bias_dtype bfloat16 "
-                   "--out_dtype float32"};
-    auto kernelFunc = qbmm_mix_kernel_entry<int8_t, int8_t, float, int32_t>;
-    RunMixSmoke(kernelFunc, cfg);
-}
-
-// 覆盖 bias 路径 + biasDtype=fp16：激活 per-token + 权重 per-channel + fp16 bias，half 输出。
-TEST_F(QBMMV3Test, Test_MIX_A8W8_WithBias_FP16)
-{
-    MixCaseCfg cfg{16,
-                   16,
-                   16,
-                   1,
-                   QM_PERTOKEN,
-                   QM_PERCHANNEL,
-                   true,
-                   GE_DT_FLOAT16,
-                   sizeof(half),
-                   sizeof(half),
-                   "--x1_mode pertoken --x2_mode perchannel --scale_dtype float32 --bias --bias_dtype float16"};
-    auto kernelFunc = qbmm_mix_kernel_entry<int8_t, int8_t, half, int32_t>;
-    RunMixSmoke(kernelFunc, cfg);
-}
-
-// 覆盖 OutType=bf16：激活 per-token + 权重 per-channel，bfloat16 输出。
-TEST_F(QBMMV3Test, Test_MIX_A8W8_Output_BF16)
-{
-    MixCaseCfg cfg{16,
-                   16,
-                   16,
-                   1,
-                   QM_PERTOKEN,
-                   QM_PERCHANNEL,
-                   false,
-                   GE_DT_FLOAT,
-                   sizeof(float),
-                   sizeof(bfloat16_t),
-                   "--x1_mode pertoken --x2_mode perchannel --scale_dtype float32"};
     auto kernelFunc = qbmm_mix_kernel_entry<int8_t, int8_t, bfloat16_t, int32_t>;
-    RunMixSmoke(kernelFunc, cfg);
+    RunMixRuntimeModes<int8_t, int8_t, float>(kernelFunc, 16, sizeof(bfloat16_t));
+}
+
+TEST_F(QBMMV3Test, Test_MIX_FP8_RuntimeModes_OutputFP16)
+{
+    auto kernelFunc = qbmm_mix_kernel_entry<fp8_e4m3fn_t, fp8_e4m3fn_t, half, float>;
+    RunMixRuntimeModes<fp8_e4m3fn_t, fp8_e4m3fn_t, float>(kernelFunc, 64, sizeof(half));
 }
 
 // 单 batch 特化：走 GemmUniversal without_batch，激活 per-token + 权重 per-channel，half 输出。
@@ -1835,27 +2175,38 @@ TEST_F(QBMMPertensorStreamKTest, DoubleScaleWithoutPostBiasMergesBeforeMask)
     EXPECT_EQ(actualBits, mergedBits & Epilogue::DEQ_SCALE_MUL_MASK);
 }
 
-TEST_F(QBMMPertensorStreamKTest, PostBiasScaleDecodePreservesFullPrecision)
+TEST_F(QBMMPertensorStreamKTest, Int8FloatScaleWithoutBiasPureSk)
 {
-    using Layout = asc::te::nd_ext_layout_ptn;
-    using DispatchPolicy = Blaze::Gemm::MatmulWithScaleFixpipeQuant<0, false,
-                                                                    Blaze::Gemm::KernelQbmmPertensorMultiBlockStreamK>;
-    using Mmad = Blaze::Gemm::Block::BlockMmad<DispatchPolicy, fp8_e4m3fn_t, Layout,
-                                               AscendC::Std::tuple<fp8_e4m3fn_t, float>, Layout, float, Layout, float,
-                                               Layout>;
-    using Epilogue = Blaze::Epilogue::Block::BlockEpilogueQbmmPertensorStreamK<typename Mmad::WorkspaceType, float,
-                                                                               DispatchPolicy, float, float>;
-
-    constexpr uint32_t rawScaleBits = 0x3F812345U;
-    const float rawScale = *reinterpret_cast<const float*>(&rawScaleBits);
-    const uint32_t actualBits = *reinterpret_cast<const uint32_t*>(&rawScale);
-
-    EXPECT_EQ(actualBits, rawScaleBits);
-    EXPECT_NE(actualBits, rawScaleBits & Epilogue::DEQ_SCALE_MUL_MASK);
+    PertensorStreamKCaseCfg cfg{16, 16, 128, 2};
+    RunPertensorStreamKSmoke<int8_t, int8_t, float, half, float>(cfg);
 }
 
-TEST_F(QBMMPertensorStreamKTest, Int8PerTensorSmoke) { RunInt8PertensorStreamKSmoke(); }
+TEST_F(QBMMPertensorStreamKTest, Int8Uint64ScaleInt32MmadBiasPureSk)
+{
+    PertensorStreamKCaseCfg cfg{16, 16, 128, 2};
+    cfg.isBias = true;
+    cfg.biasDtype = GE_DT_INT32;
+    cfg.biasElemSize = sizeof(int32_t);
+    RunPertensorStreamKSmoke<int8_t, int8_t, uint64_t, half, int32_t>(cfg);
+}
 
-TEST_F(QBMMPertensorStreamKTest, Fp8DoubleScalePostBiasSmoke) { RunFp8DoubleScalePostBiasStreamKSmoke(); }
+TEST_F(QBMMPertensorStreamKTest, Fp8DoubleScaleWithoutBiasDpSk)
+{
+    PertensorStreamKCaseCfg cfg{48, 17, 128, 4};
+    cfg.hasX1Scale = true;
+    RunPertensorStreamKSmoke<fp8_e4m3fn_t, fp8_e5m2_t, float, float, float>(cfg);
+}
+
+TEST_F(QBMMPertensorStreamKTest, Fp8DoubleScalePostBiasModesPureSk)
+{
+    PertensorStreamKCaseCfg cfg{16, 16, 128, 2};
+    RunPertensorStreamKPostBiasModes<fp8_e4m3fn_t, fp8_e5m2_t, float, float, float>(cfg);
+}
+
+TEST_F(QBMMPertensorStreamKTest, Int8FloatScalePostBiasModesPureSk)
+{
+    PertensorStreamKCaseCfg cfg{16, 16, 128, 2};
+    RunPertensorStreamKPostBiasModes<int8_t, int8_t, float, half, float>(cfg);
+}
 
 TEST_F(QBMMPertensorStreamKTest, BatchedInputReturnsBeforeScheduling) { RunBatchInputRejectedSmoke(); }
