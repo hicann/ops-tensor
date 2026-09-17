@@ -60,6 +60,7 @@ public:
 private:
     static constexpr uint64_t DATA_BLOCK = 32;
     static constexpr uint32_t CV_RATIO = 2;
+#ifdef __CCE_AICORE__
     static constexpr AscendC::Reg::CastTrait CAST_IN_ZERO = {
         AscendC::Reg::RegLayout::ZERO, AscendC::Reg::SatMode::UNKNOWN, AscendC::Reg::MaskMergeMode::ZEROING,
         AscendC::RoundMode::UNKNOWN};
@@ -69,6 +70,7 @@ private:
     static constexpr AscendC::Reg::CastTrait CAST_OUT = {AscendC::Reg::RegLayout::ZERO, AscendC::Reg::SatMode::NO_SAT,
                                                          AscendC::Reg::MaskMergeMode::ZEROING,
                                                          AscendC::RoundMode::CAST_RINT};
+#endif // __CCE_AICORE__
 
     template <class T>
     __aicore__ inline static uint64_t AlignBytes(uint64_t elements)

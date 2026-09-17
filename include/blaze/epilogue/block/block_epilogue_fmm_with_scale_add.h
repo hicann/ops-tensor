@@ -36,6 +36,7 @@ namespace Epilogue {
 namespace Block {
 namespace Detail {
 
+#ifdef __CCE_AICORE__
 constexpr AscendC::Reg::CastTrait FMM_WITH_SCALE_ADD_B16_TO_FP32_ZERO = {
     AscendC::Reg::RegLayout::ZERO, AscendC::Reg::SatMode::UNKNOWN, AscendC::Reg::MaskMergeMode::ZEROING,
     AscendC::RoundMode::UNKNOWN};
@@ -45,6 +46,8 @@ constexpr AscendC::Reg::CastTrait FMM_WITH_SCALE_ADD_B16_TO_FP32_ONE = {
 constexpr AscendC::Reg::CastTrait FMM_WITH_SCALE_ADD_FP32_TO_B16 = {
     AscendC::Reg::RegLayout::ZERO, AscendC::Reg::SatMode::NO_SAT, AscendC::Reg::MaskMergeMode::ZEROING,
     AscendC::RoundMode::CAST_RINT};
+#endif // __CCE_AICORE__
+
 constexpr float FMM_WITH_SCALE_ADD_DEFAULT_SCALE_VALUE = 1.0F;
 
 template <typename ElementType_>

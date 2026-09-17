@@ -19,11 +19,13 @@
 
 namespace Blaze::Epilogue::Tile {
 
+#ifdef __CCE_AICORE__
 constexpr AscendC::Reg::DivSpecificMode RMS_SOFTMAX_DIV_0ULP_FTZ_TRUE_MODE = {
     AscendC::Reg::MaskMergeMode::ZEROING,
     true,
     AscendC::DivAlgo::PRECISION_0ULP_FTZ_TRUE,
 };
+#endif // __CCE_AICORE__
 
 class RmsSoftmax {
 public:

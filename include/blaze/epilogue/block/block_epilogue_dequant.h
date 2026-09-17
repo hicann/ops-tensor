@@ -41,6 +41,7 @@ using Blaze::Gemm::CeilDiv;
 // Cast traits for the vector dequant micro-ops.
 // int32->fp32 is a 1:1 width cast (both 4 bytes); the bf16/half->fp32 traits use the
 // ZERO/ONE register-layout split that is recombined with Interleave (1:2 width expansion).
+#ifdef __CCE_AICORE__
 constexpr AscendC::Reg::CastTrait DQ_CT_INT32_2_FP32 = {
     AscendC::Reg::RegLayout::UNKNOWN, AscendC::Reg::SatMode::UNKNOWN, AscendC::Reg::MaskMergeMode::ZEROING,
     AscendC::RoundMode::CAST_RINT};
@@ -53,6 +54,7 @@ constexpr AscendC::Reg::CastTrait DQ_CT_HALF_2_FP32_ZERO = {
 constexpr AscendC::Reg::CastTrait DQ_CT_HALF_2_FP32_ONE = {AscendC::Reg::RegLayout::ONE, AscendC::Reg::SatMode::UNKNOWN,
                                                            AscendC::Reg::MaskMergeMode::ZEROING,
                                                            AscendC::RoundMode::UNKNOWN};
+#endif // __CCE_AICORE__
 
 template <class OutType_, class BiasType_, class X2ScaleType_, class X1ScaleType_ = float, class L0CType_ = int32_t>
 class BlockEpilogueDequant {
