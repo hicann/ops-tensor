@@ -236,5 +236,46 @@ private:
     BufferSlot scaleL1Slot_;
 };
 
+/* =========================================================================
+ * 独立锁函数
+ * ========================================================================= */
+__aicore__ inline void LockMte2(uint8_t bufferId) { asc_lock(pipe_t::PIPE_MTE2, bufferId); }
+__aicore__ inline void UnLockMte2(uint8_t bufferId) { asc_unlock(pipe_t::PIPE_MTE2, bufferId); }
+__aicore__ inline void LockMte1(uint8_t bufferId)
+{
+    if ASCEND_IS_NOT_AIV {
+        asc_lock(pipe_t::PIPE_MTE1, bufferId);
+    }
+}
+__aicore__ inline void UnLockMte1(uint8_t bufferId)
+{
+    if ASCEND_IS_NOT_AIV {
+        asc_unlock(pipe_t::PIPE_MTE1, bufferId);
+    }
+}
+__aicore__ inline void LockM(uint8_t bufferId)
+{
+    if ASCEND_IS_NOT_AIV {
+        asc_lock(pipe_t::PIPE_M, bufferId);
+    }
+}
+__aicore__ inline void UnLockM(uint8_t bufferId)
+{
+    if ASCEND_IS_NOT_AIV {
+        asc_unlock(pipe_t::PIPE_M, bufferId);
+    }
+}
+__aicore__ inline void LockFix(uint8_t bufferId)
+{
+    if ASCEND_IS_NOT_AIV {
+        asc_lock(pipe_t::PIPE_FIX, bufferId);
+    }
+}
+__aicore__ inline void UnLockFix(uint8_t bufferId)
+{
+    if ASCEND_IS_NOT_AIV {
+        asc_unlock(pipe_t::PIPE_FIX, bufferId);
+    }
+}
 } // namespace Gemm
 } // namespace Blaze
