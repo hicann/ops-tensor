@@ -172,9 +172,6 @@ private:
     uint64_t geluResUbOffset_{0};
     uint64_t maxExpUbOffset_{0};
     uint64_t halfScaleUbOffset_{0};
-    uint64_t erfTmpUbOffset_{0};
-    uint64_t fp32TmpUbOffset_{0};
-    uint64_t geluFp32TmpUbOffset_{0};
 
     int64_t n_;
     int64_t scaleN_;
@@ -244,18 +241,6 @@ __aicore__ inline void BlockEpilogueGeluMxQuant<DataTypeOut_, DataTypeIn_>::Setu
     halfScaleUbOffset_ = afterIOAndGeluExp;
     constexpr uint32_t realScaleBlockOffset = afterIOAndGeluExp + MAX_SINGLE_SCALE_NUM * sizeof(uint16_t);
     quantScaleBlockOutputUbOffset_ = realScaleBlockOffset;
-    if (params_->geluAlg == GeluAlg::ERF) {
-        uint32_t ubOffset = realScaleBlockOffset +
-                            params_->baseM / AscendC::GetTaskRation() * AscendC::ONE_BLK_SIZE * sizeof(int8_t);
-        if constexpr (AscendC::IsSameType<DataTypeIn, float>::value) {
-            erfTmpUbOffset_ = ubOffset;
-            geluFp32TmpUbOffset_ = ubOffset + params_->baseN * sizeof(float);
-        } else {
-            fp32TmpUbOffset_ = ubOffset;
-            erfTmpUbOffset_ = ubOffset + params_->baseN * sizeof(float);
-            geluFp32TmpUbOffset_ = ubOffset + params_->baseN * sizeof(float) * 2;
-        }
-    }
 }
 
 template <typename DataTypeOut_, typename DataTypeIn_>
@@ -798,13 +783,7 @@ __aicore__ inline void BlockEpilogueGeluMxQuant<DataTypeOut_, DataTypeIn_>::VFDo
                                           layout);
     Gelu<bfloat16_t, DataTypeIn> gelu;
     if (params_->geluAlg == GeluAlg::ERF) {
-        auto erfTensor = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::ub, float>(erfTmpUbOffset_),
-                                              layout);
-        auto fp32Tensor = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::ub, float>(fp32TmpUbOffset_),
-                                               layout);
-        auto geluFp32Tensor = asc::te::make_tensor(
-            asc::te::make_mem_ptr<asc::te::location::ub, float>(geluFp32TmpUbOffset_), layout);
-        gelu.GeluErf(srcTensor, dstTensor, erfTensor, fp32Tensor, geluFp32Tensor, mSize, nSize);
+        gelu.GeluErf(srcTensor, dstTensor, mSize, nSize);
     } else {
         gelu.GeluTanh(srcTensor, dstTensor, mSize, nSize);
     }

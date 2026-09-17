@@ -7,17 +7,19 @@ Tile 级 GELU 激活组件，提供两种算法，供多个 Block Epilogue 复�
 
 - **GeluTanh**：tanh 近似，`0.5·x·(1 + tanh(√(2/π)·(x + 0.044715·x³)))`，
   等价 sigmoid 形式 `x / (1 + exp(-√(8/π)·(x + 0.044715·x³)))`，纯寄存器指令实现
-- **GeluErf**：erf 精确形式，`0.5·x·(1 + erf(x/√2))`，高层 `AscendC::Erf`
-  （分段多项式近似）+ 寄存器组装
+- **GeluErf**：erf 精确形式，`0.5·x·(1 + erf(x/√2))`，`ErfCallee` 分段多项式
+  近似（寄存器级移植自 erf_3510_impl.h）+ 寄存器组装，同样纯寄存器实现
 
 采用两层设计：
 - **公共接口（`__aicore__`）**：接收 `make_tensor` 构造的 UB 张量，内部经
   `.data().get()` 提取 `__ubuf__` 指针后委托 Vf；入口含 static_assert
   类型/排布门禁与 `if ASCEND_IS_AIC` 早退
 - **私有实现（`__simd_vf__` / `__simd_callee__`）**：Reg API 寄存器级计算。
-  `GeluTanhVf`（fp32 输入直接加载）与 `GeluTanhCastInVf`（16F 输入 unpack+加宽）
-  共享 `GeluTanhCoreCallee` 数学尾段（类内定义，复用 shift_w4_to_w8.h 的
-  callee 组合模式）
+  两种算法各有一对 Vf 入口——`GeluTanhVf` / `GeluErfVf`（fp32 输入直接加载）
+  与 `GeluTanhCastInVf` / `GeluErfCastInVf`（16F 输入 unpack+加宽），分别共享
+  `GeluTanhCoreCallee` / `GeluErfCoreCallee` 数学尾段（类内定义，复用
+  shift_w4_to_w8.h 的 callee 组合模式）。整块 tile 一次 `asc_vf_call` 完成，
+  无 temp buffer、无高层 API 调用
 
 ## 特殊约束
 
@@ -40,16 +42,12 @@ Tile 级 GELU 激活组件，提供两种算法，供多个 Block Epilogue 复�
 `CT_32F_TO_OUT` 编译期决定。
 
 ### 张量契约（static_assert 门禁）
-- **元素类型**：src 元素须等于 `DataTypeIn`，dst 元素须等于 `DataTypeOut`
-  （GeluErf 的三块 temp 须为 `float`），防止张量传错被 reinterpret_cast 静默吞掉
+- **元素类型**：src 元素须等于 `DataTypeIn`，dst 元素须等于 `DataTypeOut`，
+  防止张量传错被 reinterpret_cast 静默吞掉
 - **内存位置**：所有张量必须为 UB
 - **排布**：所有张量必须为 `nd_ext_layout_ptn`（仅支持 ND）
-- **行距**：src/dst/temp 的 rowPitch 均须为 `Gemm::Align32(n)` 元素
+- **行距**：src/dst 的 rowPitch 均须为 `Gemm::Align32(n)` 元素
   （Vf 内按 `mIdx * nAligned` 计算行偏移）
-
-### temp buffer 生命周期
-GeluErf 的 `erfTensor` / `fp32Tensor` / `geluFp32Tensor` 由调用方（Block 层）
-分配和管理，Tile 只做临时写入。
 
 ## 特殊类型
 
@@ -62,11 +60,9 @@ public:
     __aicore__ inline void GeluTanh(const SrcTensor& srcTensor, const DstTensor& dstTensor,
                                     uint16_t mSize, uint16_t nSize);
 
-    template <typename SrcTensor, typename DstTensor, typename ErfTensor,
-              typename Fp32Tensor, typename GeluFp32Tensor>
+    template <typename SrcTensor, typename DstTensor>
     __aicore__ inline void GeluErf(const SrcTensor& srcTensor, const DstTensor& dstTensor,
-                                   const ErfTensor& erfTensor, const Fp32Tensor& fp32Tensor,
-                                   const GeluFp32Tensor& geluFp32Tensor, uint16_t mSize, uint16_t nSize);
+                                   uint16_t mSize, uint16_t nSize);
 };
 ```
 
@@ -87,20 +83,18 @@ public:
 |------|------|------|
 | srcTensor | SrcTensor | 输入 UB Tensor，[mSize, nSize] |
 | dstTensor | DstTensor | 输出 UB Tensor，与 src 同形同行距 |
-| erfTensor | ErfTensor | temp：erf 结果缓冲（float，每行复用） |
-| fp32Tensor | Fp32Tensor | temp：16F 输入的 fp32 加宽缓冲（float 输入时仍需传入） |
-| geluFp32Tensor | GeluFp32Tensor | temp：x/√2 缓冲（float） |
 | mSize / nSize | uint16_t | 形状 |
 
-执行流程（逐行）：`Muls(x, 1/√2)` → `AscendC::Erf`（分段多项式近似）→
-`GeluErfVf` 组装 `(1+erf)·(0.5·x)` → 缩窄 store。
+执行流程（单次 Vf 启动，逐行逐 repeat）：加载 x →（16F 输入先 unpack+加宽）→
+`GeluErfCoreCallee`（`Muls(x, 1/√2)` → `ErfCallee` 分段多项式近似 →
+`(1+erf)·(0.5·x)` 组装 → 缩窄 store）。
 
 ## 使用示例
 
 ```cpp
 #include "blaze/epilogue/tile/compute.h"
 
-// Block 层持有 UB 字节偏移（geluResUbOffset_ / erfTmpUbOffset_ ...）
+// Block 层持有 UB 字节偏移（geluResUbOffset_ ...）
 const uint32_t nAligned = Gemm::Align32(static_cast<uint32_t>(nSize));
 auto layout = Gemm::MakeNDExtLayout(static_cast<int64_t>(mSize),
                                     static_cast<int64_t>(nSize),
@@ -112,8 +106,8 @@ auto dstTensor = asc::te::make_tensor(
 
 Blaze::Epilogue::Block::Gelu<bfloat16_t, float> gelu;
 gelu.GeluTanh(srcTensor, dstTensor, mSize, nSize);   // tanh 近似
-// 或 erf 精确形式（额外传入三块 fp32 temp）：
-// gelu.GeluErf(srcTensor, dstTensor, erfTensor, fp32Tensor, geluFp32Tensor, mSize, nSize);
+// 或 erf 精确形式（无需 temp buffer）：
+// gelu.GeluErf(srcTensor, dstTensor, mSize, nSize);
 ```
 
 ## 数据流
@@ -123,9 +117,9 @@ UB（src, rowPitch=Align32(n)）
     ↓ [16F] unpack + CT_16F_TO_32F 加宽        ↓ [fp32] 直接加载
     └──────────────┬───────────────────────────┘
                    ↓
-        GeluTanhCoreCallee / 逐行 Erf 组装（fp32 寄存器计算）
+    GeluTanhCoreCallee / GeluErfCoreCallee（fp32 寄存器计算）
                    ↓
-        CT_32F_TO_OUT 缩窄（half→SAT / bf16→NO_SAT / float→直存）
+    CT_32F_TO_OUT 缩窄（half→SAT / bf16→NO_SAT / float→直存）
                    ↓
 UB（dst, rowPitch=Align32(n)）
 ```

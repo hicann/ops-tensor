@@ -188,7 +188,7 @@ __aicore__ inline ~BlockEpilogueGeluMxQuant()   // 默认
 ```
 __aicore__ inline void Init(const Params& params)
 ```
-功能： 规划UB布局，使用固定大小的UB预分配，使得当m×n <= 256×256（每个vector核计算128×256个元素）时能完成所有计算。当激活方式为erf时，额外分配一小段UB通过高阶API计算Erf。
+功能： 规划UB布局，使用固定大小的UB预分配，使得当m×n <= 256×256（每个vector核计算128×256个元素）时能完成所有计算。Gelu 激活（tanh/erf）由 tile 级纯寄存器实现完成，无需额外 temp UB。
 
 ### operator函数
 ```
