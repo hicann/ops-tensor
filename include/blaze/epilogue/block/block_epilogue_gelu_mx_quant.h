@@ -389,11 +389,13 @@ __aicore__ inline void BlockEpilogueGeluMxQuant<DataTypeOut_, DataTypeIn_>::Comp
 {
     using T = bfloat16_t;
     DstTypeMaxType dtypeMax;
+    uint16_t subNormalScene = 0;
     if constexpr (AscendC::IsSameType<DataTypeOut, fp8_e4m3fn_t>::value ||
                   AscendC::IsSameType<DataTypeOut, fp8_e5m2_t>::value) {
         dtypeMax = dtypeMax_;
+        subNormalScene = 1;
     } else {
-        dtypeMax = dstTypeMax_;
+        dtypeMax = 1.0f / dstTypeMax_;
     }
     __VEC_SCOPE__
     {
@@ -455,10 +457,13 @@ __aicore__ inline void BlockEpilogueGeluMxQuant<DataTypeOut_, DataTypeIn_>::Comp
             AscendC::Reg::MaskAnd(p0, p0, p1, mask);
             AscendC::Reg::MaskAnd(p0, p0, p2, mask);
 
-            AscendC::Reg::CompareScalar<uint32_t, AscendC::CMPMODE::EQ>(p1, exp32, NUMBER_ZERO, mask);
-            AscendC::Reg::CompareScalar<uint32_t, AscendC::CMPMODE::GT>(p2, man32, NUMBER_HALF, mask);
-            AscendC::Reg::MaskAnd(p1, p1, p2, mask);
-            AscendC::Reg::MaskOr(p0, p0, p1, mask);
+            // fp8非正规数进位场景，fp4场景2不涉及
+            for (uint16_t i = 0; i < subNormalScene; i++) {
+                AscendC::Reg::CompareScalar<uint32_t, AscendC::CMPMODE::EQ>(p1, exp32, NUMBER_ZERO, mask);
+                AscendC::Reg::CompareScalar<uint32_t, AscendC::CMPMODE::GT>(p2, man32, NUMBER_HALF, mask);
+                AscendC::Reg::MaskAnd(p1, p1, p2, mask);
+                AscendC::Reg::MaskOr(p0, p0, p1, mask);
+            }
 
             AscendC::Reg::Adds(expAddOne32, exp32, 1, mask);
             AscendC::Reg::Select(extractExp, expAddOne32, exp32, p0);
