@@ -75,6 +75,7 @@ private:
     static constexpr float GELU_HALF = 0.5f;
     static constexpr float GELU_ONE = 1.0f;
 
+#ifdef __CCE_AICORE__
     // Cast traits (compile-time constexpr, shared between high-level and Vf).
     // Named by bit-width: 16F covers both half and bfloat16_t.
     // Narrowing fp32 -> 16F, no saturation: safe for bf16 (shares fp32's exponent range).
@@ -103,6 +104,7 @@ private:
         AscendC::Reg::MaskMergeMode::ZEROING,
         true,
     };
+#endif // __CCE_AICORE__
 
     static constexpr AscendC::ErfConfig GELU_ERF_CONFIG = {AscendC::ErfAlgo::SUBSECTION_POLYNOMIAL_APPROXIMATION};
 
