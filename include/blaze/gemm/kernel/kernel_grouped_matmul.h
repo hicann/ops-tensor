@@ -352,12 +352,13 @@ private:
         auto hasOutputCopy = false;
 
         for (uint32_t groupIdx = 0; groupIdx < params.gmmParams.groupNum; ++groupIdx) {
-            auto groupCoord = PrepareGroup(params, bs, gmGroupList, groupIdx);
+            // Empty output only needs group shape parsing and C offset progression.
+            PrepareGroupShape(params, bs, gmGroupList, groupIdx);
 
             auto m = asc::te::get<MNK_M>(problemShape_);
             auto n = asc::te::get<MNK_N>(problemShape_);
             auto k = asc::te::get<MNK_K>(problemShape_);
-            auto currentCOffset = asc::te::get<MNK_B>(groupCoord);
+            auto currentCOffset = bs.UpdateNextOutputOffset(problemShape_);
             if (m <= 0 || n <= 0 || k != 0) {
                 continue;
             }
@@ -453,7 +454,8 @@ private:
         if (blockIdx >= bs.GetCoreNums()) {
             return;
         }
-        for (int64_t taskIdx = blockIdx; taskIdx < bs.GetBlockNums(); taskIdx += AscendC::GetBlockNum()) {
+        for (int64_t taskIdx = bs.GetFirstBlockIdx(blockIdx); taskIdx < bs.GetBlockNums();
+             taskIdx += AscendC::GetBlockNum()) {
             auto blockShape = bs.template GetBlockShape<TRANS_B, BType>(taskIdx);
             auto blockCoord = bs.GetBlockCoord(taskIdx);
             auto blockM = asc::te::get<MNK_M>(blockShape);
