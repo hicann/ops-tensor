@@ -405,7 +405,7 @@ private:
     bool isBL1Loaded_{false};
     uint64_t cvPingPong_{0};
 
-    BufferManager<4, 2, 2> bufMgr_; // <MaxL1ASlots, MaxL1BSlots, MaxL0Slots>: A pipeline, B full-load, L0 ping-pong
+    BufferManager<4, 2, 2> bufMgr_; // 4 = A 4-stage pipeline, 2 = B full-load double buffers, 2 = L0 ping-pong
 };
 } // namespace Block
 } // namespace Gemm
