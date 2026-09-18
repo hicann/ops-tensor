@@ -1,0 +1,12 @@
+caseName,groupNum,m,n,k,baseM,baseN,baseK,kAL1,kBL1,x1QuantMode,x2QuantMode,isBias,dbL0C,groupType,groupListType,singleW,aType,bType,cType,biasType,x2ScaleType,layoutA,layoutB,groupList,dtype
+int8_pertensor_nd_bias,2,16,64,64,16,64,64,64,64,0,1,1,1,0,1,1,int8,int8,fp16,int32,float,nd,nd,16;16,int8
+int8_perchannel_nd,2,16,64,64,16,64,64,64,64,0,2,0,1,0,1,1,int8,int8,fp16,int32,uint64,nd,nd,16;16,int8
+int8_pertensor_dn,2,16,64,64,16,64,64,64,64,0,1,0,1,0,1,1,int8,int8,fp16,int32,float,nd,dn,16;16,int8
+int8_pertensor_nz,2,16,64,64,16,64,64,64,64,0,1,0,1,0,1,1,int8,int8,fp16,int32,float,nd,nz,16;16,int8
+fp8_pertensor_nd,2,16,64,64,16,64,64,64,64,0,1,0,1,0,1,1,fp8_e4m3,fp8_e4m3,fp32,float,float,nd,nd,16;16,fp8_e4m3
+fp8_double_scale_nz,2,16,64,64,16,64,64,64,64,1,1,0,1,0,1,1,fp8_e4m3,fp8_e4m3,fp32,float,float,nd,nz,16;16,fp8_e4m3
+fp8_perchannel_nd,2,16,64,64,16,64,64,64,64,0,2,0,1,0,1,1,fp8_e4m3,fp8_e4m3,fp32,float,uint64,nd,nd,16;16,fp8_e4m3
+int8_pertensor_nd_bias_bf16,2,16,64,64,16,64,64,64,64,0,1,1,1,0,1,1,int8,int8,bf16,int32,float,nd,nd,16;16,int8
+int8_perchannel_nd_bf16,2,16,64,64,16,64,64,64,64,0,2,0,1,0,1,1,int8,int8,bf16,int32,uint64,nd,nd,16;16,int8
+fp8_pertensor_nd_bf16,2,16,64,64,16,64,64,64,64,0,1,0,1,0,1,1,fp8_e4m3,fp8_e4m3,bf16,float,float,nd,nd,16;16,fp8_e4m3
+fp8_double_scale_nz_bf16,2,16,64,64,16,64,64,64,64,1,1,0,1,0,1,1,fp8_e4m3,fp8_e4m3,bf16,float,float,nd,nz,16;16,fp8_e4m3

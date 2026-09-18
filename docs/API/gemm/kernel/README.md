@@ -13,6 +13,7 @@
 | [kernel_matmul_fixpipe_opti](./kernel_matmul_fixpipe_opti.md) | Fixpipe 非全载 Kernel，AIC+AIV 双核，根据 FULL_LOAD_MODE 自动选择非全载/B全载 calc BlockMmad |
 | [kernel_qbmm_cube](./kernel_qbmm_cube.md) | 支持多 Batch 的量化 Matmul，通过 Fixpipe 搬出结果并按需反量化 |
 | [kernel_qbmm_cube_without_batch](./kernel_qbmm_cube_without_batch.md) | Batch 固定为 1 的量化 Matmul，通过 Fixpipe 搬出结果并按需反量化 |
+| [kernel_qgmm_cube](./kernel_qgmm_cube.md) | Fixpipe 量化 Grouped Matmul，支持 group list、per-tensor/per-channel scale 与尾块切分 |
 | [kernel_qbmm_mx](./kernel_qbmm_mx.md) | 支持多 Batch 的 MX 量化 Matmul，支持 MxFP4/MxFP8 |
 | [kernel_qbmm_mx_without_batch](./kernel_qbmm_mx_without_batch.md) | Batch 固定为 1 的 MX 量化 Matmul，不处理多 Batch 广播 |
 | [kernel_qbmm_mx_activation_quant](./kernel_qbmm_mx_activation_quant.md) | 支持多 Batch 的 MX 量化 Matmul，融合 Gelu 激活和动态 MX 量化，AIC+AIV 双核 |
@@ -59,6 +60,7 @@ KernelMatmul
 | KernelQbmmMix | AIC + AIV 双核 | int8 (A8W8) | x2Scale + x1Scale(可选) | BlockEpilogueDequant | 不需要 | 多 batch | BlockSchedulerQbmm | 有 | int8 量化 Matmul（支持多 Batch，ND/WeightNz） |
 | KernelQbmmMixWithoutBatch | AIC + AIV 双核 | int8 (A8W8) | x2Scale + x1Scale(可选) | BlockEpilogueDequant | 不需要 | 单 batch | BlockSchedulerQbmm | 有 | int8 量化 Matmul（Batch = 1，ND/WeightNz） |
 | KernelQgmmMx | 仅 AIC | MX FP4/MX FP8 | ScaleA + ScaleB | 无 | 不需要 | group list | BlockSchedulerGmmSwatWithTailSplit | 无 | 量化 Grouped Matmul |
+| KernelQgmmCube | 仅 AIC | int8/HiFloat8/FP8 | ScaleA + ScaleB | 无 | 不需要 | group list | BlockSchedulerGmmSwatWithTailSplit | 无 | 量化 Grouped Matmul |
 | KernelMatmulStreamK | AIC + AIV 双核 | 不支持 | 不支持 | BlockEpilogueStreamK | 需要 | 单 batch | StreamK Scheduler | 有 | 切 K 场景 Matmul |
 | KernelQbmmStreamK | AIC + AIV 双核 | MX FP4/MX FP8 | ScaleA + ScaleB | BlockEpilogueStreamK（复用） | 需要 | 单 batch | StreamK Scheduler（复用） | 有 | 量化切 K 场景 Matmul |
 | KernelQbmmPertensorStreamK | AIC + AIV 双核 | int8/FP8/HiFloat8 | X2 per-tensor + 可选 X1 scale | BlockEpilogueQbmmPertensorStreamK | 需要 | 单 batch | StreamK Scheduler | 有 | QBMM per-tensor StreamK |

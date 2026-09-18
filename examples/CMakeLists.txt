@@ -71,6 +71,7 @@ include_directories(
     ${ASCEND_HOME_PATH}/${ASCEND_ARCH_DIR}/asc/include/tiling  # platform_ascendc.h
     ${ASCEND_HOME_PATH}/asc/impl/c_api  # instr_impl/ header resolution
     ${ASCEND_HOME_PATH}/asc/impl/utils  # impl/utils header resolution
+    ${ASCEND_HOME_PATH}/compiler/ascendc/include/highlevel_api  # matmul_intf.h for Tensor API traits
 )
 
 ##############################################################################

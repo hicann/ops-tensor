@@ -19,6 +19,7 @@
 #include "tensor_api/tensor.h"
 
 #if defined(ASCENDC_CPU_DEBUG)
+#include "lib/matmul_intf.h"
 #undef half
 #endif
 

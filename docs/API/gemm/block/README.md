@@ -81,7 +81,7 @@ BlockMmad
 | BlockMmadFixpipeOpti | MatmulMultiBlockFixpipeOpti | UB | 不支持 | 不支持 | A/B 均 l1Stages | 可配置 | 支持 | 有 | 非全载 Fixpipe，小 K 场景 |
 | BlockMmadStreamK | MatmulMultiBlockWithStreamK | GM 或 workspace | 不支持 | 不支持 | 固定双缓冲 | 固定单缓冲 | 支持 | 无（Kernel 层处理） | StreamK Kernel |
 | BlockMmadA8W8FixpipeQuant（StreamK 调度） | MatmulWithScaleFixpipeQuant + KernelQbmmPertensorMultiBlockStreamK | C GM（DP）或 workspace 分块累加结果（SK） | int8/FP8/HiFloat8 | DP 使用 Fixpipe，SK 由 AIV epilogue 处理 | 2 或 4 | 固定单缓冲 | 支持反量化前 bias | 有（Kernel 层处理） | QBMM per-tensor StreamK |
-| BlockMmadA8W8FixpipeQuant | MatmulWithScaleFixpipeQuant | GM | int8/HiFloat8/FP8 | X2 scale + Fixpipe | 可配置 (2、3 或 4) | 可配置 | 支持 | 无 | QBMM Cube Kernel |
+| BlockMmadA8W8FixpipeQuant | MatmulWithScaleFixpipeQuant | GM | int8/HiFloat8/FP8 | X2 scale + Fixpipe | 可配置 (2、3 或 4) | 可配置 | 支持 | 无 | QBMM Cube Kernel / GMM Cube Kernel |
 | BlockMmadMx | MatmulWithScaleMx | GM | MxFP4/MxFP8 | ScaleA + ScaleB | 可配置 (2、3 或 4) | 可配置 | 支持 | 无 | QBMM MX Kernel |
 | BlockMmadA8W8Mix | MatmulWithScaleMix | UB (L0C→UB) | int8 (A8W8) | 不在本层（由 epilogue 处理） | 可配置 (2 或 4) | 可配置 | 不在本层 | 无（Kernel 层处理） | QBMM MIX Kernel |
 | BlockMmadQGmmMx | GroupedMatmulWithScaleMx | GM | MxFP4/MxFP8 | ScaleA + ScaleB | 固定双缓冲 | 可配置 | 支持 | 无 | QGMM MX Kernel |

@@ -17,14 +17,16 @@
 - `MatmulWithScaleFixpipeQuant<FullLoadMode, AtomicAdd, KernelMmadWithScaleFixpipeQuantWithoutBatch>`
   （Batch 固定为 1；`FullLoadMode` 支持非全载/A 全载，`AtomicAdd` 支持开启或关闭）
 - `MatmulWithScaleFixpipeQuant<0, false, KernelQbmmPertensorMultiBlockStreamK>`（QBMM per-tensor StreamK，DP/SK 混合输出）
-- `MatmulWithScaleFixpipeQuant<0, false, KernelGroupedMmadWithScaleFixpipeQuant>`（GMM Fixpipe per-channel/per-group）
+- `MatmulWithScaleFixpipeQuant<0, false, KernelGroupedMmadWithScaleFixpipeQuant>`（GMM Fixpipe per-channel/per-group，S8S4 等路径）
+- `MatmulWithScaleFixpipeQuant<0, false, KernelGroupedMmadFixpipeQuant>`（GMM Cube Kernel，A8W8 fixpipe GMM）
 
-`MatmulWithScaleFixpipeQuant` 默认使用 `KernelMmadWithScaleFixpipeQuant`。当 `ScheduleType` 为
-`KernelMmadWithScaleFixpipeQuantWithoutBatch` 时，Block 的计算与输出逻辑不变；对应 Kernel 仅处理
-Batch 为 1 的场景，不执行多 Batch 广播和地址换算。这两种调度都将结果写入 C GM，不启用
-workspace 输出；只有 `KernelQbmmPertensorMultiBlockStreamK` 调度会在编译期启用原始累加结果的
-workspace 输出路径。
-Atomic Add 标志由 Kernel 层读取并配置，Block 内部不直接设置 atomic 状态。
+`MatmulWithScaleFixpipeQuant` 的 `ScheduleType` 默认为 `KernelMmadWithScaleFixpipeQuant`（QBMM Cube Kernel 使用），可通过第 3 个模板参数 `ScheduleType_` 覆盖为：
+- `KernelMmadWithScaleFixpipeQuantWithoutBatch`：仅处理 Batch 为 1 的场景，Block 的计算与输出逻辑不变，不执行多 Batch 广播和地址换算；
+- `KernelQbmmPertensorMultiBlockStreamK`：QBMM per-tensor StreamK，Block 通过 `ScheduleType` 编译期判断开启 raw workspace 输出能力；
+- `KernelGroupedMmadWithScaleFixpipeQuant`：GMM/S8S4 Fixpipe per-channel/per-group；
+- `KernelGroupedMmadFixpipeQuant`：GMM Cube Kernel（A8W8 fixpipe GMM）。
+
+除 `KernelQbmmPertensorMultiBlockStreamK` 外的调度都将结果写入 C GM、不启用 workspace 输出；只有它会在编译期启用原始累加结果的 workspace 输出路径。
 
 不支持 `MatmulWithScaleMx`、`GroupedMatmulWithScaleMx` 或 `MatmulMultiBlockBasic`。
 
@@ -306,6 +308,13 @@ using DispatchPolicy = Blaze::Gemm::MatmulWithScaleFixpipeQuant<0, false>;
 
 using BlockMmad = Blaze::Gemm::Block::BlockMmad<
     DispatchPolicy, AType, LayoutA, BTypeTuple, LayoutB, CType, LayoutC, BiasType, LayoutBias>;
+```
+
+Grouped Matmul（GMM Cube Kernel）场景只需替换 `ScheduleType_`，Block 实现完全复用：
+
+```cpp
+using DispatchPolicy = Blaze::Gemm::MatmulWithScaleFixpipeQuant<
+    0, false, Blaze::Gemm::KernelGroupedMmadFixpipeQuant>;
 ```
 
 ### 组件初始化
