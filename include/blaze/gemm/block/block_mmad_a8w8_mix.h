@@ -11,7 +11,7 @@
 /*!
  * \file block_mmad_a8w8_mix.h
  * \brief MIX template quantized matmul block — L0C output to UB via fixpipe (Tensor API).
- *        No scale/bias applied here; dequantization is handled by the epilogue on AIV side.
+ *        INT32 bias initializes the Cube accumulation; scales and floating bias are handled on AIV.
  */
 
 #pragma once
@@ -25,7 +25,7 @@
 #include "blaze/gemm/utils/common_utils.h"
 #include "blaze/gemm/policy/dispatch_policy.h"
 #include "blaze/gemm/tile/tile_trait.h"
-#include "block_mmad.h"
+#include "blaze/gemm/block/block_mmad.h"
 #include "tensor_api/tensor.h"
 
 namespace Blaze {
@@ -62,6 +62,8 @@ public:
         uint64_t kBL1{0};
         uint64_t l1BufferNum{0};
         bool enableL0CPingPong{false};
+        GM_ADDR biasGmAddr{nullptr};
+        bool isBias{false};
     };
 
     __aicore__ inline BlockMmad()
@@ -72,6 +74,8 @@ public:
         SetFlag<HardEvent::MTE1_MTE2>(INPUT_BUFFER_FLAG_3);
         SetFlag<HardEvent::M_MTE1>(BASE_FLAG + M_MTE1_FLAG_0);
         SetFlag<HardEvent::M_MTE1>(BASE_FLAG + M_MTE1_FLAG_1);
+        SetFlag<HardEvent::MTE1_MTE2>(BIAS_FLAG);
+        SetFlag<HardEvent::MTE1_MTE2>(BIAS_FLAG + 1);
         SetMMLayoutTransform(true);
     }
 
@@ -83,11 +87,14 @@ public:
         WaitFlag<HardEvent::MTE1_MTE2>(INPUT_BUFFER_FLAG_3);
         WaitFlag<HardEvent::M_MTE1>(BASE_FLAG + M_MTE1_FLAG_0);
         WaitFlag<HardEvent::M_MTE1>(BASE_FLAG + M_MTE1_FLAG_1);
+        WaitFlag<HardEvent::MTE1_MTE2>(BIAS_FLAG);
+        WaitFlag<HardEvent::MTE1_MTE2>(BIAS_FLAG + 1);
         SetMMLayoutTransform(false);
     }
 
     __aicore__ inline void Init(const Params& params)
     {
+        hasIntegerBias_ = IsSameType<L0CType, int32_t>::value && params.isBias;
         k_ = asc::te::get<IDX_K_IDX>(params.problemShape);
         uint64_t baseM = asc::te::get<IDX_M_IDX>(params.l0TileShape);
         baseN_ = asc::te::get<IDX_N_IDX>(params.l0TileShape);
@@ -132,9 +139,15 @@ public:
         GetL1BufferOffset(aL1OneBuffer, bL1OneBuffer);
     }
 
-    template <typename TensorA, typename TensorB, typename TensorC>
-    __aicore__ inline void operator()(const TensorA& gmA, const TensorB& gmB, TensorC ubC, BlockShape singleShape)
+    template <typename TensorA, typename TensorB, typename TensorC, typename TensorBias = decltype(nullptr)>
+    __aicore__ inline void operator()(const TensorA& gmA, const TensorB& gmB, TensorC ubC, BlockShape singleShape,
+                                      const TensorBias& gmBias = nullptr)
     {
+        const bool configuredIntegerBias = hasIntegerBias_;
+        if constexpr (IsSameType<TensorBias, decltype(nullptr)>::value) {
+            // Legacy four-argument calls perform MMAD without bias.
+            hasIntegerBias_ = false;
+        }
         constexpr uint64_t halfL0cSize = AscendC::TOTAL_L0C_SIZE / DOUBLE_BUFFER_COUNT;
         uint64_t curML1 = asc::te::get<IDX_M_TILEIDX>(singleShape);
         uint64_t curNL1 = asc::te::get<IDX_N_TILEIDX>(singleShape);
@@ -149,6 +162,9 @@ public:
         auto c1Local = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::l0c, L0CType>(l0cOffset),
                                             layoutL0C);
 
+        if constexpr (!IsSameType<TensorBias, decltype(nullptr)>::value) {
+            PrepareIntegerBias(curNL1, gmBias);
+        }
         if (kAL1_ == kBL1_) {
             IterateABL1(gmA, gmB, mmadParams, c1Local, curML1, curNL1);
         } else if (kAL1_ > kBL1_) {
@@ -160,9 +176,13 @@ public:
         auto copyL0C2UB = asc::te::make_copy(asc::te::copy_l0c_to_ub{}, Blaze::Gemm::Tile::CopyL0C2UBTraitMixSplitM{});
         asc::te::copy(copyL0C2UB.with(asc::te::l0c_to_ub_params(asc::te::unit_flag_mode::enable_update)), ubC, c1Local);
 
+        if (hasIntegerBias_) {
+            biasBufferId_ ^= 1;
+        }
         if (enableL0cPingPong_) {
             l0cPingPong_++;
         }
+        hasIntegerBias_ = configuredIntegerBias;
     }
 
 private:
@@ -170,6 +190,7 @@ private:
     {
         constexpr uint64_t halfL1Size = AscendC::TOTAL_L1_SIZE >> 1;
         uint64_t l1HalfBufNum = l1BufNum_ >> 1;
+        const uint64_t biasBytes = hasIntegerBias_ ? CeilAlign(baseN_ * sizeof(int32_t), BLOCK_BYTE_SIZE) : 0UL;
         if constexpr (DispatchPolicy::FULL_LOAD_MODE == NONE_FULL_LOAD_MODE) {
             for (uint16_t bufferId = 0; bufferId < l1BufNum_; bufferId++) {
                 uint64_t l1Offset = halfL1Size * (bufferId & 1);
@@ -177,12 +198,33 @@ private:
                 l1BufferBOffset_[bufferId] = l1Offset + aL1OneBuffer * l1HalfBufNum + bL1OneBuffer * (bufferId >> 1);
             }
         } else {
-            l1BufferAOffset_[0] = bL1OneBuffer * l1HalfBufNum;
+            l1BufferAOffset_[0] = bL1OneBuffer * l1HalfBufNum + biasBytes;
             uint64_t b1Offset = l1BufferAOffset_[0] + aL1OneBuffer >= halfL1Size ? l1BufferAOffset_[0] + aL1OneBuffer :
                                                                                    halfL1Size;
             for (uint16_t bufferId = 0; bufferId < l1BufNum_; bufferId++) {
                 l1BufferBOffset_[bufferId] = b1Offset * (bufferId & 1) + bL1OneBuffer * (bufferId >> 1);
             }
+        }
+        for (uint16_t bufferId = 0; bufferId < DOUBLE_BUFFER_COUNT; ++bufferId) {
+            l1BiasOffset_[bufferId] = l1BufferBOffset_[bufferId] + bL1OneBuffer * l1HalfBufNum;
+        }
+    }
+
+    template <typename TensorBias>
+    __aicore__ inline void PrepareIntegerBias(uint64_t n, const TensorBias& gmBias)
+    {
+        if constexpr (IsSameType<L0CType, int32_t>::value) {
+            if (!hasIntegerBias_) {
+                return;
+            }
+            WaitFlag<HardEvent::MTE1_MTE2>(BIAS_FLAG + biasBufferId_);
+            auto layout = asc::te::make_frame_layout<asc::te::nd_ext_layout_ptn,
+                                                     asc::te::layout_trait_default<int32_t>>(1UL, n);
+            auto l1Bias = asc::te::make_tensor(
+                asc::te::make_mem_ptr<asc::te::location::l1, int32_t>(l1BiasOffset_[biasBufferId_]), layout);
+            asc::te::copy(asc::te::make_copy(asc::te::copy_gm_to_l1{}), l1Bias, gmBias);
+            SetFlag<HardEvent::MTE2_MTE1>(BIAS_FLAG + biasBufferId_);
+            WaitFlag<HardEvent::MTE2_MTE1>(BIAS_FLAG + biasBufferId_);
         }
     }
 
@@ -219,6 +261,23 @@ private:
                                           asc::te::make_shape(curKL0, curNL1));
             asc::te::copy(copyL12L0B, l0bLocal, bL1Sub);
 
+            // Match Matmul::SetBias: seed L0C only on the first MMAD, across every K-loop nesting order.
+            const bool firstK = kL1OuterIdx == 0 && kL1InnerIdx == 0 && iter1 == 0;
+            auto biasLayout = asc::te::make_frame_layout<asc::te::nd_ext_layout_ptn,
+                                                         asc::te::layout_trait_default<int32_t>>(1UL, curNL1);
+            auto btLayout = asc::te::make_frame_layout<asc::te::nd_ext_layout_ptn>(1UL, Align16(curNL1));
+            auto tensorBt = asc::te::make_tensor(
+                asc::te::make_mem_ptr<asc::te::location::bias, int32_t>(baseN_ * sizeof(int32_t) * biasBufferId_),
+                btLayout);
+            if constexpr (IsSameType<L0CType, int32_t>::value) {
+                if (hasIntegerBias_ && firstK) {
+                    auto l1Bias = asc::te::make_tensor(
+                        asc::te::make_mem_ptr<asc::te::location::l1, int32_t>(l1BiasOffset_[biasBufferId_]),
+                        biasLayout);
+                    asc::te::copy(asc::te::make_copy(asc::te::copy_l1_to_biastable{}), tensorBt, l1Bias);
+                    SetFlag<HardEvent::MTE1_MTE2>(BIAS_FLAG + biasBufferId_);
+                }
+            }
             SetFlag<HardEvent::MTE1_M>(l0PingPong_ & 0x1);
             WaitFlag<HardEvent::MTE1_M>(l0PingPong_ & 0x1);
 
@@ -230,7 +289,15 @@ private:
                                             (kL1OuterIdx == 0 && kL1InnerIdx == 0 && iter1 == 0);
 
             constexpr auto mmadAtom = asc::te::make_mmad(asc::te::mmad_operation{}, asc::te::mmad_trait_default{});
-            asc::te::mmad(mmadAtom.with(mmadParams), c1Local, l0aLocal, l0bLocal);
+            if constexpr (IsSameType<L0CType, int32_t>::value) {
+                if (hasIntegerBias_ && firstK) {
+                    asc::te::mmad(mmadAtom.with(mmadParams), c1Local, l0aLocal, l0bLocal, tensorBt);
+                } else {
+                    asc::te::mmad(mmadAtom.with(mmadParams), c1Local, l0aLocal, l0bLocal);
+                }
+            } else {
+                asc::te::mmad(mmadAtom.with(mmadParams), c1Local, l0aLocal, l0bLocal);
+            }
 
             SetFlag<HardEvent::M_MTE1>(BASE_FLAG + (l0PingPong_ & 0x1));
             l0PingPong_++;
@@ -397,14 +464,17 @@ private:
     uint64_t kBL1_{1};
     uint64_t baseN_{16};
     uint64_t baseK_{16};
-    uint16_t aPingPongId_{0};
-    uint16_t bPingPongId_{0};
     uint64_t abL1LoopCnt_{0};
     uint64_t l0PingPong_{0};
     uint64_t l0cPingPong_{0};
     uint64_t l1BufferAOffset_[QUADRUPLE_BUFFER_COUNT] = {0UL};
     uint64_t l1BufferBOffset_[QUADRUPLE_BUFFER_COUNT] = {0UL};
+    uint64_t l1BiasOffset_[DOUBLE_BUFFER_COUNT] = {0UL};
+    uint16_t aPingPongId_{0};
+    uint16_t bPingPongId_{0};
+    uint16_t biasBufferId_{0};
     bool enableL0cPingPong_{false};
+    bool hasIntegerBias_{false};
 
     static constexpr uint32_t L0_INIT_MODE_ABL1 = 0U;
     static constexpr uint32_t L0_INIT_MODE_SPLIT = 1U;
@@ -412,6 +482,7 @@ private:
     static constexpr bool TRANS_A = IsTrans<LayoutA>::value;
     static constexpr bool TRANS_B = IsTrans<LayoutB>::value;
     static constexpr int32_t C0_SIZE = asc::te::c0_element<AType>;
+    static constexpr uint16_t BIAS_FLAG = 4;
     static constexpr uint16_t BASE_FLAG = 4;
     static constexpr uint16_t M_MTE1_FLAG_0 = 0;
     static constexpr uint16_t M_MTE1_FLAG_1 = 1;

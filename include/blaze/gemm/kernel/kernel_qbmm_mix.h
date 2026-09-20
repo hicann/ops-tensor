@@ -15,8 +15,7 @@
  */
 
 #pragma once
-
-#include "kernel_universal.h"
+#include "blaze/gemm/kernel/kernel_universal.h"
 #if ASC_DEVKIT_MAJOR >= 9
 #include "kernel_basic_intf.h"
 #else
@@ -177,10 +176,10 @@ private:
     }
 
     // Process one block on AIC(cube) and AIV(dequant), keeping ProcessSingleBatch compact.
-    template <class GmTensorA, class GmTensorB>
-    __aicore__ inline void ProcessOneBlock(const GmTensorA& gmA, const GmTensorB& gmB, const BlockShape& singleShape,
-                                           int64_t mPos, int64_t nPos, int64_t curM, int64_t curN, int64_t k, int64_t m,
-                                           int64_t n, int64_t l0cUbBaseOffset)
+    template <class GmTensorA, class GmTensorB, class GmTensorBias>
+    __aicore__ inline void ProcessOneBlock(const GmTensorA& gmA, const GmTensorB& gmB, const GmTensorBias& gmBlockBias,
+                                           const BlockShape& singleShape, int64_t mPos, int64_t nPos, int64_t curM,
+                                           int64_t curN, int64_t k, int64_t m, int64_t n, int64_t l0cUbBaseOffset)
     {
         constexpr int64_t kPos = 0;
         if ASCEND_IS_AIC {
@@ -198,7 +197,7 @@ private:
             auto layoutUbC = asc::te::make_frame_layout<asc::te::nd_layout_ptn>(curMAligned, curNAligned);
             auto ubC = asc::te::make_tensor(
                 asc::te::make_mem_ptr<asc::te::location::ub, L0CType>(l0cUbBaseOffset * sizeof(L0CType)), layoutUbC);
-            mmadOp_(gmBlockA, gmBlockB, ubC, singleShape);
+            mmadOp_(gmBlockA, gmBlockB, ubC, singleShape, gmBlockBias);
             NotifyVector();
             isFirstBlock_ = false;
         }
@@ -373,6 +372,13 @@ __aicore__ inline void GemmUniversal<QBMM_MIX_KERNEL_TEM_PARAMS>::ProcessSingleB
 
     auto gmA = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::gm>(aGmBase_), layoutA);
     auto gmB = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::gm>(bGmBase_), layoutB);
+    auto biasGmBase = reinterpret_cast<__gm__ int32_t*>(params.mmadParams.biasGmAddr);
+    if (params.mmadParams.isBias && isBiasThreeDim_) {
+        biasGmBase += batchCOffset_ * n;
+    }
+    auto layoutBias = asc::te::make_frame_layout<asc::te::nd_ext_layout_ptn, asc::te::layout_trait_default<int32_t>>(1L,
+                                                                                                                     n);
+    auto gmBias = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::gm>(biasGmBase), layoutBias);
 
     if (needUpdateTail_ || (isTailRound && ((bs.GetEndBlockIdx() + 1) + (restBatch * bs.GetTotalCnt())) *
                                                    params.schParams.mTailTile * params.schParams.nTailTile <=
@@ -395,7 +401,9 @@ __aicore__ inline void GemmUniversal<QBMM_MIX_KERNEL_TEM_PARAMS>::ProcessSingleB
         const int64_t curN = asc::te::get<IDX_N_TILEIDX>(singleShape);
         const int64_t l0cUbBaseOffset = 0;
         SetBL2Cache(params.problemShape, curM, curN, params.qbmmParams.bMustHitL2, gmB);
-        ProcessOneBlock(gmA, gmB, singleShape, mPos, nPos, curM, curN, k, m, n, l0cUbBaseOffset);
+        auto gmBlockBias = gmBias.slice(asc::te::make_coord(0L, params.mmadParams.isBias ? nPos : 0L),
+                                        asc::te::make_shape(1L, curN));
+        ProcessOneBlock(gmA, gmB, gmBlockBias, singleShape, mPos, nPos, curM, curN, k, m, n, l0cUbBaseOffset);
     }
     bs.UpdateNextBatchBlockRoundParams();
 }

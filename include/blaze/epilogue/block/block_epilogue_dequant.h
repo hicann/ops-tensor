@@ -19,6 +19,7 @@
  */
 
 #pragma once
+
 #if ASC_DEVKIT_MAJOR >= 9
 #include "kernel_basic_intf.h"
 #else

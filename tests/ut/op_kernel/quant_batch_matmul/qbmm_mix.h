@@ -65,7 +65,7 @@ struct QBMMMixTypes {
 
 // 用 tilingData 填充 MIX BlockMmad::Params（aGm/bGm + 全套 tile/L1/L0C 配置）。
 template <typename MmadParams>
-__aicore__ inline void FillMixMmadParams(MmadParams& mmadParams, GM_ADDR x1GM, GM_ADDR x2GM,
+__aicore__ inline void FillMixMmadParams(MmadParams& mmadParams, GM_ADDR x1GM, GM_ADDR x2GM, GM_ADDR biasGM,
                                          const QBMMV3TilingData& tilingData)
 {
     using BlockShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
@@ -79,6 +79,8 @@ __aicore__ inline void FillMixMmadParams(MmadParams& mmadParams, GM_ADDR x1GM, G
     mmadParams.kBL1 = tilingData.kBL1;
     mmadParams.l1BufferNum = tilingData.nBufferNum;
     mmadParams.enableL0CPingPong = (tilingData.dbL0C > 1);
+    mmadParams.biasGmAddr = biasGM;
+    mmadParams.isBias = tilingData.isBias != 0 && tilingData.biasDtype == DT_INT32;
 }
 
 // Fill BlockEpilogueDequant::Params from tiling and GM addresses.
@@ -96,7 +98,7 @@ __aicore__ inline void FillEpilogueParams(EpilogueParams& epilogueParams, GM_ADD
     epilogueParams.baseN = static_cast<int64_t>(tilingData.baseN_qbmm);
     epilogueParams.x1QuantMode = tilingData.x1QuantMode;
     epilogueParams.x2QuantMode = tilingData.x2QuantMode;
-    epilogueParams.isBias = (tilingData.isBias != 0);
+    epilogueParams.isBias = tilingData.isBias != 0 && tilingData.biasDtype != DT_INT32;
     epilogueParams.biasDtype = tilingData.biasDtype;
 }
 
@@ -112,7 +114,7 @@ __aicore__ inline void QBMMMixWrapper(GM_ADDR x1GM, GM_ADDR x2GM, GM_ADDR pertok
 
     Params params;
     params.problemShape = {tilingData.m, tilingData.n, tilingData.k, tilingData.b};
-    FillMixMmadParams(params.mmadParams, x1GM, x2GM, tilingData);
+    FillMixMmadParams(params.mmadParams, x1GM, x2GM, biasGM, tilingData);
     FillQbmmSchParams(params.schParams, tilingData);
 
     FillQbmmBatchParams(params.qbmmParams, tilingData);
@@ -138,7 +140,7 @@ __aicore__ inline void QBMMMixWithoutBatchWrapper(GM_ADDR x1GM, GM_ADDR x2GM, GM
 
     Params params;
     params.problemShape = {tilingData.m, tilingData.n, tilingData.k, 1L};
-    FillMixMmadParams(params.mmParams, x1GM, x2GM, tilingData);
+    FillMixMmadParams(params.mmParams, x1GM, x2GM, biasGM, tilingData);
     params.mmParams.problemShape = params.problemShape;
     FillQbmmSchParams(params.schParams, tilingData);
 
