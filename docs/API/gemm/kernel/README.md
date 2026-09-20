@@ -27,6 +27,7 @@
 | [kernel_matmul_mix_weight_prologue](./kernel_matmul_mix_weight_prologue.md) | AIV 权重前处理 + AIC MX MMAD 的 Mix Kernel |
 | [kernel_wqgmm_mix_weight_prologue](./kernel_wqgmm_mix_weight_prologue.md) | Grouped MX A8W4 Mix Kernel，支持 E2M1/E1M2、FP16/BF16 输出、可选 Bias 和单/多 Weight |
 | [kernel_matmul_with_scale_add](./kernel_matmul_with_scale_add.md) | FusedMatMul scale_add Kernel，AIC 矩阵乘 + AIV 缩放相加后处理 |
+| [kernel_grouped_matmul](./kernel_grouped_matmul.md) | 非量化 Grouped Matmul Kernel，支持 M/K 轴分组、不分组、cumsum/count/sparse groupList、ND/NZ weight |
 
 ## 公共框架
 

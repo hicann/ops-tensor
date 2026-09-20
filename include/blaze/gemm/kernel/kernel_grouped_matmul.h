@@ -93,9 +93,13 @@ public:
         }
 
         Init(params);
-        auto groupListLayout = asc::te::make_layout(
-            asc::te::make_shape(static_cast<int64_t>(params.gmmParams.groupNum)), asc::te::make_stride(1L));
-        auto gmGroupList = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::gm>(
+        // Sparse groupList is [E, 2]: each entry is [actualGroupIdx, groupSize], with non-zero
+        // groups front-loaded. Flatten both columns into the linear GM layout.
+        const auto groupListSize = static_cast<int64_t>(params.gmmParams.groupNum) *
+                                   (groupListType_ == GROUP_LIST_TYPE_SPARSE ? SPARSE_GROUP_LIST_ITEM_STRIDE :
+                                                                               static_cast<int64_t>(1));
+        auto groupListLayout = asc::te::make_layout(asc::te::make_shape(groupListSize), asc::te::make_shape(1L));
+        auto gmGroupList = asc::te::make_tensor(asc::te::make_mem_ptr<AscendC::Te::Location::GM>(
                                                     reinterpret_cast<__gm__ int64_t*>(params.mmParams.groupListGmAddr)),
                                                 groupListLayout);
         BlockScheduler bs(params.schedulerParams);
@@ -106,24 +110,42 @@ public:
         }
 
         EnableAtomicAdd();
-        for (uint32_t groupIdx = 0; groupIdx < params.gmmParams.groupNum; ++groupIdx) {
-            auto groupCoord = PrepareGroup(params, bs, gmGroupList, groupIdx);
+        for (uint32_t loopIdx = 0; loopIdx < params.gmmParams.groupNum; ++loopIdx) {
+            uint32_t groupIdx = loopIdx;
+            if (groupListType_ == GROUP_LIST_TYPE_SPARSE && groupType_ == GROUP_TYPE_SPLIT_M) {
+                groupIdx = static_cast<uint32_t>(
+                    gmGroupList[static_cast<int64_t>(loopIdx) * SPARSE_GROUP_LIST_ITEM_STRIDE +
+                                SPARSE_GROUP_LIST_GROUP_IDX_OFFSET]);
+                bs.SetGroupIdx(groupIdx);
+            }
+            auto splitValue = GetSplitValueFromGroupList(gmGroupList, loopIdx);
+            auto groupCoord = PrepareGroup(params, bs, groupIdx, splitValue);
 
             auto problemM = asc::te::get<MNK_M>(problemShape_);
             auto problemN = asc::te::get<MNK_N>(problemShape_);
             auto problemK = asc::te::get<MNK_K>(problemShape_);
-            if (problemM > 0 && problemN > 0 && problemK > 0) {
-                ProcessSingleGroup(params, bs, groupCoord, groupIdx);
+            if (problemM <= 0 || problemN <= 0 || problemK <= 0) {
+                // Sparse groupList front-loads non-zero groups; the first empty group marks the end.
+                if (groupType_ == GROUP_TYPE_SPLIT_M && groupListType_ == GROUP_LIST_TYPE_SPARSE && problemM <= 0) {
+                    break;
+                }
+                continue;
             }
+            ProcessSingleGroup(params, bs, groupCoord, groupIdx);
         }
         DisableAtomicAdd();
     }
 
 private:
+    static constexpr int32_t GROUP_TYPE_NO_SPLIT = -1;
     static constexpr int32_t GROUP_TYPE_SPLIT_M = 0;
     static constexpr int32_t GROUP_TYPE_SPLIT_K = 2;
     static constexpr uint32_t GROUP_LIST_TYPE_OFFSET = 0;
     static constexpr uint32_t GROUP_LIST_TYPE_COUNT = 1;
+    static constexpr uint32_t GROUP_LIST_TYPE_SPARSE = 2;
+    static constexpr int64_t SPARSE_GROUP_LIST_ITEM_STRIDE = 2;
+    static constexpr int64_t SPARSE_GROUP_LIST_GROUP_IDX_OFFSET = 0;
+    static constexpr int64_t SPARSE_GROUP_LIST_SPLIT_VALUE_OFFSET = 1;
     static constexpr uint64_t DIM_NUM = 2;
     static constexpr uint64_t NZ_DESC_DIM_NUM = 4;
     static constexpr uint64_t SHAPE_BUF_SIZE = 8;
@@ -143,6 +165,8 @@ private:
     __aicore__ inline void Init(const Params& params)
     {
         problemShape_ = params.problemShape;
+        groupListType_ = params.gmmParams.groupListType;
+        groupType_ = params.gmmParams.groupType;
         if ASCEND_IS_AIC {
             blockMmad_.Init(params.mmParams);
         }
@@ -197,17 +221,17 @@ private:
 
     __aicore__ inline bool IsValidGroupParams(const Params& params) const
     {
-        auto validGroupListType = params.gmmParams.groupListType == GROUP_LIST_TYPE_OFFSET ||
-                                  params.gmmParams.groupListType == GROUP_LIST_TYPE_COUNT;
+        auto validGroupListType = groupListType_ == GROUP_LIST_TYPE_OFFSET || groupListType_ == GROUP_LIST_TYPE_COUNT;
+        // inplace add only support split-k, split-k do not support groupList sparse
         if constexpr (ENABLE_INPLACE_ADD) {
-            return params.gmmParams.groupType == GROUP_TYPE_SPLIT_K && validGroupListType &&
-                   IsSingleTensor(params.gmmParams) && params.gmmParams.hasBias == 0 &&
-                   params.mmParams.groupListGmAddr != nullptr;
+            return groupType_ == GROUP_TYPE_SPLIT_K && validGroupListType && IsSingleTensor(params.gmmParams) &&
+                   params.gmmParams.hasBias == 0 && params.mmParams.groupListGmAddr != nullptr;
         }
-        auto validGroupType = params.gmmParams.groupType == -1 || params.gmmParams.groupType == GROUP_TYPE_SPLIT_M ||
-                              params.gmmParams.groupType == GROUP_TYPE_SPLIT_K;
+        validGroupListType = validGroupListType || groupListType_ == GROUP_LIST_TYPE_SPARSE;
+        auto validGroupType = groupType_ == GROUP_TYPE_NO_SPLIT || groupType_ == GROUP_TYPE_SPLIT_M ||
+                              groupType_ == GROUP_TYPE_SPLIT_K;
         return validGroupType && validGroupListType &&
-               (params.gmmParams.groupType == -1 || params.mmParams.groupListGmAddr != nullptr);
+               (groupType_ == GROUP_TYPE_NO_SPLIT || params.mmParams.groupListGmAddr != nullptr);
     }
 
     __aicore__ inline void SetProblemShape(const Params& params, uint32_t groupIdx, int64_t splitValue)
@@ -233,34 +257,45 @@ private:
             problemM = static_cast<int64_t>(TRANS_A ? xShape[1] : xShape[0]);
             problemK = static_cast<int64_t>(TRANS_B ? weightShape[1] : weightShape[0]);
             problemN = static_cast<int64_t>(TRANS_B ? weightShape[0] : weightShape[1]);
-        } else if (params.gmmParams.groupType == GROUP_TYPE_SPLIT_K && groupIdx == 0U) {
+        } else if (groupType_ == GROUP_TYPE_SPLIT_K && groupIdx == 0U) {
             // For split-K single tensors, derive M from the X descriptor instead of trusting the tiling shape.
             uint64_t xShape[DIM_NUM] = {0, 0};
             GetTensorShape(0U, params.mmParams.aGmAddr, xShape, false);
             problemM = static_cast<int64_t>(TRANS_A ? xShape[1] : xShape[0]);
         }
-        if (params.gmmParams.groupType == GROUP_TYPE_SPLIT_M) {
+        if (groupType_ == GROUP_TYPE_SPLIT_M) {
             problemM = splitValue;
-        } else if (params.gmmParams.groupType == GROUP_TYPE_SPLIT_K) {
+        } else if (groupType_ == GROUP_TYPE_SPLIT_K) {
             problemK = splitValue;
         }
         problemShape_ = ProblemShape{problemM, problemN, problemK, 1};
     }
 
     template <typename GroupListTensor>
-    __aicore__ inline void PrepareGroupShape(const Params& params, BlockScheduler& bs,
-                                             const GroupListTensor& gmGroupList, uint32_t groupIdx)
+    __aicore__ inline int64_t GetSplitValueFromGroupList(const GroupListTensor& gmGroupList, uint32_t groupIdx)
     {
-        auto groupValue = params.gmmParams.groupType == -1 ? 0 : gmGroupList[groupIdx];
-        auto splitValue = bs.GetSplitValue(groupValue, params.gmmParams.groupListType);
-        SetProblemShape(params, groupIdx, splitValue);
+        int64_t splitValue = 0;
+        if (groupType_ == GROUP_TYPE_NO_SPLIT) {
+            return splitValue;
+        }
+        if (groupListType_ == GROUP_LIST_TYPE_OFFSET) {
+            const int64_t offset = gmGroupList[groupIdx];
+            splitValue = offset - preOffset_;
+            preOffset_ = offset;
+        } else if (groupListType_ == GROUP_LIST_TYPE_COUNT) {
+            splitValue = gmGroupList[groupIdx];
+        } else if (groupListType_ == GROUP_LIST_TYPE_SPARSE) {
+            const auto splitValueIdx = static_cast<int64_t>(groupIdx) * SPARSE_GROUP_LIST_ITEM_STRIDE +
+                                       SPARSE_GROUP_LIST_SPLIT_VALUE_OFFSET;
+            splitValue = gmGroupList[splitValueIdx];
+        }
+        return splitValue;
     }
 
-    template <typename GroupListTensor>
-    __aicore__ inline GroupCoord PrepareGroup(const Params& params, BlockScheduler& bs,
-                                              const GroupListTensor& gmGroupList, uint32_t groupIdx)
+    __aicore__ inline GroupCoord PrepareGroup(const Params& params, BlockScheduler& bs, uint32_t groupIdx,
+                                              int64_t splitValue)
     {
-        PrepareGroupShape(params, bs, gmGroupList, groupIdx);
+        SetProblemShape(params, groupIdx, splitValue);
         return bs.UpdateNextGroup(problemShape_);
     }
 
@@ -325,7 +360,7 @@ private:
     __aicore__ inline void ProcessEmptyGroups(const Params& params, BlockScheduler& bs,
                                               const GroupListTensor& gmGroupList)
     {
-        if (params.gmmParams.groupType != GROUP_TYPE_SPLIT_K || params.mmParams.groupListGmAddr == nullptr) {
+        if (groupType_ != GROUP_TYPE_SPLIT_K || params.mmParams.groupListGmAddr == nullptr) {
             return;
         }
 
@@ -352,8 +387,9 @@ private:
         auto hasOutputCopy = false;
 
         for (uint32_t groupIdx = 0; groupIdx < params.gmmParams.groupNum; ++groupIdx) {
-            // Empty output only needs group shape parsing and C offset progression.
-            PrepareGroupShape(params, bs, gmGroupList, groupIdx);
+            // Empty output only needs group shape parsing and C offset progression;
+            auto splitValue = GetSplitValueFromGroupList(gmGroupList, groupIdx);
+            SetProblemShape(params, groupIdx, splitValue);
 
             auto m = asc::te::get<MNK_M>(problemShape_);
             auto n = asc::te::get<MNK_N>(problemShape_);
@@ -479,6 +515,10 @@ private:
 
     BlockMmad blockMmad_;
     ProblemShape problemShape_{};
+    uint32_t groupListType_{GROUP_LIST_TYPE_OFFSET};
+    int32_t groupType_{GROUP_TYPE_NO_SPLIT};
+    // Cumulative offset used to resolve per-group sizes from cumulative groupList entries.
+    int64_t preOffset_{0};
     uint64_t shapeBuf_[SHAPE_BUF_SIZE] = {0};
 };
 
