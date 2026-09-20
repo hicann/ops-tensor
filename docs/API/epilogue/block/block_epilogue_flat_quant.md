@@ -83,23 +83,33 @@ struct Params {
 
 ### dstTypeMax 路径选择
 
-| dstTypeMax | Scale 计算路径 | 说明 |
+量化链已收编至 [MxQuant tile](../tile/arch35/mx_quant.md)，由 `MxQuantConfig.alg` 分派：
+
+| dstTypeMax | Scale 算法（MxScaleAlg） | 说明 |
 |-----------|---------------|------|
-| 0.0f | `ScaleVf` | 默认 FP4 E2M1 路径，标准 eMax→scale |
-| 6.0f | `ScaleVfDynamic` | 动态 FP4 路径，addValueBit = `ADD_VALUE_FOR_BF16_MAN1` (0x003f) |
-| 7.0f | `ScaleVfDynamic` | 动态 FP4 路径，addValueBit = `ADD_VALUE_FOR_BF16_MAN2` (0x001f) |
-| 其他 | `ScaleVfcuBLAS` | cuBLAS 兼容路径，使用 invDstTypeMax |
+| 0.0f | `OCP` | 默认 FP4 E2M1 路径，标准 eMax→scale |
+| 6.0f | `DYN_DTYPE_RANGE` | 动态 FP4 路径，addValueBit = `ADD_VALUE_FOR_BF16_MAN1` (0x003f) |
+| 7.0f | `DYN_DTYPE_RANGE` | 动态 FP4 路径，addValueBit = `ADD_VALUE_FOR_BF16_MAN2` (0x001f) |
+| 其他 | `CUBLAS` | cuBLAS 兼容路径，使用 invDstTypeMax |
+
+`zeroScaleOnZeroExp = true`（zeroMask 取原始 maxExp，同时作用于 yScale 与倒数，
+同 gelu_mx/swiglu 阵营，见 MxQuant 设计文档 D1）。
 
 ### eMax 计算路径选择
 
+eMax 的 abs/exp 路径由 `GroupMaxExp` 的 `useAbs` 参数控制（保留 flat 原始判定）：
+
 | dstTypeMax | eMax 计算路径 | 说明 |
 |-----------|-------------|------|
-| 6.0f ~ 12.0f | `ExpMaxVfcuBLAS` | cuBLAS 兼容，取绝对值后提取指数 |
-| 其他 | `ExpMaxVf` | 标准路径，直接提取 bf16 指数部分 |
+| 6.0f ~ 12.0f | `useAbs = true`（绝对值码点） | cuBLAS 兼容，取绝对值后提取指数 |
+| 其他 | `useAbs = false`（指数域掩码） | 标准路径，直接提取 bf16 指数部分 |
 
 ## 常量定义
 
 ### Constant 命名空间
+
+量化链常量（MAX_EXP_FOR_BF16 / BF16_EXP_BIAS / NAN_CUSTOMIZATION 等）已随量化链
+收编至 [MxQuant tile](../tile/arch35/mx_quant.md)，Block 侧仅保留布局与编排常量：
 
 | 常量 | 值 | 说明 |
 |------|------|------|
@@ -110,14 +120,10 @@ struct Params {
 | MN_SIZE | 64 * 1024 | xTensor UB 空间大小（元素数） |
 | OUT_SIZE | 32 * 1024 | yTensor UB 空间大小（元素数） |
 | EMAX_SIZE | 2 * 1024 | eMaxTensor UB 空间大小（元素数） |
-| MAX_EXP_FOR_BF16 | 0x7f80 | BF16 指数掩码 |
-| BF16_EXP_BIAS | 0x7f00 | BF16 指数偏置 |
-| SHR_NUM_FOR_BF16 | 7 | BF16 指数右移位数 |
-| FP4_E2M1_MAX_EXP | 0x0100 | FP4 E2M1 最大指数 |
-| NAN_CUSTOMIZATION | 0x7f81 | 自定义 NaN 值 |
-| SPECIAL_EXP_THRESHOLD | 0x0040 | 特殊指数阈值 |
+| FP4_E2M1_MAX_EXP | 0x0100 | MxQuantConfig fpEmax（沿用 flat 硬编码上界） |
 | BLOCK_SCALE | 2 | Scale block 大小 |
-| SCALE_STORE_STRIDE | 32 | Scale 存储步长 |
+| STORE_UNALIGN_STRIDE_BYTES | 8 | 尾块 UnAlign 存储步长（字节） |
+| ADD_VALUE_FOR_BF16_MAN1/MAN2 | 0x003f / 0x001f | Dyn 路径 addValueBits（Init 解析） |
 
 ## UB 空间布局
 
@@ -200,7 +206,10 @@ __aicore__ inline void ComputeMxQuant(
     LocalTensor<uint16_t>& eMaxTensor, LocalTensor<int8_t>& scaleTensor,
     LocalTensor<uint16_t>& deQuantScaleTensor, uint32_t totalDataInUB, uint64_t inputOffset)
 ```
-功能：执行 MX 量化核心计算（eMax → Scale → Quant）。
+功能：执行 MX 量化核心计算（eMax → Scale → Quant）。内部构造 `make_tensor` UB 张量
+（经 `GetUbByteOffset` 换算字节偏移，xTensor 附加 inputOffset），组装
+`MxQuantConfig` 后调用 [MxQuant tile](../tile/arch35/mx_quant.md) 的
+`GroupMaxExp` / `GenScale` / `Quantize`（RINT 舍入）。
 
 ### ComputeTransLayout
 ```cpp
@@ -208,38 +217,35 @@ __aicore__ inline void ComputeTransLayout(
     LocalTensor<int8_t>& scaleTensor, LocalTensor<int8_t>& scaleBlockTensor,
     uint16_t m, uint16_t n)
 ```
-功能：Scale 布局转换，从行优先转换为 block 对齐（32B）格式。
+功能：Scale 布局转换，从行优先转换为 block 对齐（32B）格式。内部调用
+MxQuant tile 的 `TransScaleLayout`。
 
 ## SIMD 向量函数
 
-以下函数使用 `__simd_vf__` 内联向量指令实现：
+Block 侧仅保留尾块保护的 `__simd_vf__` 函数（UB 复用逻辑，不迁入 Tile）：
 
 | 函数 | 说明 |
 |------|------|
-| `ExpMaxVf` | 标准 eMax 计算：提取 bf16 指数 → ReduceMax |
-| `ExpMaxVfcuBLAS` | cuBLAS 兼容 eMax：取绝对值 → 提取指数 → ReduceMax |
-| `ScaleVf` | 默认 FP4 E2M1 scale 计算 |
-| `ScaleVfDynamic` | 动态 FP4 scale 计算（dstTypeMax=6/7） |
-| `ScaleVfcuBLAS` | cuBLAS 兼容 scale 计算（使用 invDstTypeMax） |
-| `QuantVf` | 量化：bf16 × dequant scale → Cast FP4（fp4x2_e2m1_t） |
-| `TransLayoutVf` | Scale 布局转换（逐行搬运到 32B 对齐） |
 | `SaveTailVf` | 保存尾部数据（GROUP_SIZE 不整除时） |
 | `ClearTailVf` | 清零尾部数据 |
 | `RestoreTailVf` | 恢复尾部数据 |
+
+量化链向量函数（ExpMax/Scale/Quant/TransLayout）已收编至
+[MxQuant tile](../tile/arch35/mx_quant.md)。
 
 ## 数据流
 
 ### 量化数据流
 ```
-bf16 输入 (UB, xTensor_)
-    ↓ ExpMaxVf / ExpMaxVfcuBLAS
+bf16 输入 (UB, xTensor_ + inputOffset)
+    ↓ MxQuant::GroupMaxExp(useAbs = dstTypeMax ∈ [6,12])
 eMax (uint16_t, eMaxTensor_)    —— 每 32 元素组 1 个 eMax
-    ↓ ScaleVf / ScaleVfDynamic / ScaleVfcuBLAS
+    ↓ MxQuant::GenScale(OCP / DYN_DTYPE_RANGE / CUBLAS)
 scale (E8M0, scaleTensor_)      —— 量化 scale
 dequant scale (uint16_t, deQuantScaleTensor_)  —— 反量化 scale
-    ↓ QuantVf
+    ↓ MxQuant::Quantize(RINT, fp4x2_e2m1_t)
 FP4 packed (int8_t, yTensor_)   —— 量化结果
-    ↓ TransLayoutVf
+    ↓ MxQuant::TransScaleLayout
 scale block (int8_t, scaleBlockTensor_)  —— 布局转换后的 scale
     ↓ CopyOutputFromUbToGm / CopyScaleFromUbToGm
 GM (量化输出 + scale)

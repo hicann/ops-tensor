@@ -24,6 +24,7 @@
 #include "blaze/gemm/utils/common_utils.h"
 #include "blaze/gemm/utils/layout_utils.h"
 #include "tensor_api/tensor.h"
+#include "blaze/epilogue/tile/compute.h"
 
 namespace Blaze {
 namespace Epilogue {
@@ -31,41 +32,16 @@ namespace Block {
 
 namespace Constant {
 constexpr uint32_t NUM_TWO = 2;
-constexpr int64_t OUT_ELE_NUM_ONE_BLK = 64;
 constexpr uint64_t MX_QUANT_COMPUTE_ALIGN = 64UL;
-constexpr uint32_t BLOCK_SIZE = 32;
 constexpr uint32_t MAX_SINGLE_MN = 64 * 256;
-constexpr uint16_t MAX_EXP_FOR_BF16 = 0x7f80;
-constexpr uint16_t MAX_EXP_FOR_FP8 = 0x00ff;
-constexpr uint16_t BF16_EXP_BIAS = 0x7f00;
-constexpr int16_t SHR_NUM_FOR_BF16 = 7;
-constexpr uint16_t NAN_CUSTOMIZATION = 0x7f81;
-constexpr uint16_t SPECIAL_EXP_THRESHOLD = 0x0040;
 constexpr uint16_t FP8_E4M3_MAX_EXP = 0x0400;
 constexpr uint16_t FP8_E5M2_MAX_EXP = 0x0780;
-constexpr uint16_t FP4_E2M1_MAX_EXP = 0x0100;
-constexpr uint16_t FP4_E1M2_MAX_EXP = 0x0000;
 } // namespace Constant
 
 #ifdef __CCE_AICORE__
 constexpr AscendC::Reg::CastTrait CT_FP32_TO_BF16 = {AscendC::Reg::RegLayout::ZERO, AscendC::Reg::SatMode::NO_SAT,
                                                      AscendC::Reg::MaskMergeMode::ZEROING,
                                                      AscendC::RoundMode::CAST_RINT};
-
-constexpr AscendC::Reg::CastTrait CT_BF16_TO_FP32_ZERO = {AscendC::Reg::RegLayout::ZERO, AscendC::Reg::SatMode::UNKNOWN,
-                                                          AscendC::Reg::MaskMergeMode::ZEROING,
-                                                          AscendC::RoundMode::UNKNOWN};
-
-constexpr AscendC::Reg::CastTrait CT_BF16_TO_FP32_ONE = {AscendC::Reg::RegLayout::ONE, AscendC::Reg::SatMode::UNKNOWN,
-                                                         AscendC::Reg::MaskMergeMode::ZEROING,
-                                                         AscendC::RoundMode::UNKNOWN};
-
-constexpr AscendC::Reg::CastTrait CT_FP32_TO_FP8_SAT = {AscendC::Reg::RegLayout::ZERO, AscendC::Reg::SatMode::SAT,
-                                                        AscendC::Reg::MaskMergeMode::ZEROING,
-                                                        AscendC::RoundMode::CAST_RINT};
-
-constexpr AscendC::Reg::CastTrait CT_FP4_RINT = {AscendC::Reg::RegLayout::ZERO, AscendC::Reg::SatMode::UNKNOWN,
-                                                 AscendC::Reg::MaskMergeMode::ZEROING, AscendC::RoundMode::CAST_RINT};
 
 constexpr AscendC::Reg::DivSpecificMode DIV_MODE = {
     AscendC::Reg::MaskMergeMode::ZEROING,
@@ -161,18 +137,6 @@ private:
 
     __aicore__ inline void SetupUbLayout();
 
-    __aicore__ inline void ComputeMaxExp(__ubuf__ bfloat16_t* srcAddr, __ubuf__ uint16_t* maxExpAddr,
-                                         uint32_t totalCountInUB, uint16_t loopNum);
-
-    __aicore__ inline void ComputeScale(__ubuf__ uint16_t* maxExpAddr, __ubuf__ uint16_t* mxScaleLocalAddr,
-                                        __ubuf__ uint16_t* halfScaleLocalAddr, uint32_t totalScaleInUB,
-                                        uint16_t loopNumScale);
-
-    __aicore__ inline void ComputeDataForQuantTargetFp8(__ubuf__ bfloat16_t* srcAddr,
-                                                        __ubuf__ uint16_t* halfScaleLocalAddr,
-                                                        __ubuf__ int8_t* outLocalAddr, uint32_t totalCountInUB,
-                                                        uint16_t loopNum);
-
     __aicore__ inline void TransMxScaleLayout(uint16_t mSize, uint16_t scaleBlockN);
 
     // ---- Params ----
@@ -198,8 +162,6 @@ private:
     uint32_t singleM_{0};
     uint32_t singleN_{0};
 
-    uint32_t vlForHalfNumber_{0};
-    uint16_t elementAfterReduce_{0};
     uint16_t fpEmax_{0};
 };
 
@@ -278,9 +240,6 @@ __aicore__ inline void BlockEpilogueSwigluMxQuant<DataTypeOut_, DataTypeIn_, Dat
     }
     uint64_t mOffset = subBlockIdx_ * halfSingleM;
 
-    vlForHalfNumber_ = AscendC::VECTOR_REG_WIDTH / sizeof(bfloat16_t);
-    elementAfterReduce_ = AscendC::VECTOR_REG_WIDTH / Constant::BLOCK_SIZE;
-
     AscendC::WaitFlag<AscendC::HardEvent::MTE3_V>(0);
 
     ComputeSwiglu(static_cast<uint16_t>(singleMInVec));
@@ -345,23 +304,17 @@ template <typename DataTypeOut_, typename DataTypeIn_, typename DataTypeScale_>
 __aicore__ inline void BlockEpilogueSwigluMxQuant<DataTypeOut_, DataTypeIn_, DataTypeScale_>::TransMxScaleLayout(
     uint16_t mSize, uint16_t scaleBlockN)
 {
-    __ubuf__ int8_t* quantScaleOutputInUbAddr = GetUbAddr<int8_t>(quantScaleOutputUbOffset_);
-    __ubuf__ int8_t* quantScaleBlockOutputInUbAddr = GetUbAddr<int8_t>(quantScaleBlockOutputUbOffset_);
-
-    __VEC_SCOPE__
-    {
-        for (uint16_t mIdx = 0; mIdx < mSize; ++mIdx) {
-            uint32_t elemNum = scaleBlockN;
-            AscendC::Reg::MaskReg maskScaleN = AscendC::Reg::UpdateMask<int8_t>(elemNum);
-            AscendC::Reg::RegTensor<int8_t> vreg0;
-            AscendC::Reg::UnalignReg u0;
-            auto srcUb = quantScaleOutputInUbAddr + mIdx * scaleBlockN;
-            AscendC::Reg::DataCopyUnAlignPre(u0, srcUb);
-            AscendC::Reg::DataCopyUnAlign(vreg0, u0, srcUb);
-            auto dstUb = quantScaleBlockOutputInUbAddr + mIdx * AscendC::ONE_BLK_SIZE;
-            AscendC::Reg::DataCopy<int8_t, AscendC::Reg::StoreDist::DIST_NORM_B8>(dstUb, vreg0, maskScaleN);
-        }
-    }
+    auto srcLayout = Gemm::MakeNDExtLayout<int8_t>(static_cast<int64_t>(mSize), static_cast<int64_t>(scaleBlockN),
+                                                   static_cast<int64_t>(scaleBlockN));
+    auto srcTensor = asc::te::make_tensor(
+        asc::te::make_mem_ptr<asc::te::location::ub, int8_t>(quantScaleOutputUbOffset_), srcLayout);
+    auto dstLayout = Gemm::MakeNDExtLayout<int8_t>(static_cast<int64_t>(mSize),
+                                                   static_cast<int64_t>(AscendC::ONE_BLK_SIZE),
+                                                   static_cast<int64_t>(AscendC::ONE_BLK_SIZE));
+    auto dstTensor = asc::te::make_tensor(
+        asc::te::make_mem_ptr<asc::te::location::ub, int8_t>(quantScaleBlockOutputUbOffset_), dstLayout);
+    Tile::MxQuant<DataTypeOut> mx;
+    mx.TransScaleLayout(srcTensor, dstTensor, mSize, scaleBlockN);
 }
 
 template <typename DataTypeOut_, typename DataTypeIn_, typename DataTypeScale_>
@@ -440,177 +393,33 @@ template <typename DataTypeOut_, typename DataTypeIn_, typename DataTypeScale_>
 __aicore__ inline void BlockEpilogueSwigluMxQuant<DataTypeOut_, DataTypeIn_, DataTypeScale_>::ComputeMxQuant(
     uint16_t mSize)
 {
-    __ubuf__ bfloat16_t* gluResAddr = GetUbAddr<bfloat16_t>(gluResUbOffset_);
-    __ubuf__ int8_t* quantOutputInUbAddr = GetUbAddr<int8_t>(quantOutputUbOffset_);
-    __ubuf__ uint16_t* quantScaleOutputInUbAddr = GetUbAddr<uint16_t>(quantScaleOutputUbOffset_);
-
     const uint32_t nDstUbAligned64 = Blaze::Gemm::Align64(static_cast<uint64_t>(singleN_));
     const uint32_t totalDataInUb = mSize * nDstUbAligned64;
     const uint32_t totalScaleInUb = totalDataInUb / AscendC::ONE_BLK_SIZE;
-    const uint16_t loopDataNum = (totalDataInUb + vlForHalfNumber_ * Constant::NUM_TWO - 1) /
-                                 (vlForHalfNumber_ * Constant::NUM_TWO);
-    const uint16_t loopScaleNum = (totalScaleInUb + vlForHalfNumber_ - 1) / vlForHalfNumber_;
 
-    __ubuf__ uint16_t* maxExpAddr = GetUbAddr<uint16_t>(maxExpUbOffset_);
-    ComputeMaxExp(gluResAddr, maxExpAddr, totalDataInUb, loopDataNum);
+    auto dataLayout = Gemm::MakeNDExtLayout<int8_t>(1, static_cast<int64_t>(totalDataInUb),
+                                                    static_cast<int64_t>(totalDataInUb));
+    auto scaleLayout = Gemm::MakeNDExtLayout<int8_t>(1, static_cast<int64_t>(totalScaleInUb),
+                                                     static_cast<int64_t>(totalScaleInUb));
+    auto gluResTensor = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::ub, bfloat16_t>(gluResUbOffset_),
+                                             dataLayout);
+    auto maxExpTensor = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::ub, uint16_t>(maxExpUbOffset_),
+                                             scaleLayout);
+    auto yScaleTensor = asc::te::make_tensor(
+        asc::te::make_mem_ptr<asc::te::location::ub, int8_t>(quantScaleOutputUbOffset_), scaleLayout);
+    auto reciprocalTensor = asc::te::make_tensor(
+        asc::te::make_mem_ptr<asc::te::location::ub, uint16_t>(halfScaleUbOffset_), scaleLayout);
+    auto yTensor = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::ub, int8_t>(quantOutputUbOffset_),
+                                        dataLayout);
 
-    __ubuf__ uint16_t* halfScaleLocalAddr = GetUbAddr<uint16_t>(halfScaleUbOffset_);
-    ComputeScale(maxExpAddr, quantScaleOutputInUbAddr, halfScaleLocalAddr, totalScaleInUb, loopScaleNum);
-    ComputeDataForQuantTargetFp8(gluResAddr, halfScaleLocalAddr, quantOutputInUbAddr, totalDataInUb, loopDataNum);
-}
+    // MxQuantConfig 由 Init 阶段解析的普通成员在调用点组装（tile 类型不得出现在类作用域）
+    // zeroScaleOnZeroExp=true: swiglu 阵营; invDstTypeMax/addValueBits 取默认值（OCP 链路不消费）
+    Tile::MxQuantConfig cfg{Tile::MxScaleAlg::OCP, fpEmax_, 1.0f, 0x003f, true};
 
-template <typename DataTypeOut_, typename DataTypeIn_, typename DataTypeScale_>
-__aicore__ inline void BlockEpilogueSwigluMxQuant<DataTypeOut_, DataTypeIn_, DataTypeScale_>::ComputeMaxExp(
-    __ubuf__ bfloat16_t* srcAddr, __ubuf__ uint16_t* maxExpAddr, uint32_t totalCountInUB, uint16_t loopNum)
-{
-    __VEC_SCOPE__
-    {
-        AscendC::Reg::RegTensor<bfloat16_t> vdExp0;
-        AscendC::Reg::RegTensor<bfloat16_t> vdExp1;
-        AscendC::Reg::RegTensor<uint16_t> vdExpExtract0;
-        AscendC::Reg::RegTensor<uint16_t> vdExpExtract1;
-
-        AscendC::Reg::RegTensor<uint16_t> expMaskBF16;
-        AscendC::Reg::Duplicate(expMaskBF16, Constant::MAX_EXP_FOR_BF16);
-
-        AscendC::Reg::RegTensor<uint16_t> vdMaxExp;
-        AscendC::Reg::MaskReg scaleMask1;
-        AscendC::Reg::MaskReg scaleMask2;
-        AscendC::Reg::UnalignReg u1;
-
-        for (uint16_t i = 0; i < loopNum; i++) {
-            scaleMask1 = AscendC::Reg::UpdateMask<bfloat16_t>(totalCountInUB);
-            scaleMask2 = AscendC::Reg::UpdateMask<bfloat16_t>(totalCountInUB);
-            AscendC::Reg::MaskDeInterleave<bfloat16_t>(scaleMask1, scaleMask2, scaleMask1, scaleMask2);
-            AscendC::Reg::DataCopy<bfloat16_t, AscendC::Reg::PostLiteral::POST_MODE_UPDATE,
-                                   AscendC::Reg::LoadDist::DIST_DINTLV_B16>(vdExp0, vdExp1, srcAddr,
-                                                                            vlForHalfNumber_ * Constant::NUM_TWO);
-            AscendC::Reg::And(vdExpExtract0, (AscendC::Reg::RegTensor<uint16_t>&)vdExp0, expMaskBF16, scaleMask1);
-            AscendC::Reg::And(vdExpExtract1, (AscendC::Reg::RegTensor<uint16_t>&)vdExp1, expMaskBF16, scaleMask2);
-
-            AscendC::Reg::Max(vdMaxExp, vdExpExtract0, vdExpExtract1, scaleMask1);
-            AscendC::Reg::ReduceMaxWithDataBlock(vdMaxExp, vdMaxExp, scaleMask1);
-
-            AscendC::Reg::DataCopyUnAlign<uint16_t, AscendC::Reg::PostLiteral::POST_MODE_UPDATE>(
-                maxExpAddr, vdMaxExp, u1, static_cast<uint32_t>(elementAfterReduce_));
-        }
-        AscendC::Reg::DataCopyUnAlignPost(maxExpAddr, u1, 0);
-    }
-}
-
-template <typename DataTypeOut_, typename DataTypeIn_, typename DataTypeScale_>
-__aicore__ inline void BlockEpilogueSwigluMxQuant<DataTypeOut_, DataTypeIn_, DataTypeScale_>::ComputeScale(
-    __ubuf__ uint16_t* maxExpAddr, __ubuf__ uint16_t* mxScaleLocalAddr, __ubuf__ uint16_t* halfScaleLocalAddr,
-    uint32_t totalScaleInUB, uint16_t loopNumScale)
-{
-    __VEC_SCOPE__
-    {
-        AscendC::Reg::RegTensor<uint16_t> expMask, sharedExp, scaleValue;
-        AscendC::Reg::RegTensor<uint16_t> scaleBias, halfScale, fp8NanRegTensor;
-        AscendC::Reg::Duplicate(expMask, Constant::MAX_EXP_FOR_BF16);
-        AscendC::Reg::RegTensor<uint16_t> vdMaxExp;
-        AscendC::Reg::MaskReg cmpResult, zeroMask, invalidDataMask, specialDataMask;
-        AscendC::Reg::MaskReg preMaskScale;
-        AscendC::Reg::RegTensor<uint16_t> maxExpValue, zeroRegTensor, nanRegTensor, specialExpRegTensor;
-        AscendC::Reg::Duplicate(maxExpValue, fpEmax_);
-        AscendC::Reg::Duplicate(scaleBias, Constant::BF16_EXP_BIAS);
-        AscendC::Reg::Duplicate(fp8NanRegTensor, Constant::MAX_EXP_FOR_FP8);
-        AscendC::Reg::Duplicate(zeroRegTensor, 0);
-        AscendC::Reg::Duplicate(nanRegTensor, Constant::NAN_CUSTOMIZATION);
-        AscendC::Reg::Duplicate(specialExpRegTensor, Constant::SPECIAL_EXP_THRESHOLD);
-
-        for (uint16_t i = 0; i < loopNumScale; i++) {
-            preMaskScale = AscendC::Reg::UpdateMask<uint16_t>(totalScaleInUB);
-            AscendC::Reg::DataCopy<uint16_t, AscendC::Reg::PostLiteral::POST_MODE_UPDATE>(vdMaxExp, maxExpAddr,
-                                                                                          vlForHalfNumber_);
-            AscendC::Reg::Compare<uint16_t, AscendC::CMPMODE::NE>(cmpResult, vdMaxExp, expMask, preMaskScale);
-            AscendC::Reg::Compare<uint16_t, AscendC::CMPMODE::NE>(zeroMask, vdMaxExp, zeroRegTensor, preMaskScale);
-            AscendC::Reg::Compare<uint16_t, AscendC::CMPMODE::LE>(invalidDataMask, vdMaxExp, maxExpValue, preMaskScale);
-            AscendC::Reg::Select<uint16_t>(vdMaxExp, maxExpValue, vdMaxExp, invalidDataMask);
-            AscendC::Reg::Sub(sharedExp, vdMaxExp, maxExpValue, preMaskScale);
-            AscendC::Reg::ShiftRights(scaleValue, sharedExp, Constant::SHR_NUM_FOR_BF16, preMaskScale);
-            AscendC::Reg::Select<uint16_t>(scaleValue, scaleValue, fp8NanRegTensor, cmpResult);
-            AscendC::Reg::Select<uint16_t>(scaleValue, scaleValue, zeroRegTensor, zeroMask);
-
-            AscendC::Reg::DataCopy<uint16_t, AscendC::Reg::PostLiteral::POST_MODE_UPDATE,
-                                   AscendC::Reg::StoreDist::DIST_PACK_B16>(mxScaleLocalAddr, scaleValue,
-                                                                           vlForHalfNumber_ >> 1, preMaskScale);
-
-            AscendC::Reg::Compare<uint16_t, AscendC::CMPMODE::EQ>(specialDataMask, sharedExp, scaleBias, preMaskScale);
-            AscendC::Reg::Sub(halfScale, scaleBias, sharedExp, preMaskScale);
-            AscendC::Reg::Select<uint16_t>(halfScale, halfScale, nanRegTensor, cmpResult);
-            AscendC::Reg::Select<uint16_t>(halfScale, halfScale, zeroRegTensor, zeroMask);
-            AscendC::Reg::Select<uint16_t>(halfScale, specialExpRegTensor, halfScale, specialDataMask);
-
-            AscendC::Reg::DataCopy<uint16_t, AscendC::Reg::PostLiteral::POST_MODE_UPDATE>(
-                halfScaleLocalAddr, halfScale, vlForHalfNumber_, preMaskScale);
-        }
-    }
-}
-
-template <typename DataTypeOut_, typename DataTypeIn_, typename DataTypeScale_>
-__aicore__ inline void
-BlockEpilogueSwigluMxQuant<DataTypeOut_, DataTypeIn_, DataTypeScale_>::ComputeDataForQuantTargetFp8(
-    __ubuf__ bfloat16_t* srcAddr, __ubuf__ uint16_t* halfScaleLocalAddr, __ubuf__ int8_t* outLocalAddr,
-    uint32_t totalCountInUB, uint16_t loopNum)
-{
-    uint32_t totalCountInUB2 = totalCountInUB * Constant::NUM_TWO;
-    using T = bfloat16_t;
-    __VEC_SCOPE__
-    {
-        AscendC::Reg::MaskReg dataMask1, dataMask2, dataMask3, dataMask4;
-        AscendC::Reg::MaskReg dataMaskEven, dataMaskOdd;
-        AscendC::Reg::RegTensor<uint16_t> halfScaleForMul;
-        AscendC::Reg::RegTensor<T> vdExp0, vdExp1;
-        AscendC::Reg::RegTensor<float> vdExp0FP32Zero, vdExp0FP32One, vdExp1FP32Zero, vdExp1FP32One;
-        AscendC::Reg::RegTensor<DataTypeOut> vdExp0FP8Zero, vdExp0FP8One, vdExp1FP8Zero, vdExp1FP8One;
-
-        for (uint16_t i = 0; i < loopNum; i++) {
-            dataMask1 = AscendC::Reg::UpdateMask<T>(totalCountInUB);
-            dataMask2 = AscendC::Reg::UpdateMask<T>(totalCountInUB);
-            dataMask3 = AscendC::Reg::UpdateMask<T>(totalCountInUB2);
-            dataMask4 = AscendC::Reg::UpdateMask<T>(totalCountInUB2);
-            AscendC::Reg::MaskDeInterleave<T>(dataMaskEven, dataMaskOdd, dataMask1, dataMask2);
-            AscendC::Reg::DataCopy<T, AscendC::Reg::PostLiteral::POST_MODE_UPDATE,
-                                   AscendC::Reg::LoadDist::DIST_DINTLV_B16>(vdExp0, vdExp1, srcAddr,
-                                                                            vlForHalfNumber_ * Constant::NUM_TWO);
-
-            AscendC::Reg::DataCopy<uint16_t, AscendC::Reg::PostLiteral::POST_MODE_UPDATE,
-                                   AscendC::Reg::LoadDist::DIST_E2B_B16>(halfScaleForMul, halfScaleLocalAddr,
-                                                                         elementAfterReduce_);
-
-            AscendC::Reg::Mul(vdExp0, vdExp0, (AscendC::Reg::RegTensor<T>&)halfScaleForMul, dataMaskEven);
-            AscendC::Reg::Mul(vdExp1, vdExp1, (AscendC::Reg::RegTensor<T>&)halfScaleForMul, dataMaskOdd);
-            AscendC::Reg::Interleave(vdExp0, vdExp1, vdExp0, vdExp1);
-
-            AscendC::Reg::Cast<float, T, CT_BF16_TO_FP32_ZERO>(vdExp0FP32Zero, vdExp0, dataMask1);
-            AscendC::Reg::Cast<float, T, CT_BF16_TO_FP32_ONE>(vdExp0FP32One, vdExp0, dataMask1);
-            AscendC::Reg::Interleave(vdExp0FP32Zero, vdExp0FP32One, vdExp0FP32Zero, vdExp0FP32One);
-            AscendC::Reg::Cast<DataTypeOut, float, CT_FP32_TO_FP8_SAT>(vdExp0FP8Zero, vdExp0FP32Zero, dataMask3);
-            AscendC::Reg::Cast<DataTypeOut, float, CT_FP32_TO_FP8_SAT>(vdExp0FP8One, vdExp0FP32One, dataMask3);
-
-            AscendC::Reg::Cast<float, T, CT_BF16_TO_FP32_ZERO>(vdExp1FP32Zero, vdExp1, dataMask2);
-            AscendC::Reg::Cast<float, T, CT_BF16_TO_FP32_ONE>(vdExp1FP32One, vdExp1, dataMask2);
-            AscendC::Reg::Interleave(vdExp1FP32Zero, vdExp1FP32One, vdExp1FP32Zero, vdExp1FP32One);
-            AscendC::Reg::Cast<DataTypeOut, float, CT_FP32_TO_FP8_SAT>(vdExp1FP8Zero, vdExp1FP32Zero, dataMask4);
-            AscendC::Reg::Cast<DataTypeOut, float, CT_FP32_TO_FP8_SAT>(vdExp1FP8One, vdExp1FP32One, dataMask4);
-
-            AscendC::Reg::DataCopy<int8_t, AscendC::Reg::PostLiteral::POST_MODE_UPDATE,
-                                   AscendC::Reg::StoreDist::DIST_PACK4_B32>(
-                outLocalAddr, (AscendC::Reg::RegTensor<int8_t>&)vdExp0FP8Zero, Constant::OUT_ELE_NUM_ONE_BLK,
-                dataMask3);
-            AscendC::Reg::DataCopy<int8_t, AscendC::Reg::PostLiteral::POST_MODE_UPDATE,
-                                   AscendC::Reg::StoreDist::DIST_PACK4_B32>(
-                outLocalAddr, (AscendC::Reg::RegTensor<int8_t>&)vdExp0FP8One, Constant::OUT_ELE_NUM_ONE_BLK, dataMask3);
-            AscendC::Reg::DataCopy<int8_t, AscendC::Reg::PostLiteral::POST_MODE_UPDATE,
-                                   AscendC::Reg::StoreDist::DIST_PACK4_B32>(
-                outLocalAddr, (AscendC::Reg::RegTensor<int8_t>&)vdExp1FP8Zero, Constant::OUT_ELE_NUM_ONE_BLK,
-                dataMask4);
-            AscendC::Reg::DataCopy<int8_t, AscendC::Reg::PostLiteral::POST_MODE_UPDATE,
-                                   AscendC::Reg::StoreDist::DIST_PACK4_B32>(
-                outLocalAddr, (AscendC::Reg::RegTensor<int8_t>&)vdExp1FP8One, Constant::OUT_ELE_NUM_ONE_BLK, dataMask4);
-        }
-    }
+    Tile::MxQuant<DataTypeOut> mx;
+    mx.GroupMaxExp(gluResTensor, maxExpTensor, totalDataInUb, false);
+    mx.GenScale(maxExpTensor, yScaleTensor, reciprocalTensor, cfg, totalScaleInUb);
+    mx.Quantize(gluResTensor, reciprocalTensor, yTensor, totalDataInUb);
 }
 
 } // namespace Block

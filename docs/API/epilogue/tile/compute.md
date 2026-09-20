@@ -47,7 +47,7 @@ auto srcTensor = asc::te::make_tensor(
     asc::te::make_mem_ptr<asc::te::location::ub, float>(0), layout);
 auto dstTensor = asc::te::make_tensor(
     asc::te::make_mem_ptr<asc::te::location::ub, bfloat16_t>(dstOffset), layout);
-Blaze::Epilogue::Block::Gelu<bfloat16_t, float> gelu;
+Blaze::Epilogue::Tile::Gelu<bfloat16_t, float> gelu;
 gelu.GeluTanh(srcTensor, dstTensor, mSize, nSize);
 ```
 

@@ -16,20 +16,17 @@
  *   - Public  (__aicore__): accepts make_tensor-created UB tensors, extracts
  *     raw __ubuf__ pointers via .data().get(), and delegates to Vf.
  *   - Private (__simd_vf__): Reg API register-level computation.
- *     Pure vector instructions (DataCopy, Mul, Axpy, Exp, Log, Div, Cast,
- *     Compare/Select, Store). Both algorithms are fully in-register: one
+ *     Pure vector instructions (LoadAlign/StoreAlign, Mul, Axpy, Exp, Log, Div, Cast,
+ *     Compare/Select). Both algorithms are fully in-register: one
  *     Vf launch covers the whole [mSize, nSize] tile.
  */
 
 #pragma once
 
 #include "tensor_api/tensor.h"
-#include "kernel_operator.h"
 #include "blaze/gemm/utils/common_utils.h"
 
-namespace Blaze {
-namespace Epilogue {
-namespace Block {
+namespace Blaze::Epilogue::Tile {
 
 // ---------------------------------------------------------------------------
 // Gelu tile: reusable activation epilogue
@@ -41,7 +38,7 @@ namespace Block {
 //   kPreciseDiv: per-caller division mode (gelu_tanh lineage = true:
 //   error-compensation DivPrecisionImpl; gelu_mx lineage = false: plain vdiv).
 //   Both lineages are golden-verified with their own mode, so the divergence
-//   is parameterized instead of silently unified (design doc D6).
+//   is parameterized instead of silently unified.
 // ---------------------------------------------------------------------------
 template <typename DataTypeOut_, typename DataTypeIn_, bool kPreciseDiv_ = false>
 class Gelu {
@@ -156,12 +153,12 @@ private:
         AscendC::Reg::Adds(vregInputCub, vregInputCub, GELU_ONE, mask);
         AscendC::Reg::Div<float, &GELU_DIV_MODE>(vregOutput, vregInput, vregInputCub, mask);
         if constexpr (AscendC::IsSameType<DataTypeOut, float>::value) {
-            AscendC::Reg::DataCopy<float, AscendC::Reg::StoreDist::DIST_NORM_B32>(dstAddr + offset, vregOutput, mask);
+            AscendC::Reg::StoreAlign<float, AscendC::Reg::StoreDist::DIST_NORM_B32>(dstAddr + offset, vregOutput, mask);
         } else {
             AscendC::Reg::RegTensor<DataTypeOut> vregOutputOut;
             AscendC::Reg::Cast<DataTypeOut, float, CT_32F_TO_OUT>(vregOutputOut, vregOutput, mask);
-            AscendC::Reg::DataCopy<DataTypeOut, AscendC::Reg::StoreDist::DIST_PACK_B32>(dstAddr + offset, vregOutputOut,
-                                                                                        mask);
+            AscendC::Reg::StoreAlign<DataTypeOut, AscendC::Reg::StoreDist::DIST_PACK_B32>(dstAddr + offset,
+                                                                                          vregOutputOut, mask);
         }
     }
 
@@ -179,7 +176,7 @@ private:
             for (uint16_t vfIdx = 0; vfIdx < params.oneRowRepeatTimes; vfIdx++) {
                 mask = AscendC::Reg::UpdateMask<float>(count);
                 uint32_t offset = mIdx * params.nAligned + vfIdx * params.sizePerRepeat;
-                AscendC::Reg::DataCopy(vregInput, src + offset);
+                AscendC::Reg::LoadAlign<float, AscendC::Reg::LoadDist::DIST_NORM>(vregInput, src + offset);
                 GeluTanhCoreCallee(vregInput, mask, params.dstAddr, offset);
             }
         }
@@ -199,8 +196,8 @@ private:
             for (uint16_t vfIdx = 0; vfIdx < params.oneRowRepeatTimes; vfIdx++) {
                 mask = AscendC::Reg::UpdateMask<float>(count);
                 uint32_t offset = mIdx * params.nAligned + vfIdx * params.sizePerRepeat;
-                AscendC::Reg::DataCopy<DataTypeIn, AscendC::Reg::LoadDist::DIST_UNPACK_B16>(vregInput16,
-                                                                                            params.srcAddr + offset);
+                AscendC::Reg::LoadAlign<DataTypeIn, AscendC::Reg::LoadDist::DIST_UNPACK_B16>(vregInput16,
+                                                                                             params.srcAddr + offset);
                 AscendC::Reg::Cast<float, DataTypeIn, CT_16F_TO_32F>(vregInput, vregInput16, mask);
                 GeluTanhCoreCallee(vregInput, mask, params.dstAddr, offset);
             }
@@ -312,12 +309,12 @@ private:
         AscendC::Reg::Muls(vregMuls, vregInput, GELU_HALF, mask);
         AscendC::Reg::Mul(vregOutput, vregAdds, vregMuls, mask);
         if constexpr (AscendC::IsSameType<DataTypeOut, float>::value) {
-            AscendC::Reg::DataCopy<float, AscendC::Reg::StoreDist::DIST_NORM_B32>(dstAddr + offset, vregOutput, mask);
+            AscendC::Reg::StoreAlign<float, AscendC::Reg::StoreDist::DIST_NORM_B32>(dstAddr + offset, vregOutput, mask);
         } else {
             AscendC::Reg::RegTensor<DataTypeOut> vregOutputOut;
             AscendC::Reg::Cast<DataTypeOut, float, CT_32F_TO_OUT>(vregOutputOut, vregOutput, mask);
-            AscendC::Reg::DataCopy<DataTypeOut, AscendC::Reg::StoreDist::DIST_PACK_B32>(dstAddr + offset, vregOutputOut,
-                                                                                        mask);
+            AscendC::Reg::StoreAlign<DataTypeOut, AscendC::Reg::StoreDist::DIST_PACK_B32>(dstAddr + offset,
+                                                                                          vregOutputOut, mask);
         }
     }
 
@@ -335,7 +332,7 @@ private:
             for (uint16_t vfIdx = 0; vfIdx < params.oneRowRepeatTimes; vfIdx++) {
                 mask = AscendC::Reg::UpdateMask<float>(count);
                 uint32_t offset = mIdx * params.nAligned + vfIdx * params.sizePerRepeat;
-                AscendC::Reg::DataCopy(vregInput, src + offset);
+                AscendC::Reg::LoadAlign<float, AscendC::Reg::LoadDist::DIST_NORM>(vregInput, src + offset);
                 GeluErfCoreCallee(vregInput, mask, params.dstAddr, offset);
             }
         }
@@ -355,8 +352,8 @@ private:
             for (uint16_t vfIdx = 0; vfIdx < params.oneRowRepeatTimes; vfIdx++) {
                 mask = AscendC::Reg::UpdateMask<float>(count);
                 uint32_t offset = mIdx * params.nAligned + vfIdx * params.sizePerRepeat;
-                AscendC::Reg::DataCopy<DataTypeIn, AscendC::Reg::LoadDist::DIST_UNPACK_B16>(vregInput16,
-                                                                                            params.srcAddr + offset);
+                AscendC::Reg::LoadAlign<DataTypeIn, AscendC::Reg::LoadDist::DIST_UNPACK_B16>(vregInput16,
+                                                                                             params.srcAddr + offset);
                 AscendC::Reg::Cast<float, DataTypeIn, CT_16F_TO_32F>(vregInput, vregInput16, mask);
                 GeluErfCoreCallee(vregInput, mask, params.dstAddr, offset);
             }
@@ -460,6 +457,4 @@ __aicore__ inline void Gelu<DataTypeOut_, DataTypeIn_, kPreciseDiv_>::GeluErf(co
     }
 }
 
-} // namespace Block
-} // namespace Epilogue
-} // namespace Blaze
+} // namespace Blaze::Epilogue::Tile

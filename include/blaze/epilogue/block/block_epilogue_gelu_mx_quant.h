@@ -54,32 +54,14 @@ constexpr int64_t MX_SCALE_ALIGN_SIZE = 2;
 
 constexpr uint32_t MAX_SINGLE_MN = 128 * 256;
 constexpr uint32_t MAX_SINGLE_SCALE_NUM = MAX_SINGLE_MN / AscendC::ONE_BLK_SIZE;
-constexpr uint16_t MAX_EXP_FOR_BF16 = 0x7f80; // 0b0111 1111 1000 0000
-constexpr uint16_t MAX_EXP_FOR_FP8 = 0x00ff;
-constexpr uint16_t BF16_EXP_BIAS = 0x7f00; // 0b0111 1111 0000 0000
-constexpr int16_t SHR_NUM_FOR_BF16 = 7;
-constexpr int16_t SHR_NUM_FOR_FP32 = 23;
 constexpr uint16_t BF16_ADD_VALUE_MAN1 = 0x003f; // dst_TypeMax=0.0或6.0时使用
 constexpr uint16_t BF16_ADD_VALUE_MAN2 = 0x001f; // dst_TypeMax=7.0时使用
-constexpr uint16_t NAN_CUSTOMIZATION = 0x7f81;
-constexpr uint16_t SPECIAL_EXP_THRESHOLD = 0x0040;
 // elem_emax右移7位(BF16E8M7)
 constexpr uint16_t FP8_E4M3_MAX_EXP = 0x0400; // 0b 0000 0100 0000 0000 右移7位为8
 constexpr uint16_t FP8_E5M2_MAX_EXP = 0x0780; // 0b 0000 0111 1000 0000 右移7位为15
 constexpr uint16_t FP4_E2M1_MAX_EXP = 0x0100; // 0b 0000 0001 0000 0000 右移7位为2
 constexpr uint16_t FP4_E1M2_MAX_EXP = 0x0000; // 右移7位为0
 
-constexpr uint16_t ABS_MASK_FOR_16BIT = 0x7fff;
-constexpr uint32_t FP8_E5M2_MAX = 0x37924925; // 1/57344的float32表示 57334是E5M2所能表示的最大值
-constexpr uint32_t FP8_E4M3_MAX = 0x3b124925; // 1/448的float32表示 448是E4M3所能表示的最大值
-constexpr uint32_t MAN_MASK_FLOAT = 0x007fffff;
-constexpr uint32_t MAX_EXP_FOR_FP32 = 0x7f800000;
-constexpr uint32_t FP32_EXP_BIAS_CUBLAS = 0x00007f00;
-constexpr uint16_t NAN_CUSTOMIZATION_PACK = 0x00007f81;
-constexpr uint32_t MAX_EXP_FOR_FP8_IN_FP32 = 0x000000ff;
-constexpr uint32_t NUMBER_ZERO = 0x00000000;
-constexpr uint32_t NUMBER_TWO_FIVE_FOUR = 0x000000fe;
-constexpr uint32_t NUMBER_HALF = 0x00400000;
 constexpr int8_t FLOAT_OVERFLOW_MODE_CTRL = 60;
 constexpr float DIGIT_ZERO_FLOAT = 0.0;
 constexpr float DIGIT_SIX_FLOAT = 6.0;
@@ -130,31 +112,7 @@ private:
     __aicore__ inline void VFDoGeluForMX(uint16_t mSize);
     __aicore__ inline void TransMxScaleLayout(uint16_t mSize);
     __aicore__ inline void TransFp4MxOutLayout(uint16_t mSize);
-    __aicore__ inline void VFDoGeluAndQuantForMX(__ubuf__ int8_t* outputDst, __ubuf__ uint16_t* scaleDst,
-                                                 uint16_t mSize, uint16_t nSize);
-    __aicore__ inline void ComputeScaleOCP(__ubuf__ uint16_t* maxExpAddr, __ubuf__ uint16_t* mxScaleLocalAddr,
-                                           __ubuf__ uint16_t* halfScaleLocalAddr, uint32_t totalScaleInUB,
-                                           uint16_t loopNumScale);
-    template <typename DstTypeMaxType>
-    __aicore__ inline void ComputeScalecuBLAS(__ubuf__ uint16_t* maxExpAddr, __ubuf__ uint16_t* mxScaleLocalAddr,
-                                              __ubuf__ uint16_t* halfScaleLocalAddr, uint32_t totalScaleInUB,
-                                              uint16_t loopNumScale);
-    __aicore__ inline void ComputeScaleDynDtypeRange(__ubuf__ uint16_t* maxExpAddr, __ubuf__ uint16_t* mxScaleLocalAddr,
-                                                     __ubuf__ uint16_t* halfScaleLocalAddr, uint32_t totalScaleInUB,
-                                                     uint16_t loopNumScale);
-    __aicore__ inline void ComputeMaxExpOCP(__ubuf__ bfloat16_t* srcAddr, __ubuf__ uint16_t* maxExpAddr,
-                                            uint16_t loopNum);
-    __aicore__ inline void ComputeMaxExpcuBLASOrDynDtypeRange(__ubuf__ bfloat16_t* srcAddr,
-                                                              __ubuf__ uint16_t* maxExpAddr, uint16_t loopNum);
-    __aicore__ inline void ComputeDataForQuantTargetFp8(__ubuf__ bfloat16_t* srcAddr,
-                                                        __ubuf__ uint16_t* halfScaleLocalAddr,
-                                                        __ubuf__ int8_t* outLocalAddr, uint32_t totalCountInUB,
-                                                        uint16_t loopNum);
-    template <AscendC::RoundMode roundMode>
-    __aicore__ inline void ComputeDataForQuantTargetFp4(__ubuf__ bfloat16_t* srcAddr,
-                                                        __ubuf__ uint16_t* halfScaleLocalAddr,
-                                                        __ubuf__ int8_t* outLocalAddr, uint32_t totalCountInUB,
-                                                        uint16_t loopNum);
+    __aicore__ inline void VFDoGeluAndQuantForMX(uint16_t mSize, uint16_t nSize);
     __aicore__ inline void CopyOutputFromUb2Gm(uint64_t blockCount, int64_t gmOffset);
     __aicore__ inline void CopyScaleFromUb2Gm(uint64_t blockCount, int64_t gmOffset);
 
@@ -181,14 +139,10 @@ private:
     uint32_t singleM_;
     uint32_t singleN_;
 
-    int64_t UBBlockSize_ = 0;
-    uint32_t vlForHalfNumber_ = 0;
-    uint32_t vlForFloat32Number_ = 0;
-    uint16_t elementAfterReduce_ = 0;
-    uint16_t fpEmax_ = 0;
-    uint32_t dtypeMax_ = 0;
-    float dstTypeMax_ = 0.0;
-    uint32_t addValueBit_ = 0; // 场景2，进位附加值
+    uint16_t fpEmax_{0};
+    float invDstTypeMax_{1.0f / 6.0f};
+    float dstTypeMax_{0.0};
+    uint32_t addValueBits_{BF16_ADD_VALUE_MAN1}; // 场景2，进位附加值
 
     BlockCoord blockCoord_{0, 0, 0, 0, 0};
 };
@@ -207,22 +161,24 @@ __aicore__ inline void BlockEpilogueGeluMxQuant<DataTypeOut_, DataTypeIn_>::Init
     quantScaleGmAddr_ = reinterpret_cast<__gm__ int8_t*>(params_->yScaleGmAddr);
     if constexpr (AscendC::IsSameType<DataTypeOut, fp8_e4m3fn_t>::value) {
         fpEmax_ = FP8_E4M3_MAX_EXP;
-        dtypeMax_ = FP8_E4M3_MAX;
+        invDstTypeMax_ = 1.0f / 448.0f;
     } else if constexpr (AscendC::IsSameType<DataTypeOut, fp8_e5m2_t>::value) {
         fpEmax_ = FP8_E5M2_MAX_EXP;
-        dtypeMax_ = FP8_E5M2_MAX;
+        invDstTypeMax_ = 1.0f / 57344.0f;
     } else if constexpr (AscendC::IsSameType<DataTypeOut, fp4x2_e2m1_t>::value) {
         fpEmax_ = FP4_E2M1_MAX_EXP;
         dstTypeMax_ = params_->dtypeMax;
-        if (params_->dtypeMax == 0.0f || params_->dtypeMax == 6.0f) {
-            addValueBit_ = BF16_ADD_VALUE_MAN1;
-        } else if (params_->dtypeMax == 7.0f) {
-            addValueBit_ = BF16_ADD_VALUE_MAN2;
-        }
+        invDstTypeMax_ = 1.0f / 6.0f;
     } else {
         fpEmax_ = FP4_E1M2_MAX_EXP;
         dstTypeMax_ = params_->dtypeMax;
+        invDstTypeMax_ = 1.0f / 3.5f;
     }
+    if (params_->quantAlg == QuantAlg::DYN_DTYPE_RANGE && params_->dtypeMax != DIGIT_ZERO_FLOAT) {
+        invDstTypeMax_ = 1.0f / params_->dtypeMax;
+    }
+    // 进位附加值规则统一为 gelu_tanh 语义
+    addValueBits_ = params_->dtypeMax == DIGIT_SEVEN_FLOAT ? BF16_ADD_VALUE_MAN2 : BF16_ADD_VALUE_MAN1;
     SetupUbLayout();
 }
 
@@ -315,453 +271,8 @@ __aicore__ inline void BlockEpilogueGeluMxQuant<DataTypeOut_, DataTypeIn_>::Copy
 }
 
 template <typename DataTypeOut_, typename DataTypeIn_>
-__aicore__ inline void BlockEpilogueGeluMxQuant<DataTypeOut_, DataTypeIn_>::ComputeMaxExpOCP(
-    __ubuf__ bfloat16_t* srcAddr, __ubuf__ uint16_t* maxExpAddr, uint16_t loopNum)
-{
-    __VEC_SCOPE__
-    {
-        AscendC::Reg::RegTensor<bfloat16_t> vdExp0;
-        AscendC::Reg::RegTensor<bfloat16_t> vdExp1;
-        AscendC::Reg::RegTensor<uint16_t> vdExpExtract0;
-        AscendC::Reg::RegTensor<uint16_t> vdExpExtract1;
-
-        AscendC::Reg::RegTensor<uint16_t> expMaskBF16;
-        AscendC::Reg::Duplicate(expMaskBF16, MAX_EXP_FOR_BF16);
-
-        AscendC::Reg::RegTensor<uint16_t> vdMaxExp;
-        AscendC::Reg::MaskReg Mask = AscendC::Reg::CreateMask<uint16_t, AscendC::Reg::MaskPattern::ALL>();
-        AscendC::Reg::UnalignReg u1;
-        for (uint16_t i = 0; i < loopNum; i++) {
-            AscendC::Reg::LoadAlign<bfloat16_t, AscendC::Reg::PostLiteral::POST_MODE_UPDATE,
-                                    AscendC::Reg::LoadDist::DIST_DINTLV_B16>(vdExp0, vdExp1, srcAddr,
-                                                                             vlForHalfNumber_ * 2);
-            AscendC::Reg::And(vdExpExtract0, (AscendC::Reg::RegTensor<uint16_t>&)vdExp0, expMaskBF16, Mask);
-            AscendC::Reg::And(vdExpExtract1, (AscendC::Reg::RegTensor<uint16_t>&)vdExp1, expMaskBF16, Mask);
-            AscendC::Reg::Max(vdMaxExp, vdExpExtract0, vdExpExtract1, Mask);
-            AscendC::Reg::ReduceMaxWithDataBlock(vdMaxExp, vdMaxExp, Mask);
-            AscendC::Reg::StoreUnAlign<uint16_t, AscendC::Reg::PostLiteral::POST_MODE_UPDATE>(maxExpAddr, vdMaxExp, u1,
-                                                                                              elementAfterReduce_);
-        }
-        AscendC::Reg::StoreUnAlignPost(maxExpAddr, u1, 0);
-    }
-    return;
-}
-
-template <typename DataTypeOut_, typename DataTypeIn_>
-__aicore__ inline void BlockEpilogueGeluMxQuant<DataTypeOut_, DataTypeIn_>::ComputeMaxExpcuBLASOrDynDtypeRange(
-    __ubuf__ bfloat16_t* srcAddr, __ubuf__ uint16_t* maxExpAddr, uint16_t loopNum)
-{
-    __VEC_SCOPE__
-    {
-        AscendC::Reg::RegTensor<bfloat16_t> vdExp0;
-        AscendC::Reg::RegTensor<bfloat16_t> vdExp1;
-        AscendC::Reg::RegTensor<uint16_t> vdMaxExp;
-
-        AscendC::Reg::RegTensor<uint16_t> absMask16Bit;
-        AscendC::Reg::Duplicate(absMask16Bit, ABS_MASK_FOR_16BIT);
-
-        AscendC::Reg::MaskReg Mask = AscendC::Reg::CreateMask<uint16_t, AscendC::Reg::MaskPattern::ALL>();
-        AscendC::Reg::UnalignReg u1;
-        for (uint16_t i = 0; i < loopNum; i++) {
-            AscendC::Reg::LoadAlign<bfloat16_t, AscendC::Reg::PostLiteral::POST_MODE_UPDATE,
-                                    AscendC::Reg::LoadDist::DIST_DINTLV_B16>(vdExp0, vdExp1, srcAddr,
-                                                                             vlForHalfNumber_ * 2);
-            AscendC::Reg::And((AscendC::Reg::RegTensor<uint16_t>&)vdExp0, (AscendC::Reg::RegTensor<uint16_t>&)vdExp0,
-                              absMask16Bit, Mask);
-            AscendC::Reg::And((AscendC::Reg::RegTensor<uint16_t>&)vdExp1, (AscendC::Reg::RegTensor<uint16_t>&)vdExp1,
-                              absMask16Bit, Mask);
-            AscendC::Reg::Max(vdMaxExp, (AscendC::Reg::RegTensor<uint16_t>&)vdExp0,
-                              (AscendC::Reg::RegTensor<uint16_t>&)vdExp1, Mask);
-            AscendC::Reg::ReduceMaxWithDataBlock(vdMaxExp, vdMaxExp, Mask);
-            AscendC::Reg::StoreUnAlign<uint16_t, AscendC::Reg::PostLiteral::POST_MODE_UPDATE>(maxExpAddr, vdMaxExp, u1,
-                                                                                              elementAfterReduce_);
-        }
-        AscendC::Reg::StoreUnAlignPost(maxExpAddr, u1, 0);
-    }
-    return;
-}
-
-template <typename DataTypeOut_, typename DataTypeIn_>
-template <typename DstTypeMaxType>
-__aicore__ inline void BlockEpilogueGeluMxQuant<DataTypeOut_, DataTypeIn_>::ComputeScalecuBLAS(
-    __ubuf__ uint16_t* maxExpAddr, __ubuf__ uint16_t* mxScaleLocalAddr, __ubuf__ uint16_t* halfScaleLocalAddr,
-    uint32_t totalScaleInUB, uint16_t loopNumScale)
-{
-    using T = bfloat16_t;
-    DstTypeMaxType dtypeMax;
-    uint16_t subNormalScene = 0;
-    if constexpr (AscendC::IsSameType<DataTypeOut, fp8_e4m3fn_t>::value ||
-                  AscendC::IsSameType<DataTypeOut, fp8_e5m2_t>::value) {
-        dtypeMax = dtypeMax_;
-        subNormalScene = 1;
-    } else {
-        dtypeMax = 1.0f / dstTypeMax_;
-    }
-    __VEC_SCOPE__
-    {
-        AscendC::Reg::RegTensor<uint16_t> vdMaxExp;
-        AscendC::Reg::RegTensor<uint32_t> vdMaxExp32;
-        AscendC::Reg::RegTensor<uint32_t> exp32;
-        AscendC::Reg::RegTensor<uint32_t> man32;
-        AscendC::Reg::RegTensor<uint32_t> normalExp32;
-        AscendC::Reg::RegTensor<uint32_t> expAddOne32;
-        AscendC::Reg::RegTensor<uint32_t> extractExp;
-        AscendC::Reg::RegTensor<uint16_t> expOut;
-        AscendC::Reg::RegTensor<uint32_t> halfScale;
-        AscendC::Reg::RegTensor<uint16_t> recExpOut;
-
-        AscendC::Reg::RegTensor<DstTypeMaxType> invMax;
-        AscendC::Reg::Duplicate(invMax, dtypeMax);
-        AscendC::Reg::RegTensor<uint32_t> manMaskFP32;
-        AscendC::Reg::Duplicate(manMaskFP32, MAN_MASK_FLOAT);
-        AscendC::Reg::RegTensor<uint32_t> expMask;
-        AscendC::Reg::Duplicate(expMask, MAX_EXP_FOR_FP32);
-        AscendC::Reg::RegTensor<uint32_t> zeroRegTensor32;
-        AscendC::Reg::Duplicate(zeroRegTensor32, 0);
-        AscendC::Reg::RegTensor<uint32_t> scaleBias;
-        AscendC::Reg::Duplicate(scaleBias, FP32_EXP_BIAS_CUBLAS);
-        AscendC::Reg::RegTensor<uint32_t> nanRegTensor;
-        AscendC::Reg::Duplicate(nanRegTensor, NAN_CUSTOMIZATION_PACK);
-        AscendC::Reg::RegTensor<uint32_t> fp8NanRegTensor;
-        AscendC::Reg::Duplicate(fp8NanRegTensor, MAX_EXP_FOR_FP8_IN_FP32);
-
-        AscendC::Reg::MaskReg cmpResult;
-        AscendC::Reg::MaskReg zeroMask;
-        AscendC::Reg::MaskReg p0;
-        AscendC::Reg::MaskReg p1;
-        AscendC::Reg::MaskReg p2;
-        uint32_t SixtyFour = 64;
-        AscendC::Reg::MaskReg dataMaskB16Half = AscendC::Reg::UpdateMask<uint16_t>(SixtyFour);
-        AscendC::Reg::MaskReg mask = AscendC::Reg::CreateMask<uint32_t>();
-
-        static constexpr AscendC::Reg::CastTrait castTraitHalf2Float = {
-            AscendC::Reg::RegLayout::ZERO, AscendC::Reg::SatMode::UNKNOWN, AscendC::Reg::MaskMergeMode::ZEROING,
-            AscendC::RoundMode::UNKNOWN};
-        for (uint16_t i = 0; i < loopNumScale; i++) {
-            AscendC::Reg::LoadAlign<uint16_t, AscendC::Reg::PostLiteral::POST_MODE_UPDATE,
-                                    AscendC::Reg::LoadDist::DIST_UNPACK_B16>(vdMaxExp, maxExpAddr, vlForFloat32Number_);
-
-            AscendC::Reg::Cast<float, T, castTraitHalf2Float>((AscendC::Reg::RegTensor<float>&)vdMaxExp32,
-                                                              (AscendC::Reg::RegTensor<T>&)vdMaxExp, mask);
-            AscendC::Reg::Compare<uint32_t, AscendC::CMPMODE::LT>(cmpResult, vdMaxExp32, expMask, mask);
-            AscendC::Reg::Compare<uint32_t, AscendC::CMPMODE::NE>(zeroMask, vdMaxExp32, zeroRegTensor32, mask);
-
-            AscendC::Reg::Mul((AscendC::Reg::RegTensor<float>&)vdMaxExp32, (AscendC::Reg::RegTensor<float>&)vdMaxExp32,
-                              (AscendC::Reg::RegTensor<float>&)invMax, mask);
-            AscendC::Reg::ShiftRights(exp32, vdMaxExp32, SHR_NUM_FOR_FP32, mask);
-            AscendC::Reg::And(man32, vdMaxExp32, manMaskFP32, mask);
-
-            AscendC::Reg::CompareScalar<uint32_t, AscendC::CMPMODE::GT>(p0, exp32, NUMBER_ZERO, mask);
-            AscendC::Reg::CompareScalar<uint32_t, AscendC::CMPMODE::LT>(p1, exp32, NUMBER_TWO_FIVE_FOUR, mask);
-            AscendC::Reg::CompareScalar<uint32_t, AscendC::CMPMODE::GT>(p2, man32, NUMBER_ZERO, mask);
-            AscendC::Reg::MaskAnd(p0, p0, p1, mask);
-            AscendC::Reg::MaskAnd(p0, p0, p2, mask);
-
-            // fp8非正规数进位场景，fp4场景2不涉及
-            for (uint16_t i = 0; i < subNormalScene; i++) {
-                AscendC::Reg::CompareScalar<uint32_t, AscendC::CMPMODE::EQ>(p1, exp32, NUMBER_ZERO, mask);
-                AscendC::Reg::CompareScalar<uint32_t, AscendC::CMPMODE::GT>(p2, man32, NUMBER_HALF, mask);
-                AscendC::Reg::MaskAnd(p1, p1, p2, mask);
-                AscendC::Reg::MaskOr(p0, p0, p1, mask);
-            }
-
-            AscendC::Reg::Adds(expAddOne32, exp32, 1, mask);
-            AscendC::Reg::Select(extractExp, expAddOne32, exp32, p0);
-            AscendC::Reg::Select<uint32_t>(extractExp, extractExp, fp8NanRegTensor, cmpResult);
-            AscendC::Reg::Select<uint32_t>(extractExp, extractExp, zeroRegTensor32, zeroMask);
-            AscendC::Reg::Pack<uint16_t, uint32_t, AscendC::Reg::HighLowPart::LOWEST>(expOut, extractExp);
-            AscendC::Reg::StoreAlign<uint16_t, AscendC::Reg::StoreDist::DIST_PACK_B16>(mxScaleLocalAddr + i * 32,
-                                                                                       expOut, dataMaskB16Half);
-
-            AscendC::Reg::ShiftLefts(extractExp, extractExp, SHR_NUM_FOR_BF16, mask);
-            AscendC::Reg::Sub(halfScale, scaleBias, extractExp, mask);
-            AscendC::Reg::Select<uint32_t>(halfScale, halfScale, nanRegTensor, cmpResult);
-            AscendC::Reg::Select<uint32_t>(halfScale, halfScale, zeroRegTensor32, zeroMask);
-            AscendC::Reg::Pack<uint16_t, uint32_t, AscendC::Reg::HighLowPart::LOWEST>(recExpOut, halfScale);
-            AscendC::Reg::StoreAlign<uint16_t>(halfScaleLocalAddr + i * vlForFloat32Number_, recExpOut,
-                                               dataMaskB16Half);
-        }
-    }
-    return;
-}
-
-template <typename DataTypeOut_, typename DataTypeIn_>
-__aicore__ inline void BlockEpilogueGeluMxQuant<DataTypeOut_, DataTypeIn_>::ComputeScaleOCP(
-    __ubuf__ uint16_t* maxExpAddr, __ubuf__ uint16_t* mxScaleLocalAddr, __ubuf__ uint16_t* halfScaleLocalAddr,
-    uint32_t totalScaleInUB, uint16_t loopNumScale)
-{
-    __VEC_SCOPE__
-    {
-        AscendC::Reg::RegTensor<uint16_t> expMask, sharedExp, scaleValue, scaleBias, halfScale, fp8NanRegTensor;
-        AscendC::Reg::Duplicate(expMask, MAX_EXP_FOR_BF16);
-        AscendC::Reg::RegTensor<uint16_t> vdMaxExp;
-        AscendC::Reg::RegTensor<bfloat16_t> vdExp0, vdExp1;
-        AscendC::Reg::MaskReg cmpResult, zeroMask, cmpResultSub, maskScale;
-        AscendC::Reg::RegTensor<uint16_t> maxExpValue, zeroRegTensor, nanRegTensor, specialExpRegTensor;
-        AscendC::Reg::Duplicate(maxExpValue, fpEmax_);
-        AscendC::Reg::Duplicate(scaleBias, BF16_EXP_BIAS);
-        AscendC::Reg::Duplicate(fp8NanRegTensor, MAX_EXP_FOR_FP8);
-        AscendC::Reg::Duplicate(zeroRegTensor, 0);
-        AscendC::Reg::Duplicate(nanRegTensor, NAN_CUSTOMIZATION);
-        AscendC::Reg::MaskReg invalidDataMask, specialDataMask;
-        AscendC::Reg::Duplicate(specialExpRegTensor, SPECIAL_EXP_THRESHOLD);
-        for (uint16_t i = 0; i < loopNumScale; i++) {
-            maskScale = AscendC::Reg::UpdateMask<uint16_t>(totalScaleInUB);
-            AscendC::Reg::LoadAlign<uint16_t, AscendC::Reg::PostLiteral::POST_MODE_UPDATE>(vdMaxExp, maxExpAddr,
-                                                                                           vlForHalfNumber_);
-            AscendC::Reg::Compare<uint16_t, AscendC::CMPMODE::NE>(cmpResult, vdMaxExp, expMask,
-                                                                  maskScale); // INF\nAN
-            AscendC::Reg::Compare<uint16_t, AscendC::CMPMODE::NE>(zeroMask, vdMaxExp, zeroRegTensor, maskScale);
-            AscendC::Reg::Compare<uint16_t, AscendC::CMPMODE::LE>(invalidDataMask, vdMaxExp, maxExpValue, maskScale);
-            AscendC::Reg::Select<uint16_t>(vdMaxExp, maxExpValue, vdMaxExp, invalidDataMask); // 大于emax取emax
-            AscendC::Reg::Sub(sharedExp, vdMaxExp, maxExpValue, maskScale);
-            AscendC::Reg::ShiftRights(scaleValue, sharedExp, SHR_NUM_FOR_BF16, maskScale);
-            AscendC::Reg::Select<uint16_t>(scaleValue, scaleValue, fp8NanRegTensor, cmpResult);
-            AscendC::Reg::Select<uint16_t>(scaleValue, scaleValue, zeroRegTensor, zeroMask);
-
-            AscendC::Reg::StoreAlign<uint16_t, AscendC::Reg::PostLiteral::POST_MODE_UPDATE,
-                                     AscendC::Reg::StoreDist::DIST_PACK_B16>(mxScaleLocalAddr, scaleValue,
-                                                                             vlForHalfNumber_ >> 1, maskScale);
-
-            AscendC::Reg::Compare<uint16_t, AscendC::CMPMODE::EQ>(specialDataMask, sharedExp, scaleBias, maskScale);
-            AscendC::Reg::Sub(halfScale, scaleBias, sharedExp, maskScale);
-            AscendC::Reg::Select<uint16_t>(halfScale, halfScale, nanRegTensor, cmpResult);
-            AscendC::Reg::Select<uint16_t>(halfScale, halfScale, zeroRegTensor, zeroMask);
-            AscendC::Reg::Select<uint16_t>(halfScale, specialExpRegTensor, halfScale, specialDataMask);
-
-            AscendC::Reg::StoreAlign<uint16_t, AscendC::Reg::PostLiteral::POST_MODE_UPDATE>(
-                halfScaleLocalAddr, halfScale, vlForHalfNumber_, maskScale);
-        }
-    }
-    return;
-}
-
-/**
- * @brief 计算动态数据类型范围(DynDtypeRange)下的MX量化缩放因子
- *
- * 该函数基于ComputeMaxExpcuBLASOrDynDtypeRange计算的最大指数值，生成MX量化格式所需的缩放因子。
- * 主要用于FP4(E2M1/E1M2)格式的动态范围量化场景。
- *
- * 算法流程:
- * 1. 加载最大指数值到寄存器
- * 2. 提取指数位并检查INF/NaN特殊情况
- * 3. 添加进位附加值(addValueBit_)处理进位情况
- * 4. 计算共享指数: sharedExp = xMaxExpAdd - maxExpValue
- * 5. 生成MX缩放因子: scaleValue = sharedExp >> 7 (右移7位转换为BF16 E8M7格式)
- * 6. 生成半缩放因子: halfScale = BF16_EXP_BIAS - sharedExp
- * 7. 处理特殊情况: INF/NaN返回特殊值，零值返回0
- *
- * @param maxExpAddr 输入最大指数值的UB地址
- * @param mxScaleLocalAddr 输出MX缩放因子的UB地址，存储BF16 E8M7格式的缩放值
- * @param halfScaleLocalAddr 输出半缩放因子的UB地址，用于后续数据量化计算
- * @param totalScaleInUB 当前UB中的总缩放因子数量
- * @param loopNumScale 循环次数，根据vlForHalfNumber_计算
- *
- * 特殊值处理:
- * - INF/NaN: scaleValue返回0x00FF (MAX_EXP_FOR_FP8)
- * - 零值: scaleValue返回0
- * - 特殊指数(==BF16_EXP_BIAS): halfScale返回0x0040 (SPECIAL_EXP_THRESHOLD)
- */
-template <typename DataTypeOut_, typename DataTypeIn_>
-__aicore__ inline void BlockEpilogueGeluMxQuant<DataTypeOut_, DataTypeIn_>::ComputeScaleDynDtypeRange(
-    __ubuf__ uint16_t* maxExpAddr, __ubuf__ uint16_t* mxScaleLocalAddr, __ubuf__ uint16_t* halfScaleLocalAddr,
-    uint32_t totalScaleInUB, uint16_t loopNumScale)
-{
-    __VEC_SCOPE__
-    {
-        AscendC::Reg::RegTensor<uint16_t> xMaxExp;
-        AscendC::Reg::RegTensor<uint16_t> sharedExp;
-        AscendC::Reg::RegTensor<uint16_t> scaleValue;
-        AscendC::Reg::RegTensor<uint16_t> halfScale;
-        AscendC::Reg::RegTensor<uint16_t> xMaxExpAdd;
-        AscendC::Reg::RegTensor<uint16_t> xMaxExpOnly;
-
-        AscendC::Reg::RegTensor<uint16_t> expMask;
-        AscendC::Reg::Duplicate(expMask, MAX_EXP_FOR_BF16);
-        AscendC::Reg::RegTensor<uint16_t> addValue;
-        AscendC::Reg::Duplicate(addValue, addValueBit_);
-        AscendC::Reg::RegTensor<uint16_t> maxExpValue;
-        AscendC::Reg::Duplicate(maxExpValue, FP4_E2M1_MAX_EXP);
-        AscendC::Reg::RegTensor<uint16_t> scaleBias;
-        AscendC::Reg::Duplicate(scaleBias, BF16_EXP_BIAS);
-        AscendC::Reg::RegTensor<uint16_t> fp8NanU16;
-        AscendC::Reg::Duplicate(fp8NanU16, MAX_EXP_FOR_FP8);
-        AscendC::Reg::RegTensor<uint16_t> zeroU16;
-        AscendC::Reg::Duplicate(zeroU16, 0);
-        AscendC::Reg::RegTensor<uint16_t> nanU16;
-        AscendC::Reg::Duplicate(nanU16, NAN_CUSTOMIZATION);
-        AscendC::Reg::RegTensor<uint16_t> specialExpU16;
-        AscendC::Reg::Duplicate(specialExpU16, SPECIAL_EXP_THRESHOLD);
-
-        AscendC::Reg::MaskReg cmpResult;
-        AscendC::Reg::MaskReg zeroMask;
-        AscendC::Reg::MaskReg invalidDataMask;
-        AscendC::Reg::MaskReg specialDataMask;
-        AscendC::Reg::MaskReg preMaskScale;
-
-        for (uint16_t i = 0; i < loopNumScale; i++) {
-            preMaskScale = AscendC::Reg::UpdateMask<uint16_t>(totalScaleInUB);
-            AscendC::Reg::LoadAlign<uint16_t, AscendC::Reg::PostLiteral::POST_MODE_UPDATE>(xMaxExp, maxExpAddr,
-                                                                                           vlForHalfNumber_);
-
-            AscendC::Reg::And(xMaxExpOnly, xMaxExp, expMask, preMaskScale); // 提取指数位
-            AscendC::Reg::Compare<uint16_t, AscendC::CMPMODE::NE>(cmpResult, xMaxExpOnly, expMask,
-                                                                  preMaskScale); // INF/NAN
-            AscendC::Reg::Compare<uint16_t, AscendC::CMPMODE::LT>(invalidDataMask, xMaxExpOnly, maxExpValue,
-                                                                  preMaskScale);
-
-            AscendC::Reg::Add(xMaxExpAdd, xMaxExp, addValue, preMaskScale);   // 进位后的结果
-            AscendC::Reg::And(xMaxExpAdd, xMaxExpAdd, expMask, preMaskScale); // 提取进位结果的指数位
-            AscendC::Reg::Select<uint16_t>(xMaxExpAdd, maxExpValue, xMaxExpAdd, invalidDataMask);
-            AscendC::Reg::Sub(sharedExp, xMaxExpAdd, maxExpValue, preMaskScale);
-
-            AscendC::Reg::ShiftRights(scaleValue, sharedExp, SHR_NUM_FOR_BF16, preMaskScale);
-            AscendC::Reg::Select<uint16_t>(scaleValue, scaleValue, fp8NanU16, cmpResult);
-            AscendC::Reg::StoreAlign<uint16_t, AscendC::Reg::PostLiteral::POST_MODE_UPDATE,
-                                     AscendC::Reg::StoreDist::DIST_PACK_B16>(mxScaleLocalAddr, scaleValue,
-                                                                             vlForHalfNumber_ >> 1, preMaskScale);
-
-            AscendC::Reg::Compare<uint16_t, AscendC::CMPMODE::NE>(zeroMask, sharedExp, zeroU16, preMaskScale);
-            AscendC::Reg::Compare<uint16_t, AscendC::CMPMODE::EQ>(specialDataMask, sharedExp, scaleBias, preMaskScale);
-            AscendC::Reg::Sub(halfScale, scaleBias, sharedExp, preMaskScale);
-            AscendC::Reg::Select<uint16_t>(halfScale, halfScale, nanU16, cmpResult);
-            AscendC::Reg::Select<uint16_t>(halfScale, halfScale, zeroU16, zeroMask);
-            AscendC::Reg::Select<uint16_t>(halfScale, specialExpU16, halfScale, specialDataMask);
-
-            AscendC::Reg::StoreAlign<uint16_t, AscendC::Reg::PostLiteral::POST_MODE_UPDATE>(
-                halfScaleLocalAddr, halfScale, vlForHalfNumber_, preMaskScale);
-        }
-    }
-    return;
-}
-
-template <typename DataTypeOut_, typename DataTypeIn_>
-__aicore__ inline void BlockEpilogueGeluMxQuant<DataTypeOut_, DataTypeIn_>::ComputeDataForQuantTargetFp8(
-    __ubuf__ bfloat16_t* srcAddr, __ubuf__ uint16_t* halfScaleLocalAddr, __ubuf__ int8_t* outLocalAddr,
-    uint32_t totalCountInUB, uint16_t loopNum)
-{
-    uint32_t totalCountInUB2 = totalCountInUB * 2;
-    using T = bfloat16_t;
-    __VEC_SCOPE__
-    {
-        AscendC::Reg::MaskReg dataMask1, dataMask2, dataMask3, dataMask4;
-        AscendC::Reg::MaskReg maskAll = AscendC::Reg::CreateMask<uint16_t, AscendC::Reg::MaskPattern::ALL>();
-        AscendC::Reg::RegTensor<uint16_t> halfScaleForMul;
-        AscendC::Reg::RegTensor<float> floatScaleForMul;
-        AscendC::Reg::RegTensor<T> vdExp0, vdExp1, vdExp0Convert, vdExp1Convert;
-        AscendC::Reg::RegTensor<bfloat16_t> vdExp0BF16, vdExp1BF16;
-        AscendC::Reg::RegTensor<float> vdExp0FP32Zero, vdExp0FP32One, vdExp1FP32Zero, vdExp1FP32One;
-        AscendC::Reg::RegTensor<DataTypeOut> vdExp0FP8Zero, vdExp0FP8One, vdExp1FP8Zero, vdExp1FP8One;
-
-        static constexpr AscendC::Reg::CastTrait castTraitZero = {
-            AscendC::Reg::RegLayout::ZERO, AscendC::Reg::SatMode::UNKNOWN, AscendC::Reg::MaskMergeMode::ZEROING,
-            AscendC::RoundMode::UNKNOWN};
-        static constexpr AscendC::Reg::CastTrait castTraitOne = {
-            AscendC::Reg::RegLayout::ONE, AscendC::Reg::SatMode::UNKNOWN, AscendC::Reg::MaskMergeMode::ZEROING,
-            AscendC::RoundMode::UNKNOWN};
-        static constexpr AscendC::Reg::CastTrait castTrait32to8 = {
-            AscendC::Reg::RegLayout::ZERO, AscendC::Reg::SatMode::SAT, AscendC::Reg::MaskMergeMode::ZEROING,
-            AscendC::RoundMode::CAST_RINT};
-        for (uint16_t i = 0; i < loopNum; i++) {
-            dataMask1 = AscendC::Reg::UpdateMask<T>(totalCountInUB);
-            dataMask2 = AscendC::Reg::UpdateMask<T>(totalCountInUB);
-            dataMask3 = AscendC::Reg::UpdateMask<T>(totalCountInUB2);
-            dataMask4 = AscendC::Reg::UpdateMask<T>(totalCountInUB2);
-            AscendC::Reg::LoadAlign<T, AscendC::Reg::PostLiteral::POST_MODE_UPDATE,
-                                    AscendC::Reg::LoadDist::DIST_DINTLV_B16>(
-                vdExp0, vdExp1, srcAddr,
-                vlForHalfNumber_ * 2); // copy two chunks from srcAddr to regbase
-            AscendC::Reg::LoadAlign<uint16_t, AscendC::Reg::PostLiteral::POST_MODE_UPDATE,
-                                    AscendC::Reg::LoadDist::DIST_E2B_B16>(halfScaleForMul, halfScaleLocalAddr,
-                                                                          elementAfterReduce_);
-
-            AscendC::Reg::Mul(vdExp0, vdExp0, (AscendC::Reg::RegTensor<T>&)halfScaleForMul, dataMask1);
-            AscendC::Reg::Mul(vdExp1, vdExp1, (AscendC::Reg::RegTensor<T>&)halfScaleForMul, dataMask1);
-            AscendC::Reg::Interleave(vdExp0, vdExp1, vdExp0, vdExp1);
-            AscendC::Reg::Cast<float, T, castTraitZero>(vdExp0FP32Zero, vdExp0, dataMask1);
-            AscendC::Reg::Cast<float, T, castTraitOne>(vdExp0FP32One, vdExp0, dataMask1);
-            AscendC::Reg::Interleave(vdExp0FP32Zero, vdExp0FP32One, vdExp0FP32Zero, vdExp0FP32One);
-            AscendC::Reg::Cast<DataTypeOut, float, castTrait32to8>(vdExp0FP8Zero, vdExp0FP32Zero, dataMask3);
-            AscendC::Reg::Cast<DataTypeOut, float, castTrait32to8>(vdExp0FP8One, vdExp0FP32One, dataMask3);
-            AscendC::Reg::Cast<float, T, castTraitZero>(vdExp1FP32Zero, vdExp1, dataMask2);
-            AscendC::Reg::Cast<float, T, castTraitOne>(vdExp1FP32One, vdExp1, dataMask2);
-            AscendC::Reg::Interleave(vdExp1FP32Zero, vdExp1FP32One, vdExp1FP32Zero, vdExp1FP32One);
-            AscendC::Reg::Cast<DataTypeOut, float, castTrait32to8>(vdExp1FP8Zero, vdExp1FP32Zero, dataMask4);
-            AscendC::Reg::Cast<DataTypeOut, float, castTrait32to8>(vdExp1FP8One, vdExp1FP32One, dataMask4);
-            AscendC::Reg::StoreAlign<int8_t, AscendC::Reg::PostLiteral::POST_MODE_UPDATE,
-                                     AscendC::Reg::StoreDist::DIST_PACK4_B32>(
-                outLocalAddr, (AscendC::Reg::RegTensor<int8_t>&)vdExp0FP8Zero, OUT_ELE_NUM_ONE_BLK, dataMask3);
-            AscendC::Reg::StoreAlign<int8_t, AscendC::Reg::PostLiteral::POST_MODE_UPDATE,
-                                     AscendC::Reg::StoreDist::DIST_PACK4_B32>(
-                outLocalAddr, (AscendC::Reg::RegTensor<int8_t>&)vdExp0FP8One, OUT_ELE_NUM_ONE_BLK, dataMask3);
-            AscendC::Reg::StoreAlign<int8_t, AscendC::Reg::PostLiteral::POST_MODE_UPDATE,
-                                     AscendC::Reg::StoreDist::DIST_PACK4_B32>(
-                outLocalAddr, (AscendC::Reg::RegTensor<int8_t>&)vdExp1FP8Zero, OUT_ELE_NUM_ONE_BLK, dataMask4);
-            AscendC::Reg::StoreAlign<int8_t, AscendC::Reg::PostLiteral::POST_MODE_UPDATE,
-                                     AscendC::Reg::StoreDist::DIST_PACK4_B32>(
-                outLocalAddr, (AscendC::Reg::RegTensor<int8_t>&)vdExp1FP8One, OUT_ELE_NUM_ONE_BLK, dataMask4);
-        }
-    }
-    return;
-}
-
-template <typename DataTypeOut_, typename DataTypeIn_>
-template <AscendC::RoundMode roundMode>
-__aicore__ inline void BlockEpilogueGeluMxQuant<DataTypeOut_, DataTypeIn_>::ComputeDataForQuantTargetFp4(
-    __ubuf__ bfloat16_t* srcAddr, __ubuf__ uint16_t* halfScaleLocalAddr, __ubuf__ int8_t* outLocalAddr,
-    uint32_t totalCountInUB, uint16_t loopNum)
-{
-    using T = bfloat16_t;
-    using U = DataTypeOut;
-    __VEC_SCOPE__
-    {
-        AscendC::Reg::MaskReg dataMask1;
-        AscendC::Reg::MaskReg dataMask2;
-        AscendC::Reg::RegTensor<uint16_t> halfScaleForMul;
-        AscendC::Reg::RegTensor<T> vdExp0;
-        AscendC::Reg::RegTensor<T> vdExp1;
-        AscendC::Reg::RegTensor<T> vdExp0Convert;
-        AscendC::Reg::RegTensor<T> vdExp1Convert;
-
-        AscendC::Reg::RegTensor<bfloat16_t> vdExp0BF16;
-        AscendC::Reg::RegTensor<bfloat16_t> vdExp1BF16;
-
-        AscendC::Reg::RegTensor<U> vdExp0FP4;
-        AscendC::Reg::RegTensor<U> vdExp1FP4;
-
-        static constexpr AscendC::Reg::CastTrait castTrait = {AscendC::Reg::RegLayout::ZERO,
-                                                              AscendC::Reg::SatMode::UNKNOWN,
-                                                              AscendC::Reg::MaskMergeMode::ZEROING, roundMode};
-        for (uint16_t i = 0; i < loopNum; i++) {
-            dataMask1 = AscendC::Reg::UpdateMask<T>(totalCountInUB);
-            dataMask2 = AscendC::Reg::UpdateMask<T>(totalCountInUB);
-            AscendC::Reg::LoadAlign<T, AscendC::Reg::PostLiteral::POST_MODE_UPDATE,
-                                    AscendC::Reg::LoadDist::DIST_DINTLV_B16>(vdExp0, vdExp1, srcAddr,
-                                                                             vlForHalfNumber_ * 2);
-            AscendC::Reg::LoadAlign<uint16_t, AscendC::Reg::PostLiteral::POST_MODE_UPDATE,
-                                    AscendC::Reg::LoadDist::DIST_E2B_B16>(halfScaleForMul, halfScaleLocalAddr,
-                                                                          elementAfterReduce_);
-
-            AscendC::Reg::Mul(vdExp0, vdExp0, (AscendC::Reg::RegTensor<T>&)halfScaleForMul, dataMask1);
-            AscendC::Reg::Mul(vdExp1, vdExp1, (AscendC::Reg::RegTensor<T>&)halfScaleForMul, dataMask1);
-            AscendC::Reg::Interleave(vdExp0, vdExp1, vdExp0, vdExp1);
-            AscendC::Reg::Cast<U, T, castTrait>(vdExp0FP4, vdExp0, dataMask1);
-            AscendC::Reg::Cast<U, T, castTrait>(vdExp1FP4, vdExp1, dataMask2);
-
-            AscendC::Reg::StoreAlign<int8_t, AscendC::Reg::PostLiteral::POST_MODE_UPDATE,
-                                     AscendC::Reg::StoreDist::DIST_PACK4_B32>(
-                outLocalAddr, (AscendC::Reg::RegTensor<int8_t>&)vdExp0FP4, OUT_ELE_NUM_ONE_BLK, dataMask1);
-            AscendC::Reg::StoreAlign<int8_t, AscendC::Reg::PostLiteral::POST_MODE_UPDATE,
-                                     AscendC::Reg::StoreDist::DIST_PACK4_B32>(
-                outLocalAddr, (AscendC::Reg::RegTensor<int8_t>&)vdExp1FP4, OUT_ELE_NUM_ONE_BLK, dataMask2);
-        }
-    }
-    return;
-}
-
-template <typename DataTypeOut_, typename DataTypeIn_>
-__aicore__ inline void BlockEpilogueGeluMxQuant<DataTypeOut_, DataTypeIn_>::VFDoGeluAndQuantForMX(
-    __ubuf__ int8_t* outputDst, __ubuf__ uint16_t* scaleDst, uint16_t mSize, uint16_t nSize)
+__aicore__ inline void BlockEpilogueGeluMxQuant<DataTypeOut_, DataTypeIn_>::VFDoGeluAndQuantForMX(uint16_t mSize,
+                                                                                                  uint16_t nSize)
 {
     uint32_t nAligned = Gemm::Align32(static_cast<uint32_t>(nSize)); // 输入为32位对齐
     __ubuf__ bfloat16_t* geluResAddr = GetUbAddr<bfloat16_t>(geluResUbOffset_);
@@ -786,140 +297,105 @@ __aicore__ inline void BlockEpilogueGeluMxQuant<DataTypeOut_, DataTypeIn_>::VFDo
     auto srcTensor = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::ub, DataTypeIn>(0), layout);
     auto dstTensor = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::ub, bfloat16_t>(geluResUbOffset_),
                                           layout);
-    Gelu<bfloat16_t, DataTypeIn> gelu;
+    Tile::Gelu<bfloat16_t, DataTypeIn> gelu;
     if (params_->geluAlg == GeluAlg::ERF) {
         gelu.GeluErf(srcTensor, dstTensor, mSize, nSize);
     } else {
         gelu.GeluTanh(srcTensor, dstTensor, mSize, nSize);
     }
 
-    uint32_t totalDataInUb = mSize * nAligned;
-    uint32_t totalScaleInUb = totalDataInUb / BLOCK_SIZE;
-    uint16_t loopDataNum = (totalDataInUb + vlForHalfNumber_ * 2 - 1) / (vlForHalfNumber_ * 2);
-    __ubuf__ uint16_t* halfScaleLocalAddr;
-    if (params_->quantAlg == QuantAlg::OCP) {
-        uint16_t loopScaleNum = (totalScaleInUb + vlForHalfNumber_ - 1) / vlForHalfNumber_;
-        __ubuf__ uint16_t* maxExpAddr = GetUbAddr<uint16_t>(maxExpUbOffset_);
-        ComputeMaxExpOCP(geluResAddr, maxExpAddr, loopDataNum);
-        halfScaleLocalAddr = GetUbAddr<uint16_t>(halfScaleUbOffset_);
-        ComputeScaleOCP(maxExpAddr, scaleDst, halfScaleLocalAddr, totalScaleInUb, loopScaleNum);
-    } else if (params_->quantAlg == QuantAlg::BLAS) {
-        uint16_t loopScaleNum = (totalScaleInUb + vlForFloat32Number_ - 1) / vlForFloat32Number_;
-        __ubuf__ uint16_t* maxExpAddr = GetUbAddr<uint16_t>(maxExpUbOffset_);
-        ComputeMaxExpcuBLASOrDynDtypeRange(geluResAddr, maxExpAddr, loopDataNum);
-        halfScaleLocalAddr = GetUbAddr<uint16_t>(halfScaleUbOffset_);
-        ComputeScalecuBLAS<uint32_t>(maxExpAddr, scaleDst, halfScaleLocalAddr, totalScaleInUb, loopScaleNum);
-    } else {
-        if (dstTypeMax_ == DIGIT_ZERO_FLOAT || dstTypeMax_ == DIGIT_SIX_FLOAT || dstTypeMax_ == DIGIT_SEVEN_FLOAT) {
-            uint16_t loopScaleNum = (totalScaleInUb + vlForHalfNumber_ - 1) / vlForHalfNumber_;
-            __ubuf__ uint16_t* maxExpAddr = GetUbAddr<uint16_t>(maxExpUbOffset_);
-            ComputeMaxExpcuBLASOrDynDtypeRange(geluResAddr, maxExpAddr, loopDataNum);
-            halfScaleLocalAddr = GetUbAddr<uint16_t>(halfScaleUbOffset_);
-            ComputeScaleDynDtypeRange(maxExpAddr, scaleDst, halfScaleLocalAddr, totalScaleInUb, loopScaleNum);
-        } else {
-            uint16_t loopScaleNum = (totalScaleInUb + vlForFloat32Number_ - 1) / vlForFloat32Number_;
-            __ubuf__ uint16_t* maxExpAddr = GetUbAddr<uint16_t>(maxExpUbOffset_);
-            ComputeMaxExpcuBLASOrDynDtypeRange(geluResAddr, maxExpAddr, loopDataNum);
-            halfScaleLocalAddr = GetUbAddr<uint16_t>(halfScaleUbOffset_);
-            ComputeScalecuBLAS<float>(maxExpAddr, scaleDst, halfScaleLocalAddr, totalScaleInUb, loopScaleNum);
-        }
-    }
+    const uint32_t totalDataInUb = mSize * nAligned;
+    const uint32_t totalScaleInUb = totalDataInUb / BLOCK_SIZE;
 
-    if constexpr (AscendC::IsSameType<DataTypeOut, fp8_e4m3fn_t>::value ||
-                  AscendC::IsSameType<DataTypeOut, fp8_e5m2_t>::value) {
-        ComputeDataForQuantTargetFp8(geluResAddr, halfScaleLocalAddr, outputDst, totalDataInUb, loopDataNum);
+    auto dataLayout = Gemm::MakeNDExtLayout<int8_t>(1, static_cast<int64_t>(totalDataInUb),
+                                                    static_cast<int64_t>(totalDataInUb));
+    auto scaleLayout = Gemm::MakeNDExtLayout<int8_t>(1, static_cast<int64_t>(totalScaleInUb),
+                                                     static_cast<int64_t>(totalScaleInUb));
+    auto geluResTensor = asc::te::make_tensor(
+        asc::te::make_mem_ptr<asc::te::location::ub, bfloat16_t>(geluResUbOffset_), dataLayout);
+    auto maxExpTensor = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::ub, uint16_t>(maxExpUbOffset_),
+                                             scaleLayout);
+    auto yScaleTensor = asc::te::make_tensor(
+        asc::te::make_mem_ptr<asc::te::location::ub, int8_t>(quantScaleOutputUbOffset_), scaleLayout);
+    auto reciprocalTensor = asc::te::make_tensor(
+        asc::te::make_mem_ptr<asc::te::location::ub, uint16_t>(halfScaleUbOffset_), scaleLayout);
+    auto yTensor = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::ub, int8_t>(quantOutputUbOffset_),
+                                        dataLayout);
+
+    // MxQuantConfig 由 Init 阶段解析的普通成员在调用点组装（tile 类型不得出现在类作用域）
+    // zeroScaleOnZeroExp=true: gelu_mx 阵营
+    Tile::MxQuantConfig cfg{Tile::MxScaleAlg::OCP, fpEmax_, invDstTypeMax_, static_cast<uint16_t>(addValueBits_), true};
+
+    Tile::MxQuant<DataTypeOut> mx;
+    if (params_->quantAlg == QuantAlg::OCP) {
+        cfg.alg = Tile::MxScaleAlg::OCP;
+        mx.GroupMaxExp(geluResTensor, maxExpTensor, totalDataInUb, false);
+    } else if (params_->quantAlg == QuantAlg::BLAS) {
+        cfg.alg = Tile::MxScaleAlg::CUBLAS;
+        mx.GroupMaxExp(geluResTensor, maxExpTensor, totalDataInUb, true);
+    } else if (dstTypeMax_ == DIGIT_ZERO_FLOAT || dstTypeMax_ == DIGIT_SIX_FLOAT || dstTypeMax_ == DIGIT_SEVEN_FLOAT) {
+        cfg.alg = Tile::MxScaleAlg::DYN_DTYPE_RANGE;
+        mx.GroupMaxExp(geluResTensor, maxExpTensor, totalDataInUb, true);
+    } else {
+        cfg.alg = Tile::MxScaleAlg::CUBLAS;
+        mx.GroupMaxExp(geluResTensor, maxExpTensor, totalDataInUb, true);
     }
-    if constexpr (AscendC::IsSameType<DataTypeOut, fp4x2_e2m1_t>::value ||
-                  AscendC::IsSameType<DataTypeOut, fp4x2_e1m2_t>::value) {
-        if (params_->fp4RoundMode == ROUND_MODE_FP4::FLOOR) {
-            ComputeDataForQuantTargetFp4<AscendC::RoundMode::CAST_FLOOR>(geluResAddr, halfScaleLocalAddr, outputDst,
-                                                                         totalDataInUb, loopDataNum);
-        } else if ((params_->fp4RoundMode == ROUND_MODE_FP4::ROUND)) {
-            ComputeDataForQuantTargetFp4<AscendC::RoundMode::CAST_ROUND>(geluResAddr, halfScaleLocalAddr, outputDst,
-                                                                         totalDataInUb, loopDataNum);
-        } else { // 默认rint
-            ComputeDataForQuantTargetFp4<AscendC::RoundMode::CAST_RINT>(geluResAddr, halfScaleLocalAddr, outputDst,
-                                                                        totalDataInUb, loopDataNum);
-        }
+    mx.GenScale(maxExpTensor, yScaleTensor, reciprocalTensor, cfg, totalScaleInUb);
+
+    Tile::MxQuantFp4RoundMode fp4RoundMode = Tile::MxQuantFp4RoundMode::RINT;
+    if (params_->fp4RoundMode == ROUND_MODE_FP4::FLOOR) {
+        fp4RoundMode = Tile::MxQuantFp4RoundMode::FLOOR;
+    } else if (params_->fp4RoundMode == ROUND_MODE_FP4::ROUND) {
+        fp4RoundMode = Tile::MxQuantFp4RoundMode::ROUND;
     }
+    mx.Quantize(geluResTensor, reciprocalTensor, yTensor, totalDataInUb, fp4RoundMode);
     return;
 }
 
 template <typename DataTypeOut_, typename DataTypeIn_>
 __aicore__ inline void BlockEpilogueGeluMxQuant<DataTypeOut_, DataTypeIn_>::VFDoGeluForMX(uint16_t mSize)
 {
-    __ubuf__ int8_t* quantOutputInUbAddr = GetUbAddr<int8_t>(quantOutputUbOffset_);
-    __ubuf__ uint16_t* quantScaleOutputInUbAddr = GetUbAddr<uint16_t>(quantScaleOutputUbOffset_);
-    VFDoGeluAndQuantForMX(quantOutputInUbAddr, quantScaleOutputInUbAddr, mSize, singleN_);
+    VFDoGeluAndQuantForMX(mSize, static_cast<uint16_t>(singleN_));
 }
 
 /**
  * @brief 转换FP4 MX量化输出的数据布局
  *
- * 该函数将FP4量化输出从线性布局转换为块对齐布局，以满足MTE(Memory Transfer Engine)搬运的对齐要求。
- *
- * 布局转换说明:
- * - 输入: 线性存储，每行数据连续排列，行间距为Align16(singleN_/2)字节
- *   (FP4是2个元素打包为1字节，所以每行占singleN_/2字节，16字节对齐)
- * - 输出: 块对齐存储，每行间距为Align32(singleN_/2)字节(32字节对齐)，便于MTE搬运
- *
- * 算法流程:
- * 1. 计算源地址行间距: tailLineStride = Align16(singleN_ / 2)
- * 2. 计算目标地址行间距: singleNAligned = Align32(singleN_ / 2)
- * 3. 对每一行数据:
- *    a. 计算有效元素数量: elemNum = singleN_ / 2 (FP4打包后的字节数)
- *    b. 从源地址加载数据到寄存器(使用LoadUnAlign支持非对齐加载)
- *    c. 将数据存储到目标地址，使用DIST_NORM_B8模式进行字节级存储
- *
- * @param mSize 处理的行数
+ * 委托 MxQuant::TransFp4OutLayout：将FP4量化输出从 Align16(n/2) 字节行距的线性
+ * 布局转为 Align32(n/2) 字节行距的块对齐布局，满足 MTE 搬运的对齐要求。
  *
  * 注意: 该函数仅在DataTypeOut为fp4x2_e2m1_t或fp4x2_e1m2_t且singleN_ < 64时被调用
  */
 template <typename DataTypeOut_, typename DataTypeIn_>
 __aicore__ inline void BlockEpilogueGeluMxQuant<DataTypeOut_, DataTypeIn_>::TransFp4MxOutLayout(uint16_t mSize)
 {
-    __ubuf__ int8_t* quantOutputInUbAddr = GetUbAddr<int8_t>(quantOutputUbOffset_);
-    __ubuf__ int8_t* quantBlockOutputInUbAddr = GetUbAddr<int8_t>(geluResUbOffset_);
-    // 源地址行间距: 16字节对齐的FP4打包数据长度
-    uint32_t tailLineStride = Gemm::Align16(singleN_ / 2);
-    // 目标地址行间距: 32字节对齐，满足MTE搬运要求
-    uint32_t singleNAligned = Gemm::Align32(static_cast<uint32_t>(singleN_ / 2));
-    __VEC_SCOPE__
-    {
-        for (uint16_t mIdx = 0; mIdx < mSize; ++mIdx) {
-            uint32_t elemNum = singleN_ / 2;
-            AscendC::Reg::MaskReg maskOutN = AscendC::Reg::UpdateMask<int8_t>(elemNum);
-            AscendC::Reg::RegTensor<int8_t> vreg0;
-            AscendC::Reg::UnalignReg u0, u1;
-            auto srcUb = quantOutputInUbAddr + mIdx * tailLineStride;
-            AscendC::Reg::LoadUnAlignPre(u0, srcUb);
-            AscendC::Reg::LoadUnAlign(vreg0, u0, srcUb);
-            auto dstUb = quantBlockOutputInUbAddr + mIdx * singleNAligned;
-            AscendC::Reg::StoreAlign<int8_t, AscendC::Reg::StoreDist::DIST_NORM_B8>(dstUb, vreg0, maskOutN);
-        }
-    }
+    const int64_t packedBytes = static_cast<int64_t>(singleN_) / 2;
+    auto srcLayout = Gemm::MakeNDExtLayout<int8_t>(static_cast<int64_t>(mSize), packedBytes,
+                                                   static_cast<int64_t>(Gemm::Align16(packedBytes)));
+    auto srcTensor = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::ub, int8_t>(quantOutputUbOffset_),
+                                          srcLayout);
+    auto dstLayout = Gemm::MakeNDExtLayout<int8_t>(static_cast<int64_t>(mSize), packedBytes,
+                                                   static_cast<int64_t>(Gemm::Align32(packedBytes)));
+    auto dstTensor = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::ub, int8_t>(geluResUbOffset_),
+                                          dstLayout);
+    Tile::MxQuant<DataTypeOut> mx;
+    mx.TransFp4OutLayout(srcTensor, dstTensor, mSize, static_cast<uint16_t>(singleN_));
 }
 
 template <typename DataTypeOut_, typename DataTypeIn_>
 __aicore__ inline void BlockEpilogueGeluMxQuant<DataTypeOut_, DataTypeIn_>::TransMxScaleLayout(uint16_t mSize)
 {
-    __ubuf__ int8_t* quantScaleOutputInUbAddr = GetUbAddr<int8_t>(quantScaleOutputUbOffset_);
-    __ubuf__ int8_t* quantScaleBlockOutputInUbAddr = GetUbAddr<int8_t>(quantScaleBlockOutputUbOffset_);
     // scale layout: (mSize*8) -> (mSize,32)
-    __VEC_SCOPE__
-    {
-        for (uint16_t mIdx = 0; mIdx < mSize; ++mIdx) {
-            uint32_t elemNum = scaleBlockN_;
-            AscendC::Reg::MaskReg maskScaleN = AscendC::Reg::UpdateMask<int8_t>(elemNum);
-            AscendC::Reg::RegTensor<int8_t> vreg0;
-            AscendC::Reg::UnalignReg u0, u1;
-            auto srcUb = quantScaleOutputInUbAddr + mIdx * scaleBlockN_;
-            AscendC::Reg::LoadUnAlignPre(u0, srcUb);
-            AscendC::Reg::LoadUnAlign(vreg0, u0, srcUb);
-            auto dstUb = quantScaleBlockOutputInUbAddr + mIdx * AscendC::ONE_BLK_SIZE;
-            AscendC::Reg::StoreAlign<int8_t, AscendC::Reg::StoreDist::DIST_NORM_B8>(dstUb, vreg0, maskScaleN);
-        }
-    }
+    auto srcLayout = Gemm::MakeNDExtLayout<int8_t>(static_cast<int64_t>(mSize), scaleBlockN_, scaleBlockN_);
+    auto srcTensor = asc::te::make_tensor(
+        asc::te::make_mem_ptr<asc::te::location::ub, int8_t>(quantScaleOutputUbOffset_), srcLayout);
+    auto dstLayout = Gemm::MakeNDExtLayout<int8_t>(static_cast<int64_t>(mSize),
+                                                   static_cast<int64_t>(AscendC::ONE_BLK_SIZE),
+                                                   static_cast<int64_t>(AscendC::ONE_BLK_SIZE));
+    auto dstTensor = asc::te::make_tensor(
+        asc::te::make_mem_ptr<asc::te::location::ub, int8_t>(quantScaleBlockOutputUbOffset_), dstLayout);
+    Tile::MxQuant<DataTypeOut> mx;
+    mx.TransScaleLayout(srcTensor, dstTensor, mSize, static_cast<uint16_t>(scaleBlockN_));
 }
 
 template <typename DataTypeOut_, typename DataTypeIn_>
@@ -936,11 +412,6 @@ __aicore__ inline void BlockEpilogueGeluMxQuant<DataTypeOut_, DataTypeIn_>::oper
         return;
     }
     uint64_t mOffset = subBlockIdx_ * halfSingleM;
-
-    vlForHalfNumber_ = AscendC::VECTOR_REG_WIDTH / sizeof(bfloat16_t);
-    vlForFloat32Number_ = AscendC::VECTOR_REG_WIDTH / sizeof(float);
-    UBBlockSize_ = AscendC::ONE_BLK_SIZE;
-    elementAfterReduce_ = AscendC::VECTOR_REG_WIDTH / UBBlockSize_;
 
     VFDoGeluForMX(singleMInVec);
     int64_t yOffset = static_cast<int64_t>(asc::te::get<Y_IDX>(blockCoord)) +

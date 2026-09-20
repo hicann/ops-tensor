@@ -17,6 +17,7 @@
 #if defined(__NPU_ARCH__) && __NPU_ARCH__ == 3510
 #include "blaze/epilogue/tile/arch35/gelu.h"
 #include "blaze/epilogue/tile/arch35/initialize_empty_softmax.h"
+#include "blaze/epilogue/tile/arch35/mx_quant.h"
 #include "blaze/epilogue/tile/arch35/reduce_square.h"
 #include "blaze/epilogue/tile/arch35/rms_softmax.h"
 #endif
