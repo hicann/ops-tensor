@@ -45,7 +45,6 @@ public:
         bool transB{false};
         bool weightNz{false};
         uint32_t weightElementSize{1};
-        uint32_t groupListType{0};
     };
 
     __aicore__ inline explicit BlockSchedulerGmmNoQuant(const Params& params)
@@ -63,8 +62,7 @@ public:
           singleY_(params.singleY),
           transB_(params.transB),
           weightNz_(params.weightNz),
-          weightElementSize_(params.weightElementSize),
-          groupListType_(params.groupListType)
+          weightElementSize_(params.weightElementSize)
     {
         blockNum_ = static_cast<int64_t>(AscendC::GetBlockNum());
     }
@@ -97,7 +95,19 @@ public:
         return blockCoord_;
     }
 
-    __aicore__ inline void SetGroupIdx(uint32_t groupIdx) { groupIdx_ = static_cast<int64_t>(groupIdx); }
+    // GMM-specific group parsing and continuous-storage offset interfaces stay in the scheduler.
+    __aicore__ inline int64_t GetSplitValue(int64_t groupValue, uint32_t groupListType)
+    {
+        if (groupType_ == -1) {
+            return 0;
+        }
+        if (groupListType == GROUP_LIST_TYPE_OFFSET) {
+            const int64_t splitValue = groupValue - groupListOffset_;
+            groupListOffset_ = groupValue;
+            return splitValue;
+        }
+        return groupValue;
+    }
 
     // Advance the output offset without updating block scheduling state.
     __aicore__ inline int64_t UpdateNextOutputOffset(const ProblemShape& problemShape)
@@ -119,8 +129,7 @@ public:
 
 private:
     static constexpr int64_t WINDOW_LEN = 4;
-    static constexpr int32_t GROUP_TYPE_SPLIT_M = 0;
-    static constexpr uint32_t GROUP_LIST_TYPE_SPARSE = 2;
+    static constexpr uint32_t GROUP_LIST_TYPE_OFFSET = 0;
 
     struct SplitBlockInfo {
         int64_t blockM{0};
@@ -146,23 +155,12 @@ private:
         const int64_t problemN = Max(asc::te::get<MNK_N>(problemShape), static_cast<int64_t>(0));
         const int64_t problemK = Max(asc::te::get<MNK_K>(problemShape), static_cast<int64_t>(0));
 
-        // Sparse groups address the packed weight/bias storage by the actual group index instead of
-        // the sequential accumulated offsets; x/y keep the sequential accumulation in both modes.
-        const bool isSparseGroupList = groupListType_ == GROUP_LIST_TYPE_SPARSE && groupType_ == GROUP_TYPE_SPLIT_M;
-        const int64_t groupBOffset = singleWeight_ ?
-                                         (isSparseGroupList ? groupIdx_ * GetWeightSize(problemN, problemK) :
-                                                              nextBOffset_) :
-                                         0;
-        const int64_t groupBiasOffset = singleWeight_ ? (isSparseGroupList ? groupIdx_ * problemN : nextBiasOffset_) :
-                                                        0;
-        auto groupCoord = GroupCoord{singleX_ ? nextAOffset_ : 0, groupBOffset, groupBiasOffset,
-                                     singleY_ ? nextCOffset_ : 0};
+        auto groupCoord = GroupCoord{singleX_ ? nextAOffset_ : 0, singleWeight_ ? nextBOffset_ : 0,
+                                     singleWeight_ ? nextBiasOffset_ : 0, singleY_ ? nextCOffset_ : 0};
 
         nextAOffset_ += problemM * problemK;
-        if (!isSparseGroupList) {
-            nextBOffset_ += GetWeightSize(problemN, problemK);
-            nextBiasOffset_ += problemN;
-        }
+        nextBOffset_ += GetWeightSize(problemN, problemK);
+        nextBiasOffset_ += problemN;
         nextCOffset_ += problemM * problemN;
         return groupCoord;
     }
@@ -335,7 +333,7 @@ private:
     int64_t lastBlockIdx_{-1};
     BlockShape blockShape_{};
     BlockCoord blockCoord_{};
-    int64_t groupIdx_{0};
+    int64_t groupListOffset_{0};
     int64_t nextAOffset_{0};
     int64_t nextBOffset_{0};
     int64_t nextBiasOffset_{0};
@@ -346,7 +344,6 @@ private:
     bool transB_{false};
     bool weightNz_{false};
     uint32_t weightElementSize_{1};
-    uint32_t groupListType_{0};
 };
 
 } // namespace Block

@@ -28,7 +28,6 @@
 | [block_scheduler_matmul_streamk](./block_scheduler_matmul_streamk.md) | StreamK 调度器：DP+SK 混合策略、K 轴切分 |
 | [block_scheduler_qbmm_mx](./block_scheduler_qbmm_mx.md) | QBMM 调度器：Batch 维度切分、量化对齐 |
 | [block_scheduler_gmm_swat_with_tail_split](./block_scheduler_gmm_swat_with_tail_split.md) | QGMM 调度器：group 间连续分核、SWAT 扫描、末组 tail split |
-| [block_scheduler_grouped_matmul](./block_scheduler_grouped_matmul.md) | 非量化 GMM 调度器：组间偏移管理（含 sparse 直接定位）、SWAT 扫描、跨组延续起始核、tail split |
 | [block_scheduler_matmul_swat_with_tail_split](./block_scheduler_matmul_swat_with_tail_split.md) | 通用 M/N SWAT 扫描、尾块合并和 compact tail split |
 
 ## 公共框架
