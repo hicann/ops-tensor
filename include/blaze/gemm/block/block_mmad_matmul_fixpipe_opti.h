@@ -379,7 +379,7 @@ private:
     bool splitM_{false};
     uint64_t cvPingPong_{0};
 
-    BufferManager<4, 4, 2> bufMgr_;
+    BufferManager<4, 4, 2> bufMgr_; // 4 = A 4-stage pipeline, 4 = B 4-stage pipeline, 2 = L0 ping-pong
 };
 } // namespace Block
 } // namespace Gemm
