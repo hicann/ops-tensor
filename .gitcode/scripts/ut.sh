@@ -60,6 +60,7 @@ elif sudo update-alternatives --set gcc /usr/bin/gcc-15 2>/dev/null; then
 elif sudo update-alternatives --set gcc /usr/bin/gcc-14 2>/dev/null; then
     echo "gcc-16/15 not available, fell back to gcc-14"
 fi
+
 if gcc --version | head -n1 | grep -q "15\."; then
     rm -rf /home/jenkins/opensource/lib_cache
     if [ -d /home/jenkins/opensource/gcc15 ]; then

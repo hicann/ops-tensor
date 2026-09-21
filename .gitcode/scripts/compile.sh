@@ -27,6 +27,7 @@ else
         source /opt/rh/devtoolset-7/enable
     fi
 fi
+
 if gcc --version | head -n1 | grep -q "15\."; then
     rm -rf /home/jenkins/opensource/lib_cache
     if [ -d /home/jenkins/opensource/gcc15 ]; then
