@@ -1,0 +1,16 @@
+caseName,groupType,groupListType,singleX,singleWeight,singleY,weightFormat,dtype,groupNum,m,n,k,isBias,hasGroupList,groupList,xMs,baseM,baseN,baseK,coreNum
+mgroup_sss_offset_nd_fp16_bias,0,0,1,1,1,nd,float16,2,40,64,64,1,1,16;40,40,16,64,64,2
+mgroup_sss_count_nd_fp32,0,1,1,1,1,nd,float32,2,40,64,64,0,1,16;24,40,16,64,64,2
+mgroup_sss_sparse_nd_fp16,0,2,1,1,1,nd,float16,4,40,64,64,0,1,0;16;2;24;1;0;3;0,40,16,64,64,2
+mgroup_sss_sparse_nz_bf16_bias,0,2,1,1,1,nz,bfloat16,4,40,64,64,1,1,0;16;2;24;1;0;3;0,40,16,64,64,2
+mgroup_sms_count_nd_bf16_bias,0,1,1,0,1,nd,bfloat16,2,48,64,64,1,1,24;24,48,16,64,64,2
+mgroup_sms_sparse_nd_fp16,0,2,1,0,1,nd,float16,3,32,64,64,0,1,2;16;0;16;1;0,32,16,64,64,2
+mgroup_sms_offset_nz_fp16,0,0,1,0,1,nz,float16,2,32,64,64,0,1,16;32,32,16,64,64,2
+mgroup_mms_count_nd_fp16,0,1,0,0,1,nd,float16,2,40,64,64,0,1,16;24,16;24,16,64,64,2
+mgroup_mms_sparse_nd_fp16,0,2,0,0,1,nd,float16,2,40,64,64,0,1,0;16;1;24,16;24,16,64,64,2
+mgroup_mms_sparse_nz_bf16_bias,0,2,0,0,1,nz,bfloat16,2,40,64,64,1,1,0;24;1;16,24;16,16,64,64,2
+kgroup_sss_offset_nd_fp16,2,0,1,1,1,nd,float16,2,16,64,128,0,1,64;128,16,16,64,64,2
+kgroup_sss_count_nd_bf16_empty,2,1,1,1,1,nd,bfloat16,3,16,64,96,0,1,32;0;64,16,16,64,64,2
+kgroup_smm_count_nd_fp16,2,1,1,0,0,nd,float16,2,16,64,128,0,1,64;64,16,16,64,64,2
+nosplit_mmm_nd_fp16,-1,0,0,0,0,nd,float16,2,40,64,64,0,0,none,16;24,16,64,64,2
+nosplit_mmm_nz_bf16_bias,-1,0,0,0,0,nz,bfloat16,2,40,64,64,1,0,none,16;24,16,64,64,2
