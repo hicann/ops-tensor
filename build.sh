@@ -75,6 +75,7 @@ SOC_EXPLICIT=false
 BUILD_DIR="build"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 THREAD_NUM=8  # 默认编译线程数
+THREAD_EXPLICIT=false  # 用户是否显式指定 -j（examples 模式仅显式时透传，否则 run.sh 自适应）
 CORE_NUMS=$(cat /proc/cpuinfo | grep "processor" | wc -l 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
 TEST_TIMEOUT=300  # 默认测试超时时间（秒）
 BUILD_OUT_DIR=build_out
@@ -258,9 +259,11 @@ Kernel UT Examples:
 
 Examples Mode:
   --examples              Build and run all examples (uses built-in shapes)
-                          Automatically initializes tensor_api submodule before build
+                           Automatically initializes tensor_api submodule before build
   --ops=X                 Specify operator for examples (e.g., mat_mul)
   --target=Y              Specify example for examples (e.g., mat_mul_streamk)
+  -j[N]                   (optional) Parallel build jobs in examples mode.
+                           Default (no -j): auto = min(cores, targets, ~RAM/16GB)
 
   $(basename "$0") --examples                                    # All examples
   $(basename "$0") --examples --ops=mat_mul                      # mat_mul all examples
@@ -679,6 +682,11 @@ build_examples() {
     if [ -n "$EXAMPLE_TARGET" ]; then
         run_args+=("--target=${EXAMPLE_TARGET}")
     fi
+    # -j 透传：仅显式指定时传给 run.sh（未指定时 run.sh 自适应，避免默认 8 限制大核机器）
+    if [ "$THREAD_EXPLICIT" = true ]; then
+        run_args+=("-j${THREAD_NUM}")
+        log_info "Examples build parallelism: ${THREAD_NUM} job(s)"
+    fi
     if [ "$FORCE_SUBMODULE" = true ]; then
         run_args+=("--force-submodule")
     fi
@@ -731,6 +739,7 @@ parse_arguments() {
                     log_error "non-integer argument:$THREAD_NUM"
                     exit 1
                 fi
+                THREAD_EXPLICIT=true
                 ;;
             --test-timeout=*)
                 # 提取测试超时时间

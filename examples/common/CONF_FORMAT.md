@@ -79,8 +79,8 @@ params=--m:m,--k:k,--dtype:dtype
 注入由 `run_case.py` 提供的运行时值，不从 CSV 查找。
 
 可用令牌：
-- `$OUTPUT_DIR` — 解析为 `examples/{op}/scripts/output/`
-- `$INPUT_DIR` — 解析为 `examples/{op}/scripts/input/`
+- `$OUTPUT_DIR` — 解析为 `examples/{op}/{example}/output/`
+- `$INPUT_DIR` — 解析为 `examples/{op}/{example}/input/`
 
 ```ini
 params=--output-dir:$OUTPUT_DIR
@@ -94,7 +94,7 @@ params=--output-dir:$OUTPUT_DIR
 params=$OUTPUT_DIR/golden_c.bin,$OUTPUT_DIR/npu_out.bin
 ```
 
-对于 `$OUTPUT_DIR/golden_c.bin`，结果为 `examples/{op}/scripts/output/golden_c.bin`。
+对于 `$OUTPUT_DIR/golden_c.bin`，结果为 `examples/{op}/{example}/output/golden_c.bin`。
 
 ### 5. 字面量字符串 (`="value"`)
 
@@ -123,7 +123,7 @@ bool_flags=++trans-a:transA,++hf32:hf32
 1. **列存在性**：`params` 和 `bool_flags` 中引用的所有列名必须存在于 CSV 表头中，运行时令牌（`$OUTPUT_DIR`、`$INPUT_DIR` 等）和字面量字符串（`="value"`）除外。
 2. **顺序敏感**：`params` 中的位置参数按出现顺序传递。
 3. **必填字段**：每个 section 必须有 `params` 字段。`bool_flags` 为可选。
-4. **可用运行时令牌**：`$OUTPUT_DIR`（scripts/output/）、`$INPUT_DIR`（scripts/input/）。
+4. **可用运行时令牌**：`$OUTPUT_DIR`（{example}/output/）、`$INPUT_DIR`（{example}/input/）。
 
 ## 完整示例
 

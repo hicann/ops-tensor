@@ -108,7 +108,7 @@ nd_large_fp4e2m1,256,512,256,0,fp4_e2m1,fp4_e2m1,false,false,"(ND,ND)",128,128,1
 
 ### 输入数据
 
-由 `examples/quant_matmul_activation_quant/scripts/gen_data.py` 在 `scripts/input/` 下生成：
+由 `examples/quant_matmul_activation_quant/scripts/gen_data.py` 在样例目录的 `input/` 下生成：
 
 - `input_a.bin`: A 矩阵（FP8）
 - `input_b.bin`: B 矩阵（FP8，NZ 格式）
@@ -120,8 +120,8 @@ nd_large_fp4e2m1,256,512,256,0,fp4_e2m1,fp4_e2m1,false,false,"(ND,ND)",128,128,1
 
 ### 输出数据
 
-- `scripts/output/npu_y.bin`: NPU 计算得到的量化输出
-- `scripts/output/npu_y_scale.bin`: NPU 计算得到的 E8M0 输出 Scale
+- `output/npu_y.bin`: NPU 计算得到的量化输出
+- `output/npu_y_scale.bin`: NPU 计算得到的 E8M0 输出 Scale
 
 ### 验证标准
 

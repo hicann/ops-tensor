@@ -87,11 +87,13 @@ examples/
     │   ├── gen_data.py         #     输入数据生成 + CPU golden 计算
     │   └── verify_result.py    #     NPU 输出 vs CPU golden 精度比对
     │
-    └── {example}/              # 样例级目录，如 mat_mul_basic
+    └── {example}/              #   样例级目录，如 mat_mul_basic
         ├── {example}.cpp       #   样例源码
         ├── {example}.conf      #   执行参数配置（INI 格式）
         ├── {example}.csv       #   CSV 测试用例表
-        └── README.md           #   样例说明文档
+        ├── README.md           #   样例说明文档
+        ├── input/              #   运行时生成：输入数据 + CPU golden（每条用例覆盖，样例执行后自动清理）
+        └── output/             #   运行时生成：NPU 输出 + verify_metrics.json（每条用例覆盖，样例执行后自动清理）
 ```
 
 **层级关系**：
@@ -143,7 +145,7 @@ examples/
 `common/run.sh` 是统一执行入口：
 
 ```bash
-bash examples/common/run.sh --ops=<names> [--target=<names>] [--case=<path>] [--ti=<N|N-M>] [--skip-build] [--build-only]
+bash examples/common/run.sh --ops=<names> [--target=<names>] [--case=<path>] [--ti=<N|N-M>] [-j<N>|--jobs=<N>] [--skip-build] [--build-only]
 ```
 
 **参数说明**：
@@ -156,7 +158,8 @@ bash examples/common/run.sh --ops=<names> [--target=<names>] [--case=<path>] [--
 | `--ti=<N>`         | 仅运行第 N 条用例（0-based 索引）。仅支持`--ops` 和 `--target` 均为单个值时使用                               |
 | `--ti=<N-M>`       | 运行第 N 到第 M 条用例（含两端）。仅支持`--ops` 和 `--target` 均为单个值时使用                                |
 | `--skip-build`     | 跳过 CMake 编译阶段                                                                                               |
-| `--build-only`     | 仅编译，不运行和验证                                                                                              |
+| `--build-only`     | 仅编译，不运行和验证                                                                                               |
+| `-j<N>` / `--jobs=<N>` | 编译与样例运行阶段的并行作业数（两阶段各自自适应）。编译默认 min(核数, 目标数, 内存GB/16)；运行默认 4×NPU 卡数（无法探测卡数时为 8），不超过样例数。显式指定时不超过核数。单样例（或 `-j1`）时运行阶段串行、输出直接打印到控制台；并行运行时各样例完整输出写入 `examples/build/logs/run/{op}_{example}.log`，同时控制台实时回显带 `[样例名]` 前缀的用例级结果（PASS/FAIL + 精度信息） |
 
 **多值约束**：
 
@@ -204,8 +207,11 @@ bash examples/common/run.sh --ops=mat_mul --target=mat_mul_basic --skip-build
 bash examples/common/run.sh --ops=mat_mul --target=mat_mul_basic
     │
     ├─→ preflight（检查 ASCEND_HOME_PATH / bisheng / g++ / python3 / cmake）
-    ├─→ cmake + cmake --build             # 编译
-    ├─→ 读取 mat_mul_basic.csv，逐条执行:
+    ├─→ cmake + cmake --build             # 编译（并行）
+    ├─→ 并行运行各样例（worker 池；多样例时各样例完整输出写入
+    │   examples/build/logs/run/{op}_{example}.log，控制台实时回显
+    │   带 [样例名] 前缀的用例级结果）
+    │   每个样例读取 {example}.csv，逐条执行:
     │       ├─ gen_data.py（按 .conf [gen_data] 参数生成数据）
     │       ├─ ./mat_mul_basic（按 .conf [kernel] 参数执行 kernel）
     │       └─ verify_result.py（按 .conf [verify] 参数验证精度）

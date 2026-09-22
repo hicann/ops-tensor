@@ -177,9 +177,9 @@ def resolve_paths(conf_path, conf):
 
     Layout:
         examples/{ops}/{example}/{example}.conf   <- conf_path
-        examples/{ops}/scripts/                    <- scripts_dir
-        examples/{ops}/scripts/output/             <- $OUTPUT_DIR
-        examples/{ops}/scripts/input/              <- $INPUT_DIR
+        examples/{ops}/scripts/                    <- scripts_dir (gen/verify scripts)
+        examples/{ops}/{example}/output/           <- $OUTPUT_DIR (per-example data)
+        examples/{ops}/{example}/input/            <- $INPUT_DIR (per-example data)
 
     Optional [scripts] section in .conf overrides script filenames:
         [scripts]
@@ -197,8 +197,8 @@ def resolve_paths(conf_path, conf):
 
     gen_data_py = os.path.join(scripts_dir, gen_data_name)
     verify_py = os.path.join(scripts_dir, verify_name)
-    output_dir = os.path.join(scripts_dir, "output")
-    input_dir = os.path.join(scripts_dir, "input")
+    output_dir = os.path.join(example_dir, "output")
+    input_dir = os.path.join(example_dir, "input")
     return scripts_dir, gen_data_py, verify_py, output_dir, input_dir
 
 
@@ -313,10 +313,11 @@ def _format_metrics_json(metrics):
     return json.dumps(result, ensure_ascii=False)
 
 
-def _print_metrics(metrics):
-    """Print per-output accuracy/tolerance/max-diff lines (PASS and FAIL paths)."""
+def _format_metrics_lines(metrics):
+    """Format per-output accuracy/tolerance/max-diff lines (PASS and FAIL paths)."""
+    lines = []
     if not (metrics and metrics.get("outputs")):
-        return
+        return lines
     for out in metrics["outputs"]:
         name = out.get("name", "output")
         parts = []
@@ -327,7 +328,21 @@ def _print_metrics(metrics):
         if out.get("max_abs_diff") is not None:
             parts.append(f"max_abs_diff={out['max_abs_diff']:.6e}")
         if parts:
-            print(f"  {name}: {', '.join(parts)}")
+            lines.append(f"  {name}: {', '.join(parts)}")
+    return lines
+
+
+def _print_case_lines(lines, prefix):
+    """Print per-case result lines.
+
+    Lines always go to stdout. When a prefix is set, each line is also echoed
+    to stderr as '[prefix] line' so a parallel runner can redirect stdout to a
+    per-example log file while still streaming case results to the console.
+    """
+    for line in lines:
+        print(line)
+        if prefix:
+            print(f"[{prefix}] {line}", file=sys.stderr, flush=True)
 
 
 # ---------------------------------------------------------------------------
@@ -336,9 +351,14 @@ def _print_metrics(metrics):
 
 
 def run_single_case(
-    executable, row, conf, scripts_dir, gen_data_py, verify_py, output_dir, input_dir
+    executable, row, conf, example_dir, gen_data_py, verify_py, output_dir, input_dir
 ):
-    """Execute one test case through gen_data -> kernel -> verify."""
+    """Execute one test case through gen_data -> kernel -> verify.
+
+    All three stages run with cwd = the example directory, so that CWD-relative
+    scripts and kernels (./input, ./output) resolve to the per-example data
+    directories instead of the shared {op}/scripts/ directory.
+    """
     runtime_vars = {"$OUTPUT_DIR": output_dir, "$INPUT_DIR": input_dir}
 
     gen_params, gen_bools = get_section_entries(conf, "gen_data")
@@ -348,21 +368,21 @@ def run_single_case(
     # -- Stage 1: gen_data ---------------------------------------------------
     gen_args = build_args(gen_params + gen_bools, row, runtime_vars)
     gen_cmd = [sys.executable, gen_data_py] + gen_args
-    rc, out = run_subprocess(gen_cmd, cwd=scripts_dir)
+    rc, out = run_subprocess(gen_cmd, cwd=example_dir)
     if rc != 0:
         return "FAIL", "gen_data", out, None
 
     # -- Stage 2: kernel binary ----------------------------------------------
     kernel_args = build_args(kernel_params + kernel_bools, row, runtime_vars)
     kernel_cmd = [executable] + kernel_args
-    rc, out = run_subprocess(kernel_cmd, cwd=scripts_dir, settle=1)
+    rc, out = run_subprocess(kernel_cmd, cwd=example_dir, settle=1)
     if rc != 0:
         return "FAIL", "kernel", out, None
 
     # -- Stage 3: verify -----------------------------------------------------
     verify_args = build_args(verify_params + verify_bools, row, runtime_vars)
     verify_cmd = [sys.executable, verify_py] + verify_args
-    rc, out = run_subprocess(verify_cmd, cwd=scripts_dir)
+    rc, out = run_subprocess(verify_cmd, cwd=example_dir)
 
     metrics = _load_metrics(output_dir, out, rc)
 
@@ -402,6 +422,13 @@ def main():
         metavar="N|N-M",
         help="Run only specific test index(es): N or N-M (0-based)",
     )
+    parser.add_argument(
+        "--prefix",
+        default=None,
+        metavar="TAG",
+        help="Echo per-case result lines to stderr as '[TAG] ...' so parallel "
+        "runners can stream them to the console while stdout goes to a log",
+    )
 
     args = parser.parse_args()
 
@@ -422,6 +449,8 @@ def main():
     if not os.path.isfile(args.executable):
         print(f"Error: Executable not found: {args.executable}", file=sys.stderr)
         sys.exit(1)
+    # Kernels run with cwd = example dir; resolve against this process's cwd first.
+    args.executable = os.path.abspath(args.executable)
 
     # -- Parse .conf ---------------------------------------------------------
     conf = load_conf(args.conf_file)
@@ -430,6 +459,8 @@ def main():
     scripts_dir, gen_data_py, verify_py, output_dir, input_dir = resolve_paths(
         args.conf_file, conf
     )
+    # Subprocess cwd; must match where $INPUT_DIR/$OUTPUT_DIR live (see run_single_case).
+    example_dir = os.path.dirname(os.path.abspath(args.conf_file))
 
     if not os.path.isfile(gen_data_py):
         print(f"Error: gen_data script not found: {gen_data_py}", file=sys.stderr)
@@ -493,7 +524,7 @@ def main():
                 args.executable,
                 row,
                 conf,
-                scripts_dir,
+                example_dir,
                 gen_data_py,
                 verify_py,
                 output_dir,
@@ -504,17 +535,18 @@ def main():
 
         if status == "PASS":
             pass_count += 1
-            print(f"[PASS] {casename}")
-            _print_metrics(metrics)
+            case_lines = [f"[PASS] {casename}"]
+            case_lines.extend(_format_metrics_lines(metrics))
         else:
             fail_count += 1
-            print(f"[FAIL] {casename} (stage={stage})")
+            case_lines = [f"[FAIL] {casename} (stage={stage})"]
             if message:
                 preview = message[:500]
                 if len(message) > 500:
                     preview += "..."
-                print(f"  Error: {preview}")
-            _print_metrics(metrics)
+                case_lines.append(f"  Error: {preview}")
+            case_lines.extend(_format_metrics_lines(metrics))
+        _print_case_lines(case_lines, args.prefix)
 
         results.append(
             {
