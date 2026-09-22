@@ -7,17 +7,13 @@
  * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
  * See LICENSE in the root of the software repository for the full text of the License.
  */
-
-/*!
- * \file datamove.h
- * \brief Architecture-specific data movement primitives for tile-level tensors.
- */
 #pragma once
-
-#if (defined(__NPU_ARCH__) && __NPU_ARCH__ == 3510)
-#include "blaze/gemm/tile/arch35/copy_gm_to_l1.h"
-#include "blaze/gemm/tile/arch35/copy_gm_to_ub.h"
-#include "blaze/gemm/tile/arch35/copy_ub_to_l1.h"
-#include "blaze/gemm/tile/arch35/copy_mx_scale.h"
-#include "blaze/gemm/tile/arch35/copy_weight_ub_to_l1.h"
-#endif
+#include <cstdint>
+namespace WeightQuantBatchMatmulUT {
+struct CopyInstruction {
+    uint64_t calls = 0, src = 0, dst = 0;
+    uint16_t count = 0, length = 0, srcGap = 0, dstGap = 0;
+    uint8_t sid = 0;
+};
+inline thread_local CopyInstruction* observedCopy = nullptr;
+} // namespace WeightQuantBatchMatmulUT

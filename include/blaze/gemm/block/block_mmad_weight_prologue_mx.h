@@ -237,10 +237,11 @@ private:
 
     __aicore__ inline void Init(const Params& params)
     {
+        constexpr uint32_t SCALE_K_INDEX = 3;
         uint64_t l1BaseM = static_cast<uint64_t>(asc::te::get<MNK_M>(params.l1TileShape));
         uint64_t l1BaseN = static_cast<uint64_t>(asc::te::get<MNK_N>(params.l1TileShape));
         kL1Size_ = static_cast<uint64_t>(asc::te::get<MNK_K>(params.l1TileShape));
-        scaleKL1Size_ = static_cast<uint64_t>(asc::te::get<3>(params.l1TileShape));
+        scaleKL1Size_ = static_cast<uint64_t>(asc::te::get<SCALE_K_INDEX>(params.l1TileShape));
         kL0Size_ = static_cast<uint64_t>(asc::te::get<MNK_K>(params.l0TileShape));
         l1BufferNum_ = params.l1BufferNum;
         l1BufferMask_ = l1BufferNum_ - 1U;

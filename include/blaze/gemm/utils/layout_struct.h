@@ -17,6 +17,54 @@
 namespace Blaze {
 namespace Gemm {
 
+// FP16/BF16 weight UB layouts in logical (K,N) coordinates, shape ((k0,k1),(n0,n1)).
+// ZN: stride ((1,pitch),(k0,n0*k0)); NZ: stride ((n0,k0*n0),(1,pitch)).
+// A full tile adds one k0/n0 padding segment between groups. Tail tiles retain
+// the VF allocation pitch instead of recomputing it from the effective shape.
+struct zn_row_padding_layout_ptn {};
+struct nz_col_padding_layout_ptn {};
+
+// Construct the physical (K,N) region copied from FP16/BF16 UB storage.
+// groupPitch is in elements and describes the allocated VF group spacing,
+// including padding. It must not shrink when the effective tile is a tail.
+template <typename T>
+struct ZnRowPaddingUBLayout {
+    static_assert(AscendC::Std::is_same_v<T, half> || AscendC::Std::is_same_v<T, bfloat16_t>,
+                  "ZnRowPaddingUBLayout expects FP16/BF16 elements");
+
+    __aicore__ inline auto operator()(int64_t kSize, int64_t nSize, int64_t groupPitch) const
+    {
+        constexpr int64_t C0 = asc::te::c0_element<T>;
+        using Block = AscendC::Std::Int<C0>;
+        using One = AscendC::Std::Int<1>;
+        // Preserve the valid N length; align K to a 32-byte group (C0 = 16 elements).
+        auto shape = asc::te::make_shape(asc::te::make_shape(Block{}, CeilDiv(kSize, C0)),
+                                         asc::te::make_shape(One{}, nSize));
+        auto stride = asc::te::make_stride(asc::te::make_stride(One{}, groupPitch),
+                                           asc::te::make_stride(Block{}, Block{}));
+        return asc::te::make_pattern_layout<zn_row_padding_layout_ptn, asc::te::layout_trait_default<T>>(shape, stride);
+    }
+};
+
+template <typename T>
+struct NzColPaddingUBLayout {
+    static_assert(AscendC::Std::is_same_v<T, half> || AscendC::Std::is_same_v<T, bfloat16_t>,
+                  "NzColPaddingUBLayout expects FP16/BF16 elements");
+
+    __aicore__ inline auto operator()(int64_t kSize, int64_t nSize, int64_t groupPitch) const
+    {
+        constexpr int64_t C0 = asc::te::c0_element<T>;
+        using Block = AscendC::Std::Int<C0>;
+        using One = AscendC::Std::Int<1>;
+        // Preserve the valid K length; align N to a 32-byte group (C0 = 16 elements).
+        auto shape = asc::te::make_shape(asc::te::make_shape(One{}, kSize),
+                                         asc::te::make_shape(Block{}, CeilDiv(nSize, C0)));
+        auto stride = asc::te::make_stride(asc::te::make_stride(Block{}, Block{}),
+                                           asc::te::make_stride(One{}, groupPitch));
+        return asc::te::make_pattern_layout<nz_col_padding_layout_ptn, asc::te::layout_trait_default<T>>(shape, stride);
+    }
+};
+
 // Layout for 8-bit weight tiles in Unified Buffer (ZN conversion path).
 //
 // This is a specialized UB layout for 8-bit weight data.  Unlike the standard

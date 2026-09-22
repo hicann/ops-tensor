@@ -49,6 +49,7 @@ struct KernelGmmSwiGluMixMx {};                 // MIX AIC+AIV schedule for Grou
 struct KernelMatmulEmuSplitWeight {};           // Double bf16 matmul to simulate fp32 (AIC+AIV)
 struct KernelMmadWithScaleMxMix {};             // Multi-block with Mx scale, epilogue after block mmad
 struct KernelGroupedMmadNoQuant {};             // Grouped multi-block without quantization
+struct KernelMmadAPrefetchBAntiquant {};        // AIV weight dequantization and AIC matrix multiplication
 enum class MatmulOutputMode : std::uint8_t { OVERWRITE = 0, INPLACE_ADD = 1 };
 enum class MatMulL0C2Out : std::uint8_t { ON_THE_FLY = 0, ND_FIXPIPE_1_1 = 1, ND_FIXPIPE_1_2 = 2 };
 
@@ -270,6 +271,39 @@ struct MatmulMultiBlockFixpipeOpti {
     static constexpr uint64_t FULL_LOAD_MODE = NONE_FULL_LOAD_MODE;
     static constexpr uint64_t L0C2OUT_MODEL = L0C2OutModel_;
     static constexpr uint64_t FUSED_OP_TYPE = FusedOpType_;
+};
+
+/**
+ * @struct MatmulWithWeightAntiquant
+ * @brief Blaze dispatch policy for 8-bit weight dequantization followed by AIC matrix multiplication.
+ * @param [in] AivNum_: number of AIV sub-blocks per AIC; must be 2
+ * @param [in] UbMte2InnerSize_: weight input UB row pitch in bytes
+ * @param [in] UbMte2BufNum_: number of prologue input buffers; only 2 or 4 are supported
+ * @param [in] AntiquantType_: per-tensor or per-channel antiquantization
+ * @param [in] HasAntiquantOffset_: whether antiquantOffset is enabled
+ */
+template <uint64_t AivNum_ = 2, uint32_t UbMte2InnerSize_ = 512, uint32_t UbMte2BufNum_ = 2,
+          QuantMode AntiquantType_ = QuantMode::PERCHANNEL_MODE, bool HasAntiquantOffset_ = false>
+struct MatmulWithWeightAntiquant {
+    using ScheduleType = KernelMmadAPrefetchBAntiquant;
+    struct SyncProtocol {
+        static constexpr uint16_t MODE = 4;
+        static constexpr uint16_t AIV_READY_FLAG = 9;
+        static constexpr uint16_t AIC_FREE_FLAG = 8;
+        static constexpr uint16_t FLAG_ID_MAX = 16;
+    };
+
+    static constexpr uint64_t AIV_NUM = AivNum_;
+    static constexpr uint32_t UB_MTE2_INNER_SIZE = UbMte2InnerSize_;
+    static constexpr uint32_t UB_MTE2_BUFFER_NUM = UbMte2BufNum_;
+    static constexpr QuantMode ANTIQUANT_TYPE = AntiquantType_;
+    static constexpr bool HAS_ANTIQUANT_OFFSET = HasAntiquantOffset_;
+
+    static_assert(AivNum_ == 2, "Weight antiquantization requires two AIV sub-blocks");
+    static_assert(UbMte2BufNum_ == 2 || UbMte2BufNum_ == 4,
+                  "Weight antiquantization supports only 2 or 4 UB input buffers");
+    static_assert(AntiquantType_ == QuantMode::PERTENSOR_MODE || AntiquantType_ == QuantMode::PERCHANNEL_MODE,
+                  "Weight antiquantization supports only per-tensor or per-channel quantization");
 };
 
 } // namespace Gemm

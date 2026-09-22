@@ -19,6 +19,7 @@
 | [block_mmad_qbmm_mx_l0c_pingpong](./block_mmad_qbmm_mx_l0c_pingpong.md) | MX 量化矩阵乘 L0C PingPong Block，支持 N 方向拆分、Scale 复用和 SplitK 写回控制 |
 | [block_mmad_matmul_streamk](./block_mmad_matmul_streamk.md) | StreamK 矩阵乘 Block，支持 workspace 输出、K 轴切分 |
 | [block_mmad_weight_prologue_mx](./block_mmad_weight_prologue_mx.md) | AIV 已写入 B/Bias L1 后的 MX AIC BlockMmad |
+| [block_mmad_wqmm_mix_weight_prologue](./block_mmad_wqmm_mix_weight_prologue.md) | 权重反量化矩阵乘的 AIC 计算、L1 空间划分及缓冲同步 |
 
 ### BlockScheduler（任务调度）
 | 组件名 | 描述 |
@@ -26,6 +27,7 @@
 | [block_scheduler](./block_scheduler.md) | 公共框架：tile 切分、Z 型扫描、尾块处理 |
 | [block_scheduler_matmul_basic](./block_scheduler_matmul_basic.md) | Basic 调度器：尾块切分、SplitK 切分、L2Cache 配置 |
 | [block_scheduler_matmul_streamk](./block_scheduler_matmul_streamk.md) | StreamK 调度器：DP+SK 混合策略、K 轴切分 |
+| [block_scheduler_wqmm](./block_scheduler_wqmm.md) | WQMM 的 M/N 分核与三段 N 区间调度，提供分块坐标和有效长度 |
 | [block_scheduler_qbmm_mx](./block_scheduler_qbmm_mx.md) | QBMM 调度器：Batch 维度切分、量化对齐 |
 | [block_scheduler_gmm_swat_with_tail_split](./block_scheduler_gmm_swat_with_tail_split.md) | QGMM 调度器：group 间连续分核、SWAT 扫描、末组 tail split |
 | [block_scheduler_matmul_swat_with_tail_split](./block_scheduler_matmul_swat_with_tail_split.md) | 通用 M/N SWAT 扫描、尾块合并和 compact tail split |

@@ -1,0 +1,9 @@
+casename,m,k,n,x_dtype,transpose_weight,antiquant_per_tensor,has_antiquant_offset,has_bias
+fp16_nk_channel_tail,3,255,257,fp16,1,0,0,0
+fp16_kn_channel_offset_multim,65,513,159,fp16,0,0,1,1
+fp16_nk_tensor_offset,32,129,64,fp16,1,1,1,0
+fp16_kn_tensor,17,256,128,fp16,0,1,0,1
+bf16_nk_channel_offset,33,255,31,bf16,1,0,1,1
+bf16_kn_channel,7,129,257,bf16,0,0,0,0
+bf16_nk_tensor,64,513,159,bf16,1,1,0,0
+bf16_kn_tensor_offset,3,65,17,bf16,0,1,1,1
