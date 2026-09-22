@@ -113,8 +113,8 @@ public:
     __aicore__ inline int64_t UpdateNextOutputOffset(const ProblemShape& problemShape)
     {
         const int64_t currentCOffset = singleY_ ? nextCOffset_ : 0;
-        const int64_t problemM = Max(AscendC::Te::Get<MNK_M>(problemShape), static_cast<int64_t>(0));
-        const int64_t problemN = Max(AscendC::Te::Get<MNK_N>(problemShape), static_cast<int64_t>(0));
+        const int64_t problemM = Max(asc::te::get<MNK_M>(problemShape), static_cast<int64_t>(0));
+        const int64_t problemN = Max(asc::te::get<MNK_N>(problemShape), static_cast<int64_t>(0));
         nextCOffset_ += problemM * problemN;
         return currentCOffset;
     }
