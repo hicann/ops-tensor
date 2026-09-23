@@ -44,6 +44,7 @@ struct KernelMmadMultiBlockFixpipeOpti {};      // Multi-tile FixpipeOpti
 struct KernelMmadMultiBlockTBMM {};             // tbmm schedule
 struct KernelMmadMultiBlockTQBMM {};            // tqbmm schedule
 struct KernelMixWithWeightPrologue {};          // Mix matmul with AIV weight preprocessing
+struct KernelMixWithWeightPergroupPrologue {};  // Mix matmul with AIV per-group weight dequant preprocessing
 struct KernelWqgmmMxMix {};                     // Grouped MX mix kernel with AIV weight preprocessing
 struct KernelGmmSwiGluMixMx {};                 // MIX AIC+AIV schedule for GroupedMatmul + SwiGLU + MX quant
 struct KernelMatmulEmuSplitWeight {};           // Double bf16 matmul to simulate fp32 (AIC+AIV)
@@ -103,6 +104,23 @@ struct MatmulWithScaleMx {
  */
 struct MatmulWithWeightQuantMx {
     using ScheduleType = KernelMixWithWeightPrologue;
+};
+
+/**
+ * @struct MatmulWithWeightQuantPergroup
+ * @brief T-CG weight-only per-group quantized matrix multiplication.
+ *        AIV converts FP4 weights (FLOAT4_E2M1) + per-group scale (BFLOAT16/FLOAT16) to FP8, writes to L1.
+ *        AIC performs FP8 x FP8 matmul with per-channel output quant via yScale (UINT64/INT64) in fixpipe.
+ *        Formula: out = (x1 @ (x2 * x2Scale)) * yScale
+ */
+struct MatmulWithWeightQuantPergroup {
+    using ScheduleType = KernelMixWithWeightPergroupPrologue;
+    struct SyncProtocol {
+        static constexpr uint16_t MODE = 4U;
+        static constexpr uint16_t AIV_READY_FLAG = 1U;
+        static constexpr uint16_t AIC_FREE_FLAG = 2U;
+        static constexpr uint16_t FLAG_ID_MAX = 16U;
+    };
 };
 
 /**

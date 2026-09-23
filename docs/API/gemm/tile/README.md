@@ -8,7 +8,7 @@
 | [tile_mmad_mx](./tile_mmad_mx.md) | MX Mmad Trait 定义，用于量化矩阵乘计算 |
 | [pad_mx_k_l1](./pad_mx_kl1.md) | MX K 轴 Padding，用于 L1 数据对齐补零 |
 | [copy_gm_to_l1](./copy_gm_to_l1.md) | A 矩阵 ND slice 非连续场景的 GM->L1 搬运 |
-| [copy_ub_to_l1](./copy_ub_to_l1.md) | FP16/BF16 权重 padding 布局的 UB→L1 搬运 |
+| [copy_ub_to_l1](./copy_ub_to_l1.md) | CopyPaddedUBToL1：FP16/BF16 权重 padding 布局与转换后 8-bit 权重（ZN 列 padding / ZN-ZN / NZ 行 padding 三分支）的 UB→L1 搬运 |
 | [tile_weight_quant_mx_preprocess](./tile_weight_quant_mx_preprocess.md) | packed FP4 ND/NZ 转换、bias 预缩放和 UB/L1 布局契约 |
 
 ## 聚合头

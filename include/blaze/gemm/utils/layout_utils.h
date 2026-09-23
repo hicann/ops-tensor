@@ -29,6 +29,14 @@ struct NDSliceLayoutPtn {};
 struct Weight8BitZnToZnUbLayoutPtn {};
 struct Weight8BitDnToZnUbLayoutPtn {};
 
+// New-style tags for the converted-weight UB layouts. ZnColPaddingLayoutPtn describes
+// the same geometry as the legacy Weight8BitDnToZnUbLayoutPtn above (kept for
+// compatibility); both route to the same converted-weight branch of CopyPaddedUBToL1.
+// NzRowPaddingLayoutPtn covers the NZ-fractal family (N1 fractals, per-group 32K x 32N
+// slabs, chunk interleave).
+struct ZnColPaddingLayoutPtn {};
+struct NzRowPaddingLayoutPtn {};
+
 // IsTrans
 template <typename LayoutPattern>
 constexpr bool GetTransValue()

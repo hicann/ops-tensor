@@ -65,13 +65,10 @@ struct NzColPaddingUBLayout {
     }
 };
 
-// Layout for 8-bit weight tiles in Unified Buffer (ZN conversion path).
-//
-// This is a specialized UB layout for 8-bit weight data.  Unlike the standard
-// FRACTAL_FIXED=16, this uses N0=VEC_REG_ELEM/C0=8 because the weight data is
-// produced by Vector unit writes in 256-element (VEC_REG_ELEM) chunks.
-// The InnerStride template parameter exposes inter-chunk spacing control to
-// the MTE3 copy path, which is not expressible with built-in layout formulas.
+// Layout for 8-bit weight tiles in Unified Buffer (ZN conversion path): unlike the
+// standard FRACTAL_FIXED=16, uses N0=VEC_REG_ELEM/C0=8 because the data is produced by
+// Vector unit writes in 256-element chunks; the InnerStride template parameter exposes
+// inter-chunk spacing control to the MTE3 copy path.
 template <typename T>
 struct Weight8BitZnToZnUBLayout;
 
@@ -126,6 +123,59 @@ struct Weight8BitDnToZnUBLayout {
                                            asc::te::make_stride(AscendC::Std::Int<C0>{}, AscendC::Std::Int<C0>{}));
         using Trait = asc::te::layout_trait<AscendC::Std::ignore_t, AscendC::Std::Int<C0>>;
         return asc::te::make_pattern_layout<Weight8BitDnToZnUbLayoutPtn, Trait>(shape, stride);
+    }
+};
+
+// New-style naming for Weight8BitDnToZnUBLayout: the same ZN-shaped UB layout with
+// column padding, tagged with ZnColPaddingLayoutPtn. Both functors
+// emit identical geometry; keep them in sync. The ub2l1 copy routes both tags to one
+// implementation branch.
+template <typename T>
+struct ZnColPaddingLayout {
+    static_assert(sizeof(T) == 1, "ZnColPaddingLayout expects an 8-bit element type");
+
+    __aicore__ inline auto operator()(int64_t kSize, int64_t nSize) const
+    {
+        static constexpr int64_t C0 = asc::te::c0_element<T>;
+        static constexpr int64_t EXTRA_N_BLOCK = 1;
+        int64_t k1 = CeilDiv(kSize, C0);
+        int64_t nStride = static_cast<int64_t>(Align16(static_cast<uint64_t>(nSize))) + EXTRA_N_BLOCK;
+        auto shape = asc::te::make_shape(asc::te::make_shape(AscendC::Std::Int<C0>{}, k1),
+                                         asc::te::make_shape(AscendC::Std::Int<1>{}, nSize));
+        auto stride = asc::te::make_stride(asc::te::make_stride(AscendC::Std::Int<1>{}, nStride * C0),
+                                           asc::te::make_stride(AscendC::Std::Int<C0>{}, AscendC::Std::Int<C0>{}));
+        using Trait = asc::te::layout_trait<AscendC::Std::ignore_t, AscendC::Std::Int<C0>>;
+        return asc::te::make_pattern_layout<ZnColPaddingLayoutPtn, Trait>(shape, stride);
+    }
+};
+
+// Specialized UB layout emitted when the input weight format is NZ (the L1 destination
+// is NZ-fractal as well). Fastest-to-slowest dims: 256-element vector chunk, K group
+// (32 K per group), vector loop within one group, N1 fractal (32 N); InnerStride carries
+// the ping-pong interleave between consecutive vector chunks.
+template <typename T>
+struct NzRowPaddingLayout {
+    static_assert(sizeof(T) == 1, "NzRowPaddingLayout expects an 8-bit element type");
+
+    __aicore__ inline auto operator()(int64_t kSize, int64_t nSize, uint64_t innerStride) const
+    {
+        static constexpr int64_t GROUP_SIZE = 32;
+        static constexpr int64_t C0 = 32;
+        static constexpr int64_t VEC_REG_ELEM = 256;
+        static constexpr int64_t VL_LOOP_IN_GROUP = GROUP_SIZE * C0 / VEC_REG_ELEM;
+        int64_t kGroupNum = kSize / GROUP_SIZE;
+        int64_t n1LoopNum = CeilDiv(nSize, C0);
+        // Shape: ((VEC_REG_ELEM, kGroupNum), (VL_LOOP_IN_GROUP, n1LoopNum))
+        auto shape = asc::te::make_shape(asc::te::make_shape(AscendC::Std::Int<VEC_REG_ELEM>{}, kGroupNum),
+                                         asc::te::make_shape(AscendC::Std::Int<VL_LOOP_IN_GROUP>{}, n1LoopNum));
+        // Stride: (MakeStride(1, VL_LOOP_IN_GROUP * InnerStride),
+        //          MakeStride(InnerStride, kGroupNum * VL_LOOP_IN_GROUP * InnerStride))
+        auto stride = asc::te::make_stride(
+            asc::te::make_stride(AscendC::Std::Int<1>{}, static_cast<int64_t>(innerStride) * VL_LOOP_IN_GROUP),
+            asc::te::make_stride(static_cast<int64_t>(innerStride),
+                                 static_cast<int64_t>(innerStride) * VL_LOOP_IN_GROUP * kGroupNum));
+        using Trait = asc::te::layout_trait<AscendC::Std::ignore_t, AscendC::Std::Int<C0>>;
+        return asc::te::make_pattern_layout<NzRowPaddingLayoutPtn, Trait>(shape, stride);
     }
 };
 

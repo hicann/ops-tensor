@@ -1,0 +1,5 @@
+casename,variant,m,k,n
+pergroup_a8w4_nd,nd,32,512,64
+pergroup_a8w4_nd_tail,nd,20,96,48
+pergroup_a8w4_nz,nz,32,512,64
+pergroup_a8w4_nz_tail,nz,16,96,64
