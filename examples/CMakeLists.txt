@@ -53,6 +53,9 @@ message(STATUS "Examples CANN arch dir: ${ASCEND_ARCH_DIR}")
 add_compile_options(
     $<$<COMPILE_LANGUAGE:ASC>:-iquote${BLAZE_INCLUDE_DIR}/tensor_api/include>
     $<$<COMPILE_LANGUAGE:ASC>:-iquote${BLAZE_INCLUDE_DIR}/tensor_api>
+    # bisheng --asc-aicore-lang host 边不定义 __CCE_AICORE__，内置 pipe_t 枚举缺 PIPE_FIX 成员，
+    # blaze 模板默认实参在 host 边无法解析；force-include 桩仅 host 边兜底，device 边不生效
+    $<$<COMPILE_LANGUAGE:ASC>:-include${EXAMPLES_COMMON_DIR}/cce_pipe_stub.h>
 )
 
 include_directories(
