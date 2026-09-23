@@ -15,7 +15,7 @@ GroupedMatmulMxTilingData，直接组装 Block MMAD、Scheduler、Prologue 和�
 | Weight | float4_e2m1、float4_e1m2 |
 | 输出与 Bias | float16、bfloat16 |
 | Bias | 0、1 |
-| groupListType | 0（累计 Offset）、1（当前组 Count） |
+| groupListType | 0（累计 Offset）、1（当前组 Count）、2（Sparse） |
 | singleW | 1（连续存储）、0（TensorList） |
 
 singleW=1 对应 IsSingleMultiSingle=false；singleW=0 对应
@@ -34,14 +34,19 @@ groupListType=0 时，groupList 为累计 Offset，最后一项须等于 totalM�
 groupListType=1 时，groupList 为每组 Count，所有项之和须等于 totalM。
 两种编码都允许空 expert。
 
+groupListType=2 时，groupList 为 INT64 的 [groupNum, 2] 数组，每行为
+[expertIndex, count]；非零组按 expertIndex 升序排列在前，零组按 expertIndex 升序排列在后。
+CSV 使用分号展开两列，例如 `1;7;3;10;0;0;2;0` 对应
+`[[1, 7], [3, 10], [0, 0], [2, 0]]`。
+
 ## 用例覆盖
 
-grouped_matmul_mx_a8w4.csv 包含 8 条确定性用例，联合覆盖：
+grouped_matmul_mx_a8w4.csv 包含 9 条确定性用例，联合覆盖：
 
 - E2M1 和 E1M2；
 - FP16 和 BF16 输出；
 - Bias 和无 Bias；
-- Offset 和 Count groupList；
+- Offset、Count 和 Sparse groupList；
 - 连续 Weight 和 TensorList；
 - 空 expert、单 N 段、三 N 段以及长 K。
 
@@ -67,9 +72,9 @@ secondTailBlockCount,coreNum,cubeNumBlocksN
 | cDtype | float16 或 bfloat16；Bias 使用同类型 |
 | baseM | M 方向基础 block 大小 |
 | isBias | 0 为无 Bias，1 为有 Bias |
-| groupListType | 0 为 Offset，1 为 Count |
+| groupListType | 0 为 Offset，1 为 Count，2 为 Sparse |
 | singleW | 1 为连续存储，0 为 TensorList |
-| groupList | 分号分隔的 groupNum 个 INT64 值 |
+| groupList | 分号分隔的 INT64 值；type 0/1 为 groupNum 项，type 2 为 groupNum 对 expertIndex/count |
 | mainBlockSize、mainBlockCount | 主 N 段大小与数量 |
 | firstTailBlockSize、firstTailBlockCount | 第一尾段大小与数量 |
 | secondTailBlockSize、secondTailBlockCount | 第二尾段大小与数量 |

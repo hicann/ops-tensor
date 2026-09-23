@@ -755,7 +755,7 @@ __aicore__ inline auto WQGMM_MX_PROLOGUE_CLASS::MakeL1BiasTensor(uint64_t nL1Siz
  *   consumes A, B', scaleA and scaleB for accumulation.
  *
  * Specific flow:
- * - Outer loop is group-based. groupList[g] is either cumulative M (type 0) or the current-group M count (type 1).
+ * - Outer loop reads cumulative M (type 0), group M counts (type 1), or [expert index, M count] rows (type 2).
  * - For each group g:
  *   C_g = MatmulMX(A_g, B'_g, scaleA_g, scaleB_g)
  *   where A_g/B'_g are consumed by MMAD with a consistent compute type, and scaleA_g/scaleB_g are MX scales.
@@ -763,7 +763,8 @@ __aicore__ inline auto WQGMM_MX_PROLOGUE_CLASS::MakeL1BiasTensor(uint64_t nL1Siz
  * - AIV branch: tile prologue (FP4E2M1/FP4E1M2 -> FP8E4M3) for B.
  *
  * Key constraints:
- * 1) groupList length and groupNum must match; type 0 values are nondecreasing and type 1 values are per-group counts.
+ * 1) groupList has groupNum rows; type 2 uses two columns and places empty groups after nonempty groups,
+ *    with each partition ordered by expert index.
  * 2) BlockMmad and BlockPrologue must use the same dispatch policy so they agree on tile boundaries and sync points.
  *
  * When to use:
@@ -817,6 +818,18 @@ public:
     __aicore__ inline void operator()(const Params& params);
 
 private:
+    static constexpr uint32_t GROUP_LIST_TYPE_OFFSET = 0U;
+    static constexpr uint32_t GROUP_LIST_TYPE_LENGTH = 1U;
+    static constexpr uint32_t GROUP_LIST_TYPE_SPARSE = 2U;
+    static constexpr uint32_t SPARSE_GROUP_LIST_ITEM_STRIDE = 2U;
+    static constexpr uint32_t SPARSE_GROUP_LIST_SPLIT_VALUE_OFFSET = 1U;
+    static constexpr int32_t PROBLEM_SHAPE_K_INDEX = 1;
+    static constexpr int32_t PROBLEM_SHAPE_N_INDEX = 2;
+    static constexpr int32_t PROBLEM_SHAPE_GROUP_NUM_INDEX = 3;
+
+    int64_t preOffset_{0};
+    uint32_t groupListType_{GROUP_LIST_TYPE_OFFSET};
+
     __gm__ typename BlockMmad::AType* xGm_;
     // Single-weight mode stores a data base; multi-weight mode stores the tensor-list descriptor.
     __gm__ typename BlockMmad::ScaleBType* antiquantScaleGm_;
@@ -831,6 +844,26 @@ private:
 
     using TensorLayoutGroupList = typename asc::te::frame_layout_format<asc::te::nd_ext_layout_ptn>;
 
+    template <typename GroupListTensor>
+    __aicore__ inline int64_t GetSplitValueFromGroupList(const GroupListTensor& groupList, uint32_t loopIdx)
+    {
+        int64_t splitValue = 0;
+        if (groupListType_ == GROUP_LIST_TYPE_OFFSET) {
+            const int64_t offset = groupList[loopIdx];
+            splitValue = offset - preOffset_;
+            preOffset_ = offset;
+        } else if (groupListType_ == GROUP_LIST_TYPE_LENGTH) {
+            splitValue = groupList[loopIdx];
+            preOffset_ += splitValue;
+        } else {
+            const uint32_t splitValueIdx = loopIdx * SPARSE_GROUP_LIST_ITEM_STRIDE +
+                                           SPARSE_GROUP_LIST_SPLIT_VALUE_OFFSET;
+            splitValue = groupList[splitValueIdx];
+            preOffset_ += splitValue;
+        }
+        return splitValue;
+    }
+
     template <typename T_>
     __aicore__ inline __gm__ T_* GetTensorAddrFromTensorList(uint32_t tensorIdx, __gm__ T_* tensorListAddr) const
     {
@@ -842,6 +875,8 @@ private:
 GROUPED_MATMUL_RESPLIT_KERNEL_TEMPLATE_PARAM
 __aicore__ inline void GROUPED_MATMUL_RESPLIT_KERNEL_CLASS::operator()(const Params& params)
 {
+    groupListType_ = params.groupListType;
+    preOffset_ = 0;
     // ScaleB is consumed by AIC MMAD and by the AIV prologue that fills ScaleB L1.
     antiquantScaleGm_ = reinterpret_cast<__gm__ typename BlockMmad::ScaleBType*>(params.mmad.ptrScaleB);
     // AIC branch consumes A / scales and performs MMAD accumulation.
@@ -857,12 +892,14 @@ __aicore__ inline void GROUPED_MATMUL_RESPLIT_KERNEL_CLASS::operator()(const Par
     }
     BlockScheduler scheduler(params.scheduler);
     groupListGm_ = reinterpret_cast<__gm__ int64_t*>(params.ptrGroupList);
-    const uint64_t kSize = AscendC::Std::get<1>(params.problemShape);
-    const uint64_t nSize = AscendC::Std::get<2>(params.problemShape);
-    const uint64_t groupNum = AscendC::Std::get<3>(params.problemShape);
-    const uint64_t scaleKSize = CeilDiv(kSize, static_cast<uint64_t>(64)) * 2;
+    const uint64_t kSize = AscendC::Std::get<PROBLEM_SHAPE_K_INDEX>(params.problemShape);
+    const uint64_t nSize = AscendC::Std::get<PROBLEM_SHAPE_N_INDEX>(params.problemShape);
+    const uint64_t groupNum = AscendC::Std::get<PROBLEM_SHAPE_GROUP_NUM_INDEX>(params.problemShape);
+    const uint64_t scaleKSize = CeilDiv(kSize, MXFP_DIVISOR_SIZE) * MXFP_MULTI_BASE_SIZE;
+    const uint64_t groupListSize = groupNum *
+                                   (groupListType_ == GROUP_LIST_TYPE_SPARSE ? SPARSE_GROUP_LIST_ITEM_STRIDE : 1U);
     auto tensorGroupListGm = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::gm>(groupListGm_),
-                                                  TensorLayoutGroupList{}(1, groupNum));
+                                                  TensorLayoutGroupList{}(1, groupListSize));
     using MakeLayoutB = asc::te::frame_layout_format<typename BlockMmad::LayoutB,
                                                      AscendC::Std::Int<asc::te::c0_element<typename BlockMmad::AType>>>;
     using MakeLayoutScaleB = asc::te::frame_layout_format<typename BlockMmad::LayoutScaleB,
@@ -878,22 +915,23 @@ __aicore__ inline void GROUPED_MATMUL_RESPLIT_KERNEL_CLASS::operator()(const Par
         // not resolve, slice, or dereference it in the group/tile loops.
         auto tensorScaleBGm = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::gm>(antiquantScaleGm_),
                                                    scaleBLayout);
-        uint64_t preGroupOffset = 0;
-        for (uint32_t groupIdx = 0; groupIdx < groupNum; ++groupIdx) {
-            uint64_t groupListValue = static_cast<uint64_t>(tensorGroupListGm[groupIdx]);
-            uint64_t mSize = groupListValue;
-            if (params.groupListType == 0) {
-                mSize = groupListValue - preGroupOffset;
-                preGroupOffset = groupListValue;
+        for (uint32_t loopIdx = 0; loopIdx < groupNum; ++loopIdx) {
+            const int64_t groupM = GetSplitValueFromGroupList(tensorGroupListGm, loopIdx);
+            if (groupListType_ == GROUP_LIST_TYPE_SPARSE && groupM <= 0) {
+                break;
             }
+            const uint64_t mSize = static_cast<uint64_t>(groupM);
             if (mSize > 0 && nSize > 0) {
-                auto tensorAGm = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::gm>(xGm_),
-                                                      MakeLayoutA{}(mSize, kSize));
+                const uint64_t groupMOffset = static_cast<uint64_t>(preOffset_ - groupM);
+                auto tensorAGm = asc::te::make_tensor(
+                    asc::te::make_mem_ptr<asc::te::location::gm>(xGm_ + groupMOffset * kSize),
+                    MakeLayoutA{}(mSize, kSize));
                 auto tensorScaleAGm = asc::te::make_tensor(
-                    asc::te::make_mem_ptr<asc::te::location::gm>(perTokenScaleGm_),
+                    asc::te::make_mem_ptr<asc::te::location::gm>(perTokenScaleGm_ + groupMOffset * scaleKSize),
                     MakeLayoutScaleA{}(mSize, scaleKSize));
-                auto tensorCGm = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::gm>(yGm_),
-                                                      MakeLayoutC{}(mSize, nSize));
+                auto tensorCGm = asc::te::make_tensor(
+                    asc::te::make_mem_ptr<asc::te::location::gm>(yGm_ + groupMOffset * nSize),
+                    MakeLayoutC{}(mSize, nSize));
 
                 scheduler.UpdateNextProblem(asc::te::make_shape(mSize, nSize, kSize));
                 typename BlockScheduler::BlockCoord blockCoord;
@@ -913,9 +951,6 @@ __aicore__ inline void GROUPED_MATMUL_RESPLIT_KERNEL_CLASS::operator()(const Par
                     blockMmad(tensorBlockAGm, tensorBlockScaleAGm, tensorScaleBGm, tensorBlockCGm, params.hasBias != 0);
                 }
             }
-            xGm_ += mSize * kSize;
-            yGm_ += mSize * nSize;
-            perTokenScaleGm_ += mSize * scaleKSize;
         }
     } else {
         using TensorLayoutBias = typename BlockMmad::LayoutBias;
@@ -927,13 +962,15 @@ __aicore__ inline void GROUPED_MATMUL_RESPLIT_KERNEL_CLASS::operator()(const Par
         const bool isWeightCacheLineAligned = kSize % FP4_CACHE_LINE_ELEMENT_NUM == 0;
         const uint64_t baseM = static_cast<uint64_t>(params.scheduler.baseM);
         BlockPrologue blockPrologue(params.hasBias != 0);
-        uint64_t preGroupOffset = 0;
-        for (uint32_t groupIdx = 0; groupIdx < groupNum; ++groupIdx) {
-            uint64_t groupListValue = static_cast<uint64_t>(tensorGroupListGm[groupIdx]);
-            uint64_t mSize = groupListValue;
-            if (params.groupListType == 0) {
-                mSize = groupListValue - preGroupOffset;
-                preGroupOffset = groupListValue;
+        for (uint32_t loopIdx = 0; loopIdx < groupNum; ++loopIdx) {
+            const int64_t groupM = GetSplitValueFromGroupList(tensorGroupListGm, loopIdx);
+            if (groupListType_ == GROUP_LIST_TYPE_SPARSE && groupM <= 0) {
+                break;
+            }
+            const uint64_t mSize = static_cast<uint64_t>(groupM);
+            uint32_t groupIdx = loopIdx;
+            if (groupListType_ == GROUP_LIST_TYPE_SPARSE) {
+                groupIdx = static_cast<uint32_t>(tensorGroupListGm[loopIdx * SPARSE_GROUP_LIST_ITEM_STRIDE]);
             }
             if (mSize > 0 && nSize > 0) {
                 __gm__ typename BlockPrologue::InType* groupWeightGm = weightGm_;
@@ -944,6 +981,13 @@ __aicore__ inline void GROUPED_MATMUL_RESPLIT_KERNEL_CLASS::operator()(const Par
                     groupScaleBGm = GetTensorAddrFromTensorList(groupIdx, antiquantScaleGm_);
                     if (params.hasBias != 0) {
                         groupBiasGm = GetTensorAddrFromTensorList(groupIdx, biasGm_);
+                    }
+                } else {
+                    // Each byte stores two FP4 elements.
+                    groupWeightGm += static_cast<uint64_t>(groupIdx) * ((nSize * kSize) >> 1U);
+                    groupScaleBGm += static_cast<uint64_t>(groupIdx) * nSize * scaleKSize;
+                    if (params.hasBias != 0) {
+                        groupBiasGm += static_cast<uint64_t>(groupIdx) * nSize;
                     }
                 }
                 scheduler.UpdateNextProblem(asc::te::make_shape(mSize, nSize, kSize));
@@ -964,14 +1008,6 @@ __aicore__ inline void GROUPED_MATMUL_RESPLIT_KERNEL_CLASS::operator()(const Par
                     auto nL1Size = AscendC::Std::get<1>(blockShape);
                     blockPrologue(weightGmTensor, scaleBGmTensor, biasGmTensor, mL1Size, kSize, nL1Size, nOffset,
                                   nAlign);
-                }
-            }
-            if constexpr (!IS_SINGLE_MULTI_SINGLE) {
-                // B4 is packed as two elements per byte, so address offset is in bytes.
-                weightGm_ += (nSize * kSize) >> 1;
-                antiquantScaleGm_ += nSize * scaleKSize;
-                if (params.hasBias != 0) {
-                    biasGm_ += nSize;
                 }
             }
         }

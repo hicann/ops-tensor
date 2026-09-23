@@ -52,6 +52,9 @@ namespace {
 constexpr uint64_t FP4_PACK_FACTOR = 2U;
 constexpr uint64_t TENSOR_LIST_ADDRESS_OFFSET = 3U * sizeof(uint64_t);
 constexpr uint64_t TENSOR_LIST_SHAPE_SENTINEL = 0xFFFFFFFFULL;
+constexpr uint32_t GROUP_LIST_TYPE_SPARSE = 2U;
+constexpr size_t SPARSE_GROUP_LIST_ITEM_STRIDE = 2U;
+constexpr int64_t INVALID_EXPERT_INDEX = -1;
 
 struct GroupedMatmulMxTilingData {
     uint32_t groupNum{0U};
@@ -150,9 +153,40 @@ CaseConfig ParseConfig(char** argv)
 bool IsValidGroupList(const CaseConfig& config)
 {
     const auto& tiling = config.tiling;
-    if (config.groupList.size() != tiling.groupNum ||
+    const size_t entryCount = static_cast<size_t>(tiling.groupNum) *
+                              (tiling.groupListType == GROUP_LIST_TYPE_SPARSE ? SPARSE_GROUP_LIST_ITEM_STRIDE : 1U);
+    if (config.groupList.size() != entryCount ||
         std::any_of(config.groupList.begin(), config.groupList.end(), [](int64_t value) { return value < 0; })) {
         return false;
+    }
+    if (tiling.groupListType == GROUP_LIST_TYPE_SPARSE) {
+        std::vector<bool> seen(tiling.groupNum, false);
+        int64_t previousActive = INVALID_EXPERT_INDEX;
+        int64_t previousZero = INVALID_EXPERT_INDEX;
+        int64_t totalM = 0;
+        bool hasZeroGroup = false;
+        for (size_t index = 0U; index < entryCount; index += SPARSE_GROUP_LIST_ITEM_STRIDE) {
+            const int64_t expert = config.groupList[index];
+            const int64_t count = config.groupList[index + 1U];
+            if (expert >= tiling.groupNum || seen[expert]) {
+                return false;
+            }
+            seen[expert] = true;
+            if (count == 0) {
+                if (expert <= previousZero) {
+                    return false;
+                }
+                previousZero = expert;
+                hasZeroGroup = true;
+            } else {
+                if (hasZeroGroup || expert <= previousActive || count > config.totalM - totalM) {
+                    return false;
+                }
+                previousActive = expert;
+                totalM += count;
+            }
+        }
+        return totalM == config.totalM;
     }
     if (tiling.groupListType == 0U) {
         return std::is_sorted(config.groupList.begin(), config.groupList.end()) &&
@@ -170,7 +204,8 @@ bool IsValidConfig(const CaseConfig& config)
                              (config.singleW == 0U && tiling.groupNum <= 128U);
     const bool validTypes = (config.weightDtype == "float4_e2m1" || config.weightDtype == "float4_e1m2") &&
                             (config.cDtype == "float16" || config.cDtype == "bfloat16");
-    const bool validFlags = tiling.hasBias <= 1U && tiling.groupListType <= 1U && config.singleW <= 1U;
+    const bool validFlags = tiling.hasBias <= 1U && tiling.groupListType <= GROUP_LIST_TYPE_SPARSE &&
+                            config.singleW <= 1U;
     const uint64_t nBlockCount = tiling.mainBlockCount + tiling.firstTailBlockCount + tiling.secondTailBlockCount;
     const uint64_t coveredN = static_cast<uint64_t>(tiling.mainBlockSize) * tiling.mainBlockCount +
                               static_cast<uint64_t>(tiling.firstTailBlockSize) * tiling.firstTailBlockCount +

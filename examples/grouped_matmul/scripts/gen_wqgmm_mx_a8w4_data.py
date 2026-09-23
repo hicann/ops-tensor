@@ -23,6 +23,8 @@ MX_GROUP_SIZE = 32
 NZ_K0 = 32
 NZ_N0 = 16
 FP4_PACK_FACTOR = 2
+GROUP_LIST_TYPE_SPARSE = 2
+SPARSE_GROUP_LIST_ITEM_STRIDE = 2
 DEFAULT_SEED = 20260829
 OUTPUT_DTYPES = {
     "float16": np.float16,
@@ -86,11 +88,38 @@ def align_up(value, alignment):
 
 def parse_group_list(text, group_num, total_m, group_list_type):
     values = np.asarray([int(item) for item in text.split(";")], dtype=np.int64)
-    if values.size != group_num:
-        raise ValueError("groupList must contain exactly groupNum entries")
+    entry_count = group_num * (
+        SPARSE_GROUP_LIST_ITEM_STRIDE
+        if group_list_type == GROUP_LIST_TYPE_SPARSE
+        else 1
+    )
+    if values.size != entry_count:
+        raise ValueError(f"groupList must contain exactly {entry_count} entries")
     if np.any(values < 0):
         raise ValueError("groupList entries must be nonnegative")
-    if group_list_type == 0:
+    if group_list_type == GROUP_LIST_TYPE_SPARSE:
+        values = values.reshape(group_num, SPARSE_GROUP_LIST_ITEM_STRIDE)
+        experts, counts = values[:, 0], values[:, 1]
+        if sorted(experts.tolist()) != list(range(group_num)):
+            raise ValueError(
+                "sparse groupList indices must be a permutation of [0, groupNum)"
+            )
+        active = counts > 0
+        if np.any(active[1:] & ~active[:-1]):
+            raise ValueError("sparse groupList must place all zero-size groups last")
+        if np.any(np.diff(experts[active]) <= 0) or np.any(
+            np.diff(experts[~active]) <= 0
+        ):
+            raise ValueError(
+                "active and zero-size groups must each be ordered by expert index"
+            )
+        if int(counts.sum()) != total_m:
+            raise ValueError("sparse groupList counts must sum to totalM")
+        # The existing generator stores weights by expert index. Restore counts to
+        # that order so X/Y remain contiguous while W, ScaleB and Bias select experts.
+        lengths = np.zeros(group_num, dtype=np.int64)
+        lengths[experts] = counts
+    elif group_list_type == 0:
         if np.any(np.diff(values) < 0):
             raise ValueError("offset groupList must be nondecreasing")
         if int(values[-1]) != total_m:
@@ -247,7 +276,12 @@ def parse_args():
     parser.add_argument("--weight-dtype", choices=tuple(WEIGHT_TYPES), required=True)
     parser.add_argument("--c-dtype", choices=tuple(OUTPUT_DTYPES), required=True)
     parser.add_argument("--is-bias", type=int, choices=(0, 1), required=True)
-    parser.add_argument("--group-list-type", type=int, choices=(0, 1), required=True)
+    parser.add_argument(
+        "--group-list-type",
+        type=int,
+        choices=(0, 1, GROUP_LIST_TYPE_SPARSE),
+        required=True,
+    )
     parser.add_argument("--single-w", type=int, choices=(0, 1), required=True)
     parser.add_argument("--group-list", required=True)
     parser.add_argument("--output-dir", required=True)

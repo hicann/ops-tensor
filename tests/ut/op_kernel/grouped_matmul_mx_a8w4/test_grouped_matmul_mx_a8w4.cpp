@@ -31,6 +31,8 @@ namespace {
 
 constexpr uint64_t FP4_PACK_FACTOR = 2U;
 constexpr uint8_t MX_IDENTITY_SCALE = 0x7FU;
+constexpr uint32_t GROUP_LIST_TYPE_SPARSE = 2U;
+constexpr size_t SPARSE_GROUP_LIST_ITEM_STRIDE = 2U;
 
 uint64_t AlignUp(uint64_t value, uint64_t alignment)
 {
@@ -87,10 +89,16 @@ struct CaseConfig {
     uint16_t secondTailBlockCount;
 };
 
+size_t GetGroupNum(const CaseConfig& config)
+{
+    return config.groupList.size() /
+           (config.groupListType == GROUP_LIST_TYPE_SPARSE ? SPARSE_GROUP_LIST_ITEM_STRIDE : 1U);
+}
+
 class GroupedCaseBuffers {
 public:
     GroupedCaseBuffers(const CaseConfig& config, size_t outputElementSize)
-        : groupNum_(config.groupList.size()),
+        : groupNum_(GetGroupNum(config)),
           scaleK_(AlignUp(config.k, 64U) / 32U),
           weightGroupSize_(static_cast<size_t>(AlignUp(config.k, 32U) * AlignUp(config.n, 16U) / FP4_PACK_FACTOR)),
           scaleBGroupSize_(static_cast<size_t>(config.n) * scaleK_),
@@ -98,7 +106,7 @@ public:
           a_(static_cast<size_t>(config.totalM) * config.k),
           scaleA_(static_cast<size_t>(config.totalM) * scaleK_),
           c_(static_cast<size_t>(config.totalM) * config.n * outputElementSize),
-          groupList_(groupNum_ * sizeof(int64_t)),
+          groupList_(config.groupList.size() * sizeof(int64_t)),
           tiling_(sizeof(GroupedMatmulMxA8W4TilingData)),
           b_(config.singleW == 1U ? groupNum_ * weightGroupSize_ : (groupNum_ + 3U) * sizeof(uint64_t)),
           scaleB_(config.singleW == 1U ? groupNum_ * scaleBGroupSize_ : (groupNum_ + 3U) * sizeof(uint64_t)),
@@ -177,7 +185,7 @@ private:
 GroupedMatmulMxA8W4TilingData BuildTiling(const CaseConfig& config)
 {
     return GroupedMatmulMxA8W4TilingData{
-        static_cast<uint32_t>(config.groupList.size()),
+        static_cast<uint32_t>(GetGroupNum(config)),
         1U,
         config.k,
         config.n,
@@ -255,6 +263,13 @@ TEST(GroupedMatmulMxA8W4KernelTest, E1M2OffsetContiguousNoBiasBf16WithThreeNSegm
 {
     const CaseConfig config{{16, 32}, 32, 448, 128, 32, 0, 1, 0, 256, 1, 128, 1, 64, 1};
     RunCase<fp4x2_e1m2_t, bfloat16_t, false>(config);
+}
+
+TEST(GroupedMatmulMxA8W4KernelTest, E2M1SparseContiguousBiasBf16)
+{
+    const CaseConfig config{
+        {1, 7, 3, 10, 0, 0, 2, 0}, 17, 64, 128, 32, GROUP_LIST_TYPE_SPARSE, 1, 1, 64, 1, 0, 0, 0, 0};
+    RunCase<fp4x2_e2m1_t, bfloat16_t, false>(config);
 }
 
 } // namespace

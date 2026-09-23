@@ -15,7 +15,7 @@ Kernel 层拥有 group/block 调度、AIV Prologue、AIC MMAD 调用和同步生
 
 - Weight 为 packed FP4 E2M1 或 E1M2；
 - 输出和可选 Bias 为 FP16 或 BF16；
-- groupListType 为 0（累计 Offset）或 1（当前组 Count）；
+- groupListType 为 0（累计 Offset）、1（当前组 Count）或 2（Sparse）；
 - 连续多 expert Weight 或每 expert 一个 Tensor 的 TensorList；
 - N 方向 main、first-tail、second-tail 三段调度。
 
@@ -59,7 +59,7 @@ IsSingleMultiSingle=true。
 | xScale | fp8_e8m0_t，ScaleA ND | [totalM, ceil(K/64)*2] | 与 x 的 M 顺序一致 |
 | weightScale | fp8_e8m0_t，ScaleB DN | 每 expert [ceil(K/64)*2, N] | 连续数据首地址或 TensorList 描述符 |
 | bias | FP16/BF16，ND | 每 expert [N] | hasBias=0 时可为空；否则与 Weight 使用相同存储模式 |
-| groupList | int64_t，ND | [groupNum] | 原始数组地址，不是 TensorList |
+| groupList | int64_t，ND | grouplisttype 0/1：[groupNum]；grouplisttype 2：[groupNum, 2] | 原始数组地址，不是 TensorList |
 | y | FP16/BF16，ND | [totalM, N] | 所有 expert 沿 M 连续拼接 |
 
 每个字节承载两个 FP4 元素。连续存储模式下，相邻 expert 的 Weight 字节步长为
@@ -72,6 +72,12 @@ TensorList 描述符须覆盖 groupNum 项。Weight、ScaleB 和非空 Bias 使�
 groupListType=0 时，第 i 项为前 i+1 个 expert 的累计 M；序列须非递减，最后一项等于
 totalM。groupListType=1 时，第 i 项为该 expert 的 M count；所有值之和等于 totalM。
 两种模式都允许值为 0 的空 expert。
+
+当 groupListType 为 2 时，groupList 的 shape 为 `[E, 2]`，E 为分组数（groupNum），
+数据排布为 `[[groupIdx0, groupSize0], [groupIdx1, groupSize1], ...]`。
+其中，groupIdx 表示分组索引，groupSize 表示 M 轴上每组的大小，groupList 中所有数值均须非负。
+groupSize 非零的分组按 groupIdx 升序排列在前，groupSize 为零的分组按 groupIdx 升序排列在后。
+例如，`[[1, 7], [3, 10], [0, 0], [2, 0]]`。
 
 N 三段 block 必须无遗漏覆盖 N。Kernel 对每个 expert 按 baseM 继续切 M，并在逻辑 Cube core
 间轮转起始 block，保持跨 expert 的负载均衡。AIC 和 AIV 使用同一调度器实例语义。
