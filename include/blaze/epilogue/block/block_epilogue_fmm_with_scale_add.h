@@ -115,7 +115,8 @@ public:
 
     template <typename TensorC>
     __aicore__ inline void operator()(TensorC& ubTensor, const BlockShape& blockShape, int64_t dstOffset, bool splitM,
-                                      int64_t baseM, int64_t baseN)
+                                      int64_t baseM, int64_t baseN, int64_t stagingBaseOffset = -1,
+                                      int64_t stagingBytes = -1)
     {
         int64_t curM = asc::te::get<Blaze::Gemm::MNK_M>(blockShape);
         if (baseM != 0) {
@@ -146,7 +147,8 @@ public:
                 continue;
             }
             Gemm::Sync::WaitForCube<AIC_SYNC_AIV_MODE_4, PIPE_V>(AIC_SYNC_AIV_FLAG);
-            ProcessTile(ubTensor, localRows, accumulatorRows, tileN, dstOffset + nIdx * curBaseN + localRowOffset * n_);
+            ProcessTile(ubTensor, localRows, accumulatorRows, tileN, dstOffset + nIdx * curBaseN + localRowOffset * n_,
+                        stagingBaseOffset, stagingBytes);
             Gemm::Sync::NotifyCube<AIC_SYNC_AIV_MODE_4, PIPE_MTE3>(AIV_SYNC_AIC_FLAG);
         }
     }
@@ -166,7 +168,7 @@ private:
 
     template <typename TensorC>
     __aicore__ inline void ProcessTile(TensorC& ubTensor, int64_t localRows, int64_t accumulatorRows, int64_t tileN,
-                                       int64_t tileGmOffset)
+                                       int64_t tileGmOffset, int64_t stagingBaseOffset, int64_t stagingBytes)
     {
         if (localRows <= 0 || tileN <= 0) {
             return;
@@ -181,7 +183,10 @@ private:
             return;
         }
         // Place x3 immediately after the accumulator. The output reuses the x3 buffer in place.
-        const uint64_t x3OutputBufferBytes = AscendC::TOTAL_UB_SIZE - accumulatorBytes;
+        // Callers that host several accumulator images in UB pass an explicit staging
+        // window; the default places staging right after this tile's accumulator.
+        const uint64_t x3OutputBufferBytes = stagingBytes >= 0 ? static_cast<uint64_t>(stagingBytes) :
+                                                                 AscendC::TOTAL_UB_SIZE - accumulatorBytes;
         const uint64_t stageRowBytes = nAlignElement * sizeof(ElementType_);
         const int64_t stageRows = static_cast<int64_t>(
             Blaze::Gemm::Min(static_cast<uint64_t>(localRows), x3OutputBufferBytes / stageRowBytes));
@@ -199,7 +204,8 @@ private:
             const auto validShape = asc::te::make_shape(rowsThisStage, tileN);
 
             auto x3UbStorage = asc::te::make_tensor(
-                asc::te::make_mem_ptr<asc::te::location::ub, ElementType_>(accumulatorBytes),
+                asc::te::make_mem_ptr<asc::te::location::ub, ElementType_>(
+                    stagingBaseOffset >= 0 ? static_cast<uint64_t>(stagingBaseOffset) : accumulatorBytes),
                 asc::te::make_frame_layout<asc::te::nd_ext_layout_ptn>(rowsThisStage,
                                                                        static_cast<int64_t>(nAlignElement)));
             auto x3Ub = x3UbStorage.slice(origin, validShape);

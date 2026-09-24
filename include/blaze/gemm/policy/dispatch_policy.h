@@ -36,6 +36,7 @@ struct KernelQbmmMultiBlockStreamK {};          // QBMM MX StreamK schedule
 struct KernelQbmmPertensorMultiBlockStreamK {}; // QBMM per-tensor StreamK schedule
 struct KernelMmadMultiBlockBasic {};            // Multi-tile basic
 struct KernelMmadFmmWithScaleAdd {};            // Fused matmul with scale/add epilogue
+struct KernelMmadSyrk {};                       // Symmetric rank-k update, single nd2nz fetch per row-block
 struct KernelIterBatchBroadcast {};             // Multi-tile batchMatmul broadcast + iterbatch
 struct KernelMmadMultiBlockBmmBroadcast {};     // Multi-tile batchMatmul broadcast
 struct KernelMmadMultiBlockAFullLoad {};        // Multi-tile aFullLoad
@@ -322,6 +323,22 @@ struct MatmulWithWeightAntiquant {
                   "Weight antiquantization supports only 2 or 4 UB input buffers");
     static_assert(AntiquantType_ == QuantMode::PERTENSOR_MODE || AntiquantType_ == QuantMode::PERCHANNEL_MODE,
                   "Weight antiquantization supports only per-tensor or per-channel quantization");
+};
+
+/**
+ * @struct MatmulSyrk
+ * @brief Symmetric rank-k update (C = alpha * (A @ A^T) + beta * C) policy.
+ *
+ * The syrk block loads each A row-block from GM into L1 exactly once per
+ * (row-block pair, k-chunk) via a single nd2nz CopyGM2L1. The NZ arrangement
+ * of a row-block X(m, k) is byte-identical to the ZN arrangement of X^T(k, m),
+ * so one L1 image feeds both cube inputs: an NZ view sources L0A
+ * (CopyL12L0A) and a ZN view sources L0B (CopyL12L0B). Upper-triangle tile
+ * pairs (i, j) / (j, i) share the two row-block fetches, halving the total
+ * GM->L1 traffic versus a generic matmul composition.
+ */
+struct MatmulSyrk {
+    using ScheduleType = KernelMmadSyrk;
 };
 
 } // namespace Gemm
