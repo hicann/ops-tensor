@@ -34,6 +34,11 @@ constexpr uint16_t MIX_AIC_SYNC_AIV_FLAG = 0;
 constexpr uint16_t MIX_AIV_SYNC_AIC_FLAG = 1;
 constexpr uint16_t MIX_FLAG_ID_MAX = 16;
 
+// Fixpipe L0C->UB producer-consumer handshake. The slot index is added to each base flag.
+constexpr uint16_t FIXPIPE_AIV_ACK_FLAG_BASE = 4;   // AIV -> AIC: the UB slot can be reused.
+constexpr uint16_t FIXPIPE_AIC_READY_FLAG_BASE = 6; // AIC -> AIV: the UB slot contains valid data.
+constexpr uint16_t FIXPIPE_MAX_SLOT_COUNT = 2;
+
 constexpr uint16_t NPU_ARCH_950 = 950;
 constexpr uint16_t NPU_ARCH_960 = 960;
 

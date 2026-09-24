@@ -53,11 +53,6 @@ public:
     static constexpr bool TRANS_B = IsTrans<LayoutB>::value;
     static constexpr bool WEIGHT_NZ_FORMAT = IsWeightNz<LayoutB>::value;
 
-    constexpr static uint16_t AIC_SYNC_AIV_MODE_4 = 4;
-    constexpr static uint16_t AIV_SYNC_AIC_FLAG = 4;
-    constexpr static uint16_t AIC_SYNC_AIV_FLAG = 6;
-    constexpr static uint16_t FLAG_ID_MAX = 16;
-
     using MakeLayoutAL1 = AscendC::Std::conditional_t<
         TRANS_A, asc::te::frame_layout_format<asc::te::zn_layout_ptn, asc::te::layout_trait_default<AType>>,
         asc::te::frame_layout_format<asc::te::nz_layout_ptn, asc::te::layout_trait_default<AType>>>;
@@ -85,6 +80,7 @@ public:
         uint64_t splitM{0};
         uint8_t ubDB{1};
         uint64_t rowStride{0};
+        uint32_t ubPitchGran{0};
     };
 
 public:
@@ -104,7 +100,6 @@ public:
 
     __aicore__ inline void Init(const Params& params)
     {
-        k_ = params.oriK;
         mL1_ = params.mL1;
         nL1_ = params.nL1;
         kL1_ = params.kL1;
@@ -115,6 +110,7 @@ public:
         l1Stages_ = params.l1Stages;
         splitM_ = params.splitM;
         ubDB_ = params.ubDB;
+        ubPitchGran_ = params.ubPitchGran;
         enableL0cPingPong_ = params.l0cStages > 1;
         l0PingPong_ = 0;
         abL1LoopCnt_ = 0;
@@ -146,17 +142,19 @@ public:
 
         curBaseN_ = Min(curN, baseN_);
         nL1Iter_ = CeilDiv(curN, curBaseN_);
-        kL1_ = Min(k_, kL1_);
-        kL1Iter_ = CeilDiv(k_, kL1_);
+        const uint64_t curKL1Base = Min(curK, kL1_);
+        const uint64_t kL1Iter = CeilDiv(curK, curKL1Base);
         for (uint64_t iterN = 0; iterN < nL1Iter_; ++iterN) {
             auto tileN = (iterN + 1 == nL1Iter_) ? (curN - curBaseN_ * iterN) : curBaseN_;
             const auto& l0cSlot = bufMgr_.GetL0CSlot(l0cPingPong_ & 0x1);
+            // L0C always describes the valid MMAD tile. Destination alignment and row pitch are physical UB
+            // properties and must not enlarge the logical source shape used by the MMAD/Fixpipe unit-flag pair.
             auto layoutL0C = asc::te::frame_layout_format<asc::te::nz_layout_ptn, AscendC::Std::Int<16>>{}(curM, tileN);
             auto tensorL0C = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::l0c, float>(l0cSlot.Addr()),
                                                   layoutL0C);
 
-            for (uint64_t iter0 = 0; iter0 < kL1Iter_; ++iter0) {
-                auto curKL1 = (iter0 + 1 == kL1Iter_) ? (k_ - kL1_ * iter0) : kL1_;
+            for (uint64_t iter0 = 0; iter0 < kL1Iter; ++iter0) {
+                const uint64_t curKL1 = (iter0 + 1 == kL1Iter) ? (curK - curKL1Base * iter0) : curKL1Base;
                 uint64_t l1BufId = abL1LoopCnt_ & (l1Stages_ - 1);
                 uint64_t btBufId = abL1LoopCnt_ & 0x1;
 
@@ -166,7 +164,8 @@ public:
                 const auto& btSlot = bufMgr_.GetBTSlot(btBufId);
 
                 TileShape l1Shape{curM, tileN, curKL1};
-                auto l1TensorTuple = CopyL1FromGM(gmA, gmB, gmBias, l1Shape, aL1Slot, bL1Slot, biasL1Slot, iter0);
+                const uint64_t kOffset = iter0 * curKL1Base;
+                auto l1TensorTuple = CopyL1FromGM(gmA, gmB, gmBias, l1Shape, aL1Slot, bL1Slot, biasL1Slot, kOffset);
                 auto tensorAL1 = asc::te::get<0>(l1TensorTuple);
                 auto tensorBL1 = asc::te::get<1>(l1TensorTuple);
                 auto tensorBiasL1 = asc::te::get<2>(l1TensorTuple);
@@ -193,8 +192,8 @@ public:
                         auto l0Lock = l0Slot.LockM();
                         auto btLock = btSlot.LockM();
                         bool initCmatrix = iter0 == 0 && iter1 == 0 && !isBias_;
-                        uint8_t unitFlag = ((iter0 + 1 == kL1Iter_ && iter1 + 1 == kL0Iter) ? FINAL_ACCUMULATION :
-                                                                                              NON_FINAL_ACCUMULATION);
+                        bool isFinalK = iter0 + 1 == kL1Iter && iter1 + 1 == kL0Iter;
+                        uint8_t unitFlag = isFinalK ? FINAL_ACCUMULATION : NON_FINAL_ACCUMULATION;
                         Compute(tensorAL0, tensorBL0, tensorBiasL0, tensorL0C, l0Shape, needBias, unitFlag,
                                 initCmatrix);
                     }
@@ -204,9 +203,9 @@ public:
             }
 
             uint16_t slot = (ubDB_ > 1) ? static_cast<uint16_t>(cvPingPong_ & 0x1) : 0U;
-            Sync::WaitForVector<AIC_SYNC_AIV_MODE_4, PIPE_FIX>(AIV_SYNC_AIC_FLAG + slot, splitM_);
+            Sync::WaitForVector<Sync::SYNC_MODE_INTRA, PIPE_FIX>(Sync::FIXPIPE_AIV_ACK_FLAG_BASE + slot, splitM_);
             CopyOutFromL0C2UB(tensorC, tensorL0C, tileN, curM, slot);
-            Sync::NotifyVector<AIC_SYNC_AIV_MODE_4, PIPE_FIX>(AIC_SYNC_AIV_FLAG + slot, splitM_);
+            Sync::NotifyVector<Sync::SYNC_MODE_INTRA, PIPE_FIX>(Sync::FIXPIPE_AIC_READY_FLAG_BASE + slot, splitM_);
             cvPingPong_++;
 
             if (enableL0cPingPong_) {
@@ -224,7 +223,7 @@ private:
     template <typename TensorA, typename TensorB, typename TensorBias>
     __aicore__ inline auto CopyL1FromGM(const TensorA& tensorA, const TensorB& tensorB, const TensorBias& tensorBias,
                                         const TileShape& l1Shape, const BufferSlot& aL1Slot, const BufferSlot& bL1Slot,
-                                        const BufferSlot& biasL1Slot, uint64_t kIdx)
+                                        const BufferSlot& biasL1Slot, uint64_t kOffset)
     {
         uint64_t curM = asc::te::get<MNK_M>(l1Shape);
         uint64_t curN = asc::te::get<MNK_N>(l1Shape);
@@ -237,7 +236,7 @@ private:
                                               layoutAL1);
         {
             auto lock = aL1Slot.LockMte2();
-            auto gmTileA = tensorA.slice(asc::te::make_coord(0, kIdx * kL1_), asc::te::make_shape(curM, curKL1));
+            auto gmTileA = tensorA.slice(asc::te::make_coord(0, kOffset), asc::te::make_shape(curM, curKL1));
             asc::te::copy(copyGM2L1, tensorAL1, gmTileA);
         }
 
@@ -246,14 +245,14 @@ private:
                                               layoutBL1);
         {
             auto lock = bL1Slot.LockMte2();
-            auto gmTileB = tensorB.slice(asc::te::make_coord(kIdx * kL1_, 0), asc::te::make_shape(curKL1, curN));
+            auto gmTileB = tensorB.slice(asc::te::make_coord(kOffset, 0), asc::te::make_shape(curKL1, curN));
             asc::te::copy(copyGM2L1, tensorBL1, gmTileB);
         }
 
         auto layoutBiasL1 = asc::te::make_frame_layout<asc::te::nd_ext_layout_ptn>(1UL, curN);
         auto tensorBiasL1 = asc::te::make_tensor(
             asc::te::make_mem_ptr<asc::te::location::l1, BiasType>(biasL1Slot.Addr()), layoutBiasL1);
-        if (isBias_ && kIdx == 0) {
+        if (isBias_ && kOffset == 0) {
             auto lock = biasL1Slot.LockMte2();
             asc::te::copy(copyGM2L1, tensorBiasL1, tensorBias);
         }
@@ -314,14 +313,15 @@ private:
     __aicore__ inline void CopyOutFromL0C2UB(TensorUB& tensorC, TensorL0C& tensorL0C, uint64_t tileN, uint64_t curM,
                                              uint16_t slotIdx)
     {
+        using TensorUbType = asc::te::get_attribute_element_type<typename TensorUB::element_type*>;
         asc::te::l0c_to_ub_params fixpParams{asc::te::unit_flag_mode::enable_update};
-        uint64_t tileNAlign = Blaze::Gemm::CeilAlign(tileN, static_cast<uint64_t>(asc::te::c0_element<CType>));
+        uint64_t tileNAlign = GetFixpipeRowPitch<TensorUB>(tileN);
         auto layoutUB = asc::te::make_frame_layout<asc::te::nd_ext_layout_ptn>(
             Blaze::Gemm::CeilAlign(curM, SPLIT_M_ALIGN), tileNAlign);
-        constexpr int64_t ubHalfElems = static_cast<int64_t>(AscendC::TOTAL_UB_SIZE / sizeof(CType) /
-                                                             DOUBLE_BUFFER_COUNT);
+        constexpr int64_t totalUbElems = static_cast<int64_t>(AscendC::TOTAL_UB_SIZE / sizeof(TensorUbType));
+        const int64_t ubSlotElems = ubDB_ > 1U ? totalUbElems / DOUBLE_BUFFER_COUNT : totalUbElems;
         auto ubTensor = asc::te::make_tensor(
-            asc::te::make_mem_ptr<asc::te::location::ub>(tensorC.data().get() + slotIdx * ubHalfElems), layoutUB);
+            asc::te::make_mem_ptr<asc::te::location::ub>(tensorC.data().get() + slotIdx * ubSlotElems), layoutUB);
         if (splitM_) {
             auto copyL0C2UBSplitM = asc::te::make_copy(asc::te::copy_l0c_to_ub{},
                                                        Blaze::Gemm::Tile::CopyL0C2UBTraitSplitM{});
@@ -354,7 +354,15 @@ private:
 private:
     static constexpr uint64_t SPLIT_M_ALIGN = 2;
 
-    uint64_t k_{1};
+    template <typename TensorUB>
+    __aicore__ inline uint64_t GetFixpipeRowPitch(uint64_t tileN) const
+    {
+        using TensorUbType = asc::te::get_attribute_element_type<typename TensorUB::element_type*>;
+        const uint64_t pitchGran = ubPitchGran_ == 0 ? static_cast<uint64_t>(asc::te::c0_element<TensorUbType>) :
+                                                       static_cast<uint64_t>(ubPitchGran_);
+        return Blaze::Gemm::CeilAlign(tileN, pitchGran);
+    }
+
     uint64_t mL1_{1};
     uint64_t nL1_{1};
     uint64_t kL1_{1};
@@ -363,12 +371,12 @@ private:
     uint64_t baseK_{16};
     uint64_t curBaseN_{16};
     uint64_t nL1Iter_{0};
-    uint64_t kL1Iter_{0};
     uint32_t l1Stages_{1};
     uint64_t abL1LoopCnt_{0};
     uint64_t l0PingPong_{0};
     uint64_t l0cPingPong_{0};
     uint64_t ubDB_{0};
+    uint32_t ubPitchGran_{0};
     bool isBias_{false};
     bool enableL0cPingPong_{false};
     bool splitM_{false};

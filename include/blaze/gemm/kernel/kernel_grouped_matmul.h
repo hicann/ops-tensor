@@ -27,6 +27,7 @@
 #include "blaze/gemm/tile/compute.h"
 #include "blaze/gemm/utils/common_utils.h"
 #include "blaze/gemm/utils/layout_utils.h"
+#include "blaze/gemm/utils/sync.h"
 
 namespace Blaze {
 namespace Gemm {
@@ -60,6 +61,10 @@ public:
     static constexpr bool TRANS_B = BlockMmad::TRANS_B;
     static constexpr bool WEIGHT_NZ = BlockMmad::WEIGHT_NZ_FORMAT;
     static constexpr bool ENABLE_INPLACE_ADD = DispatchPolicy::OUTPUT_MODE == MatmulOutputMode::INPLACE_ADD;
+    static constexpr bool ENABLE_GELU = DispatchPolicy::FUSED_OP_TYPE == Gemm::OP_TYPE_GELU;
+    using EpilogueInputType = AscendC::Std::conditional_t<ENABLE_GELU, float, CType>;
+    static_assert(!(ENABLE_GELU && ENABLE_INPLACE_ADD),
+                  "GMM GELU epilogue does not support the inplace-add output mode.");
 
     struct GMMTiling {
         uint32_t groupNum{0};
@@ -106,7 +111,11 @@ public:
         BlockScheduler bs(params.schedulerParams);
 
         if ASCEND_IS_AIV {
-            ProcessEmptyGroups(params, bs, gmGroupList);
+            if constexpr (ENABLE_GELU) {
+                ProcessGeluGroups(params, bs, gmGroupList);
+            } else {
+                ProcessEmptyGroups(params, bs, gmGroupList);
+            }
             return;
         }
 
@@ -136,6 +145,16 @@ public:
             }
             ProcessSingleGroup(params, bs, groupCoord, groupIdx);
         }
+        if constexpr (ENABLE_GELU) {
+            if ASCEND_IS_AIC {
+                const uint16_t slotCount = params.mmParams.ubDB > 1 ? static_cast<uint16_t>(2U) :
+                                                                      static_cast<uint16_t>(1U);
+                for (uint16_t slot = 0; slot < slotCount; ++slot) {
+                    Sync::WaitForVector<Sync::SYNC_MODE_INTRA, PIPE_FIX>(Sync::FIXPIPE_AIV_ACK_FLAG_BASE + slot,
+                                                                         params.mmParams.splitM != 0);
+                }
+            }
+        }
         DisableAtomicAdd();
     }
 
@@ -157,10 +176,11 @@ private:
     static constexpr uint64_t B_C0_SIZE = asc::te::c0_element<BType>;
     static constexpr uint64_t OUTPUT_BLOCK_ELEMENTS = BLOCK_BYTE_SIZE / sizeof(CType);
     static constexpr uint8_t FILL_ZERO_EVENT_ID = 0;
-
     using MakeLayoutA = asc::te::frame_layout_format<LayoutA, AscendC::Std::Int<A_C0_SIZE>>;
     using MakeLayoutB = asc::te::frame_layout_format<LayoutB, AscendC::Std::Int<B_C0_SIZE>>;
     using MakeLayoutC = asc::te::frame_layout_format<LayoutC, AscendC::Std::Int<asc::te::c0_element<CType>>>;
+    using MakeLayoutEpilogueInput = asc::te::frame_layout_format<
+        LayoutC, AscendC::Std::Int<asc::te::c0_element<EpilogueInputType>>>;
     using MakeLayoutBias = asc::te::frame_layout_format<LayoutBias, AscendC::Std::Int<asc::te::c0_element<BiasType>>>;
     using MakeLinearLayout = asc::te::frame_layout_format<asc::te::nd_ext_layout_ptn,
                                                           asc::te::layout_trait_default<CType>>;
@@ -170,6 +190,27 @@ private:
         problemShape_ = params.problemShape;
         if ASCEND_IS_AIC {
             blockMmad_.Init(params.mmParams);
+        }
+        if constexpr (ENABLE_GELU) {
+            static_assert(AscendC::Std::is_same_v<typename BlockEpilogue::DataTypeIn, EpilogueInputType>,
+                          "GMM GELU Fixpipe output type must match the epilogue input type.");
+            static_assert(BlockEpilogue::UB_BUFFER_DEPTH == 1 || BlockEpilogue::UB_BUFFER_DEPTH == 2,
+                          "GMM GELU requires one or two UB slots.");
+            static_assert(BlockEpilogue::ROW_PITCH_GRANULARITY > 0 && BlockEpilogue::ROW_PITCH_GRANULARITY % 32U == 0,
+                          "GMM GELU requires an Nz2ND-compatible UB row pitch.");
+            baseN_ = static_cast<int64_t>(params.mmParams.nL0);
+            if ASCEND_IS_AIV {
+                BlockEpilogueParams epilogueParams;
+                epilogueParams.splitM = params.mmParams.splitM;
+                blockEpilogue_.Init(epilogueParams);
+                const bool splitM = params.mmParams.splitM != 0;
+                if (splitM || AscendC::GetSubBlockIdx() == 0) {
+                    constexpr uint16_t slotCount = static_cast<uint16_t>(BlockEpilogue::UB_BUFFER_DEPTH);
+                    for (uint16_t slot = 0; slot < slotCount; ++slot) {
+                        Sync::NotifyCube<Sync::SYNC_MODE_INTRA, PIPE_MTE3>(Sync::FIXPIPE_AIV_ACK_FLAG_BASE + slot);
+                    }
+                }
+            }
         }
     }
 
@@ -234,6 +275,9 @@ private:
         auto validGroupType = params.gmmParams.groupType == GROUP_TYPE_NO_SPLIT ||
                               params.gmmParams.groupType == GROUP_TYPE_SPLIT_M ||
                               params.gmmParams.groupType == GROUP_TYPE_SPLIT_K;
+        if constexpr (ENABLE_GELU) {
+            validGroupType = validGroupType && params.gmmParams.groupType != GROUP_TYPE_SPLIT_K;
+        }
         return validGroupType && validGroupListType &&
                (params.gmmParams.groupType == GROUP_TYPE_NO_SPLIT || params.mmParams.groupListGmAddr != nullptr);
     }
@@ -428,6 +472,70 @@ private:
         WaitZeroGmCopy(hasOutputCopy);
     }
 
+    template <typename GroupListTensor>
+    __aicore__ inline void ProcessGeluGroups(const Params& params, BlockScheduler& bs,
+                                             const GroupListTensor& gmGroupList)
+    {
+        // MIX_AIC_1_2 still launches both AIV sub-blocks. In single-AIV mode AIV1 must not
+        // mirror the scheduler or participate in READY/ACK, otherwise it races AIV0 on UB and GM.
+        if (params.mmParams.splitM == 0 && AscendC::GetSubBlockIdx() != 0) {
+            return;
+        }
+        const uint64_t taskRatio = static_cast<uint64_t>(AscendC::GetTaskRation());
+        if (taskRatio == 0) {
+            return;
+        }
+        // Mirror the paired AIC's block sequence: same groups, same task interleaving, same skips.
+        const auto aicIdx = static_cast<int64_t>(AscendC::GetBlockIdx()) / static_cast<int64_t>(taskRatio);
+        for (uint32_t loopIdx = 0; loopIdx < params.gmmParams.groupNum; ++loopIdx) {
+            uint32_t groupIdx = loopIdx;
+            if (params.gmmParams.groupListType == GROUP_LIST_TYPE_SPARSE &&
+                params.gmmParams.groupType == GROUP_TYPE_SPLIT_M) {
+                groupIdx = static_cast<uint32_t>(
+                    gmGroupList[static_cast<int64_t>(loopIdx) * SPARSE_GROUP_LIST_ITEM_STRIDE +
+                                SPARSE_GROUP_LIST_GROUP_IDX_OFFSET]);
+                bs.SetGroupIdx(groupIdx);
+            }
+            auto splitValue = GetSplitValueFromGroupList(params, gmGroupList, loopIdx);
+            auto groupCoord = PrepareGroup(params, bs, groupIdx, splitValue);
+
+            auto m = asc::te::get<MNK_M>(problemShape_);
+            auto n = asc::te::get<MNK_N>(problemShape_);
+            auto k = asc::te::get<MNK_K>(problemShape_);
+            if (m <= 0 || n <= 0 || k <= 0) {
+                // Sparse groupList front-loads non-zero groups; mirror the paired AIC's early exit.
+                if (params.gmmParams.groupType == GROUP_TYPE_SPLIT_M &&
+                    params.gmmParams.groupListType == GROUP_LIST_TYPE_SPARSE && m <= 0) {
+                    break;
+                }
+                continue;
+            }
+            if (aicIdx >= bs.GetCoreNums()) {
+                continue; // the paired AIC does not process this group either
+            }
+            const int64_t firstTaskIdx = bs.GetFirstBlockIdx(aicIdx);
+            if (firstTaskIdx >= bs.GetBlockNums()) {
+                continue;
+            }
+            auto cOffset = asc::te::get<MNK_B>(groupCoord);
+            auto cPtr = ResolveTensorAddr<CType>(params.gmmParams.singleY == 0 ? groupIdx : 0,
+                                                 params.mmParams.cGmAddr) +
+                        cOffset;
+            for (int64_t taskIdx = firstTaskIdx; taskIdx < bs.GetBlockNums(); taskIdx += AscendC::GetBlockNum()) {
+                auto blockShape = bs.template GetBlockShape<TRANS_B, BType>(taskIdx);
+                auto blockCoord = bs.GetBlockCoord(taskIdx);
+                auto blockM = asc::te::get<MNK_M>(blockShape);
+                auto blockN = asc::te::get<MNK_N>(blockShape);
+                auto blockMOffset = asc::te::get<MNK_M>(blockCoord);
+                auto blockNOffset = asc::te::get<MNK_N>(blockCoord);
+                if (blockM <= 0 || blockN <= 0) {
+                    continue; // skipped by the AIC as well, no signal was sent
+                }
+                blockEpilogue_(cPtr + blockMOffset * n + blockNOffset, blockM, blockN, n, baseN_);
+            }
+        }
+    }
+
     template <typename TensorB>
     __aicore__ inline void SetWeightL2CacheHint(TensorB& gmB, const Params& params, int64_t problemM) const
     {
@@ -514,15 +622,23 @@ private:
                                       asc::te::make_shape(blockM, blockN));
             auto gmBlockBias = gmBias.slice(asc::te::make_coord(static_cast<int64_t>(0), blockNOffset),
                                             asc::te::make_shape(static_cast<int64_t>(1), blockN));
-            blockMmad_(gmBlockA, gmBlockB, gmBlockBias, gmBlockC, blockShape);
+            if constexpr (ENABLE_GELU) {
+                auto ubBlockC = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::ub, EpilogueInputType>(0),
+                                                     MakeLayoutEpilogueInput{}(blockM, blockN));
+                blockMmad_(gmBlockA, gmBlockB, gmBlockBias, ubBlockC, blockShape);
+            } else {
+                blockMmad_(gmBlockA, gmBlockB, gmBlockBias, gmBlockC, blockShape);
+            }
         }
     }
 
     BlockMmad blockMmad_;
+    BlockEpilogue blockEpilogue_;
     ProblemShape problemShape_{};
     // Cumulative offset used to resolve per-group sizes from cumulative groupList entries.
     int64_t preOffset_{0};
     uint64_t shapeBuf_[SHAPE_BUF_SIZE] = {0};
+    int64_t baseN_{0};
 };
 
 } // namespace Kernel

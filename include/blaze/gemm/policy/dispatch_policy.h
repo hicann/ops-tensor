@@ -290,6 +290,7 @@ struct MatmulMultiBlockFixpipeOpti {
     static constexpr uint64_t FULL_LOAD_MODE = NONE_FULL_LOAD_MODE;
     static constexpr uint64_t L0C2OUT_MODEL = L0C2OutModel_;
     static constexpr uint64_t FUSED_OP_TYPE = FusedOpType_;
+    static constexpr MatmulOutputMode OUTPUT_MODE = MatmulOutputMode::OVERWRITE;
 };
 
 /**
