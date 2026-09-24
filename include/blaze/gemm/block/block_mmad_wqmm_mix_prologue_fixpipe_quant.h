@@ -70,8 +70,6 @@ public:
     static_assert(AscendC::Std::is_same_v<BiasType_, void> && AscendC::Std::is_same_v<LayoutBias_, void>,
                   "T-CG pergroup takes no bias; pass void for the BiasType/LayoutBias slots");
 
-    static constexpr uint64_t L1_BUFFER_SIZE = AscendC::TOTAL_L1_SIZE;
-    static constexpr uint64_t L1_BUFFER_HALF_SIZE = AscendC::TOTAL_L1_SIZE >> 1;
     static constexpr uint64_t DOUBLE_BUFFER = 2;
     static constexpr uint64_t SINGLE_BUFFER = 1;
     static constexpr uint64_t QUADRUPLE_BUFFER = 4;
@@ -198,6 +196,7 @@ public:
 
     __aicore__ inline void InitAIC()
     {
+        constexpr uint64_t L1_BUFFER_SIZE = AscendC::TOTAL_L1_SIZE;
         for (uint32_t i = 0; i < QUADRUPLE_BUFFER; i++) {
             bufMgr_.InitAL1(i, aL1Offsets_[i], BufferLayout::L1ADataBufferId(i));
             bufMgr_.InitBL1(i, bL1Offsets_[i], BufferLayout::L1BDataBufferId(i));
@@ -212,6 +211,7 @@ private:
     __aicore__ inline void InitL1Storage(int64_t bL1DataSize, int64_t aL1DataSize, uint16_t bl1Pingpong,
                                          uint16_t al1Pingpong, uint8_t vecPingpong)
     {
+        constexpr uint64_t L1_BUFFER_HALF_SIZE = AscendC::TOTAL_L1_SIZE >> 1;
         if (bl1Pingpong == QUADRUPLE_BUFFER) {
             int32_t bL1DataSizeTotal = DOUBLE_BUFFER * bL1DataSize * sizeof(AType);
             if (al1Pingpong == QUADRUPLE_BUFFER) {
