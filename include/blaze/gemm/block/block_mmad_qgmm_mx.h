@@ -299,10 +299,14 @@ public:
     }
 
 private:
-    static constexpr bool NEED_A_SET_L1_K_ZERO = AscendC::Std::is_one_of_v<AType, fp8_e5m2_t, fp8_e4m3fn_t>;
+    static constexpr bool
+        IS_FINALIZE_ROUTING = AscendC::Std::is_same_v<ScheduleType_, Blaze::Gemm::KernelQgmmMxMixFinalizeRouting>;
+    static constexpr bool NEED_A_SET_L1_K_ZERO = AscendC::Std::is_one_of_v<AType, fp8_e5m2_t, fp8_e4m3fn_t> ||
+                                                 (IS_FINALIZE_ROUTING &&
+                                                  AscendC::Std::is_one_of_v<AType, fp4x2_e2m1_t, fp4x2_e1m2_t>);
     static constexpr bool NEED_B_SET_L1_K_ZERO = AscendC::Std::is_one_of_v<BType, fp8_e5m2_t, fp8_e4m3fn_t> ||
                                                  (AscendC::Std::is_one_of_v<BType, fp4x2_e2m1_t, fp4x2_e1m2_t> &&
-                                                  !TRANS_B);
+                                                  (!TRANS_B || IS_FINALIZE_ROUTING));
     static constexpr uint64_t C0_SIZE = IS_FP4_TYPE ? C0_SIZE_B4 : C0_SIZE_B8;
     static constexpr uint8_t L1_OPERAND_NUM = 2;
     static constexpr uint8_t MTE1_MTE2_EVENT_ID_NUM = TRIPLE_BUFFER_COUNT * L1_OPERAND_NUM + SCALE_BUFFER_NUM;
@@ -703,8 +707,15 @@ private:
         if constexpr (isUbOutput) {
             auto copyL0C2UB = asc::te::make_copy(asc::te::copy_l0c_to_ub{},
                                                  Blaze::Gemm::Tile::CopyL0C2UBTraitMixSplitM{});
-            asc::te::copy(copyL0C2UB.with(asc::te::l0c_to_ub_params(asc::te::unit_flag_mode::enable_update)), tensorC,
-                          tensorL0C);
+            if constexpr (IS_FINALIZE_ROUTING) {
+                auto tensorL0CAligned = tensorL0C.slice(asc::te::make_coord(0L, 0L),
+                                                        asc::te::make_shape(l0cLayoutM, Align32(curN)));
+                asc::te::copy(copyL0C2UB.with(asc::te::l0c_to_ub_params(asc::te::unit_flag_mode::enable_update)),
+                              tensorC, tensorL0CAligned);
+            } else {
+                asc::te::copy(copyL0C2UB.with(asc::te::l0c_to_ub_params(asc::te::unit_flag_mode::enable_update)),
+                              tensorC, tensorL0C);
+            }
         } else {
             auto copyL0C2GM = asc::te::make_copy(asc::te::copy_l0c_to_gm{});
             asc::te::copy(copyL0C2GM.with(asc::te::l0c_to_gm_params(asc::te::unit_flag_mode::enable_update)), tensorC,

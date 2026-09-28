@@ -50,6 +50,7 @@ struct KernelWqgmmMxMix {};                     // Grouped MX mix kernel with AI
 struct KernelGmmSwiGluMixMx {};                 // MIX AIC+AIV schedule for GroupedMatmul + SwiGLU + MX quant
 struct KernelMatmulEmuSplitWeight {};           // Double bf16 matmul to simulate fp32 (AIC+AIV)
 struct KernelMmadWithScaleMxMix {};             // Multi-block with Mx scale, epilogue after block mmad
+struct KernelQgmmMxMixFinalizeRouting {};       // MIX AIC+AIV schedule for GroupedMatmulFinalizeRouting MX
 struct KernelGroupedMmadNoQuant {};             // Grouped multi-block without quantization
 struct KernelMmadAPrefetchBAntiquant {};        // AIV weight dequantization and AIC matrix multiplication
 enum class MatmulOutputMode : std::uint8_t { OVERWRITE = 0, INPLACE_ADD = 1 };

@@ -47,3 +47,4 @@ class GemmUniversal {
 #include "blaze/gemm/kernel/kernel_tqbmm_mx.h"
 #include "blaze/gemm/kernel/kernel_tbmm_basic.h"
 #include "blaze/gemm/kernel/kernel_grouped_matmul.h"
+#include "blaze/gemm/kernel/kernel_qgmm_mx_mix_finalize_routing.h"
