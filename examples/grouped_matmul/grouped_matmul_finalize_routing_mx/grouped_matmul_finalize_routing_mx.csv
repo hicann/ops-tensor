@@ -1,4 +1,0 @@
-caseName,groupNum,totalM,batch,n,k,baseM,baseN,baseK,kAL1,kBL1,scaleKAL1,scaleKBL1,dbL0C,groupListType,groupList,dtype,outputDtype,logitDtype,rowIndexDtype
-gmmfr_mxfp4_weight_nz_bf16_output_bf16_logit,2,32,16,64,64,16,64,64,64,64,2,2,1,1,16;16,mxfp4_e2m1,bfloat16,bfloat16,int32
-gmmfr_mxfp8_e4m3_weight_nz_bf16_output_fp32_logit,2,32,16,64,64,16,64,64,64,64,2,2,1,1,16;16,mxfp8_e4m3,bfloat16,float32,int32
-gmmfr_mxfp8_e4m3_weight_nz_fp32_output_fp32_logit,2,32,16,64,64,16,64,64,64,64,2,2,1,1,16;16,mxfp8_e4m3,float32,float32,int64
