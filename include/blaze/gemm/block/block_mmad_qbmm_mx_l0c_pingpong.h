@@ -38,7 +38,6 @@
 namespace Blaze {
 namespace Gemm {
 namespace Block {
-#if (defined(__NPU_ARCH__) && __NPU_ARCH__ == 3510)
 template <uint64_t AFullLoadMode_, bool AtomicAdd_, class ScheduleType_, class AType_, class LayoutA_, class BType_,
           class LayoutB_, class CType_, class LayoutC_, class BiasType_, class LayoutBias_>
 class BlockMmad<MatmulWithScaleMxL0CPingpong<AFullLoadMode_, AtomicAdd_, ScheduleType_>, AType_, LayoutA_, BType_,
@@ -665,7 +664,6 @@ private:
     bool enableL0cPingPong_{false};
     bool isBias_{false};
 };
-#endif
 } // namespace Block
 } // namespace Gemm
 } // namespace Blaze
