@@ -22,6 +22,8 @@
 #include "kernel_operator.h"
 #endif
 #include "tensor_api/utils/utils.h"
+// 引入 sync.h 使 host 边 PIPE_FIX 兜底宏先于下方 Deprecated 模板默认实参生效
+#include "blaze/gemm/utils/sync.h"
 
 namespace Blaze {
 namespace Gemm {

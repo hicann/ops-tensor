@@ -21,6 +21,22 @@
 #endif
 #include "c_api/sync/sync.h"
 
+// bisheng --asc-aicore-lang 混合编译（host/device 双边）时，host 不定义 __CCE_AICORE__ /  __NPU_ARCH__，
+// 编译器内置 pipe_t 枚举中 PIPE_FIX 成员被条件编译裁剪（cce_aicore_intrinsics.h 中
+// PIPE_FIX 的定义条件即 __CCE_AICORE__ >= 210），而本文件的模板默认实参
+// （pipe_t Pipe = PIPE_FIX）在 host 同样需要解析，导致上层程序混合编译报
+// "use of undeclared identifier 'PIPE_FIX'"。
+// 因此守卫条件必须用 ifndef __CCE_AICORE__ 或 __NPU_ARCH__ 表示非device编译：
+// 此时若未定义PIPE_FIX 依旧缺失，则添加新的定义兜底。
+// device （__NPU_ARCH__ 已定义）与 UT（显式 -D__CCE_AICORE__=310 且 stub_fun.h
+// 提供完整枚举）均使用真实 PIPE_FIX 枚举成员。取值与 cce_aicore_intrinsics.h 定义一致
+// （PIPE_FIX = 10）。必须位于上述头文件 include 之后，保证 pipe_t 类型已定义。
+#ifndef __NPU_ARCH__
+#ifndef PIPE_FIX
+#define PIPE_FIX (pipe_t)(10)
+#endif
+#endif
+
 namespace Blaze {
 namespace Gemm {
 namespace Sync {
