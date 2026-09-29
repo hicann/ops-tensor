@@ -1,0 +1,16 @@
+casename,m,k,n,batch,batchA,batchB,mode,bias,dtype,transA,transB,hf32
+iterbatch_fp16_otf,64,64,160,64,64,64,0,0,float16,false,false,false
+iterbatch_fp16_mix,64,64,160,64,64,64,2,0,float16,false,false,false
+iterbatch_ntail_fp16_otf,50,64,100,35,35,35,0,0,float16,false,false,false
+iterbatch_ntail_fp16_mix,50,64,100,35,35,35,2,0,float16,false,false,false
+iterbatch_transa_fp16_otf,64,64,160,64,64,64,0,0,float16,true,false,false
+iterbatch_transb_fp16_mix,64,64,160,64,64,64,2,0,float16,false,true,false
+iterbatch_transab_fp16_mix,64,64,160,64,64,64,2,0,float16,true,true,false
+iterbatch_bias_fp16_mix,64,64,160,64,64,64,2,160,float16,false,false,false
+iterbatch_multiframe_fp16_mix,32,32,32,3,3,3,2,0,float16,false,false,false
+iterbatch_bf16_otf,64,64,160,64,64,64,0,0,bfloat16,false,false,false
+iterbatch_bf16_mix,64,64,160,64,64,64,2,0,bfloat16,false,false,false
+iterbatch_fp32_otf,64,64,160,64,64,64,0,0,float32,false,false,false
+iterbatch_fp32_mix,64,64,160,64,64,64,2,0,float32,false,false,false
+iterbatch_fp32_unalign_otf,50,48,100,35,35,35,0,0,float32,false,false,false
+iterbatch_multitile_fp32_mix,64,64,160,200,200,200,2,0,float32,false,false,false

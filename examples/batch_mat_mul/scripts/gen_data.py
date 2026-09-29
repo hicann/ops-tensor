@@ -38,15 +38,15 @@ def write_artifacts(base_dir, a_data, b_data, out, dtype):
     out.view(vt).numpy().tofile(os.path.join(output_dir, "cpu_output.bin"))
 
 
-def generate_bias(n, batch, dtype):
+def generate_bias(n, dtype):
     lo, hi = (-1, 1) if dtype in (torch.float16, torch.bfloat16) else (0.0, 1.0)
-    bias = np.random.uniform(lo, hi, (batch, n)).astype(np.float32)
+    bias = np.random.uniform(lo, hi, (n,)).astype(np.float32)
     bias_tensor = torch.from_numpy(bias).to(dtype)
     vt = VIEW_TYPE_MAP[dtype]
     input_dir = os.path.join(os.getcwd(), "input")
     os.makedirs(input_dir, exist_ok=True)
     bias_tensor.view(vt).numpy().tofile(os.path.join(input_dir, "bias.bin"))
-    print(f"[INFO] Generated bias: batch={batch}, n={n}, dtype={dtype}")
+    print(f"[INFO] Generated bias: n={n}, dtype={dtype}")
     return bias_tensor
 
 
@@ -77,7 +77,7 @@ def gen_batch_data(
     out = torch.matmul(a_broadcast.float(), b_broadcast.float()).to(dtype)
 
     if bias_size > 0:
-        bias_tensor = generate_bias(n, batch_c, dtype)
+        bias_tensor = generate_bias(n, dtype)
         out = out + bias_tensor.float().to(dtype)
 
     a_flat = a_cpu.reshape(-1)

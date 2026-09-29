@@ -21,6 +21,7 @@
 | [block_mmad_weight_prologue_mx](./block_mmad_weight_prologue_mx.md) | AIV 已写入 B/Bias L1 后的 MX AIC BlockMmad |
 | [block_mmad_wqmm_mix_prologue_fixpipe_quant](./block_mmad_wqmm_mix_prologue_fixpipe_quant.md) | AIV 反量化 B 写入 L1 后的 T-CG per-group A8W4 AIC BlockMmad，Fixpipe 乘 yScale 输出 |
 | [block_mmad_wqmm_mix_weight_prologue](./block_mmad_wqmm_mix_weight_prologue.md) | 权重反量化矩阵乘的 AIC 计算、L1 空间划分及缓冲同步 |
+| [block_mmad_matmul_iterbatch](./block_mmad_matmul_iterbatch.md) | IterBatch 矩阵乘 Block，多 batch 驻留 L1、跨 tile 预取流水，ON_THE_FLY / ND_FIXPIPE_1_2 两种输出 |
 
 ### BlockScheduler（任务调度）
 | 组件名 | 描述 |
@@ -34,6 +35,7 @@
 | [block_scheduler_grouped_matmul](./block_scheduler_grouped_matmul.md) | 非量化 GMM 调度器：组间偏移管理（含 sparse 直接定位）、SWAT 扫描、跨组延续起始核、tail split |
 | [block_scheduler_matmul_swat_with_tail_split](./block_scheduler_matmul_swat_with_tail_split.md) | 通用 M/N SWAT 扫描、尾块合并和 compact tail split |
 | [block_scheduler_wqmm_block_split](./block_scheduler_wqmm_block_split.md) | 固定核分核调度器：每核一个 M/N 责任矩形，核内 ORDER_M/ORDER_N swizzle 遍历 |
+| [block_scheduler_matmul_iterbatch](./block_scheduler_matmul_iterbatch.md) | IterBatch 调度器：batch 分组 tile 映射、尾组余数分配（跨核步进由 kernel 承担） |
 
 ## 公共框架
 
@@ -92,6 +94,7 @@ BlockMmad
 | BlockMmadQGmmMx | GroupedMatmulWithScaleMx | GM | MxFP4/MxFP8 | ScaleA + ScaleB | 固定双缓冲 | 可配置 | 支持 | 无 | QGMM MX Kernel |
 | BlockMmadMxL0CPingpong | MatmulWithScaleMxL0CPingpong | GM | MxFP4/MxFP8 | ScaleA + ScaleB | 可配置 (2、3 或 4) | 固定双缓冲 | 支持 | 无 | QBMM MX L0C PingPong Kernel |
 | BlockMmadWeightPrologueMx | MatmulWithWeightQuantMx | GM | FP8 + packed FP4 | ScaleA + ScaleB | 2 或 4 | 固定单缓冲 | AIV 提供 | 有（Kernel 层 ready/free 标志） | MXA8W4 Weight ND/NZ |
+| BlockMmadMatmulIterbatch | MatmulIterBatch | GM 或 UB | 不支持 | 不支持 | 整组双缓冲 | 可配置 | 支持 | 有（Fixpipe 模式） | IterBatch Matmul |
 
 ## 使用流程
 

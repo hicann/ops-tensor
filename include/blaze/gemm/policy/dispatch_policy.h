@@ -38,6 +38,7 @@ struct KernelMmadMultiBlockBasic {};            // Multi-tile basic
 struct KernelMmadFmmWithScaleAdd {};            // Fused matmul with scale/add epilogue
 struct KernelMmadSyrk {};                       // Symmetric rank-k update, single nd2nz fetch per row-block
 struct KernelIterBatchBroadcast {};             // Multi-tile batchMatmul broadcast + iterbatch
+struct KernelIterBatch {};                      // Multi-tile batchMatmul iterbatch
 struct KernelMmadMultiBlockBmmBroadcast {};     // Multi-tile batchMatmul broadcast
 struct KernelMmadMultiBlockAFullLoad {};        // Multi-tile aFullLoad
 struct KernelMmadMultiBlockBFullLoad {};        // Multi-tile fullLoad
@@ -225,6 +226,26 @@ struct MatmulIterBatchBroadcast {
     using ScheduleType = KernelIterBatchBroadcast;
     static constexpr bool A_BROADCAST = ABroadcast_;
     static constexpr bool B_BROADCAST = BBroadcast_;
+};
+
+/**
+ * @struct MatmulIterBatch
+ * @brief BatchMatMul with iterbatch L1/L0 pipelining and cross-tile preload,
+ *        ON_THE_FLY or ND_FIXPIPE_1_2 out mode (B non-contiguous not supported)
+ * @param [in] FixpOpt_: L0C out mode, ON_THE_FLY (AIC fixpipe to GM) or ND_FIXPIPE_1_2 (MIX,
+ *        AIC fixpipe to AIV UB slot + AIV ND epilogue)
+ * @param [in] FusedOpType_: post-mmad fusion op type, default 0 (OP_TYPE_EMPTY); reserved,
+ *        no consumer yet
+ * @param [in] NonContiguousType_: reserved for the B non-contiguous scenario,
+ *        default 0 (contiguous); no consumer yet
+ */
+template <MatMulL0C2Out FixpOpt_ = MatMulL0C2Out::ON_THE_FLY, uint64_t FusedOpType_ = 0,
+          uint64_t NonContiguousType_ = 0>
+struct MatmulIterBatch {
+    using ScheduleType = KernelIterBatch;
+    static constexpr MatMulL0C2Out FIXP_OPT = FixpOpt_;
+    static constexpr uint64_t FUSED_OP_TYPE = FusedOpType_;
+    static constexpr uint64_t NON_CONTIGUOUS_TYPE = NonContiguousType_;
 };
 
 /**

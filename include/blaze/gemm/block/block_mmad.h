@@ -32,6 +32,7 @@ class BlockMmad {
 } // namespace Gemm
 } // namespace Blaze
 #include "blaze/gemm/block/block_mmad_iterbatch_broadcast.h"
+#include "blaze/gemm/block/block_mmad_matmul_iterbatch.h"
 #include "blaze/gemm/block/block_mmad_matmul_al1_full_load.h"
 #include "blaze/gemm/block/block_mmad_matmul_basic_split_k.h"
 #include "blaze/gemm/block/block_mmad_matmul_basic.h"

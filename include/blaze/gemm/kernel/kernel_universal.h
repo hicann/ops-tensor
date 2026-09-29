@@ -36,6 +36,7 @@ class GemmUniversal {
 } // namespace Blaze
 #include "blaze/gemm/kernel/kernel_batch_matmul_broadcast.h"
 #include "blaze/gemm/kernel/kernel_batch_matmul_iterbatch_broadcast.h"
+#include "blaze/gemm/kernel/kernel_matmul_iterbatch.h"
 #include "blaze/gemm/kernel/kernel_matmul_basic.h"
 #include "blaze/gemm/kernel/kernel_matmul_al1_full_load.h"
 #include "blaze/gemm/kernel/kernel_matmul_bl1_full_load.h"

@@ -871,6 +871,7 @@ TEST_F(MatMulV3Test, Test_FP16_IterateBatch)
     tilingData->l1BufferNum = 1;
     tilingData->l0cDB = 1;
     tilingData->ubDB = 1;
+    tilingData->l2CacheDisable = L2CacheMode::L2_CACHE_DEFAULT;
     tilingData->iterBatchL1 = 1;
     tilingData->iterBatchL0 = 1;
     tilingData->broadcastAxisA = 1;
@@ -890,7 +891,94 @@ TEST_F(MatMulV3Test, Test_FP16_IterateBatch)
 
     AscendC::SetKernelMode(KernelMode::MIX_MODE);
 
-    auto kernelFunc = mat_mul_kernel_entry<OP_TYPE_MATMUL_ITERBATCH, half, half, half, half,
+    auto kernelFunc = mat_mul_kernel_entry<OP_TYPE_MATMUL_BMM_ITERBATCH_BROADCAST, half, half, half, half,
+                                           Blaze::Gemm::MatMulL0C2Out::ON_THE_FLY, 0, 0, MatMulV3IterBatchTilingData>;
+    ASSERT_TRUE(KERNEL_RUN_KF(kernelFunc, blockNum, aGM, bGM, biasGM, cGM, workspaceGM, tilingGM))
+        << "Kernel execution failed: one or more cores exited with non-zero status";
+}
+
+TEST_F(MatMulV3Test, Test_FP16_IterBatch)
+{
+    const int64_t M = 64;
+    const int64_t N = 160;
+    const int64_t K = 64;
+    const uint32_t batch = 8;
+    const uint32_t blockNum = 1;
+
+    size_t aSize = batch * M * K * sizeof(half);
+    size_t bSize = batch * K * N * sizeof(half);
+    size_t biasSize = N * sizeof(float);
+    size_t cSize = batch * M * N * sizeof(half);
+    size_t workspaceSize = blockNum * WORKSPACE_TILE_SIZE + WORKSPACE_OVERHEAD;
+
+    aGM = (GM_ADDR)AscendC::GmAlloc(aSize);
+    bGM = (GM_ADDR)AscendC::GmAlloc(bSize);
+    biasGM = (GM_ADDR)AscendC::GmAlloc(biasSize);
+    cGM = (GM_ADDR)AscendC::GmAlloc(cSize);
+    workspaceGM = (GM_ADDR)AscendC::GmAlloc(workspaceSize);
+    tilingGM = (GM_ADDR)AscendC::GmAlloc(sizeof(MatMulV3IterBatchTilingData));
+
+    ASSERT_NE(aGM, nullptr);
+    ASSERT_NE(bGM, nullptr);
+    ASSERT_NE(biasGM, nullptr);
+    ASSERT_NE(cGM, nullptr);
+    ASSERT_NE(workspaceGM, nullptr);
+    ASSERT_NE(tilingGM, nullptr);
+
+    std::string dataDir = std::string(UT_KERNEL_SRC_DIR) + "/mat_mul/matmul_data";
+    std::string genCmd = std::string("cd ") + dataDir + " && rm -rf *.bin";
+    std::string genDataCmd = std::string("cd ") + dataDir + " && python3 gen_data.py --m 64 --n 160 --k 64 --batch " +
+                             std::to_string(batch) + " --dtype float16";
+    int genRet = system(genCmd.c_str());
+    ASSERT_EQ(genRet, 0) << "Failed to clean old .bin files in matmul_data";
+    genRet = system(genDataCmd.c_str());
+    ASSERT_EQ(genRet, 0) << "gen_data.py failed with exit code " << genRet;
+
+    std::ifstream aFile(dataDir + "/input_a.bin", std::ios::binary);
+    ASSERT_TRUE(aFile.is_open()) << "Failed to open input_a.bin";
+    std::ifstream bFile(dataDir + "/input_b.bin", std::ios::binary);
+    ASSERT_TRUE(bFile.is_open()) << "Failed to open input_b.bin";
+    aFile.read(reinterpret_cast<char*>(aGM), aSize);
+    ASSERT_TRUE(aFile.good()) << "Failed to read input_a.bin (expected " << aSize << " bytes)";
+    bFile.read(reinterpret_cast<char*>(bGM), bSize);
+    ASSERT_TRUE(bFile.good()) << "Failed to read input_b.bin (expected " << bSize << " bytes)";
+    std::memset(biasGM, 0, biasSize);
+
+    MatMulV3IterBatchTilingData* tilingData = reinterpret_cast<MatMulV3IterBatchTilingData*>(tilingGM);
+    tilingData->m = M;
+    tilingData->n = N;
+    tilingData->k = K;
+    tilingData->mL1 = M;
+    tilingData->nL1 = N;
+    tilingData->kL1 = K;
+    tilingData->baseM = M;
+    tilingData->baseN = N;
+    tilingData->baseK = K;
+    tilingData->isHf32 = 0;
+    tilingData->l1BufferNum = 1;
+    tilingData->l0cDB = 1;
+    tilingData->ubDB = 1;
+    tilingData->l2CacheDisable = L2CacheMode::L2_CACHE_DEFAULT;
+    tilingData->iterBatchL1 = 2;
+    tilingData->iterBatchL0 = 1;
+    tilingData->broadcastAxisA = 1;
+    tilingData->broadcastAxisB = 1;
+    tilingData->aBatchDim0 = 1;
+    tilingData->aBatchDim1 = 1;
+    tilingData->aBatchDim2 = 1;
+    tilingData->aBatchDim3 = batch;
+    tilingData->bBatchDim0 = 1;
+    tilingData->bBatchDim1 = 1;
+    tilingData->bBatchDim2 = 1;
+    tilingData->bBatchDim3 = batch;
+    tilingData->cBatchDim0 = 1;
+    tilingData->cBatchDim1 = 1;
+    tilingData->cBatchDim2 = 1;
+    tilingData->cBatchDim3 = batch;
+
+    AscendC::SetKernelMode(KernelMode::MIX_MODE);
+
+    auto kernelFunc = mat_mul_kernel_entry<OP_TYPE_MATMUL_BMM_ITERBATCH, half, half, half, half,
                                            Blaze::Gemm::MatMulL0C2Out::ON_THE_FLY, 0, 0, MatMulV3IterBatchTilingData>;
     ASSERT_TRUE(KERNEL_RUN_KF(kernelFunc, blockNum, aGM, bGM, biasGM, cGM, workspaceGM, tilingGM))
         << "Kernel execution failed: one or more cores exited with non-zero status";

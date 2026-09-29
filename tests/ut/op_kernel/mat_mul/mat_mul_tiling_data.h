@@ -21,8 +21,7 @@
 #include <cstdint>
 #endif
 
-enum class L2CacheMode : std::uint32_t
-{
+enum class L2CacheMode : std::uint32_t {
     L2_CACHE_DEFAULT = 0x00,
     A_L2_CACHE_DISABLE = 0x01,
     B_L2_CACHE_DISABLE = 0x02,
@@ -117,6 +116,7 @@ struct MatMulV3IterBatchTilingData {
     uint8_t l1BufferNum = 0;
     uint8_t l0cDB = 1;
     uint8_t ubDB = 1;
+    L2CacheMode l2CacheDisable = L2CacheMode::L2_CACHE_DEFAULT;
     uint32_t iterBatchL1 = 1;
     uint32_t iterBatchL0 = 1;
     uint32_t broadcastAxisA = 1;

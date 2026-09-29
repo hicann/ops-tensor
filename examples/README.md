@@ -108,7 +108,7 @@ examples/
 | 算子目录                           | 样例                                                                                         | 说明                                     |
 | ---------------------------------- | -------------------------------------------------------------------------------------------- | ---------------------------------------- |
 | `mat_mul/`                       | mat_mul_basic, mat_mul_streamk, mat_mul_a_fullload, mat_mul_b_fullload, mat_mul_fixpipe_opti | 矩阵乘法样例                             |
-| `batch_mat_mul/`                 | mat_mul_bmm_broadcast, mat_mul_iterbatch_broadcast                                           | 批量矩阵乘法样例（bmm/iterbatch 广播）   |
+| `batch_mat_mul/`                 | mat_mul_bmm_broadcast, mat_mul_iterbatch_broadcast, mat_mul_iterbatch                     | 批量矩阵乘法样例                         |
 | `transpose_batch_mat_mul/`       | transpose_batch_mat_mul_basic                                                                | 转置批量矩阵乘法样例                     |
 | `quant_batch_matmul/`            | quant_batch_matmul_cube, quant_batch_matmul_mix, quant_batch_matmul_mx | 量化批量矩阵乘法样例 |
 | `block_attn_res_prepare/`        | block_attn_res_prepare                                                                        | Attention residual prepare 样例           |
