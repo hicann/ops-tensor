@@ -37,13 +37,12 @@ constexpr uint32_t L0C_MAX_M = 128;
 constexpr uint32_t L0C_MAX_N = 256;
 constexpr uint32_t BLOCK_BYTES = 256;
 constexpr uint32_t VEC_MAX_M = 32;
-constexpr uint32_t FP32_ELEMENTS_PER_BLOCK = 8;
+constexpr uint32_t UB_TO_GM_ALIGN_BYTES = 32;
 constexpr uint32_t MAX_SINGLE_MN = L0C_MAX_M * L0C_MAX_N;
 constexpr uint32_t HALF_DB_MAX_SINGLE_MN = VEC_MAX_M * L0C_MAX_N;
 constexpr uint32_t Y_IDX = 0;
 constexpr uint32_t LOGIT_INDEX = 4;
 constexpr uint64_t MAX_OUTPUT_M_UB = VEC_MAX_M;
-constexpr uint64_t BLOCK_ELEMENTS_FP32 = FP32_ELEMENTS_PER_BLOCK;
 } // namespace
 
 static constexpr AscendC::Reg::CastTrait CAST_FR_FP32_TO_BF16 = {
@@ -290,7 +289,9 @@ BlockEpilogueFinalizeRouting<BLAZE_GMMFR_BLOCK_EPILOGUE_FINALIZE_ROUTING_FUNC_LO
     const uint64_t singleN = asc::te::get<Blaze::Gemm::MNK_N>(blockShape);
     const uint32_t halfSingleM = Blaze::Gemm::CeilDiv(singleM, static_cast<uint64_t>(AscendC::GetTaskRation()));
     const uint64_t l0cAlignN = Blaze::Gemm::Align32(singleN);
-    const uint64_t alignN = Blaze::Gemm::CeilDiv(singleN, BLOCK_ELEMENTS_FP32) * BLOCK_ELEMENTS_FP32;
+    // Each UB row is copied to GM separately, so every row start must be 32-byte aligned.
+    constexpr uint64_t outputAlignElements = UB_TO_GM_ALIGN_BYTES / sizeof(DataTypeOut);
+    const uint64_t alignN = Blaze::Gemm::CeilAlign(singleN, outputAlignElements);
     const uint64_t singleMInVec = subBlockIdx_ == 1 ? singleM - halfSingleM : halfSingleM;
     if (singleMInVec == 0) {
         return;
