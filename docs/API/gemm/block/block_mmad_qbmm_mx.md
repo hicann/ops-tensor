@@ -2,7 +2,10 @@
 > [代码位置](../../../../include/blaze/gemm/block/block_mmad_qbmm_mx.h)
 
 ## 功能说明
-MX 量化矩阵乘 Block，基于 Tensor API 实现，仅支持 AIC 计算。支持 MxFP4/MxFP8 量化、Scale 因子处理（ScaleA + ScaleB）、L1/L0 双缓冲优化，适用于量化 Batch Matmul Kernel 场景。
+MX 量化矩阵乘 Block，基于 Tensor API 实现，仅在 AIC 上计算。支持 MxFP4/MxFP8
+量化、ScaleA/ScaleB、L1/L0 双缓冲以及 GELU/SwiGLU ActivationQuant 的
+L0C→UB DualDst 路径。SwiGLU 路径可在一次 MMAD 中拼接 gate/linear 两个 N 半区，
+并支持 ND 与 WeightNZ 权重。
 
 **继承自**：[Block Mmad 基础框架](./block_mmad.md)
 
@@ -31,6 +34,7 @@ class BlockMmad;
 | WEIGHT_NZ | B 矩阵是否为 NZ 格式 |
 | TRANS_A | A 矩阵是否转置 |
 | TRANS_B | B 矩阵是否转置 |
+| CONCAT_N | 是否使用 SwiGLU gate/linear concat-N 路径 |
 | C0_SIZE | C0 对齐大小（FP4: 64，FP8: 32） |
 | SCALE_C0 | Scale C0 对齐大小（固定为 2，定义于 `common_utils.h`） |
 | DOUBLE_BUFFER_COUNT | Scale 缓冲数量（固定为 2，定义于 `common_utils.h`） |
@@ -70,6 +74,7 @@ struct L1Params {
 struct TileL1L0Param {
     uint64_t curM = 0;        // 当前 M 维大小
     uint64_t curN = 0;        // 当前 N 维大小
+    uint64_t gmN = 0;         // concat-N 单个半区的有效列数
     uint64_t curGmKL1 = 0;    // A/B 矩阵当前 GM K 维大小
     uint64_t curPadKL1 = 0;   // pad to 64 align
 };
@@ -83,6 +88,9 @@ struct TileL1L0Param {
 - `MatmulWithScaleMx<A_FULL_LOAD_MODE>`（Batch 路径 A 矩阵全载模式）
 - `MatmulWithScaleMx<0, false, KernelMmadWithScaleMxWithoutBatch>`（单 Batch 标量路径）
 - `MatmulWithScaleMx<A_FULL_LOAD_MODE, false, KernelMmadWithScaleMxWithoutBatch>`（单 Batch A 矩阵全载模式）
+- `KernelMmadWithScaleMxActivationQuant`（SwiGLU 拼接 N 布局通过 `MatmulWithScaleMx` 的 `ConcatN=true` 模板参数开启）
+  （GELU + 动态 MX 量化）
+  （SwiGLU concat-N + 动态 MX 量化）
 
 `MatmulWithScaleMx` 第三个模板参数为 `ScheduleType`，默认 `KernelMmadWithScaleMx`；单 Batch 标量路径需显式传 `KernelMmadWithScaleMxWithoutBatch`。
 
@@ -105,12 +113,29 @@ Scale 因子固定为 `fp8_e8m0_t`（E8M0 浮点格式），用于量化数据�
 仅支持 AIC 模式，不支持 AIV 计算。
 
 ### 输出目标
-结果直接输出到 GM，不支持 workspace。
+普通 QBMM 路径将结果直接输出到 GM；ActivationQuant 路径使用
+`L0C2UB_MODE_DUAL_DST_SPLIT_M` 将结果写入 UB，供 AIV epilogue 消费。不使用 workspace。
 
-### MXFP 对齐要求
-- K 轴需对齐到 `MXFP_DIVISOR_SIZE`（64）
-- Scale K 轴需对齐到 `MXFP_DIVISOR_SIZE × MXFP_MULTI_BASE_SIZE`（128）
+### MXFP 对齐处理
+- 逻辑 K 支持非 64 倍数的尾块；组件在 L1/L0 内部将当前 K tile 自动补零到
+  `MXFP_DIVISOR_SIZE`（64），补零不改变计算结果。
+- `scaleKL1`按原始K元素计数；内部Scale K长度换算为
+  `ceil(scaleKL1/64) * 2`个E8M0元素，对应每64个数据元素存放两个32元素组scale。
 - L0C 布局固定使用 nz_layout_ptn
+
+### SwiGLU concat-N 与 WeightNZ
+
+SwiGLU 的原始 N 按 `C=[gate | linear]` 由两个逻辑半区组成，计算
+`SiLU(gate) * linear`；要求 A 不转置且 A/B 均为 MXFP8。原始 N 必须是 64 的倍数，
+每个半区 tile 宽度按 32 对齐。BlockMmad 对同一个输出 tile 分别搬运 gate 与 linear，
+并在 L1/L0C 中打包为：
+
+```text
+[gate: gmN][linear: gmN]
+```
+
+WeightNZ 的两个半区都从完整的 NZ/ZN 分形边界开始。B、ScaleB 和 Bias 使用相同的
+gate/linear 打包位置；B/ScaleB/Bias L1 缓冲及 L0B/L0C 均按 matmul `baseN` 预算。
 
 ### Mmad 计算模式
 使用 `MmadTraitMX` trait，支持量化数据的自动反量化：
@@ -159,7 +184,7 @@ __aicore__ inline void Init(
 说明：
 - `l1BufNum` 支持 2、3 或 4 缓冲
 - `scaleKL1` 应为 `kL1` 的整数倍（建议 2×kL1）
-- K 轴需对齐到 MXFP_DIVISOR_SIZE（64）
+- `kL1`建议按MXFP_DIVISOR_SIZE（64）对齐；逻辑K尾块由组件自动补零处理
 
 ### CopyScalesInL1函数
 ```
@@ -317,8 +342,8 @@ L1 (量化数据缓冲 + Scale 缓冲)
 L0A/L0B (量化数据) + L0A/L0B (Scale)
     ↓
 L0C (float 结果)
-    ↓
-GM (float 输出)
+    ├── 普通 QBMM → GM
+    └── ActivationQuant → UB → AIV 激活与动态 MX 量化 → GM
 ```
 
 ### L1 缓冲布局（2 buffer）
@@ -371,4 +396,5 @@ Mmad 计算（MX 模式：自动反量化）
 - **量化推理**：MxFP4/MxFP8 量化矩阵乘
 - **Batch Matmul**：多 Batch 维度支持（在 Kernel 层处理）
 - **Scale 因子处理**：per-token 和 per-group scale
+- **融合激活量化**：GELU，或 MXFP8 SwiGLU 的 ND/WeightNZ concat-N 路径
 - **高性能场景**：L1 缓冲优化、Scale 复用、全载模式

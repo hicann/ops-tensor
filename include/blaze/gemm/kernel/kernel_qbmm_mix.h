@@ -218,12 +218,12 @@ private:
 
     BlockMmad mmadOp_;
     BlockEpilogue epilogueOp_;
-    __gm__ AType* aGmBase_{nullptr};
-    __gm__ BType* bGmBase_{nullptr};
-    bool isBiasThreeDim_{false};
     uint64_t batchCOffset_{0};
     uint64_t batchAOffset_{0};
     uint64_t batchBOffset_{0};
+    __gm__ AType* aGmBase_{nullptr};
+    __gm__ BType* bGmBase_{nullptr};
+    bool isBiasThreeDim_{false};
     bool isFirstBlock_{true};
     bool needUpdateTail_{false};
     static constexpr bool WEIGHT_NZ = IsWeightNz<LayoutB>::value;
@@ -401,7 +401,9 @@ __aicore__ inline void GemmUniversal<QBMM_MIX_KERNEL_TEM_PARAMS>::ProcessSingleB
         const int64_t curM = asc::te::get<IDX_M_TILEIDX>(singleShape);
         const int64_t curN = asc::te::get<IDX_N_TILEIDX>(singleShape);
         const int64_t l0cUbBaseOffset = 0;
-        SetBL2Cache(params.problemShape, curM, curN, params.qbmmParams.bMustHitL2, gmB);
+        if ASCEND_IS_AIC {
+            SetBL2Cache(params.problemShape, curM, curN, params.qbmmParams.bMustHitL2, gmB);
+        }
         auto gmBlockBias = gmBias.slice(asc::te::make_coord(0L, params.mmadParams.isBias ? nPos : 0L),
                                         asc::te::make_shape(1L, curN));
         ProcessOneBlock(gmA, gmB, gmBlockBias, singleShape, mPos, nPos, curM, curN, k, m, n, l0cUbBaseOffset);

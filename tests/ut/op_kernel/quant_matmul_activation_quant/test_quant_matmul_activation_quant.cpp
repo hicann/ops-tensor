@@ -129,6 +129,94 @@ void CheckLayoutAndLoadModes()
     CheckPublicAssembly<fp8_e4m3fn_t, fp8_e4m3fn_t, fp8_e4m3fn_t, LayoutA, LayoutB, Blaze::Gemm::A_FULL_LOAD_MODE>();
 }
 
+template <typename LayoutB, uint64_t FullLoadMode>
+void CheckSwiGluWeightNzAssembly()
+{
+    using Types = QuantMatmulSwiGluQuantTypes<fp8_e4m3fn_t, fp8_e4m3fn_t, fp8_e5m2_t, LayoutB, FullLoadMode>;
+    using BlockMmad = typename Types::BlockMmad;
+    using Kernel = typename Types::Kernel;
+
+    static_assert(std::is_same_v<typename Types::DispatchPolicy::ScheduleType,
+                                 Blaze::Gemm::KernelMmadWithScaleMxActivationQuant>);
+    static_assert(BlockMmad::WEIGHT_NZ);
+    static_assert(!BlockMmad::TRANS_A);
+    static_assert(std::is_same_v<typename BlockMmad::LayoutB, LayoutB>);
+    static_assert(BlockMmad::CONCAT_N);
+    static_assert(std::is_same_v<typename Types::BlockEpilogue::DataTypeOut, fp8_e5m2_t>);
+    static_assert(
+        std::is_same_v<decltype(std::declval<Kernel&>()(std::declval<const typename Kernel::Params&>())), void>);
+
+    EXPECT_GT(sizeof(Kernel), 0U);
+}
+
+template <typename LayoutA, typename LayoutB, uint64_t FullLoadMode>
+void CheckWithoutBatchGeluAssembly()
+{
+    using Types = QuantMatmulActivationQuantWithoutBatchTypes<fp8_e4m3fn_t, fp8_e4m3fn_t, fp8_e5m2_t, LayoutA, LayoutB,
+                                                              FullLoadMode>;
+    using Kernel = typename Types::Kernel;
+
+    static_assert(std::is_same_v<typename Types::DispatchPolicy::ScheduleType,
+                                 Blaze::Gemm::KernelMmadWithScaleMxActivationQuant>);
+    static_assert(Types::DispatchPolicy::FULL_LOAD_MODE == FullLoadMode);
+    static_assert(
+        std::is_same_v<decltype(std::declval<Kernel&>()(std::declval<const typename Kernel::Params&>())), void>);
+
+    typename Kernel::Params params{};
+    params.problemShape = {64L, 128L, 128L, 1L};
+    params.mmadParams = {nullptr, nullptr, nullptr, nullptr, nullptr, nullptr};
+    params.epilogueParams = {nullptr,
+                             nullptr,
+                             64U,
+                             128U,
+                             Blaze::Epilogue::Block::GeluAlg::TANH,
+                             Blaze::Epilogue::Block::QuantAlg::OCP,
+                             Blaze::Epilogue::Block::ROUND_MODE_FP4::RINT,
+                             0.0F};
+    params.l1Params = {64U, 64U, 2U};
+    params.schParams = {64L, 128L, 1L, 1L, 1L, 1L, 0L, 0L};
+    // Single-batch cases fill the batch parameters with defaults (all dims 1).
+    params.qbmmParams = {1U, 1U, 1U, 1U, 1U, 1U, 1U, 1U, 1U, 1U, 1U, 1U, 0U, 64U, 128U, 64U, 0U, 1U};
+
+    EXPECT_GT(sizeof(Kernel), 0U);
+    EXPECT_EQ(asc::te::get<Blaze::Gemm::MNK_B>(params.problemShape), 1L);
+    EXPECT_EQ(params.qbmmParams.baseN, 128U);
+    EXPECT_EQ(params.qbmmParams.bMustHitL2, 1U);
+}
+
+template <typename LayoutB, uint64_t FullLoadMode>
+void CheckWithoutBatchSwiGluAssembly()
+{
+    using Types = QuantMatmulSwiGluQuantWithoutBatchTypes<fp8_e5m2_t, fp8_e4m3fn_t, fp8_e5m2_t, LayoutB, FullLoadMode>;
+    using Kernel = typename Types::Kernel;
+
+    static_assert(std::is_same_v<typename Types::DispatchPolicy::ScheduleType,
+                                 Blaze::Gemm::KernelMmadWithScaleMxActivationQuant>);
+    static_assert(Types::BlockMmad::CONCAT_N);
+    static_assert(!Types::BlockMmad::TRANS_A);
+    static_assert(std::is_same_v<typename Types::BlockEpilogue::DataTypeOut, fp8_e5m2_t>);
+    static_assert(
+        std::is_same_v<decltype(std::declval<Kernel&>()(std::declval<const typename Kernel::Params&>())), void>);
+
+    typename Kernel::Params params{};
+    params.problemShape = {65L, 128L, 128L, 1L};
+    params.mmadParams = {nullptr, nullptr, nullptr, nullptr, nullptr, nullptr};
+    params.epilogueParams.yGmAddr = nullptr;
+    params.epilogueParams.yScaleGmAddr = nullptr;
+    params.epilogueParams.baseM = 64U;
+    params.epilogueParams.baseN = 64U;
+    params.epilogueParams.scaleAlg = static_cast<uint8_t>(1U);
+    params.l1Params = {64U, 64U, 2U};
+    params.schParams = {64L, 128L, 1L, 1L, 1L, 1L, 0L, 0L};
+    // Single-batch cases fill the batch parameters with defaults (all dims 1).
+    params.qbmmParams = {1U, 1U, 1U, 1U, 1U, 1U, 1U, 1U, 1U, 1U, 1U, 1U, 0U, 64U, 128U, 64U, 1U, 2U};
+
+    EXPECT_GT(sizeof(Kernel), 0U);
+    EXPECT_EQ(params.epilogueParams.baseN, params.qbmmParams.baseN / 2U);
+    EXPECT_EQ(params.epilogueParams.scaleAlg, static_cast<uint8_t>(1U));
+    EXPECT_EQ(params.qbmmParams.isBias, 1U);
+}
+
 template <typename OutputType, Blaze::Epilogue::Block::GeluAlg GeluAlg, Blaze::Epilogue::Block::QuantAlg QuantAlg,
           Blaze::Epilogue::Block::ROUND_MODE_FP4 RoundMode>
 void RunEpilogueSmoke(float dstTypeMax)
@@ -167,6 +255,24 @@ TEST(QuantMatmulActivationQuantTest, PublicAssemblyCoversAllTilingKeyLayoutsAndL
     CheckLayoutAndLoadModes<DN, DN>();
     CheckLayoutAndLoadModes<DN, NZ>();
     CheckLayoutAndLoadModes<DN, ZN>();
+}
+
+TEST(QuantMatmulActivationQuantTest, SwiGluAssemblySupportsWeightNzAndBTranspose)
+{
+    CheckSwiGluWeightNzAssembly<NZ, Blaze::Gemm::NONE_FULL_LOAD_MODE>();
+    CheckSwiGluWeightNzAssembly<NZ, Blaze::Gemm::A_FULL_LOAD_MODE>();
+    CheckSwiGluWeightNzAssembly<ZN, Blaze::Gemm::NONE_FULL_LOAD_MODE>();
+    CheckSwiGluWeightNzAssembly<ZN, Blaze::Gemm::A_FULL_LOAD_MODE>();
+}
+
+TEST(QuantMatmulActivationQuantTest, WithoutBatchAssemblyCoversGeluAndSwiGlu)
+{
+    CheckWithoutBatchGeluAssembly<ND, ND, Blaze::Gemm::NONE_FULL_LOAD_MODE>();
+    CheckWithoutBatchGeluAssembly<DN, ZN, Blaze::Gemm::A_FULL_LOAD_MODE>();
+    CheckWithoutBatchSwiGluAssembly<ND, Blaze::Gemm::NONE_FULL_LOAD_MODE>();
+    CheckWithoutBatchSwiGluAssembly<DN, Blaze::Gemm::A_FULL_LOAD_MODE>();
+    CheckWithoutBatchSwiGluAssembly<NZ, Blaze::Gemm::NONE_FULL_LOAD_MODE>();
+    CheckWithoutBatchSwiGluAssembly<ZN, Blaze::Gemm::A_FULL_LOAD_MODE>();
 }
 
 TEST(QuantMatmulActivationQuantTest, EpilogueAlgorithmsAndRoundModesSmoke)

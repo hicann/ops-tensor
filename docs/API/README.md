@@ -294,6 +294,8 @@ blaze/
 │   │   ├── block_epilogue_empty.h
 │   │   ├── block_epilogue_matmul_streamk.h
 │   │   ├── block_epilogue_qbmm_pertensor_streamk.h
+│   │   ├── block_epilogue_gelu_mx_quant.h
+│   │   ├── block_epilogue_swiglu_mx_quant.h
 │   │   └── block_epilogue_flat_quant.h  # FlatQuant AIV 量化后处理
 |   └── gemm/
 │       ├── kernel/              # Kernel 层组件
@@ -302,6 +304,7 @@ blaze/
 │       │   ├── kernel_qbmm_cube.h
 │       │   ├── kernel_qbmm_mx.h
 │       │   ├── kernel_qbmm_mx_without_batch.h
+│       │   ├── kernel_qbmm_mx_activation_quant.h
 │       │   ├── kernel_matmul_mix_weight_prologue.h
 │       │   ├── kernel_wqgmm_mix_weight_prologue.h
 │       │   ├── kernel_qbmm_streamk.h

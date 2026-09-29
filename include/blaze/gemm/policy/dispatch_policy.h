@@ -24,8 +24,8 @@ struct KernelMmadWithScaleMx {};                       // Multi-block with Mx sc
 struct KernelGroupedMmadWithScaleMx {};                // Grouped multi-block with Mx scale
 struct KernelMmadWithScaleMxWithoutBatch {};           // Multi-block with Mx scale, without batch broadcast
 struct KernelGroupedMmadWithScaleMxActivationQuant {}; // Grouped Mx matmul with AIV activation and quantization
-struct KernelMmadWithScaleMxActivationQuant {};        // Multi-block with Mx scale, AIC+AIV fusion (gelu + mx quant)
-struct KernelMmadWithScaleFixpipeQuant {};             // Multi-block with fixpipe quant scale (A8W8 fixpipe)
+struct KernelMmadWithScaleMxActivationQuant {}; // Multi-block with Mx scale, AIC+AIV fusion (gelu/swiglu + mx quant)
+struct KernelMmadWithScaleFixpipeQuant {};      // Multi-block with fixpipe quant scale (A8W8 fixpipe)
 struct KernelMmadWithScaleFixpipeQuantWithoutBatch {}; // Multi-block with fixpipe quant scale, without batch broadcast
 struct KernelGroupedMmadWithScaleFixpipeQuant {};      // Grouped S8S4 with fixpipe per-channel/per-group scale
 struct KernelGroupedMmadFixpipeQuant {};        // Grouped multi-block with fixpipe quant scale (A8W8 fixpipe GMM)
@@ -92,13 +92,16 @@ struct MatmulWithScaleMix {
  * @brief Mx Matrix multiplication with scaleA and scaleB
  */
 template <uint64_t FullLoadMode_ = 0, bool AtomicAdd_ = false, class ScheduleType_ = KernelMmadWithScaleMx,
-          uint64_t L0C2UBMode_ = L0C2UB_MODE_NONE, uint64_t NonContiguousType_ = 0>
+          uint64_t L0C2UBMode_ = L0C2UB_MODE_NONE, uint64_t NonContiguousType_ = 0, bool ConcatN_ = false>
 struct MatmulWithScaleMx {
     using ScheduleType = ScheduleType_;
     static constexpr uint64_t FULL_LOAD_MODE = FullLoadMode_;
     static constexpr bool IS_ATOMIC_ADD = AtomicAdd_;
     static constexpr uint64_t L0C2UB_MODE = L0C2UBMode_;
     static constexpr uint64_t NON_CONTIGUOUS_TYPE = NonContiguousType_;
+    // Concat-N layout: the mmad produces [gate|linear] concatenated N columns, so the
+    // epilogue consumes an N/2-wide output. Orthogonal to the kernel family tag.
+    static constexpr bool CONCAT_N = ConcatN_;
 };
 
 /**

@@ -36,6 +36,9 @@ constexpr uint64_t MX_QUANT_COMPUTE_ALIGN = 64UL;
 constexpr uint32_t MAX_SINGLE_MN = 64 * 256;
 constexpr uint16_t FP8_E4M3_MAX_EXP = 0x0400;
 constexpr uint16_t FP8_E5M2_MAX_EXP = 0x0780;
+constexpr float FP8_E4M3_MAX_VALUE = 448.0f;
+constexpr float FP8_E5M2_MAX_VALUE = 57344.0f;
+constexpr int8_t FLOAT_OVERFLOW_MODE_CTRL = 60;
 } // namespace Constant
 
 #ifdef __CCE_AICORE__
@@ -78,6 +81,7 @@ public:
         GM_ADDR yScaleGmAddr{nullptr};
         uint32_t baseM{0};
         uint32_t baseN{0};
+        uint8_t scaleAlg{0};
         Params() = default;
     };
 
@@ -163,6 +167,7 @@ private:
     uint32_t singleN_{0};
 
     uint16_t fpEmax_{0};
+    float invDstTypeMax_{1.0f};
 };
 
 template <typename DataTypeOut_, typename DataTypeIn_, typename DataTypeScale_>
@@ -171,14 +176,17 @@ __aicore__ inline void BlockEpilogueSwigluMxQuant<DataTypeOut_, DataTypeIn_, Dat
     if ASCEND_IS_AIC {
         return;
     }
+    AscendC::SetCtrlSpr<Constant::FLOAT_OVERFLOW_MODE_CTRL, Constant::FLOAT_OVERFLOW_MODE_CTRL>(0);
     params_ = &params;
     subBlockIdx_ = static_cast<uint32_t>(AscendC::GetSubBlockIdx());
 
     if constexpr (AscendC::IsSameType<DataTypeOut, fp8_e4m3fn_t>::value) {
         fpEmax_ = Constant::FP8_E4M3_MAX_EXP;
+        invDstTypeMax_ = 1.0f / Constant::FP8_E4M3_MAX_VALUE;
     }
     if constexpr (AscendC::IsSameType<DataTypeOut, fp8_e5m2_t>::value) {
         fpEmax_ = Constant::FP8_E5M2_MAX_EXP;
+        invDstTypeMax_ = 1.0f / Constant::FP8_E5M2_MAX_VALUE;
     }
     SetupUbLayout();
 }
@@ -412,12 +420,19 @@ __aicore__ inline void BlockEpilogueSwigluMxQuant<DataTypeOut_, DataTypeIn_, Dat
     auto yTensor = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::ub, int8_t>(quantOutputUbOffset_),
                                         dataLayout);
 
-    // MxQuantConfig 由 Init 阶段解析的普通成员在调用点组装（tile 类型不得出现在类作用域）
-    // zeroScaleOnZeroExp=true: swiglu 阵营; invDstTypeMax/addValueBits 取默认值（OCP 链路不消费）
-    Tile::MxQuantConfig cfg{Tile::MxScaleAlg::OCP, fpEmax_, 1.0f, 0x003f, true};
+    // MxQuantConfig 由 Init 阶段解析的普通成员在调用点组装。
+    // zeroScaleOnZeroExp=true: swiglu 阵营; CUBLAS 链路消费 invDstTypeMax（BLAS scaleAlg）
+    Tile::MxQuantConfig cfg{Tile::MxScaleAlg::OCP, fpEmax_, invDstTypeMax_, 0x003f, true};
 
     Tile::MxQuant<DataTypeOut> mx;
-    mx.GroupMaxExp(gluResTensor, maxExpTensor, totalDataInUb, false);
+    // scaleAlg 合同：0 表示 OCP，1 表示 CUBLAS；调用侧只应传入这两个值。
+    if (params_->scaleAlg == 0U) {
+        cfg.alg = Tile::MxScaleAlg::OCP;
+        mx.GroupMaxExp(gluResTensor, maxExpTensor, totalDataInUb, false);
+    } else {
+        cfg.alg = Tile::MxScaleAlg::CUBLAS;
+        mx.GroupMaxExp(gluResTensor, maxExpTensor, totalDataInUb, true);
+    }
     mx.GenScale(maxExpTensor, yScaleTensor, reciprocalTensor, cfg, totalScaleInUb);
     mx.Quantize(gluResTensor, reciprocalTensor, yTensor, totalDataInUb);
 }

@@ -10,15 +10,14 @@
 
 /**
  * @file quant_matmul_activation_quant.cpp
- * @brief CSV-driven MX quantized matmul + Gelu + dynamic MX quant fusion example.
+ * @brief CSV-driven MX quantized matmul + GELU/SwiGLU + dynamic MX quant fusion example.
  *
- * Exercises Blaze::Gemm::Kernel::GemmUniversal (kernel_qbmm_mx_activation_quant.h
- * specialization) with Blaze::Gemm::MatmulWithScaleMx dispatch policy and
- * Blaze::Epilogue::Block::BlockEpilogueGeluMxQuant epilogue.
+ * Exercises the batch and without-batch GemmUniversal specializations with
+ * Blaze::Gemm::MatmulWithScaleMx dispatch policy and GELU/SwiGLU epilogues.
  *
- * Both A and B are MX-quantized (FP8), each carrying an independent E8M0 scale.
- * AIC does MX GEMM (L0C→UB via DualDst fixpipe), AIV does Gelu activation and
- * dynamic MX quantization, outputting quantized Y (same dtype as A/C) + fp8_e8m0 scale.
+ * Both A and B are MX-quantized (FP8 or FP4), each carrying an independent E8M0 scale.
+ * AIC does MX GEMM (L0C→UB via DualDst fixpipe), AIV does activation and dynamic
+ * MX quantization, outputting quantized Y (same dtype as A) + fp8_e8m0 scale.
  *
  * Supported transposes: transA (A stored as (K,M)), transB (B stored as (N,K))
  * Weight B is always in NZ layout (ZN when transB=true).
@@ -41,6 +40,7 @@
 
 #include "acl/acl.h"
 #include "blaze/epilogue/block/block_epilogue_gelu_mx_quant.h"
+#include "blaze/epilogue/block/block_epilogue_swiglu_mx_quant.h"
 #include "blaze/gemm/block/block_mmad_qbmm_mx.h"
 #include "blaze/gemm/block/block_scheduler_qbmm.h"
 #include "blaze/gemm/kernel/kernel_qbmm_mx_activation_quant.h"
@@ -63,43 +63,43 @@ static constexpr uint64_t C0_SIZE_B4 = 64UL;
 /* Macros                                                                     */
 /* ========================================================================== */
 
-#define LAUNCH_KERNEL_IMPL(FULL_LOAD_MODE)                                                                       \
-    quant_matmul_activation_quant_kernel<A_TYPE, B_TYPE, A_TYPE, LAYOUT_A, LAYOUT_B, FULL_LOAD_MODE>             \
+#define LAUNCH_KERNEL_IMPL(FULL_LOAD_MODE, IS_SWIGLU)                                                            \
+    quant_matmul_activation_quant_kernel<A_TYPE, B_TYPE, A_TYPE, LAYOUT_A, LAYOUT_B, FULL_LOAD_MODE, IS_SWIGLU>  \
         <<<p.blockNum, 0, p.stream>>>(p.dA, p.dB, p.dBias, p.dScaleA, p.dScaleB, p.dY, p.dYScale, p.m, p.k, p.n, \
                                       p.baseM, p.baseN, p.baseK, p.kL1, p.scaleKL1, p.l1BufferNum, p.dbL0C,      \
-                                      p.biasElements)
+                                      p.biasElements, p.scaleAlg)
 
-#define DISPATCH_TRANS(A_TYPE, B_TYPE, TRANS_A, TRANS_B, IS_NZ, FULL_LOAD_MODE)                      \
-    do {                                                                                             \
-        if (TRANS_A) {                                                                               \
-            if (TRANS_B) {                                                                           \
-                if (IS_NZ) {                                                                         \
-                    LaunchKernel<A_TYPE, B_TYPE, true, true, true, FULL_LOAD_MODE>(launchParams);    \
-                } else {                                                                             \
-                    LaunchKernel<A_TYPE, B_TYPE, true, true, false, FULL_LOAD_MODE>(launchParams);   \
-                }                                                                                    \
-            } else {                                                                                 \
-                if (IS_NZ) {                                                                         \
-                    LaunchKernel<A_TYPE, B_TYPE, true, false, true, FULL_LOAD_MODE>(launchParams);   \
-                } else {                                                                             \
-                    LaunchKernel<A_TYPE, B_TYPE, true, false, false, FULL_LOAD_MODE>(launchParams);  \
-                }                                                                                    \
-            }                                                                                        \
-        } else {                                                                                     \
-            if (TRANS_B) {                                                                           \
-                if (IS_NZ) {                                                                         \
-                    LaunchKernel<A_TYPE, B_TYPE, false, true, true, FULL_LOAD_MODE>(launchParams);   \
-                } else {                                                                             \
-                    LaunchKernel<A_TYPE, B_TYPE, false, true, false, FULL_LOAD_MODE>(launchParams);  \
-                }                                                                                    \
-            } else {                                                                                 \
-                if (IS_NZ) {                                                                         \
-                    LaunchKernel<A_TYPE, B_TYPE, false, false, true, FULL_LOAD_MODE>(launchParams);  \
-                } else {                                                                             \
-                    LaunchKernel<A_TYPE, B_TYPE, false, false, false, FULL_LOAD_MODE>(launchParams); \
-                }                                                                                    \
-            }                                                                                        \
-        }                                                                                            \
+#define DISPATCH_TRANS(A_TYPE, B_TYPE, TRANS_A, TRANS_B, IS_NZ, FULL_LOAD_MODE)                             \
+    do {                                                                                                    \
+        if (TRANS_A) {                                                                                      \
+            if (TRANS_B) {                                                                                  \
+                if (IS_NZ) {                                                                                \
+                    LaunchKernel<A_TYPE, B_TYPE, true, true, true, FULL_LOAD_MODE, false>(launchParams);    \
+                } else {                                                                                    \
+                    LaunchKernel<A_TYPE, B_TYPE, true, true, false, FULL_LOAD_MODE, false>(launchParams);   \
+                }                                                                                           \
+            } else {                                                                                        \
+                if (IS_NZ) {                                                                                \
+                    LaunchKernel<A_TYPE, B_TYPE, true, false, true, FULL_LOAD_MODE, false>(launchParams);   \
+                } else {                                                                                    \
+                    LaunchKernel<A_TYPE, B_TYPE, true, false, false, FULL_LOAD_MODE, false>(launchParams);  \
+                }                                                                                           \
+            }                                                                                               \
+        } else {                                                                                            \
+            if (TRANS_B) {                                                                                  \
+                if (IS_NZ) {                                                                                \
+                    LaunchKernel<A_TYPE, B_TYPE, false, true, true, FULL_LOAD_MODE, false>(launchParams);   \
+                } else {                                                                                    \
+                    LaunchKernel<A_TYPE, B_TYPE, false, true, false, FULL_LOAD_MODE, false>(launchParams);  \
+                }                                                                                           \
+            } else {                                                                                        \
+                if (IS_NZ) {                                                                                \
+                    LaunchKernel<A_TYPE, B_TYPE, false, false, true, FULL_LOAD_MODE, false>(launchParams);  \
+                } else {                                                                                    \
+                    LaunchKernel<A_TYPE, B_TYPE, false, false, false, FULL_LOAD_MODE, false>(launchParams); \
+                }                                                                                           \
+            }                                                                                               \
+        }                                                                                                   \
     } while (0)
 
 /* ========================================================================== */
@@ -124,6 +124,9 @@ struct CliArgs {
     int64_t l1Buffers = 2;
     int64_t dbL0C = 1;
     bool aFullLoad = false;
+    std::string activation = "gelu";
+    uint32_t scaleAlg = 0;
+    std::string kernelVariant = "batch";
 };
 
 static bool ParseBool(const char* s)
@@ -134,11 +137,12 @@ static bool ParseBool(const char* s)
 
 static bool ParseCliArgs(int argc, const char** argv, CliArgs& args)
 {
-    if (argc != 18) {
+    if (argc != 21) {
         std::fprintf(stderr,
                      "Usage: %s <m> <k> <n> <bias> <a_dtype> <b_dtype>"
                      " <transA> <transB> <format> <base_m> <base_n> <base_k> <tile_k_l1> <scale_k_l1>"
-                     " <l1_buffers> <db_l0c> <a_full_load>\n",
+                     " <l1_buffers> <db_l0c> <a_full_load> <gelu|swiglu> <scale_alg>"
+                     " <batch|without_batch>\n",
                      argv[0]);
         return false;
     }
@@ -161,6 +165,9 @@ static bool ParseCliArgs(int argc, const char** argv, CliArgs& args)
     args.l1Buffers = std::atoll(argv[15]);
     args.dbL0C = std::atoll(argv[16]);
     args.aFullLoad = ParseBool(argv[17]);
+    args.activation = argv[18];
+    args.scaleAlg = static_cast<uint32_t>(std::atoll(argv[19]));
+    args.kernelVariant = argv[20];
 
     // Validation
     if (args.m <= 0 || args.k <= 0 || args.n <= 0) {
@@ -189,6 +196,30 @@ static bool ParseCliArgs(int argc, const char** argv, CliArgs& args)
     if (args.format != "(ND,ND)" && args.format != "(ND,NZ)") {
         std::fprintf(stderr, "Error: format must be (ND,ND) or (ND,NZ) (got '%s').\n", args.format.c_str());
         return false;
+    }
+    if (args.activation != "gelu" && args.activation != "swiglu") {
+        std::fprintf(stderr, "Error: activation must be gelu or swiglu.\n");
+        return false;
+    }
+    if (args.scaleAlg > 1U) {
+        std::fprintf(stderr, "Error: scale_alg must be 0 (OCP) or 1 (BLAS).\n");
+        return false;
+    }
+    if (args.scaleAlg == 1U && aIsFp4) {
+        std::fprintf(stderr, "Error: BLAS scale is only enabled for FP8 output in this example.\n");
+        return false;
+    }
+    if (args.kernelVariant != "batch" && args.kernelVariant != "without_batch") {
+        std::fprintf(stderr, "Error: kernel_variant must be batch or without_batch.\n");
+        return false;
+    }
+    if (args.activation == "swiglu") {
+        if (args.kernelVariant != "without_batch" || args.transA || aIsFp4 || bIsFp4 || args.n % 64 != 0) {
+            std::fprintf(stderr,
+                         "Error: swiglu example requires without_batch, transA=false, FP8 inputs, and N multiple "
+                         "of 64.\n");
+            return false;
+        }
     }
     return true;
 }
@@ -241,13 +272,11 @@ static int64_t CalcNZElementCount(int64_t k, int64_t n, const std::string& dtype
 
 using ProblemShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
 
-template <class AType, class BType, class CType, class LayoutA, class LayoutB, uint64_t FullLoadMode>
-__global__ __aicore__ void quant_matmul_activation_quant_kernel(GM_ADDR aGm, GM_ADDR bGm, GM_ADDR biasGm,
-                                                                GM_ADDR scaleAGm, GM_ADDR scaleBGm, GM_ADDR yGm,
-                                                                GM_ADDR yScaleGm, int64_t m, int64_t k, int64_t n,
-                                                                uint64_t baseM, uint64_t baseN, uint64_t baseK,
-                                                                uint64_t kL1, uint64_t scaleKL1, uint64_t l1BufferNum,
-                                                                uint64_t dbL0C, uint64_t biasElements)
+template <class AType, class BType, class CType, class LayoutA, class LayoutB, uint64_t FullLoadMode, bool IsSwiGlu>
+__global__ __aicore__ void quant_matmul_activation_quant_kernel(
+    GM_ADDR aGm, GM_ADDR bGm, GM_ADDR biasGm, GM_ADDR scaleAGm, GM_ADDR scaleBGm, GM_ADDR yGm, GM_ADDR yScaleGm,
+    int64_t m, int64_t k, int64_t n, uint64_t baseM, uint64_t baseN, uint64_t baseK, uint64_t kL1, uint64_t scaleKL1,
+    uint64_t l1BufferNum, uint64_t dbL0C, uint64_t biasElements, uint32_t scaleAlg)
 {
     KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_MIX_AIC_1_2);
     AscendC::InitSocState();
@@ -256,14 +285,18 @@ __global__ __aicore__ void quant_matmul_activation_quant_kernel(GM_ADDR aGm, GM_
     using BiasType = float;
     using LayoutC = asc::te::nd_ext_layout_ptn;
     using LayoutBias = asc::te::nd_ext_layout_ptn;
+    // Single-batch cases reuse the batch kernel with default batch parameters (all batch dims 1).
+    // SwiGLU selects the concat-N layout via the policy flag (mmad produces [gate|linear], epilogue N/2).
     using DispatchPolicy = Blaze::Gemm::MatmulWithScaleMx<FullLoadMode, false,
                                                           Blaze::Gemm::KernelMmadWithScaleMxActivationQuant,
-                                                          Blaze::Gemm::L0C2UB_MODE_DUAL_DST_SPLIT_M>;
+                                                          Blaze::Gemm::L0C2UB_MODE_DUAL_DST_SPLIT_M, 0, IsSwiGlu>;
     using BlockScheduler = Blaze::Gemm::Block::BlockSchedulerQuantBatchMatmulV3<ProblemShape, FullLoadMode, LayoutA,
                                                                                 LayoutB, AType>;
     using BlockMmad = Blaze::Gemm::Block::BlockMmad<DispatchPolicy, AType, LayoutA, BType, LayoutB, MatmulOutType,
                                                     LayoutC, BiasType, LayoutBias>;
-    using BlockEpilogue = Blaze::Epilogue::Block::BlockEpilogueGeluMxQuant<OutType, MatmulOutType>;
+    using BlockEpilogue = AscendC::Std::conditional_t<
+        IsSwiGlu, Blaze::Epilogue::Block::BlockEpilogueSwigluMxQuant<OutType, MatmulOutType, fp8_e8m0_t>,
+        Blaze::Epilogue::Block::BlockEpilogueGeluMxQuant<OutType, MatmulOutType>>;
     using Kernel = Blaze::Gemm::Kernel::GemmUniversal<ProblemShape, BlockMmad, BlockEpilogue, BlockScheduler>;
 
     typename Kernel::Params params{};
@@ -273,16 +306,25 @@ __global__ __aicore__ void quant_matmul_activation_quant_kernel(GM_ADDR aGm, GM_
     if constexpr (AscendC::IsSameType<OutType, fp4x2_e2m1_t>::value) {
         dtypeMaxVal = 6.0f;
     }
-    params.epilogueParams = {yGm,
-                             yScaleGm,
-                             static_cast<uint32_t>(baseM),
-                             static_cast<uint32_t>(baseN),
-                             Blaze::Epilogue::Block::GeluAlg::TANH,
-                             Blaze::Epilogue::Block::QuantAlg::OCP,
-                             Blaze::Epilogue::Block::ROUND_MODE_FP4::RINT,
-                             dtypeMaxVal};
+    if constexpr (IsSwiGlu) {
+        params.epilogueParams.yGmAddr = yGm;
+        params.epilogueParams.yScaleGmAddr = yScaleGm;
+        params.epilogueParams.baseM = static_cast<uint32_t>(baseM);
+        params.epilogueParams.baseN = static_cast<uint32_t>(baseN >> 1);
+        params.epilogueParams.scaleAlg = static_cast<uint8_t>(scaleAlg);
+    } else {
+        params.epilogueParams = {yGm,
+                                 yScaleGm,
+                                 static_cast<uint32_t>(baseM),
+                                 static_cast<uint32_t>(baseN),
+                                 Blaze::Epilogue::Block::GeluAlg::TANH,
+                                 static_cast<Blaze::Epilogue::Block::QuantAlg>(scaleAlg),
+                                 Blaze::Epilogue::Block::ROUND_MODE_FP4::RINT,
+                                 dtypeMaxVal};
+    }
     params.l1Params = {kL1, scaleKL1, l1BufferNum};
     params.schParams = {static_cast<int64_t>(baseM), static_cast<int64_t>(baseN), 1, 1, 1, 1, 0, 0};
+    // Batch parameters default to 1 for the example's single-batch cases.
     params.qbmmParams = {1,
                          1,
                          1,
@@ -323,10 +365,11 @@ struct LaunchParams {
     int64_t blockNum;
     uint64_t baseM, baseN, baseK;
     uint64_t kL1, scaleKL1, l1BufferNum, dbL0C, biasElements;
+    uint32_t scaleAlg;
     aclrtStream stream;
 };
 
-template <class A_TYPE, class B_TYPE, bool TransA, bool TransB, bool IsNzFormat, uint64_t FullLoadMode>
+template <class A_TYPE, class B_TYPE, bool TransA, bool TransB, bool IsNzFormat, uint64_t FullLoadMode, bool IsSwiGlu>
 void LaunchKernel(const LaunchParams& p)
 {
     using LAYOUT_A = std::conditional_t<TransA, asc::te::dn_ext_layout_ptn, asc::te::nd_ext_layout_ptn>;
@@ -334,22 +377,48 @@ void LaunchKernel(const LaunchParams& p)
         IsNzFormat, std::conditional_t<TransB, asc::te::zn_layout_ptn, asc::te::nz_layout_ptn>,
         std::conditional_t<TransB, asc::te::dn_ext_layout_ptn, asc::te::nd_ext_layout_ptn>>;
 
-    LAUNCH_KERNEL_IMPL(FullLoadMode);
+    LAUNCH_KERNEL_IMPL(FullLoadMode, IsSwiGlu);
 }
 
 template <class A_TYPE, class B_TYPE, uint64_t FullLoadMode>
-void LaunchByTrans(const CliArgs& args, bool isNzFormat, const LaunchParams& launchParams)
+void LaunchGeluByTrans(const CliArgs& args, bool isNzFormat, const LaunchParams& launchParams)
 {
     DISPATCH_TRANS(A_TYPE, B_TYPE, args.transA, args.transB, isNzFormat, FullLoadMode);
 }
 
 template <class A_TYPE, class B_TYPE>
-void LaunchByFullLoad(const CliArgs& args, bool isNzFormat, const LaunchParams& launchParams)
+void LaunchGeluByFullLoad(const CliArgs& args, bool isNzFormat, const LaunchParams& launchParams)
 {
     if (args.aFullLoad) {
-        LaunchByTrans<A_TYPE, B_TYPE, Blaze::Gemm::A_FULL_LOAD_MODE>(args, isNzFormat, launchParams);
+        LaunchGeluByTrans<A_TYPE, B_TYPE, Blaze::Gemm::A_FULL_LOAD_MODE>(args, isNzFormat, launchParams);
     } else {
-        LaunchByTrans<A_TYPE, B_TYPE, Blaze::Gemm::NONE_FULL_LOAD_MODE>(args, isNzFormat, launchParams);
+        LaunchGeluByTrans<A_TYPE, B_TYPE, Blaze::Gemm::NONE_FULL_LOAD_MODE>(args, isNzFormat, launchParams);
+    }
+}
+
+template <class A_TYPE, class B_TYPE, uint64_t FullLoadMode>
+void LaunchSwiGluByLayout(const CliArgs& args, bool isNzFormat, const LaunchParams& launchParams)
+{
+    if (args.transB) {
+        if (isNzFormat) {
+            LaunchKernel<A_TYPE, B_TYPE, false, true, true, FullLoadMode, true>(launchParams);
+        } else {
+            LaunchKernel<A_TYPE, B_TYPE, false, true, false, FullLoadMode, true>(launchParams);
+        }
+    } else if (isNzFormat) {
+        LaunchKernel<A_TYPE, B_TYPE, false, false, true, FullLoadMode, true>(launchParams);
+    } else {
+        LaunchKernel<A_TYPE, B_TYPE, false, false, false, FullLoadMode, true>(launchParams);
+    }
+}
+
+template <class A_TYPE, class B_TYPE>
+void LaunchSwiGluByFullLoad(const CliArgs& args, bool isNzFormat, const LaunchParams& launchParams)
+{
+    if (args.aFullLoad) {
+        LaunchSwiGluByLayout<A_TYPE, B_TYPE, Blaze::Gemm::A_FULL_LOAD_MODE>(args, isNzFormat, launchParams);
+    } else {
+        LaunchSwiGluByLayout<A_TYPE, B_TYPE, Blaze::Gemm::NONE_FULL_LOAD_MODE>(args, isNzFormat, launchParams);
     }
 }
 
@@ -372,7 +441,8 @@ static void Run(const CliArgs& args)
 
     const uint64_t scaleK = static_cast<uint64_t>(CeilDiv(args.k, static_cast<int64_t>(MXFP_DIVISOR_SIZE))) *
                             (MXFP_DIVISOR_SIZE / GROUP_SIZE);
-    const uint64_t scaleN = static_cast<uint64_t>(CeilDiv(args.n, static_cast<int64_t>(MXFP_DIVISOR_SIZE))) *
+    const int64_t outputN = args.activation == "swiglu" ? args.n / 2 : args.n;
+    const uint64_t scaleN = static_cast<uint64_t>(CeilDiv(outputN, static_cast<int64_t>(MXFP_DIVISOR_SIZE))) *
                             (MXFP_DIVISOR_SIZE / GROUP_SIZE);
     const size_t aSize = ElementCountToBytes(args.m * args.k, args.aDtype);
     bool isNzFormat = (args.format == "(ND,NZ)");
@@ -386,7 +456,7 @@ static void Run(const CliArgs& args)
     const size_t biasSize = args.bias > 0 ? static_cast<size_t>(args.bias) * sizeof(float) : 1;
     const size_t scaleASize = static_cast<size_t>(args.m) * scaleK;
     const size_t scaleBSize = static_cast<size_t>(args.n) * scaleK;
-    const size_t ySize = ElementCountToBytes(args.m * args.n, args.aDtype);
+    const size_t ySize = ElementCountToBytes(args.m * outputN, args.aDtype);
     const size_t yScaleSize = static_cast<size_t>(args.m) * scaleN;
 
     std::string inputDir = "./input";
@@ -464,6 +534,9 @@ static void Run(const CliArgs& args)
     std::cout << "  l1Buffers: " << args.l1Buffers << std::endl;
     std::cout << "  dbL0C    : " << args.dbL0C << std::endl;
     std::cout << "  AFullLoad: " << (args.aFullLoad ? "true" : "false") << std::endl;
+    std::cout << "  Activation: " << args.activation << std::endl;
+    std::cout << "  ScaleAlg : " << (args.scaleAlg == 0U ? "OCP" : "BLAS") << std::endl;
+    std::cout << "  Kernel   : " << args.kernelVariant << std::endl;
     std::cout << "  BlockNum : " << blockNum << std::endl;
     std::cout << "============================================================" << std::endl;
 
@@ -486,14 +559,25 @@ static void Run(const CliArgs& args)
                                  static_cast<uint64_t>(args.l1Buffers),
                                  static_cast<uint64_t>(args.dbL0C),
                                  static_cast<uint64_t>(args.bias),
+                                 args.scaleAlg,
                                  stream};
 
-    if (args.aDtype == "fp8_e4m3" && args.bDtype == "fp8_e4m3") {
-        LaunchByFullLoad<fp8_e4m3fn_t, fp8_e4m3fn_t>(args, isNzFormat, launchParams);
+    if (args.activation == "swiglu") {
+        if (args.aDtype == "fp8_e4m3" && args.bDtype == "fp8_e4m3") {
+            LaunchSwiGluByFullLoad<fp8_e4m3fn_t, fp8_e4m3fn_t>(args, isNzFormat, launchParams);
+        } else if (args.aDtype == "fp8_e5m2" && args.bDtype == "fp8_e4m3") {
+            LaunchSwiGluByFullLoad<fp8_e5m2_t, fp8_e4m3fn_t>(args, isNzFormat, launchParams);
+        } else {
+            std::fprintf(stderr, "Unsupported SwiGLU A/B dtype combination: a=%s b=%s.\n", args.aDtype.c_str(),
+                         args.bDtype.c_str());
+            std::exit(1);
+        }
+    } else if (args.aDtype == "fp8_e4m3" && args.bDtype == "fp8_e4m3") {
+        LaunchGeluByFullLoad<fp8_e4m3fn_t, fp8_e4m3fn_t>(args, isNzFormat, launchParams);
     } else if (args.aDtype == "fp8_e5m2" && args.bDtype == "fp8_e4m3") {
-        LaunchByFullLoad<fp8_e5m2_t, fp8_e4m3fn_t>(args, isNzFormat, launchParams);
+        LaunchGeluByFullLoad<fp8_e5m2_t, fp8_e4m3fn_t>(args, isNzFormat, launchParams);
     } else if (args.aDtype == "fp4_e2m1" && args.bDtype == "fp4_e2m1") {
-        LaunchByFullLoad<fp4x2_e2m1_t, fp4x2_e2m1_t>(args, isNzFormat, launchParams);
+        LaunchGeluByFullLoad<fp4x2_e2m1_t, fp4x2_e2m1_t>(args, isNzFormat, launchParams);
     } else {
         std::fprintf(stderr,
                      "Unsupported A/B dtype combination: a=%s b=%s.\n"

@@ -10,7 +10,7 @@
 
 /*!
  * \file kernel_qbmm_mx_activation_quant.h
- * \brief
+ * \brief QBMM MX with GELU/SwiGLU activation and MX quantization.
  */
 
 #pragma once
@@ -30,15 +30,15 @@
 namespace Blaze {
 namespace Gemm {
 namespace Kernel {
-#define QBMM_MX_KERNEL_CLASS_TEM_PARAMS \
+#define QUANT_MATMUL_ACTIVATION_QUANT_CLASS_TEMPLATE_PARAMS \
     template <class ProblemShape, class BlockMmad, class BlockEpilogue, class BlockScheduler>
-#define QBMM_MX_KERNEL_TEM_PARAMS                                                               \
-    ProblemShape, BlockMmad, BlockEpilogue, BlockScheduler,                                     \
-        AscendC::Std::enable_if_t<AscendC::Std::is_same_v<KernelMmadWithScaleMxActivationQuant, \
-                                                          typename BlockMmad::DispatchPolicy::ScheduleType>>
+#define QUANT_MATMUL_ACTIVATION_QUANT_TEMPLATE_ARGS                                                         \
+    ProblemShape, BlockMmad, BlockEpilogue, BlockScheduler,                                                 \
+        AscendC::Std::enable_if_t<AscendC::Std::is_same_v<typename BlockMmad::DispatchPolicy::ScheduleType, \
+                                                          KernelMmadWithScaleMxActivationQuant>>
 
-QBMM_MX_KERNEL_CLASS_TEM_PARAMS
-class GemmUniversal<QBMM_MX_KERNEL_TEM_PARAMS> {
+QUANT_MATMUL_ACTIVATION_QUANT_CLASS_TEMPLATE_PARAMS
+class GemmUniversal<QUANT_MATMUL_ACTIVATION_QUANT_TEMPLATE_ARGS> {
 public:
     __aicore__ inline GemmUniversal() {}
     __aicore__ inline ~GemmUniversal() {}
@@ -48,11 +48,9 @@ public:
     using L1Params = typename BlockMmad::L1Params;
     using AType = typename BlockMmad::AType;
     using BType = typename BlockMmad::BType;
-    using CType = typename BlockMmad::CType;
     using BiasType = typename BlockMmad::BiasType;
     using LayoutA = typename BlockMmad::LayoutA;
     using LayoutB = typename BlockMmad::LayoutB;
-    using LayoutC = typename BlockMmad::LayoutC;
 
     using BlockShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
     using BlockCoord = asc::te::coord<int64_t, int64_t, int64_t, int64_t>;
@@ -88,6 +86,7 @@ public:
         uint32_t baseK;
         uint32_t isBias;
         uint32_t dbL0C;
+        uint32_t bMustHitL2 = 1;
     };
 
     struct Params {
@@ -105,12 +104,16 @@ private:
     static constexpr bool WEIGHT_NZ = IsWeightNz<LayoutB>::value;
     static constexpr bool TRANS_A = IsTrans<LayoutA>::value;
     static constexpr bool TRANS_B = IsTrans<LayoutB>::value;
-    static constexpr bool IS_ATOMIC_ADD = BlockMmad::DispatchPolicy::IS_ATOMIC_ADD;
+    // Concat-N selects the SwiGLU path: the mmad produces [gate|linear] concatenated N
+    // columns, so the scheduler/epilogue run on an N/2-wide output. The flag comes from
+    // the dispatch policy (MatmulWithScaleMx<..., ConcatN=true>).
+    static constexpr bool IS_SWIGLU = BlockMmad::CONCAT_N;
     static constexpr int64_t C0_SIZE = IsFp4<AType>() ? C0_SIZE_B4 : C0_SIZE_B8;
+    static constexpr uint16_t C0_SIZE_SHIFT = IsFp4<AType>() ? MXFP_DIVISOR_SHIFT : ALIGN_32_BYTES_SHIFT;
+    static constexpr uint16_t BLOCK_CUBE_SHIFT = 4;
 
     using MakeLayoutA = asc::te::frame_layout_format<LayoutA, AscendC::Std::Int<C0_SIZE>>;
     using MakeLayoutB = asc::te::frame_layout_format<LayoutB, AscendC::Std::Int<C0_SIZE>>;
-    using MakeLayoutC = asc::te::frame_layout_format<LayoutC, AscendC::Std::Int<asc::te::c0_element<CType>>>;
     using MakeLayoutScaleA = AscendC::Std::conditional_t<
         TRANS_A, asc::te::frame_layout_format<asc::te::scalea_dn_layout_ptn, AscendC::Std::Int<SCALE_C0>>,
         asc::te::frame_layout_format<asc::te::scalea_nd_layout_ptn, AscendC::Std::Int<SCALE_C0>>>;
@@ -123,19 +126,41 @@ private:
     __aicore__ inline void ResetGmAddr(const Params& params);
     __aicore__ inline void ProcessSingleBatch(const Params& params, BlockScheduler& bs, uint64_t restBatch,
                                               bool isTailRound);
-    __aicore__ inline void ProcessTileLoop(const Params& params, BlockScheduler& bs);
+    // Process one block on AIC(cube) and AIV(dequant), keeping ProcessSingleBatch compact.
     template <class GmTensorA, class GmTensorB, class GmTensorScaleA, class GmTensorScaleB, class GmTensorBias,
-              class GmTensorC, class UbMemPtr>
+              class UbMemPtr>
     __aicore__ inline void ProcessOneBlock(const GmTensorA& gmA, const GmTensorB& gmB, const GmTensorScaleA& gmScaleA,
                                            const GmTensorScaleB& gmScaleB, const GmTensorBias& gmBias,
-                                           const GmTensorC& gmC, const BlockShape& singleShape, int64_t mPos,
-                                           int64_t nPos, int64_t baseM, int64_t baseN, int64_t k, int64_t scaleKLen,
-                                           int64_t n, const UbMemPtr& ubmemPtr);
+                                           const BlockShape& singleShape, int64_t mPos, int64_t nPos, int64_t baseM,
+                                           int64_t baseN, int64_t k, int64_t scaleKLen, int64_t n,
+                                           const UbMemPtr& ubmemPtr);
+
+    template <class GmTensorBias>
+    __aicore__ inline auto GetBiasTile(const GmTensorBias& gmBias, int64_t nPos, int64_t baseN, int64_t n)
+    {
+        if constexpr (IS_SWIGLU) {
+            auto biasAddr = biasGmAddr_ == nullptr ? nullptr : biasGmAddr_ + nPos;
+            return asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::gm>(biasAddr),
+                                        MakeNDExtLayout(2, baseN, n >> 1));
+        } else {
+            return gmBias.slice(asc::te::make_coord(0L, nPos), asc::te::make_shape(1L, baseN));
+        }
+    }
+
+    template <class UbMemPtr>
+    __aicore__ inline auto GetOutputTile(int64_t baseM, int64_t baseN, const UbMemPtr& ubmemPtr)
+    {
+        if constexpr (IS_SWIGLU) {
+            return epilogueOp_.GetConcatL0c2UbTensor(baseM, baseN);
+        } else {
+            return asc::te::make_tensor(
+                ubmemPtr, asc::te::make_frame_layout<asc::te::nd_ext_layout_ptn>((baseM + 1) & ~1, Align32(baseN)));
+        }
+    }
 
     struct BatchStrideInfo {
         uint64_t aBatchElementStride;
         uint64_t bBatchElementStride;
-        uint64_t cBatchStride;
         uint64_t biasBatchStride;
         uint64_t scaleABatchStride;
         uint64_t scaleBBatchStride;
@@ -156,102 +181,95 @@ private:
 
     __aicore__ inline void ProcessWithBatch(const Params& params, BlockScheduler& bs);
     __aicore__ inline void AddBatchOffset(const Params& params, uint64_t aBatchElementStride,
-                                          uint64_t bBatchElementStride, uint64_t cBatchStride,
-                                          uint64_t scaleABatchStride, uint64_t scaleBBatchStride,
-                                          uint64_t biasBatchStride);
+                                          uint64_t bBatchElementStride, uint64_t scaleABatchStride,
+                                          uint64_t scaleBBatchStride, uint64_t biasBatchStride);
 
-    template <typename TensorB, typename TensorC>
-    __aicore__ inline void SetL2Cache(const ProblemShape& problemShape, uint64_t baseM, uint64_t baseN, TensorB& gmB,
-                                      TensorC& gmC);
-
-    __aicore__ inline void End();
+    template <typename TensorB>
+    __aicore__ inline void SetBL2Cache(const ProblemShape& problemShape, uint64_t currentBasicBlockM,
+                                       uint64_t currentBasicBlockN, uint32_t bMustHitL2, TensorB& gmB);
 
 private:
     BlockMmad mmadOp_;
     BlockEpilogue epilogueOp_;
-    bool isVecSetSyncCom_ = false;
-    __gm__ AType* aGmAddr_;
-    __gm__ BType* bGmAddr_;
-    __gm__ CType* cGmAddr_;
-    __gm__ BiasType* biasGmAddr_ = nullptr; // optional input
-    __gm__ AscendC::fp8_e8m0_t* scaleAGmAddr_;
-    __gm__ AscendC::fp8_e8m0_t* scaleBGmAddr_;
-
     uint64_t batchCOffset_{0};
     uint64_t batchAOffset_{0};
     uint64_t batchBOffset_{0};
+    __gm__ AType* aGmAddr_{nullptr};
+    __gm__ BType* bGmAddr_{nullptr};
+    __gm__ BiasType* biasGmAddr_ = nullptr; // optional input
+    __gm__ AscendC::fp8_e8m0_t* scaleAGmAddr_{nullptr};
+    __gm__ AscendC::fp8_e8m0_t* scaleBGmAddr_{nullptr};
     bool isBiasThreeDim_{false};
     bool isBias_{false};
-    bool isSameBatch_{false};
+    bool isFirstBlock_{true};
     bool needUpdateTail_{false};
 };
 
-QBMM_MX_KERNEL_CLASS_TEM_PARAMS
-__aicore__ inline void GemmUniversal<QBMM_MX_KERNEL_TEM_PARAMS>::Run(const Params& params)
+QUANT_MATMUL_ACTIVATION_QUANT_CLASS_TEMPLATE_PARAMS
+__aicore__ inline void GemmUniversal<QUANT_MATMUL_ACTIVATION_QUANT_TEMPLATE_ARGS>::Run(const Params& params)
 {
-    if constexpr (IS_ATOMIC_ADD) {
-        AscendC::SetAtomicAdd<float>();
-    }
     const auto& problemShape = params.problemShape;
     const auto& qbmmParams = params.qbmmParams;
     Init(params);
-    BlockScheduler bs(problemShape, params.schParams);
+    ProblemShape logicalSchedulerShape = problemShape;
+    BlockSchedulerParams logicalSchedulerParams = params.schParams;
+    if constexpr (IS_SWIGLU) {
+        // Schedule output columns H=N/2; BlockMmad still reserves the full-N tile. The host has already
+        // selected M-only tail splitting and normalized all N-tail fields for this logical scheduler.
+        logicalSchedulerShape = ProblemShape{asc::te::get<MNK_M>(problemShape), asc::te::get<MNK_N>(problemShape) >> 1,
+                                             asc::te::get<MNK_K>(problemShape), asc::te::get<MNK_B>(problemShape)};
+        logicalSchedulerParams.baseN >>= 1;
+    }
+    BlockScheduler bs(logicalSchedulerShape, logicalSchedulerParams);
 
-    const BlockShape l0BlockShape{qbmmParams.baseM, qbmmParams.baseN, qbmmParams.baseK, 0};
-    mmadOp_.Init(problemShape, l0BlockShape, params.l1Params, isBias_, qbmmParams.dbL0C > 1);
+    if ASCEND_IS_AIC {
+        const BlockShape l0BlockShape{qbmmParams.baseM, qbmmParams.baseN, qbmmParams.baseK, 0};
+        mmadOp_.Init(problemShape, l0BlockShape, params.l1Params, isBias_, qbmmParams.dbL0C > 1);
+    }
     epilogueOp_.Init(params.epilogueParams);
-    epilogueOp_.UpdateNextProblem(problemShape);
+    if ASCEND_IS_AIV {
+        if constexpr (IS_SWIGLU) {
+            epilogueOp_.UpdateNextProblem(typename BlockEpilogue::ProblemShape{
+                asc::te::get<MNK_M>(logicalSchedulerShape), asc::te::get<MNK_N>(logicalSchedulerShape),
+                asc::te::get<MNK_K>(logicalSchedulerShape)});
+            epilogueOp_.UpdateGlobalAddr(typename BlockEpilogue::OutputOffsets{0, 0});
+        } else {
+            epilogueOp_.UpdateNextProblem(problemShape);
+        }
+    }
 
     if (asc::te::get<MNK_B>(problemShape) == 1) {
         ProcessSingleBatch(params, bs, 0, true);
-        if constexpr (IS_ATOMIC_ADD) {
-            AscendC::SetAtomicNone();
-        }
-        End();
-        return;
-    }
-
-    ProcessWithBatch(params, bs);
-    End();
-    if constexpr (IS_ATOMIC_ADD) {
-        AscendC::SetAtomicNone();
-    }
-}
-
-QBMM_MX_KERNEL_CLASS_TEM_PARAMS
-template <typename TensorB, typename TensorC>
-__aicore__ inline void GemmUniversal<QBMM_MX_KERNEL_TEM_PARAMS>::SetL2Cache(const ProblemShape& problemShape,
-                                                                            uint64_t baseM, uint64_t baseN,
-                                                                            TensorB& gmB, TensorC& gmC)
-{
-    if constexpr (IS_ATOMIC_ADD) {
-        gmC.set_l2_cache_hint(asc::te::cache_mode::disable);
-    }
-
-    const bool fullMBlock = baseM >= asc::te::get<MNK_M>(problemShape);
-    if (!(isSameBatch_ && fullMBlock)) {
-        return;
-    }
-
-    if constexpr (WEIGHT_NZ) {
-        gmB.set_l2_cache_hint(asc::te::cache_mode::disable);
     } else {
-        constexpr int64_t cacheLineAlignMask = IsFp4<AType>() ? 0xff : 0x7f;
-        // 0xff: 256 cache line alignment for FP4 weight GM streaming
-        // 0x7f: 128 cache line alignment for FP8 weight GM streaming
-        if constexpr (TRANS_B) {
-            bool bAlignForL2Stream = (asc::te::get<MNK_K>(problemShape) & cacheLineAlignMask) == 0;
-            gmB.set_l2_cache_hint(bAlignForL2Stream ? asc::te::cache_mode::disable : asc::te::cache_mode::normal);
-        } else {
-            bool bAlignForL2Stream = (asc::te::get<MNK_N>(problemShape) & cacheLineAlignMask) == 0 &&
-                                     (baseN & cacheLineAlignMask) == 0;
-            gmB.set_l2_cache_hint(bAlignForL2Stream ? asc::te::cache_mode::disable : asc::te::cache_mode::normal);
+        ProcessWithBatch(params, bs);
+    }
+
+    if ASCEND_IS_AIC {
+        if (!isFirstBlock_) {
+            Sync::WaitForVector(MIX_AIV_SYNC_AIC_FLAG, true);
         }
     }
 }
 
-QBMM_MX_KERNEL_CLASS_TEM_PARAMS
-__aicore__ inline void GemmUniversal<QBMM_MX_KERNEL_TEM_PARAMS>::Init(const Params& params)
+QUANT_MATMUL_ACTIVATION_QUANT_CLASS_TEMPLATE_PARAMS
+template <typename TensorB>
+__aicore__ inline void GemmUniversal<QUANT_MATMUL_ACTIVATION_QUANT_TEMPLATE_ARGS>::SetBL2Cache(
+    const ProblemShape& problemShape, uint64_t currentBasicBlockM, uint64_t currentBasicBlockN, uint32_t bMustHitL2,
+    TensorB& gmB)
+{
+    if ASCEND_IS_AIC {
+        // 0xff: 256 cache line alignment for FP4 B matrix GM streaming
+        // 0x7f: 128 cache line alignment for FP8 B matrix GM streaming
+        constexpr uint64_t cacheLineAlignMask = IsFp4<BType>() ? 0xffUL : 0x7fUL;
+        const bool isCurrentNAligned = TRANS_B || (currentBasicBlockN & cacheLineAlignMask) == 0UL;
+        const bool disableWeightL2 = bMustHitL2 == 0U && currentBasicBlockM >= asc::te::get<MNK_M>(problemShape) &&
+                                     isCurrentNAligned;
+        gmB.set_l2_cache_hint(disableWeightL2 ? asc::te::cache_mode::disable : asc::te::cache_mode::normal);
+    }
+}
+
+QUANT_MATMUL_ACTIVATION_QUANT_CLASS_TEMPLATE_PARAMS
+__aicore__ inline void GemmUniversal<QUANT_MATMUL_ACTIVATION_QUANT_TEMPLATE_ARGS>::Init(const Params& params)
 {
     const auto& qbmmParams = params.qbmmParams;
     if (qbmmParams.isBias == 1) {
@@ -260,29 +278,26 @@ __aicore__ inline void GemmUniversal<QBMM_MX_KERNEL_TEM_PARAMS>::Init(const Para
         }
         isBias_ = true;
     }
-    if (qbmmParams.batchA1 == qbmmParams.batchB1 && qbmmParams.batchA2 == qbmmParams.batchB2 &&
-        qbmmParams.batchA3 == qbmmParams.batchB3 && qbmmParams.batchA4 == qbmmParams.batchB4) {
-        isSameBatch_ = true;
-    }
     ResetGmAddr(params);
 }
 
-QBMM_MX_KERNEL_CLASS_TEM_PARAMS
-__aicore__ inline void GemmUniversal<QBMM_MX_KERNEL_TEM_PARAMS>::ResetGmAddr(const Params& params)
+QUANT_MATMUL_ACTIVATION_QUANT_CLASS_TEMPLATE_PARAMS
+__aicore__ inline void GemmUniversal<QUANT_MATMUL_ACTIVATION_QUANT_TEMPLATE_ARGS>::ResetGmAddr(const Params& params)
 {
-    aGmAddr_ = reinterpret_cast<__gm__ AType*>(params.mmadParams.aGmAddr);
-    bGmAddr_ = reinterpret_cast<__gm__ BType*>(params.mmadParams.bGmAddr);
-    cGmAddr_ = reinterpret_cast<__gm__ CType*>(params.mmadParams.cGmAddr);
-    scaleAGmAddr_ = reinterpret_cast<__gm__ AscendC::fp8_e8m0_t*>(params.mmadParams.scaleAGmAddr);
-    scaleBGmAddr_ = reinterpret_cast<__gm__ AscendC::fp8_e8m0_t*>(params.mmadParams.scaleBGmAddr);
-    if (isBias_) {
-        biasGmAddr_ = reinterpret_cast<__gm__ BiasType*>(params.mmadParams.biasGmAddr);
+    if ASCEND_IS_AIC {
+        aGmAddr_ = reinterpret_cast<__gm__ AType*>(params.mmadParams.aGmAddr);
+        bGmAddr_ = reinterpret_cast<__gm__ BType*>(params.mmadParams.bGmAddr);
+        scaleAGmAddr_ = reinterpret_cast<__gm__ AscendC::fp8_e8m0_t*>(params.mmadParams.scaleAGmAddr);
+        scaleBGmAddr_ = reinterpret_cast<__gm__ AscendC::fp8_e8m0_t*>(params.mmadParams.scaleBGmAddr);
+        if (isBias_) {
+            biasGmAddr_ = reinterpret_cast<__gm__ BiasType*>(params.mmadParams.biasGmAddr);
+        }
     }
 }
 
-QBMM_MX_KERNEL_CLASS_TEM_PARAMS
-__aicore__ inline auto GemmUniversal<QBMM_MX_KERNEL_TEM_PARAMS>::CalcBatchStrides(const Params& params)
-    -> BatchStrideInfo
+QUANT_MATMUL_ACTIVATION_QUANT_CLASS_TEMPLATE_PARAMS
+__aicore__ inline auto GemmUniversal<QUANT_MATMUL_ACTIVATION_QUANT_TEMPLATE_ARGS>::CalcBatchStrides(
+    const Params& params) -> BatchStrideInfo
 {
     const auto& qbmmParams = params.qbmmParams;
     const auto m = asc::te::get<MNK_M>(params.problemShape);
@@ -293,38 +308,40 @@ __aicore__ inline auto GemmUniversal<QBMM_MX_KERNEL_TEM_PARAMS>::CalcBatchStride
     info.aBatchElementStride = m * k;
     if constexpr (WEIGHT_NZ) {
         if constexpr (TRANS_B) {
-            info.bBatchElementStride = Blaze::Gemm::CeilDiv(k, C0_SIZE) *
-                                       Blaze::Gemm::CeilDiv(n, static_cast<int64_t>(BLOCK_CUBE)) * BLOCK_CUBE * C0_SIZE;
+            info.bBatchElementStride = ((k + C0_SIZE - 1) >> C0_SIZE_SHIFT) *
+                                       ((n + static_cast<int64_t>(BLOCK_CUBE) - 1) >> BLOCK_CUBE_SHIFT) * BLOCK_CUBE *
+                                       C0_SIZE;
         } else {
-            info.bBatchElementStride = Blaze::Gemm::CeilDiv(n, C0_SIZE) *
-                                       Blaze::Gemm::CeilDiv(k, static_cast<int64_t>(BLOCK_CUBE)) * BLOCK_CUBE * C0_SIZE;
+            info.bBatchElementStride = ((n + C0_SIZE - 1) >> C0_SIZE_SHIFT) *
+                                       ((k + static_cast<int64_t>(BLOCK_CUBE) - 1) >> BLOCK_CUBE_SHIFT) * BLOCK_CUBE *
+                                       C0_SIZE;
         }
     } else {
         info.bBatchElementStride = n * k;
     }
-    info.cBatchStride = m * n;
     info.biasBatchStride = isBiasThreeDim_ ? n : 0;
-    const uint64_t scaleKLen = Blaze::Gemm::CeilDiv(k, static_cast<int64_t>(MXFP_DIVISOR_SIZE)) * MXFP_MULTI_BASE_SIZE;
+    const uint64_t scaleKLen = ((k + static_cast<int64_t>(MXFP_DIVISOR_SIZE) - 1) >> MXFP_DIVISOR_SHIFT)
+                               << MXFP_MULTI_BASE_SHIFT;
     info.scaleABatchStride = m * scaleKLen;
     info.scaleBBatchStride = n * scaleKLen;
     info.batchC2C3C4 = qbmmParams.batchC2 * static_cast<uint64_t>(qbmmParams.batchC3) * qbmmParams.batchC4;
     info.batchB2B3B4 = qbmmParams.batchB2 * static_cast<uint64_t>(qbmmParams.batchB3) * qbmmParams.batchB4;
     info.batchA2A3A4 = qbmmParams.batchA2 * static_cast<uint64_t>(qbmmParams.batchA3) * qbmmParams.batchA4;
-    info.multiA1C1 = qbmmParams.batchA1 / qbmmParams.batchC1;
-    info.multiA2C2 = qbmmParams.batchA2 / qbmmParams.batchC2;
-    info.multiA3C3 = qbmmParams.batchA3 / qbmmParams.batchC3;
-    info.multiA4C4 = qbmmParams.batchA4 / qbmmParams.batchC4;
-    info.multiB1C1 = qbmmParams.batchB1 / qbmmParams.batchC1;
-    info.multiB2C2 = qbmmParams.batchB2 / qbmmParams.batchC2;
-    info.multiB3C3 = qbmmParams.batchB3 / qbmmParams.batchC3;
-    info.multiB4C4 = qbmmParams.batchB4 / qbmmParams.batchC4;
+    // A valid broadcast dimension is either 1 or equal to C, so each offset multiplier is only 0 or 1.
+    info.multiA1C1 = static_cast<uint32_t>(qbmmParams.batchA1 == qbmmParams.batchC1);
+    info.multiA2C2 = static_cast<uint32_t>(qbmmParams.batchA2 == qbmmParams.batchC2);
+    info.multiA3C3 = static_cast<uint32_t>(qbmmParams.batchA3 == qbmmParams.batchC3);
+    info.multiA4C4 = static_cast<uint32_t>(qbmmParams.batchA4 == qbmmParams.batchC4);
+    info.multiB1C1 = static_cast<uint32_t>(qbmmParams.batchB1 == qbmmParams.batchC1);
+    info.multiB2C2 = static_cast<uint32_t>(qbmmParams.batchB2 == qbmmParams.batchC2);
+    info.multiB3C3 = static_cast<uint32_t>(qbmmParams.batchB3 == qbmmParams.batchC3);
+    info.multiB4C4 = static_cast<uint32_t>(qbmmParams.batchB4 == qbmmParams.batchC4);
     return info;
 }
 
-QBMM_MX_KERNEL_CLASS_TEM_PARAMS
-__aicore__ inline void GemmUniversal<QBMM_MX_KERNEL_TEM_PARAMS>::ProcessBatchLoop(const Params& params,
-                                                                                  BlockScheduler& bs,
-                                                                                  const BatchStrideInfo& info)
+QUANT_MATMUL_ACTIVATION_QUANT_CLASS_TEMPLATE_PARAMS
+__aicore__ inline void GemmUniversal<QUANT_MATMUL_ACTIVATION_QUANT_TEMPLATE_ARGS>::ProcessBatchLoop(
+    const Params& params, BlockScheduler& bs, const BatchStrideInfo& info)
 {
     const auto& qbmmParams = params.qbmmParams;
     const uint64_t batchC3C4 = static_cast<uint64_t>(qbmmParams.batchC3) * qbmmParams.batchC4;
@@ -346,8 +363,8 @@ __aicore__ inline void GemmUniversal<QBMM_MX_KERNEL_TEM_PARAMS>::ProcessBatchLoo
                 batchBOffset_ = b3;
                 for (uint64_t b4 = 0; b4 < qbmmParams.batchC4; ++b4) {
                     bool isTailRound = curBatchC * singleBatchBlockCnt > tailRoundStart;
-                    AddBatchOffset(params, info.aBatchElementStride, info.bBatchElementStride, info.cBatchStride,
-                                   info.scaleABatchStride, info.scaleBBatchStride, info.biasBatchStride);
+                    AddBatchOffset(params, info.aBatchElementStride, info.bBatchElementStride, info.scaleABatchStride,
+                                   info.scaleBBatchStride, info.biasBatchStride);
                     ProcessSingleBatch(params, bs, batchCount - curBatchC, isTailRound);
                     curBatchC++;
                     batchCOffset_++;
@@ -368,102 +385,125 @@ __aicore__ inline void GemmUniversal<QBMM_MX_KERNEL_TEM_PARAMS>::ProcessBatchLoo
     }
 }
 
-QBMM_MX_KERNEL_CLASS_TEM_PARAMS
-__aicore__ inline void GemmUniversal<QBMM_MX_KERNEL_TEM_PARAMS>::ProcessWithBatch(const Params& params,
-                                                                                  BlockScheduler& bs)
+QUANT_MATMUL_ACTIVATION_QUANT_CLASS_TEMPLATE_PARAMS
+__aicore__ inline void GemmUniversal<QUANT_MATMUL_ACTIVATION_QUANT_TEMPLATE_ARGS>::ProcessWithBatch(
+    const Params& params, BlockScheduler& bs)
 {
     BatchStrideInfo info = CalcBatchStrides(params);
     ProcessBatchLoop(params, bs, info);
 }
 
-QBMM_MX_KERNEL_CLASS_TEM_PARAMS
-__aicore__ inline void GemmUniversal<QBMM_MX_KERNEL_TEM_PARAMS>::AddBatchOffset(
-    const Params& params, uint64_t aBatchElementStride, uint64_t bBatchElementStride, uint64_t cBatchStride,
-    uint64_t scaleABatchStride, uint64_t scaleBBatchStride, uint64_t biasBatchStride)
+QUANT_MATMUL_ACTIVATION_QUANT_CLASS_TEMPLATE_PARAMS
+__aicore__ inline void GemmUniversal<QUANT_MATMUL_ACTIVATION_QUANT_TEMPLATE_ARGS>::AddBatchOffset(
+    const Params& params, uint64_t aBatchElementStride, uint64_t bBatchElementStride, uint64_t scaleABatchStride,
+    uint64_t scaleBBatchStride, uint64_t biasBatchStride)
 {
     ResetGmAddr(params);
     constexpr uint64_t sizeShift = IsFp4<AType>() ? 1 : 0;
-    aGmAddr_ += (batchAOffset_ * aBatchElementStride) >> sizeShift;
-    bGmAddr_ += (batchBOffset_ * bBatchElementStride) >> sizeShift;
-    cGmAddr_ += batchCOffset_ * cBatchStride;
-    if (isBiasThreeDim_) {
-        biasGmAddr_ += batchCOffset_ * biasBatchStride;
+    if ASCEND_IS_AIC {
+        aGmAddr_ += (batchAOffset_ * aBatchElementStride) >> sizeShift;
+        bGmAddr_ += (batchBOffset_ * bBatchElementStride) >> sizeShift;
+        if (isBiasThreeDim_) {
+            biasGmAddr_ += batchCOffset_ * biasBatchStride;
+        }
+        scaleAGmAddr_ += batchAOffset_ * scaleABatchStride;
+        scaleBGmAddr_ += batchBOffset_ * scaleBBatchStride;
     }
-    scaleAGmAddr_ += batchAOffset_ * scaleABatchStride;
-    scaleBGmAddr_ += batchBOffset_ * scaleBBatchStride;
     const auto m = asc::te::get<MNK_M>(params.problemShape);
     const auto n = asc::te::get<MNK_N>(params.problemShape);
-    const int64_t scaleN = CeilDiv(n, BLOCK_SIZE * ALIGN_NUM_2) * ALIGN_NUM_2;
-    epilogueOp_.UpdateGlobalAddr({batchCOffset_ * m * n >> sizeShift, batchCOffset_ * m * scaleN, 0, 0, 0});
-}
-
-QBMM_MX_KERNEL_CLASS_TEM_PARAMS
-__aicore__ inline void GemmUniversal<QBMM_MX_KERNEL_TEM_PARAMS>::End()
-{
-    if ASCEND_IS_AIC {
-        if (isVecSetSyncCom_) {
-            Sync::WaitForVector(MIX_AIV_SYNC_AIC_FLAG, true);
+    if ASCEND_IS_AIV {
+        if constexpr (IS_SWIGLU) {
+            const int64_t h = n >> 1;
+            const int64_t scaleH = ((h + static_cast<int64_t>(MXFP_DIVISOR_SIZE) - 1) >> MXFP_DIVISOR_SHIFT)
+                                   << MXFP_MULTI_BASE_SHIFT;
+            epilogueOp_.UpdateGlobalAddr(typename BlockEpilogue::OutputOffsets{
+                static_cast<int64_t>(batchCOffset_) * m * h, static_cast<int64_t>(batchCOffset_) * m * scaleH});
+        } else {
+            const int64_t scaleN = ((n + static_cast<int64_t>(MXFP_DIVISOR_SIZE) - 1) >> MXFP_DIVISOR_SHIFT)
+                                   << MXFP_MULTI_BASE_SHIFT;
+            epilogueOp_.UpdateGlobalAddr({batchCOffset_ * m * n >> sizeShift, batchCOffset_ * m * scaleN, 0, 0, 0});
         }
     }
 }
 
-QBMM_MX_KERNEL_CLASS_TEM_PARAMS
+QUANT_MATMUL_ACTIVATION_QUANT_CLASS_TEMPLATE_PARAMS
 template <class GmTensorA, class GmTensorB, class GmTensorScaleA, class GmTensorScaleB, class GmTensorBias,
-          class GmTensorC, class UbMemPtr>
-__aicore__ inline void GemmUniversal<QBMM_MX_KERNEL_TEM_PARAMS>::ProcessOneBlock(
+          class UbMemPtr>
+__aicore__ inline void GemmUniversal<QUANT_MATMUL_ACTIVATION_QUANT_TEMPLATE_ARGS>::ProcessOneBlock(
     const GmTensorA& gmA, const GmTensorB& gmB, const GmTensorScaleA& gmScaleA, const GmTensorScaleB& gmScaleB,
-    const GmTensorBias& gmBias, const GmTensorC& gmC, const BlockShape& singleShape, int64_t mPos, int64_t nPos,
-    int64_t baseM, int64_t baseN, int64_t k, int64_t scaleKLen, int64_t n, const UbMemPtr& ubmemPtr)
+    const GmTensorBias& gmBias, const BlockShape& singleShape, int64_t mPos, int64_t nPos, int64_t baseM, int64_t baseN,
+    int64_t k, int64_t scaleKLen, int64_t n, const UbMemPtr& ubmemPtr)
 {
     constexpr int64_t kPos = 0L;
-    auto gmBlockA = gmA.slice(asc::te::make_coord(mPos, kPos), asc::te::make_shape(baseM, k));
-    auto gmBlockScaleA = gmScaleA.slice(asc::te::make_coord(mPos, kPos), asc::te::make_shape(baseM, scaleKLen));
-    auto gmBlockB = gmB.slice(asc::te::make_coord(kPos, nPos), asc::te::make_shape(k, baseN));
-    auto gmBlockScaleB = gmScaleB.slice(asc::te::make_coord(kPos, nPos), asc::te::make_shape(scaleKLen, baseN));
-    auto gmBlockBias = gmBias.slice(asc::te::make_coord(0L, nPos), asc::te::make_shape(1L, baseN));
-    auto gmBlockC = gmC.slice(asc::te::make_coord(mPos, nPos), asc::te::make_shape(baseM, baseN));
-    auto locOutUb = asc::te::make_tensor(
-        ubmemPtr, asc::te::make_frame_layout<asc::te::nd_ext_layout_ptn>((baseM + 1) & ~1, Align32(baseN)));
     if ASCEND_IS_AIC {
-        if (isVecSetSyncCom_) {
+        if (!isFirstBlock_) {
             Sync::WaitForVector(MIX_AIV_SYNC_AIC_FLAG, true);
         }
+        auto gmBlockA = gmA.slice(asc::te::make_coord(mPos, kPos), asc::te::make_shape(baseM, k));
+        auto gmBlockScaleA = gmScaleA.slice(asc::te::make_coord(mPos, kPos), asc::te::make_shape(baseM, scaleKLen));
+        // WeightNZ SwiGLU gathers two logical N halves with separate aligned copies.
+        auto gmBlockB = gmB.slice(asc::te::make_coord(kPos, nPos),
+                                  asc::te::make_shape(k, IS_SWIGLU && WEIGHT_NZ ? n - nPos : baseN));
+        // The SwiGLU scale view includes both halves for the concat copy in BlockMmad.
+        auto gmBlockScaleB = gmScaleB.slice(asc::te::make_coord(kPos, nPos),
+                                            asc::te::make_shape(scaleKLen, IS_SWIGLU ? n - nPos : baseN));
+        auto gmBlockBias = GetBiasTile(gmBias, nPos, baseN, n);
+        auto locOutUb = GetOutputTile(baseM, baseN, ubmemPtr);
         mmadOp_(gmBlockA, gmBlockB, gmBlockScaleA, gmBlockScaleB, gmBlockBias, locOutUb, singleShape);
         Sync::NotifyVector(MIX_AIC_SYNC_AIV_FLAG, true);
+        isFirstBlock_ = false;
     }
-    isVecSetSyncCom_ = true;
     if ASCEND_IS_AIV {
         Sync::WaitForCube();
-        epilogueOp_({baseM, baseN, 0, 0},
-                    {mPos * n + nPos,
-                     mPos * CeilDiv(n, BLOCK_SIZE * ALIGN_NUM_2) * ALIGN_NUM_2 + CeilDiv(nPos, BLOCK_SIZE), 0, 0, 0});
+        if constexpr (IS_SWIGLU) {
+            const int64_t h = n >> 1;
+            const int64_t scaleH = ((h + static_cast<int64_t>(MXFP_DIVISOR_SIZE) - 1) >> MXFP_DIVISOR_SHIFT)
+                                   << MXFP_MULTI_BASE_SHIFT;
+            epilogueOp_({baseM, baseN, 0, 0},
+                        typename BlockEpilogue::OutputOffsets{
+                            mPos * h + nPos, mPos * scaleH + ((nPos >> MXFP_DIVISOR_SHIFT) << MXFP_MULTI_BASE_SHIFT)});
+        } else {
+            const int64_t scaleN = ((n + static_cast<int64_t>(MXFP_DIVISOR_SIZE) - 1) >> MXFP_DIVISOR_SHIFT)
+                                   << MXFP_MULTI_BASE_SHIFT;
+            const int64_t scaleNPos = (nPos + BLOCK_SIZE - 1) >> ALIGN_32_BYTES_SHIFT;
+            epilogueOp_({baseM, baseN, 0, 0}, {mPos * n + nPos, mPos * scaleN + scaleNPos, 0, 0, 0});
+        }
         Sync::NotifyCube();
     }
 }
 
-QBMM_MX_KERNEL_CLASS_TEM_PARAMS
-__aicore__ inline void GemmUniversal<QBMM_MX_KERNEL_TEM_PARAMS>::ProcessTileLoop(const Params& params,
-                                                                                 BlockScheduler& bs)
+QUANT_MATMUL_ACTIVATION_QUANT_CLASS_TEMPLATE_PARAMS
+__aicore__ inline void GemmUniversal<QUANT_MATMUL_ACTIVATION_QUANT_TEMPLATE_ARGS>::ProcessSingleBatch(
+    const Params& params, BlockScheduler& bs, uint64_t restBatch, bool isTailRound)
 {
     const auto& problemShape = params.problemShape;
     const auto m = asc::te::get<MNK_M>(problemShape);
     const auto n = asc::te::get<MNK_N>(problemShape);
     const auto k = asc::te::get<MNK_K>(problemShape);
-    const auto scaleKLen = Blaze::Gemm::CeilDiv(k, static_cast<int64_t>(MXFP_DIVISOR_SIZE)) * MXFP_MULTI_BASE_SIZE;
+    const auto scaleKLen = ((k + static_cast<int64_t>(MXFP_DIVISOR_SIZE) - 1) >> MXFP_DIVISOR_SHIFT)
+                           << MXFP_MULTI_BASE_SHIFT;
     auto layoutA = MakeLayoutA{}(m, k);
     auto layoutScaleA = MakeLayoutScaleA{}(m, scaleKLen);
     auto layoutB = MakeLayoutB{}(k, n);
     auto layoutScaleB = MakeLayoutScaleB{}(scaleKLen, n);
     auto layoutBias = asc::te::make_frame_layout<asc::te::nd_ext_layout_ptn>(1L, n);
-    auto layoutC = MakeLayoutC{}(m, n);
     auto gmA = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::gm>(aGmAddr_), layoutA);
     auto gmScaleA = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::gm>(scaleAGmAddr_), layoutScaleA);
     auto gmB = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::gm>(bGmAddr_), layoutB);
     auto gmScaleB = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::gm>(scaleBGmAddr_), layoutScaleB);
     auto gmBias = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::gm>(biasGmAddr_), layoutBias);
-    auto gmC = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::gm>(cGmAddr_), layoutC);
     auto ubmemPtr = asc::te::make_mem_ptr<asc::te::location::ub, float>(0);
-    SetL2Cache(problemShape, params.qbmmParams.baseM, params.qbmmParams.baseN, gmB, gmC);
+
+    if constexpr (!IS_SWIGLU || BlockMmad::DispatchPolicy::FULL_LOAD_MODE == NONE_FULL_LOAD_MODE) {
+        const auto mTailTile = params.schParams.mTailTile;
+        const auto nTailTile = params.schParams.nTailTile;
+        if (needUpdateTail_ ||
+            (isTailRound && ((bs.GetEndBlockIdx() + 1) + (restBatch * bs.GetTotalCnt())) * mTailTile * nTailTile <=
+                                AscendC::GetBlockNum())) {
+            needUpdateTail_ = true;
+            bs.UpdateTailTile(mTailTile, nTailTile);
+        }
+    }
 
     BlockCoord blockCoord;
     int64_t mPos = 0L, nPos = 0L;
@@ -473,37 +513,18 @@ __aicore__ inline void GemmUniversal<QBMM_MX_KERNEL_TEM_PARAMS>::ProcessTileLoop
         const auto baseM = asc::te::get<IDX_M_TILEIDX>(singleShape);
         const auto baseN = asc::te::get<IDX_N_TILEIDX>(singleShape);
         if (baseM <= 0 || baseN <= 0) {
-            if ASCEND_IS_AIC {
-                Sync::NotifyVector(MIX_AIC_SYNC_AIV_FLAG, true);
-            }
-            if ASCEND_IS_AIV {
-                Sync::NotifyCube();
-            }
-            return;
+            break;
         }
         bs.GetTileCoord(blockCoord, mPos, nPos);
-        ProcessOneBlock(gmA, gmB, gmScaleA, gmScaleB, gmBias, gmC, singleShape, mPos, nPos, baseM, baseN, k, scaleKLen,
-                        n, ubmemPtr);
+        if ASCEND_IS_AIC {
+            SetBL2Cache(problemShape, baseM, baseN, params.qbmmParams.bMustHitL2, gmB);
+        }
+        ProcessOneBlock(gmA, gmB, gmScaleA, gmScaleB, gmBias, singleShape, mPos, nPos, baseM, baseN, k, scaleKLen, n,
+                        ubmemPtr);
     }
     bs.UpdateNextBatchBlockRoundParams();
 }
 
-QBMM_MX_KERNEL_CLASS_TEM_PARAMS
-__aicore__ inline void GemmUniversal<QBMM_MX_KERNEL_TEM_PARAMS>::ProcessSingleBatch(const Params& params,
-                                                                                    BlockScheduler& bs,
-                                                                                    uint64_t restBatch,
-                                                                                    bool isTailRound)
-{
-    const auto mTailTile = params.schParams.mTailTile;
-    const auto nTailTile = params.schParams.nTailTile;
-    if (needUpdateTail_ ||
-        (isTailRound && ((bs.GetEndBlockIdx() + 1) + (restBatch * bs.GetTotalCnt())) * mTailTile * nTailTile <=
-                            AscendC::GetBlockNum())) {
-        needUpdateTail_ = true;
-        bs.UpdateTailTile(mTailTile, nTailTile);
-    }
-    ProcessTileLoop(params, bs);
-}
 } // namespace Kernel
 } // namespace Gemm
 } // namespace Blaze

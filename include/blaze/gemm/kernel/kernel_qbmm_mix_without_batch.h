@@ -187,7 +187,9 @@ private:
             const int64_t curM = asc::te::get<IDX_M_TILEIDX>(singleShape);
             const int64_t curN = asc::te::get<IDX_N_TILEIDX>(singleShape);
             const int64_t l0cUbBaseOffset = 0;
-            SetBL2Cache(params.problemShape, curM, curN, params.qbmmParams.bMustHitL2, gmB);
+            if ASCEND_IS_AIC {
+                SetBL2Cache(params.problemShape, curM, curN, params.qbmmParams.bMustHitL2, gmB);
+            }
             auto gmBlockBias = gmBias.slice(asc::te::make_coord(0L, params.mmParams.isBias ? nPos : 0L),
                                             asc::te::make_shape(1L, curN));
             ProcessOneBlock(gmA, gmB, gmBlockBias, singleShape, mPos, nPos, curM, curN, k, n, l0cUbBaseOffset,

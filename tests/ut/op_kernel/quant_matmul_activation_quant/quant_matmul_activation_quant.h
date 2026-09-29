@@ -26,6 +26,7 @@
 #include "quant_batch_matmul/qbmm_cpu_debug_stub.h"
 
 #include "blaze/epilogue/block/block_epilogue_gelu_mx_quant.h"
+#include "blaze/epilogue/block/block_epilogue_swiglu_mx_quant.h"
 #include "blaze/gemm/block/block_mmad_qbmm_mx.h"
 #include "blaze/gemm/block/block_scheduler_qbmm.h"
 #include "blaze/gemm/kernel/kernel_qbmm_mx_activation_quant.h"
@@ -48,6 +49,58 @@ struct QuantMatmulActivationQuantTypes {
     using BlockMmad = Blaze::Gemm::Block::BlockMmad<DispatchPolicy, AType_, LayoutA, BType_, LayoutB, float, LayoutC,
                                                     float, LayoutC>;
     using BlockEpilogue = Blaze::Epilogue::Block::BlockEpilogueGeluMxQuant<OutputType_, float>;
+    using BlockScheduler = Blaze::Gemm::Block::BlockSchedulerQuantBatchMatmulV3<ProblemShape, FullLoadMode_, LayoutA,
+                                                                                LayoutB, AType_>;
+    using Kernel = Blaze::Gemm::Kernel::GemmUniversal<ProblemShape, BlockMmad, BlockEpilogue, BlockScheduler>;
+};
+
+template <typename AType_, typename BType_, typename OutputType_, typename LayoutB_, uint64_t FullLoadMode_>
+struct QuantMatmulSwiGluQuantTypes {
+    using ProblemShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
+    using LayoutA = asc::te::nd_ext_layout_ptn;
+    using LayoutB = LayoutB_;
+    using LayoutC = asc::te::nd_ext_layout_ptn;
+    using DispatchPolicy = Blaze::Gemm::MatmulWithScaleMx<FullLoadMode_, false,
+                                                          Blaze::Gemm::KernelMmadWithScaleMxActivationQuant,
+                                                          Blaze::Gemm::L0C2UB_MODE_DUAL_DST_SPLIT_M, 0, true>;
+    using BlockMmad = Blaze::Gemm::Block::BlockMmad<DispatchPolicy, AType_, LayoutA, BType_, LayoutB, float, LayoutC,
+                                                    float, LayoutC>;
+    using BlockEpilogue = Blaze::Epilogue::Block::BlockEpilogueSwigluMxQuant<OutputType_, float, fp8_e8m0_t>;
+    using BlockScheduler = Blaze::Gemm::Block::BlockSchedulerQuantBatchMatmulV3<ProblemShape, FullLoadMode_, LayoutA,
+                                                                                LayoutB, AType_>;
+    using Kernel = Blaze::Gemm::Kernel::GemmUniversal<ProblemShape, BlockMmad, BlockEpilogue, BlockScheduler>;
+};
+
+template <typename AType_, typename BType_, typename OutputType_, typename LayoutA_ = asc::te::nd_ext_layout_ptn,
+          typename LayoutB_ = asc::te::nd_ext_layout_ptn, uint64_t FullLoadMode_ = Blaze::Gemm::NONE_FULL_LOAD_MODE>
+struct QuantMatmulActivationQuantWithoutBatchTypes {
+    using ProblemShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
+    using LayoutA = LayoutA_;
+    using LayoutB = LayoutB_;
+    using LayoutC = asc::te::nd_ext_layout_ptn;
+    using DispatchPolicy = Blaze::Gemm::MatmulWithScaleMx<FullLoadMode_, false,
+                                                          Blaze::Gemm::KernelMmadWithScaleMxActivationQuant,
+                                                          Blaze::Gemm::L0C2UB_MODE_DUAL_DST_SPLIT_M>;
+    using BlockMmad = Blaze::Gemm::Block::BlockMmad<DispatchPolicy, AType_, LayoutA, BType_, LayoutB, float, LayoutC,
+                                                    float, LayoutC>;
+    using BlockEpilogue = Blaze::Epilogue::Block::BlockEpilogueGeluMxQuant<OutputType_, float>;
+    using BlockScheduler = Blaze::Gemm::Block::BlockSchedulerQuantBatchMatmulV3<ProblemShape, FullLoadMode_, LayoutA,
+                                                                                LayoutB, AType_>;
+    using Kernel = Blaze::Gemm::Kernel::GemmUniversal<ProblemShape, BlockMmad, BlockEpilogue, BlockScheduler>;
+};
+
+template <typename AType_, typename BType_, typename OutputType_, typename LayoutB_, uint64_t FullLoadMode_>
+struct QuantMatmulSwiGluQuantWithoutBatchTypes {
+    using ProblemShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
+    using LayoutA = asc::te::nd_ext_layout_ptn;
+    using LayoutB = LayoutB_;
+    using LayoutC = asc::te::nd_ext_layout_ptn;
+    using DispatchPolicy = Blaze::Gemm::MatmulWithScaleMx<FullLoadMode_, false,
+                                                          Blaze::Gemm::KernelMmadWithScaleMxActivationQuant,
+                                                          Blaze::Gemm::L0C2UB_MODE_DUAL_DST_SPLIT_M, 0, true>;
+    using BlockMmad = Blaze::Gemm::Block::BlockMmad<DispatchPolicy, AType_, LayoutA, BType_, LayoutB, float, LayoutC,
+                                                    float, LayoutC>;
+    using BlockEpilogue = Blaze::Epilogue::Block::BlockEpilogueSwigluMxQuant<OutputType_, float, fp8_e8m0_t>;
     using BlockScheduler = Blaze::Gemm::Block::BlockSchedulerQuantBatchMatmulV3<ProblemShape, FullLoadMode_, LayoutA,
                                                                                 LayoutB, AType_>;
     using Kernel = Blaze::Gemm::Kernel::GemmUniversal<ProblemShape, BlockMmad, BlockEpilogue, BlockScheduler>;

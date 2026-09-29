@@ -11,7 +11,7 @@
 # See LICENSE in the root of the software repository for the full text of the License.
 # ----------------------------------------------------------------------------------------------------------
 
-"""Generate deterministic MX inputs and compute golden: matmul -> gelu -> dynamic MX quant.
+"""Generate deterministic MX inputs and compute GELU/SwiGLU + MX-quant golden data.
 
 A is MX-quantized FP8 (fp8_e4m3 / fp8_e5m2) or FP4 (fp4_e2m1). B is MX-quantized FP8 (fp8_e4m3)
 or FP4 (fp4_e2m1), NZ layout. FP4*FP8 mixed dtype is not supported.
@@ -213,7 +213,7 @@ def _convert_to_nz(data_nd, dtype, k, n, trans_b):
 
 
 # ---------------------------------------------------------------------------
-# Gelu + OCP dynamic MX quantization (golden computation)
+# Activation + dynamic MX quantization (golden computation)
 # ---------------------------------------------------------------------------
 
 
@@ -221,25 +221,38 @@ def gelu_tanh(x):
     return 0.5 * x * (1.0 + np.tanh(np.sqrt(2.0 / np.pi) * (x + 0.044715 * x**3)))
 
 
-def ocp_mx_quantize(data, emax, dtype_max):
-    """OCP MX quantization: per-32-element block, output float32 quantized + e8m0 scale."""
-    orig_shape = data.shape
-    n_elements = data.size
-    padded = align(n_elements, GROUP_SIZE)
-    flat = np.zeros(padded, dtype=np.float32)
-    flat[:n_elements] = data.flatten()
-    n_blocks = padded // GROUP_SIZE
-    blocks = flat.reshape(n_blocks, GROUP_SIZE)
-    abs_max = np.max(np.abs(blocks), axis=1)
-    abs_max = np.maximum(abs_max, 1e-30)
-    shared_exp = np.floor(np.log2(abs_max)).astype(np.int32) - emax
-    shared_exp = np.maximum(shared_exp, -127)
-    mx_scale = np.exp2(shared_exp.astype(np.float32))
-    quantized = blocks / mx_scale[:, None]
-    quantized = np.clip(quantized, -dtype_max, dtype_max)
-    out = quantized.flatten()[:n_elements].reshape(orig_shape)
-    scale_out = mx_scale.astype(FP8_E8M0)
-    return out, scale_out
+def swiglu(x):
+    gate, linear = np.split(x, 2, axis=-1)
+    with np.errstate(over="ignore"):
+        return gate / (1.0 + np.exp(-gate)) * linear
+
+
+def mx_quantize(data, emax, dtype_max, scale_alg):
+    """Quantize the last axis in 32-element blocks using OCP(0) or BLAS(1) scale."""
+    values = np.asarray(data, dtype=np.float32)
+    width = values.shape[-1]
+    rows = values.reshape(-1, width)
+    block_count = (width + GROUP_SIZE - 1) // GROUP_SIZE
+    padded_width = block_count * GROUP_SIZE
+    padded = np.zeros((rows.shape[0], padded_width), dtype=np.float32)
+    padded[:, :width] = rows
+    blocks = padded.reshape(rows.shape[0], block_count, GROUP_SIZE)
+
+    abs_max = np.max(np.abs(blocks), axis=-1).astype(np.float64)
+    mantissa, exponent = np.frexp(abs_max)
+    exponent -= 1 + emax
+    if scale_alg == 1:
+        # FP8 E4M3/E5M2 qmax is 1.75 * 2**emax.
+        exponent += mantissa * 2 > 1.75
+    scale_codes = np.clip(exponent + 127, 0, 254).astype(np.uint8)
+    scale_codes[abs_max == 0.0] = 0
+
+    normalized = np.ldexp(
+        blocks.astype(np.float64), (127 - scale_codes.astype(np.int32))[..., None]
+    )
+    normalized = np.clip(normalized, -dtype_max, dtype_max)
+    quantized = normalized.reshape(rows.shape[0], padded_width)[:, :width]
+    return quantized.reshape(values.shape), scale_codes.view(FP8_E8M0)
 
 
 # ---------------------------------------------------------------------------
@@ -264,12 +277,25 @@ def generate(args):
         raise ValueError("M/N must be positive and K must be a multiple of 8")
     if args.bias not in (0, args.n):
         raise ValueError("bias must be 0 or N")
+    if args.activation == "swiglu":
+        if (
+            args.n % 64 != 0
+            or args.trans_a
+            or args.a_dtype == "fp4_e2m1"
+            or args.b_dtype == "fp4_e2m1"
+        ):
+            raise ValueError(
+                "SwiGLU requires N multiple of 64, transA=false, and FP8 inputs"
+            )
+    if args.scale_alg == 1 and args.a_dtype == "fp4_e2m1":
+        raise ValueError("BLAS scale is only enabled for FP8 output in this example")
 
     os.makedirs(args.output_dir, exist_ok=True)
     os.makedirs(os.path.join(os.path.dirname(args.output_dir), "output"), exist_ok=True)
 
     scale_k = align(args.k, MXFP_DIVISOR_SIZE) // GROUP_SIZE
-    scale_n = align(args.n, MXFP_DIVISOR_SIZE) // GROUP_SIZE
+    output_n = args.n // 2 if args.activation == "swiglu" else args.n
+    scale_n = align(output_n, MXFP_DIVISOR_SIZE) // GROUP_SIZE
     rng = np.random.default_rng(20260727)
 
     a_raw, a_fp32 = generate_quantized_data((args.m, args.k), args.a_dtype, rng)
@@ -286,15 +312,18 @@ def generate(args):
         bias_np = np.where(np.arange(args.n) % 2 == 0, 0.5, -1.0).astype(np.float32)
     matmul_with_bias = matmul_result + bias_np
 
-    # C dtype = float (L0C float32 accumulator, DualDst fixpipe to UB as float)
-    # Gelu (tanh) reads float from UB, computes in float, outputs bf16 internally
-    gelu_result = gelu_tanh(matmul_with_bias).astype(bfloat16)
+    # C dtype = float (L0C float32 accumulator, DualDst fixpipe to UB as float).
+    # The epilogue performs activation in FP32 and rounds its result to BF16 before MX quantization.
+    if args.activation == "swiglu":
+        activation_result = swiglu(matmul_with_bias).astype(bfloat16)
+    else:
+        activation_result = gelu_tanh(matmul_with_bias).astype(bfloat16)
 
-    # Dynamic OCP MX quantization -> Y (out dtype = a_dtype) + Y_scale (e8m0)
+    # Dynamic MX quantization -> Y (out dtype = a_dtype) + Y_scale (e8m0)
     emax = _EMAX_MAP[args.a_dtype]
     dtype_max = _DTYPE_MAX[args.a_dtype]
-    quantized_fp32, y_scale_flat = ocp_mx_quantize(
-        gelu_result.astype(np.float32), emax, dtype_max
+    quantized_fp32, y_scale_flat = mx_quantize(
+        activation_result.astype(np.float32), emax, dtype_max, args.scale_alg
     )
 
     if args.a_dtype == "fp4_e2m1":
@@ -366,6 +395,8 @@ def main():
     parser.add_argument("--trans-a", action="store_true", default=False)
     parser.add_argument("--trans-b", action="store_true", default=False)
     parser.add_argument("--format", default="(ND,NZ)", choices=("(ND,ND)", "(ND,NZ)"))
+    parser.add_argument("--activation", default="gelu", choices=("gelu", "swiglu"))
+    parser.add_argument("--scale-alg", type=int, default=0, choices=(0, 1))
     generate(parser.parse_args())
 
 

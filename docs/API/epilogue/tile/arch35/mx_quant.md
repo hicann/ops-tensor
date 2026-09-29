@@ -55,14 +55,23 @@ struct MxQuantConfig {
 `MxQuantConfig`（tile 类型禁止出现在 Block 类模板的成员声明中——host 编译趟
 `compute.h` 的 `__NPU_ARCH__` 守卫不生效，成员声明会被立即解析）。
 
+### OCP 与 cuBLAS 算法选择
+
+- `OCP`按组内最大指数生成2的整数次幂scale，不会根据目标FP8最大有限值额外上调
+  scale。归一化结果位于FP8表示边界外时，由后续FP8转换处理。
+- `CUBLAS`按组内最大绝对值与目标FP8最大有限值计算scale，并将E8M0指数向上取整，
+  可降低边界值量化溢出的风险。
+- 两者都按32个元素分组。融合Epilogue只决定量化前的数据来源，不改变这两种算法的
+  分组、scale生成和转换语义；因此它们与独立DynamicMxQuant、SwigluMxQuant的同名算法一致。
+
 ### OCP zeroMask 语义（zeroScaleOnZeroExp，设计文档 D1）
 - **false（gelu_tanh 阵营）**：zeroMask 比较 `sharedExp != 0`，仅作用于 reciprocal
 - **true（gelu_mx / swiglu 阵营）**：zeroMask 比较原始 `maxExp != 0`，同时作用于
   yScale 与 reciprocal
 
-两阵营仅在 `0 < maxExp <= fpEmax` 的组上可观测差异（reciprocal 0 vs 0x7f00），
-NPU 对拍裁决完成前经参数共存。DynDtypeRange 忽略该参数（两个源实现均比较
-sharedExp 且仅作用于 reciprocal）。
+两种配置仅在 `0 < maxExp <= fpEmax` 的组上有可观测差异（reciprocal 0 vs 0x7f00）。
+调用方应沿用所属Epilogue的既有配置；DynDtypeRange忽略该参数，其实现比较
+`sharedExp`且只作用于reciprocal。
 
 ### 张量契约（static_assert 门禁）
 - **元素类型**：src 为 `bfloat16_t`；maxExp / reciprocal 为 `uint16_t`；
@@ -204,8 +213,8 @@ loop 计数内部推导），当前被四个 Block 复用：
   三算法全支持，`zeroScaleOnZeroExp = false`
 - [BlockEpilogueGeluMxQuant](../../block/block_epilogue_gelu_mx_quant.md)：
   三算法 + FP4 输出转置（`TransFp4OutLayout`），`zeroScaleOnZeroExp = true`
-- BlockEpilogueSwigluMxQuant（暂无独立文档）：
-  仅 OCP + FP8，`zeroScaleOnZeroExp = true`
+- [BlockEpilogueSwigluMxQuant](../../block/block_epilogue_swiglu_mx_quant.md)：
+  OCP/cuBLAS + FP8，`zeroScaleOnZeroExp = true`
 - [BlockEpilogueFlatQuant](../../block/block_epilogue_flat_quant.md)：
   三算法全支持（dstTypeMax 0/6,7/其他 分派），`zeroScaleOnZeroExp = true`，
   eMax 的 abs/exp 路径由 dstTypeMax ∈ [6,12] 区间判定（保留 flat 原始行为）
