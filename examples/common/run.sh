@@ -618,6 +618,7 @@ run_selected_examples() {
         jobs=1
     fi
 
+    mkdir -p "${PARALLEL_LOG_DIR}"
     : > "${RUN_STATUS_FILE}"
 
     local example_path ops_name example_name log_file rc t0 duration

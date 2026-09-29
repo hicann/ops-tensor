@@ -1,5 +1,7 @@
 ops_example_add_executable(quant_grouped_matmul_mx quant_grouped_matmul_mx/quant_grouped_matmul_mx.cpp)
 ops_example_add_executable(quant_grouped_matmul_cubeonly quant_grouped_matmul_cubeonly/quant_grouped_matmul_cubeonly.cpp)
+ops_example_add_executable(grouped_matmul_finalize_routing_mx
+                           grouped_matmul_finalize_routing_mx/grouped_matmul_finalize_routing_mx.cpp)
 ops_example_add_executable(quant_grouped_matmul_activation_quant_mx
     quant_grouped_matmul_activation_quant_mx/quant_grouped_matmul_activation_quant_mx.cpp)
 ops_example_add_executable(grouped_matmul_mx_a8w4 grouped_matmul_mx_a8w4/grouped_matmul_mx_a8w4.cpp)
