@@ -15,7 +15,7 @@
 | [block_mmad_a8w8_fixpipe_quant](./block_mmad_a8w8_fixpipe_quant.md) | 量化矩阵乘 Block，支持 int8/HiFloat8/FP8 输入，并通过 Fixpipe 按需反量化 |
 | [block_mmad_qbmm_mx](./block_mmad_qbmm_mx.md) | MX 量化矩阵乘 Block，支持 Scale 因子、MxFP4/MxFP8 量化 |
 | [block_mmad_a8w8_mix](./block_mmad_a8w8_mix.md) | MIX 模板 A8W8 量化矩阵乘 Block，int32 累加 + L0C→UB（fixpipe NoQuant），不做 scale/bias |
-| [block_mmad_qgmm_mx](./block_mmad_qgmm_mx.md) | MX 量化 Grouped Matmul Block，支持 group list、ScaleA/ScaleB |
+| [block_mmad_qgmm_mx](./block_mmad_qgmm_mx.md) | MX 量化 Grouped Matmul Block，支持 ScaleA/ScaleB 及 SwiGLU 的左右 N 半区拼接、NZ/ZN 双源输入 |
 | [block_mmad_qbmm_mx_l0c_pingpong](./block_mmad_qbmm_mx_l0c_pingpong.md) | MX 量化矩阵乘 L0C PingPong Block，支持 N 方向拆分、Scale 复用和 SplitK 写回控制 |
 | [block_mmad_matmul_streamk](./block_mmad_matmul_streamk.md) | StreamK 矩阵乘 Block，支持 workspace 输出、K 轴切分 |
 | [block_mmad_weight_prologue_mx](./block_mmad_weight_prologue_mx.md) | AIV 已写入 B/Bias L1 后的 MX AIC BlockMmad |
@@ -31,7 +31,7 @@
 | [block_scheduler_matmul_streamk](./block_scheduler_matmul_streamk.md) | StreamK 调度器：DP+SK 混合策略、K 轴切分 |
 | [block_scheduler_wqmm](./block_scheduler_wqmm.md) | WQMM 的 M/N 分核与三段 N 区间调度，提供分块坐标和有效长度 |
 | [block_scheduler_qbmm_mx](./block_scheduler_qbmm_mx.md) | QBMM 调度器：Batch 维度切分、量化对齐 |
-| [block_scheduler_gmm_swat_with_tail_split](./block_scheduler_gmm_swat_with_tail_split.md) | QGMM 调度器：group 间连续分核、SWAT 扫描、末组 tail split |
+| [block_scheduler_gmm_swat_with_tail_split](./block_scheduler_gmm_swat_with_tail_split.md) | QGMM 调度器：group 间连续分核、SWAT 扫描、末组 tail split，以及 SwiGLU 左右半区和输出 offset |
 | [block_scheduler_grouped_matmul](./block_scheduler_grouped_matmul.md) | 非量化 GMM 调度器：组间偏移管理（含 sparse 直接定位）、SWAT 扫描、跨组延续起始核、tail split |
 | [block_scheduler_matmul_swat_with_tail_split](./block_scheduler_matmul_swat_with_tail_split.md) | 通用 M/N SWAT 扫描、尾块合并和 compact tail split |
 | [block_scheduler_wqmm_block_split](./block_scheduler_wqmm_block_split.md) | 固定核分核调度器：每核一个 M/N 责任矩形，核内 ORDER_M/ORDER_N swizzle 遍历 |
@@ -91,7 +91,7 @@ BlockMmad
 | BlockMmadA8W8FixpipeQuant | MatmulWithScaleFixpipeQuant | GM | int8/HiFloat8/FP8 | X2 scale + Fixpipe | 可配置 (2、3 或 4) | 可配置 | 支持 | 无 | QBMM Cube Kernel / GMM Cube Kernel |
 | BlockMmadMx | MatmulWithScaleMx | GM | MxFP4/MxFP8 | ScaleA + ScaleB | 可配置 (2、3 或 4) | 可配置 | 支持 | 无 | QBMM MX Kernel |
 | BlockMmadA8W8Mix | MatmulWithScaleMix | UB (L0C→UB) | int8 (A8W8) | 不在本层（由 epilogue 处理） | 可配置 (2 或 4) | 可配置 | 不在本层 | 无（Kernel 层处理） | QBMM MIX Kernel |
-| BlockMmadQGmmMx | GroupedMatmulWithScaleMx | GM | MxFP4/MxFP8 | ScaleA + ScaleB | 固定双缓冲 | 可配置 | 支持 | 无 | QGMM MX Kernel |
+| BlockMmadQGmmMx | GroupedMatmulWithScaleMx | GM 或拼接 UB | MxFP4/MxFP8；SwiGLU 路径为 MXFP8 | ScaleA + ScaleB | 可配置双/三缓冲 | 可配置 | 支持；SwiGLU 路径无 Bias | Kernel 层同步 | QGMM MX / SwiGLU MX Kernel |
 | BlockMmadMxL0CPingpong | MatmulWithScaleMxL0CPingpong | GM | MxFP4/MxFP8 | ScaleA + ScaleB | 可配置 (2、3 或 4) | 固定双缓冲 | 支持 | 无 | QBMM MX L0C PingPong Kernel |
 | BlockMmadWeightPrologueMx | MatmulWithWeightQuantMx | GM | FP8 + packed FP4 | ScaleA + ScaleB | 2 或 4 | 固定单缓冲 | AIV 提供 | 有（Kernel 层 ready/free 标志） | MXA8W4 Weight ND/NZ |
 | BlockMmadMatmulIterbatch | MatmulIterBatch | GM 或 UB | 不支持 | 不支持 | 整组双缓冲 | 可配置 | 支持 | 有（Fixpipe 模式） | IterBatch Matmul |

@@ -10,7 +10,7 @@
 
 /*!
  * \file copy_gm_to_l1.h
- * \brief
+ * \brief Arch35 GM-to-L1 copy helpers for sliced ND inputs and concatenated SwiGLU MX operands.
  */
 #pragma once
 
@@ -21,9 +21,10 @@
 namespace Blaze::Gemm::Tile {
 using asc::te::c0_element;
 
+/*! \brief Full problem dimensions needed to locate the two SwiGLU N halves. */
 struct CopyConcatGM2L1Params {
-    uint64_t n;
-    uint64_t k;
+    uint64_t n; //!< Full N before SwiGLU splitting.
+    uint64_t k; //!< Full K used by source strides.
 };
 
 struct CopySliceGM2L1 {
@@ -86,7 +87,88 @@ private:
     }
 };
 
+/*! \brief Copies two logical B or ScaleB N halves into one concatenated L1 tensor. */
 struct CopyConcatGM2L1 {
+    static constexpr uint64_t ALIGN_MASK_ADJUSTMENT = 1;
+    // Physical FP8 NZ/ZN source: src is the already-offset LEFT slice.
+    // Return false before issuing any DMA when the optimized copy contract is
+    // not satisfied; callers can retain the ordinary tensor-copy path.
+    /*!
+     * \brief Copies physical NZ/ZN FP8 weight when the aligned fast path is supported.
+     * \param dst Concatenated L1 destination.
+     * \param src Already-offset left-half GM slice for the current K window.
+     * \param params Full N/K dimensions.
+     * \return true after issuing the optimized copy, or false before any DMA so the caller can use its fallback.
+     */
+    template <typename T, typename U>
+    __aicore__ inline static bool CopyWeightNzIfSupported(const T& dst, const U& src,
+                                                          const CopyConcatGM2L1Params& params)
+    {
+        using ElementType = asc::te::get_attribute_element_type<typename U::element_type*>;
+        using SrcLayoutPtn = asc::te::get_layout_pattern<typename U::layout_type>;
+        if constexpr (sizeof(ElementType) != 1 || IsFp4<ElementType>() || !IsWeightNz<SrcLayoutPtn>::value) {
+            return false;
+        } else {
+            const uint64_t width = asc::te::get_total_column_shape(src.layout());
+            const uint64_t windowK = asc::te::get_total_row_shape(src.layout());
+            const uint64_t l1K = asc::te::get_total_row_shape(dst.layout());
+            constexpr bool IS_TRANS = IsTrans<SrcLayoutPtn>::value;
+            constexpr uint64_t N_ALIGN = IS_TRANS ? BLOCK_CUBE : C0_SIZE_B8;
+            if ((params.k & (WEIGHT_NZ_K_ALIGN - ALIGN_MASK_ADJUSTMENT)) != 0 ||
+                (params.n & (WEIGHT_NZ_N_ALIGN - ALIGN_MASK_ADJUSTMENT)) != 0 || windowK == 0 ||
+                (windowK & (WEIGHT_NZ_K_ALIGN - ALIGN_MASK_ADJUSTMENT)) != 0 || l1K != windowK || width == 0 ||
+                (width & (N_ALIGN - ALIGN_MASK_ADJUSTMENT)) != 0 || width > (params.n >> CONCAT_N_SHIFT)) {
+                return false;
+            }
+            const uint8_t cacheMode = src.engine().get_cache_mode();
+            auto dstPtr = reinterpret_cast<__cbuf__ uint8_t*>(dst.data().get());
+            auto srcPtr = reinterpret_cast<__gm__ uint8_t*>(src.data().get());
+            if constexpr (IS_TRANS) {
+                // Preserve left0,right0,left1,right1,... in L1 while loading
+                // the halves separately. Each DMA walks full-N source stripes
+                // and skips the other half in the destination.
+                const uint64_t burstsPerHalf = windowK >> ALIGN_32_BYTES_SHIFT;
+                const uint64_t bytes = width << ALIGN_32_BYTES_SHIFT;
+                // Preserve the concat-wide burst limit and leave room for the doubled destination stride.
+                if (burstsPerHalf > (MAX_DMA_BURST_COUNT >> CONCAT_N_SHIFT) ||
+                    bytes > (MAX_DMA_DST_STRIDE >> CONCAT_N_SHIFT)) {
+                    return false;
+                }
+                if ASCEND_IS_AIC {
+                    asc_copy_gm2l1_align(
+                        dstPtr, srcPtr, static_cast<uint32_t>(burstsPerHalf), static_cast<uint32_t>(bytes), 0, 0, true,
+                        cacheMode, params.n << ALIGN_32_BYTES_SHIFT, static_cast<uint32_t>(bytes << CONCAT_N_SHIFT));
+                    asc_copy_gm2l1_align(
+                        dstPtr + bytes, srcPtr + ((params.n >> CONCAT_N_SHIFT) << ALIGN_32_BYTES_SHIFT),
+                        static_cast<uint32_t>(burstsPerHalf), static_cast<uint32_t>(bytes), 0, 0, true, cacheMode,
+                        params.n << ALIGN_32_BYTES_SHIFT, static_cast<uint32_t>(bytes << CONCAT_N_SHIFT));
+                }
+            } else {
+                // Each half is a virtual ND matrix [width/32, windowK*32]
+                // of raw bytes. Swapping the destination N/D strides keeps
+                // each N32 stripe contiguous and produces standard NZ L1.
+                const uint64_t rows = width >> ALIGN_32_BYTES_SHIFT;
+                if (rows > MAX_DMA_BURST_COUNT || (windowK << ALIGN_32_BYTES_SHIFT) > MAX_DMA_DST_STRIDE) {
+                    return false;
+                }
+                if ASCEND_IS_AIC {
+                    // NZ stores each N32 stripe with the full-K pitch. Copy
+                    // the left and right stripes separately: two ordinary
+                    // aligned DMAs are substantially faster than expressing
+                    // the same address pattern through ND2NZ conversion.
+                    const uint32_t bytes = static_cast<uint32_t>(windowK << ALIGN_32_BYTES_SHIFT);
+                    asc_copy_gm2l1_align(dstPtr, srcPtr, static_cast<uint32_t>(rows), bytes, 0, 0, true, cacheMode,
+                                         params.k << ALIGN_32_BYTES_SHIFT, bytes);
+                    asc_copy_gm2l1_align(dstPtr + width * l1K, srcPtr + (params.n >> CONCAT_N_SHIFT) * params.k,
+                                         static_cast<uint32_t>(rows), bytes, 0, 0, true, cacheMode,
+                                         params.k << ALIGN_32_BYTES_SHIFT, bytes);
+                }
+            }
+            return true;
+        }
+    }
+
+    /*! \brief Copies and concatenates B or ScaleB according to the source layout. */
     template <typename T, typename U>
     __aicore__ inline static void Copy(const T& dst, const U& src, const CopyConcatGM2L1Params& params)
     {
@@ -103,6 +185,11 @@ struct CopyConcatGM2L1 {
 private:
     static constexpr uint16_t CONCAT_MATRIX_NUM = 2U;
     static constexpr uint64_t CONCAT_N_FACTOR = 2UL;
+    static constexpr uint32_t CONCAT_N_SHIFT = 1U;
+    static constexpr uint64_t WEIGHT_NZ_K_ALIGN = 128UL;
+    static constexpr uint64_t WEIGHT_NZ_N_ALIGN = 64UL;
+    static constexpr uint64_t MAX_DMA_BURST_COUNT = 0xffffUL;
+    static constexpr uint64_t MAX_DMA_DST_STRIDE = 0xffffffffUL;
 
     template <typename T, typename U>
     __aicore__ inline static void CopyB(const T& dst, const U& src, const CopyConcatGM2L1Params& params)

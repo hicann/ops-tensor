@@ -4,31 +4,33 @@
 
 ## 功能说明
 
-`BlockEpilogueSwigluMxQuant` 在 AIV 上读取 AIC 通过 DualDst Fixpipe 写入 UB 的
-gate/linear 两组 FP32 结果。输入语义为 `C=[gate | linear]`，组件计算
-`SiLU(gate) * linear`，随后执行动态 MXFP8 量化并输出 `y` 与 `yScale`。
+`BlockEpilogueSwigluMxQuant` 在 AIV 上消费 AIC 通过 DualDst Fixpipe 写入 UB 的两路 float L0C
+结果，执行 SwiGLU、转换为 bf16、按 N 轴每 32 个元素生成一个 E8M0 scale，并
+输出 MXFP8 `y` 与 `yScale`。一个 AIC 对应两个 AIV，两个 AIV 沿 M 轴分工。
 
-ND 和 WeightNZ 路径都将两个等宽半区连续写入 UB。
+输入 UB 的逻辑布局为 `[M, 2*N]`，前 `N` 列是激活分支，后 `N` 列是
+gate 分支；输出逻辑布局为 `[M, N]`。
+
+## 模式边界
+
+共享组件保留两个有调用者的模式：
+
+- `swigluMode=0`：仅用于既有 V2 内部兼容，
+  `left / (1 + exp(-left)) * right`。
+- `swigluMode=2`：V3 路径，
+  `min(left, clampLimit) / (1 + exp(-gluAlpha * min(left, clampLimit)))`
+  再乘 `clamp(right, -clampLimit, clampLimit) + gluBias`。
+
+本次 V3 能力只公开 mode 2，不支持 mode 1、mode 3 或其他值。mode 0 的保留
+不表示 V3 接口支持 mode 0。
 
 ## 模板参数
 
-```cpp
-template <
-    typename DataTypeOut_,
-    typename DataTypeIn_ = float,
-    typename DataTypeScale_ = fp8_e8m0_t>
-class BlockEpilogueSwigluMxQuant;
-```
+`DataTypeOut_` 为量化输出类型（`fp8_e4m3fn_t` 或 `fp8_e5m2_t`）；
+`DataTypeIn_` 为矩阵乘中间结果类型，当前为 `float`；
+`DataTypeScale_` 为输出 scale 类型，当前为 `fp8_e8m0_t`。
 
-| 参数 | 说明 |
-|---|---|
-| `DataTypeOut_` | 输出类型，支持 `fp8_e4m3fn_t` 或 `fp8_e5m2_t` |
-| `DataTypeIn_` | AIC 中间结果类型，当前为 `float` |
-| `DataTypeScale_` | 输出 scale 类型，当前为 `fp8_e8m0_t` |
-
-## 数据结构
-
-### Params
+## 参数结构
 
 ```cpp
 struct Params {
@@ -36,133 +38,95 @@ struct Params {
     GM_ADDR yScaleGmAddr{nullptr};
     uint32_t baseM{0};
     uint32_t baseN{0};
-    uint8_t scaleAlg{0};
+    int64_t swigluMode{0};
+    float clampLimit{7.0F};
+    float gluAlpha{1.702F};
+    float gluBias{1.0F};
+    uint32_t scaleAlg{0};
+    float dstTypeMax{0.0F};
 };
 ```
 
-| 字段 | 说明 |
-|---|---|
-| `yGmAddr` | MXFP8 输出地址 |
-| `yScaleGmAddr` | E8M0 scale 输出地址 |
-| `baseM` / `baseN` | 保留给现有调用方的 tile 参数，当前 epilogue 不读取 |
-| `scaleAlg` | 0 表示 OCP scale，1 表示 cuBLAS/BLAS scale |
+| 参数 | 说明 |
+| --- | --- |
+| `yGmAddr` | MXFP8 输出 GM 地址，必须非空 |
+| `yScaleGmAddr` | E8M0 输出 scale GM 地址，必须非空 |
+| `baseM/baseN` | 与 Kernel tiling 保持一致的兼容字段 |
+| `swigluMode` | 共享组件内部支持 V2 mode 0 与 V3 mode 2；V3 必须为 2 |
+| `clampLimit` | mode 2 裁剪上限；V3 要求有限且大于 0 |
+| `gluAlpha` | mode 2 sigmoid 输入缩放系数；V3 要求为有限 float |
+| `gluBias` | mode 2 gate 偏置；V3 要求为有限 float |
+| `scaleAlg` | V3 公开 0（OCP）或 1（cuBLAS） |
+| `dstTypeMax` | V3 MXFP8 固定为 0；当前 V3 计算不使用其他值 |
 
-调用示例：
+`OutputOffsets` 的 `yOffset` 和 `yScaleOffset` 分别是对应输出中的元素偏移，
+用于定位当前 group 和 tile 的写回位置。
 
-```cpp
-typename Epilogue::Params params{};
-params.yGmAddr = y;
-params.yScaleGmAddr = yScale;
-params.baseM = baseM;
-params.baseN = outputBaseN;
-params.scaleAlg = scaleAlg;
-```
+本 Block 复用 [Tile::MxQuant](../tile/arch35/mx_quant.md) 的 `GroupMaxExp`、
+`GenScale`、`Quantize` 和 `TransScaleLayout`，只选择 OCP 或 cuBLAS 算法，
+没有动态 dtype range 分支。调用方必须校验 `scaleAlg=0/1` 和 `dstTypeMax=0`，
+不能把共享 Tile 的 `DYN_DTYPE_RANGE` 能力作为 V3 WeightNZ 的公开能力。
 
-### OutputOffsets
+## Shape 与输出布局
 
-```cpp
-struct OutputOffsets {
-    int64_t yOffset{0};
-    int64_t yScaleOffset{0};
-};
-```
+设当前 group 的矩阵乘完整宽度为 `NFull=2*NOut`：
 
-偏移均以对应输出元素为单位。
+| 数据 | shape / 行距 |
+| --- | --- |
+| L0C→UB 输入 | 逻辑 `[blockM, 2*blockN]`，两个 N 半区连续 |
+| y | `[M, NOut]`，当前 tile 仅写有效 `blockM*blockN` |
+| yScale | `[M, ceil(NOut/64), 2]` |
+| 激活中间值 | bf16，单行按 `Align64(blockN)` 存放 |
+| 每行有效 scale | `ceil(blockN/32)`，按 32B 行块写回 |
 
-## 输入 UB 布局
-
-每行拼接后的布局为：
-
-```text
-[gate: H][linear: H]
-```
-
-`H` 是当前输出 tile 的列数，调用方保证按 32 列对齐。WeightNZ 的 gate 和 linear
-分别从各自完整的分形边界搬运，无额外前缀。
-
-若原始矩阵乘宽度为 `N`，则 `H=N/2`。最终输出为
-`y=[..., M, H]`、`yScale=[..., M, ceil(H/64), 2]`；最后一维中的两个值分别对应
-同一 64 元素存储组内的两个 32 元素量化组。
+Split-M Fixpipe 要求复制行数为偶数。组件会为奇数 M tile 创建偶数行的 UB
+视图，AIV 仍按原始逻辑行数计算并忽略 padding 行。
 
 ## 公共接口
 
-### GetL0c2UbTensor
+### `GetConcatL0c2UbTensor`
 
 ```cpp
-__aicore__ inline auto GetL0c2UbTensor(
-    int64_t rows,
-    int64_t cols,
-    L0c2UbTensorType tensorType)
+auto GetConcatL0c2UbTensor(int64_t rows, int64_t cols);
 ```
 
-兼容已有调用方的单半区 UB Tensor 构造接口。`tensorType` 可取 `SWISH_INPUT` 或
-`GATE_INPUT`，分别使用两个固定输入缓冲区。这两个枚举名沿用历史命名：按本文
-`C=[gate | linear]` 的语义，`SWISH_INPUT` 对应送入 SiLU 的 gate 半区，`GATE_INPUT`
-对应作为乘数的 linear 半区。当前 QBMM SwiGLU 融合 Kernel 使用下面的
-`GetConcatL0c2UbTensor` 连续布局，不调用该兼容接口；新接入者不应混用两种布局。
+返回供 AIC 写入的 `[ceil_align(rows,2), 2*cols]` float UB Tensor。
 
-### GetConcatL0c2UbTensor
+### `Init`
 
 ```cpp
-__aicore__ inline auto GetConcatL0c2UbTensor(int64_t rows, int64_t cols)
+void Init(const Params& params);
 ```
 
-根据当前输出 tile 的逻辑列数构造 AIC 写入、AIV 读取的 ND_EXT UB Tensor。
-`rows` 会按 Split-M 要求向 2 对齐。
+AIV 保存输出地址和量化参数并规划 UB；AIC 直接返回。
 
-### Init
+### `UpdateNextProblem`
 
 ```cpp
-__aicore__ inline void Init(const Params& params)
+void UpdateNextProblem(const ProblemShape& problemShape);
 ```
 
-初始化输出类型的最大指数与倒数范围，并规划内部 UB 区域。
+更新当前输出 `NOut` 和每行 `yScale` stride。
 
-### UpdateNextProblem
+### `UpdateGlobalAddr`
 
 ```cpp
-__aicore__ inline void UpdateNextProblem(const ProblemShape& problemShape)
+void UpdateGlobalAddr(const OutputOffsets& baseOffsets);
 ```
 
-更新逻辑输出宽度，并计算公开 `yScale[..., ceil(N/64), 2]` 布局所需的行步长。
+按当前 group 的基础偏移更新 `y/yScale` GM 地址。
 
-### UpdateGlobalAddr
+### `operator()`
 
 ```cpp
-__aicore__ inline void UpdateGlobalAddr(const OutputOffsets& baseOffsets)
+void operator()(const BlockShape& blockShape, const OutputOffsets& outputOffsets);
 ```
 
-按 Batch 或当前问题的基准偏移更新 `y`、`yScale` GM 地址。
+执行当前 tile 的 SwiGLU、MX 量化、scale 布局转换和 GM 写回。
 
-### operator()
+## 资源与校验边界
 
-```cpp
-__aicore__ inline void operator()(
-    const BlockShape& blockShape,
-    const OutputOffsets& outputOffsets)
-```
-
-依次完成 SwiGLU、BF16 中间转换、MX scale 计算、MXFP8 量化以及 `y/yScale`
-写回。AIC 调用该接口时直接返回。
-
-## Scale 算法选择
-
-| `scaleAlg` | 算法 | 行为与适用场景 |
-|---|---|---|
-| 0 | OCP | 按组内最大指数直接生成2的整数次幂scale，不会根据目标FP8最大有限值额外上调scale。归一化结果位于FP8表示边界外时，输出由底层FP8类型转换语义决定。 |
-| 1 | cuBLAS/BLAS | 按目标FP8最大有限值计算scale，并将E8M0指数向上取整，可降低边界值量化溢出的风险。输入可能触及FP8表示边界且要求有限输出时建议使用。 |
-
-两种算法都以32个元素为一组。SwiGLU结果先以RNE舍入为BF16，再计算scale和量化结果；
-这一量化阶段与独立的DynamicMxQuant、SwigluMxQuant采用相同算法语义。
-
-## 约束
-
-- 输入 gate/linear 的逻辑列数必须相同。
-- qbmmswigluquant 的原始矩阵乘 `N` 必须为正数且是 64 的倍数，epilogue 的逻辑 `N` 为原始 `N/2`。
-- 单 tile 的逻辑元素数不能超过 `64 * 256`。
-- 仅支持 MXFP8 输出；产品侧 `scaleAlg` 取值为 0 或 1。
-
-## 相关 Kernel
-
-- [多 Batch QBMM MX Activation Quant](../../gemm/kernel/kernel_qbmm_mx_activation_quant.md)
-- [QBMM MX Activation Quant（统一 Kernel，单 Batch 复用）](../../gemm/kernel/kernel_qbmm_mx_activation_quant.md)
+每个输入半区最多预留 `64*256` 个 float 元素；tiling 必须保证每个 AIV
+负责的 `M*Align64(N)` 不超过该容量。Blaze Epilogue 是设备侧 `void`
+组件，不返回 ACLNN 状态码。必选输出地址及所有属性的合法性由上层
+ACLNN/tiling 校验；必选空指针由上层按接口规范返回 `161001`。

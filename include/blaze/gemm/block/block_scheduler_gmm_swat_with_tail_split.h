@@ -10,7 +10,7 @@
 
 /*!
  * \file block_scheduler_gmm_swat_with_tail_split.h
- * \brief
+ * \brief QGMM SWAT scheduler with tail splitting and MX/SwiGLU address metadata.
  */
 
 #pragma once

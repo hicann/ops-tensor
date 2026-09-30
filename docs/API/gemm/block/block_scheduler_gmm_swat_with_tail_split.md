@@ -3,7 +3,8 @@
 
 ## 功能说明
 Grouped Matmul 的 BlockScheduler 组件，用于 QGMM MX Tensor API kernel。调度器按 group 逐次更新问题规模，在 group 间延续物理核分配位置以均衡负载，并在末组计算量较小时利用空闲核拆分 M/N tail block。
-普通 QGMM 使用通用 block 坐标接口；GMMAQ ActivationQuant 额外使用本文件中的 MX group/block 偏移接口。
+普通 QGMM 使用通用 block 坐标接口；GMMAQ ActivationQuant 使用 MX group/block 偏移接口；
+SwiGLU MX 融合 Kernel 使用专用接口解析完整 N 的左右半区及量化输出偏移。
 
 **框架参考**：[Block Scheduler 公共框架](./block_scheduler.md)
 
@@ -47,6 +48,44 @@ struct Params {
 |------|------|
 | `baseM` | M 轴基础 tile 大小 |
 | `baseN` | N 轴基础 tile 大小 |
+
+### SwiGLU 数据结构
+
+```cpp
+struct SwigluGroupParams {
+    uint32_t groupIdx;
+    int64_t groupMEndOffset;
+    ProblemShape problemShape;
+    bool singleW;
+};
+
+struct SwigluGroupInfo {
+    int64_t aOffset;
+    int64_t bOffset;
+    int64_t scaleAOffset;
+    int64_t scaleBOffset;
+    int64_t outputOffset;
+    int64_t outputScaleOffset;
+    int64_t inputScaleK;
+};
+
+struct SwigluBlockInfo {
+    BlockShape blockShape;
+    BlockShape epilogueBlockShape;
+    int64_t aMOffset;
+    int64_t bLeftNOffset;
+    int64_t bRightNOffset;
+    SwigluOutputOffsets outputOffsets;
+};
+```
+
+- `problemShape` 中的 N 是 SwiGLU 拆分前完整 N；调度本身使用的 N 是 `N / 2`。
+- `groupMEndOffset` 是当前 group 在 M 轴上的累计结束位置，起始前缀为
+  `groupMEndOffset - problemM`。
+- `singleW=true` 时 B/ScaleB 基址按 `groupIdx` 在单个连续 Tensor 内偏移；为 `false` 时调用方已经
+  选择当前 group 的 Tensor，group 基址偏移为 0。
+- `bLeftNOffset` 与 `bRightNOffset` 分别定位完整 N 的左右半区，二者相差 `N / 2`。
+- `epilogueBlockShape` 的 N 是单半区宽度；Y/YScale offset 均按 `N / 2` 输出空间计算。
 
 ## 特殊成员方法
 
@@ -136,6 +175,19 @@ Block 坐标之上补充 MX 数据布局所需的地址信息：
 
 普通 QGMM 不调用这些接口，仍使用 `GetNextBlockCoord` 和 `GetBlockShape`。
 
+### SwiGLU MX 地址接口
+
+```cpp
+__aicore__ inline void UpdateSwigluGroup(const SwigluGroupParams& params)
+__aicore__ inline const SwigluGroupInfo& GetSwigluGroupInfo() const
+__aicore__ inline bool GetNextSwigluBlock(SwigluBlockInfo& blockInfo)
+```
+
+`UpdateSwigluGroup` 根据 group 的 M 前缀、完整 N/K 和 `singleW` 计算 A/B/ScaleA/ScaleB/Y/YScale
+基址。`GetNextSwigluBlock` 在通用 SWAT block 上补充左右权重 N offset、A 的 M offset，以及
+Epilogue 使用的输出 offset。YScale 每 64 个输出元素保存两个 E8M0 scale，因此其行内 offset
+按 32 个输出元素递增 1 字节。
+
 ## 调度流程
 
 ```text
@@ -145,9 +197,16 @@ Block 坐标之上补充 MX 数据布局所需的地址信息：
     -> 末组按需调用 UpdateTailTile
     -> GetNextBlockCoord 获取 block 坐标
     -> GetBlockShape 获取 block 形状和 tail split 偏移
+
+SwiGLU MX：
+UpdateNextProblem(M, N / 2, K)
+    -> UpdateSwigluGroup(M, N, K)
+    -> GetNextSwigluBlock
+    -> 左右 B/ScaleB slice + Y/YScale offset
 ```
 
 ## 适用场景
 - QGMM MX Tensor API kernel。
 - group 间 M/N 规模动态变化的 grouped matmul。
 - 末组 tile 数少于可用核数，需要利用空闲核拆分 M/N tail 的场景。
+- SwiGLU MX 完整 N 的左右半区配对调度与输出偏移计算。

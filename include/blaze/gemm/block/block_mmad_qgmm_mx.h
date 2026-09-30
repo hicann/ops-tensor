@@ -65,6 +65,10 @@ public:
     static constexpr bool TRANS_B = IsTrans<LayoutB>::value;
     static constexpr bool IS_FP4_TYPE = IsFp4<AType>();
     static_assert(DOUBLE_BUFFER_COUNT == 2, "QGMM MX block mmad only supports double buffer.");
+    static constexpr uint64_t SCALE_K_PAIR_SIZE = 2;
+    static constexpr uint64_t SCALE_N_BLOCK = 16;
+    static constexpr uint64_t MAX_SCALE_DMA_BLOCKS = 0xffffUL;
+    static constexpr uint64_t WEIGHT_NZ_K_COPY_ALIGN = 128;
     static constexpr uint64_t SPLIT_M_ALIGN = 2;
     static constexpr uint64_t CONCAT_N_FACTOR = 2UL;
     static constexpr uint16_t CONCAT_MATRIX_NUM = 2U;
@@ -295,7 +299,20 @@ public:
     __aicore__ inline void operator()(TensorA gmA, TensorB gmBLeft, TensorScaleA gmScaleA, TensorScaleB gmScaleBLeft,
                                       TensorUbC& ubC, const BlockShape& singleShape)
     {
-        RunConcatN(gmA, gmBLeft, gmScaleA, gmScaleBLeft, ubC, singleShape);
+        // Keep custom single-source views on their CopyConcatGM2L1 overloads.
+        RunConcatN<false>(gmA, gmBLeft, gmBLeft, gmScaleA, gmScaleBLeft, gmScaleBLeft, ubC, singleShape);
+    }
+
+    // NZ/ZN weight layouts need both logical N halves as input tensors.  The
+    // scheduler already has these two slices; passing them explicitly avoids
+    // trying to address the right half relative to a left-half tensor view.
+    template <typename TensorA, typename TensorB, typename TensorScaleA, typename TensorScaleB, typename TensorUbC>
+    __aicore__ inline void operator()(TensorA gmA, TensorB gmBLeft, TensorB gmBRight, TensorScaleA gmScaleA,
+                                      TensorScaleB gmScaleBLeft, TensorScaleB gmScaleBRight, TensorUbC& ubC,
+                                      const BlockShape& singleShape)
+    {
+        static_assert(IsWeightNz<LayoutB>::value, "Dual-source concatenation only supports NZ/ZN weight layouts.");
+        RunConcatN<true>(gmA, gmBLeft, gmBRight, gmScaleA, gmScaleBLeft, gmScaleBRight, ubC, singleShape);
     }
 
 private:
@@ -321,6 +338,8 @@ private:
     __aicore__ inline void InitL1BufferOffsets()
     {
         constexpr uint64_t halfL1Offset = AscendC::TOTAL_L1_SIZE >> 1;
+        // These offsets serve ordinary MMAD. Concat computes its scale
+        // offsets separately from concatBL1OneBuffer_ in CopyConcatScalesInL1.
         l1BufferAOffset_[0] = 0UL;
         l1BufferBOffset_[0] = aL1OneBuffer_;
         l1BufferAOffset_[1] = halfL1Offset;
@@ -388,9 +407,9 @@ private:
         return ScalePair<decltype(tensorScaleAL1), decltype(tensorScaleBL1)>{tensorScaleAL1, tensorScaleBL1};
     }
 
-    template <typename TensorScaleA, typename TensorScaleB>
-    __aicore__ inline auto CopyConcatScalesInL1(TensorScaleA gmScaleA, TensorScaleB gmScaleBLeft, uint64_t curM,
-                                                uint64_t curN, uint64_t kL1Offset, uint64_t scaleL1BufId)
+    template <typename TensorScaleA>
+    __aicore__ inline auto PrepareConcatScalesInL1(TensorScaleA gmScaleA, uint64_t curM, uint64_t curN,
+                                                   uint64_t kL1Offset, uint64_t scaleL1BufId)
     {
         const uint64_t concatN = curN * CONCAT_N_FACTOR;
         const uint64_t concatScaleAOffset = l1BufferBOffset_[scaleL1BufId] + concatBL1OneBuffer_;
@@ -417,14 +436,62 @@ private:
             auto gmBlockScaleA = gmScaleA.slice(asc::te::make_coord(0, scaleOffset),
                                                 asc::te::make_shape(curM, scaleSpan));
             asc::te::copy(copyScaleGM2L1, tensorScaleAL1, gmBlockScaleA);
-
-            auto gmBlockScaleBLeft = gmScaleBLeft.slice(asc::te::make_coord(scaleOffset, 0),
-                                                        asc::te::make_shape(scaleSpan, curN));
-            auto copyConcatGM2L1 = asc::te::make_copy(Blaze::Gemm::Tile::CopyConcatGM2L1{});
-            asc::te::copy(copyConcatGM2L1.with(Blaze::Gemm::Tile::CopyConcatGM2L1Params{n_, k_}), tensorScaleBL1,
-                          gmBlockScaleBLeft);
         }
         return ScalePair<decltype(tensorScaleAL1), decltype(tensorScaleBL1)>{tensorScaleAL1, tensorScaleBL1};
+    }
+
+    template <typename TensorScaleA, typename TensorScaleB>
+    __aicore__ inline auto CopyConcatScalesInL1(TensorScaleA gmScaleA, TensorScaleB gmScaleBLeft, uint64_t curM,
+                                                uint64_t curN, uint64_t kL1Offset, uint64_t scaleL1BufId)
+    {
+        auto scalePair = PrepareConcatScalesInL1(gmScaleA, curM, curN, kL1Offset, scaleL1BufId);
+        if (kL1Offset % scaleKL1_ == 0) {
+            const uint64_t curScaleKL1 = Min(scaleKL1_, k_ - kL1Offset);
+            auto gmBlockScaleBLeft = gmScaleBLeft.slice(asc::te::make_coord(GetScaleOffset(kL1Offset), 0),
+                                                        asc::te::make_shape(GetScaleSpan(curScaleKL1), curN));
+            auto copyConcatGM2L1 = asc::te::make_copy(Blaze::Gemm::Tile::CopyConcatGM2L1{});
+            asc::te::copy(copyConcatGM2L1.with(Blaze::Gemm::Tile::CopyConcatGM2L1Params{n_, k_}), scalePair.scaleB,
+                          gmBlockScaleBLeft);
+        }
+        return scalePair;
+    }
+
+    template <bool HasDualSource, typename TensorScaleA, typename TensorScaleB>
+    __aicore__ inline auto CopyConcatScalesInL1(TensorScaleA gmScaleA, TensorScaleB gmScaleBLeft,
+                                                TensorScaleB gmScaleBRight, uint64_t curM, uint64_t curN,
+                                                uint64_t kL1Offset, uint64_t scaleL1BufId)
+    {
+        if constexpr (!HasDualSource || !IsWeightNz<LayoutB>::value) {
+            return CopyConcatScalesInL1(gmScaleA, gmScaleBLeft, curM, curN, kL1Offset, scaleL1BufId);
+        } else {
+            // Weight NZ/ZN still has ND/DN MX scales. Reuse the multi-matrix
+            // copy with the FULL scale-window layout and source half stride.
+            if (curN % SCALE_N_BLOCK == 0 && scaleKL1Span_ / SCALE_K_PAIR_SIZE <= MAX_SCALE_DMA_BLOCKS &&
+                (curN / SCALE_N_BLOCK) * (scaleKL1Span_ / SCALE_K_PAIR_SIZE) <= MAX_SCALE_DMA_BLOCKS) {
+                return CopyConcatScalesInL1(gmScaleA, gmScaleBLeft, curM, curN, kL1Offset, scaleL1BufId);
+            }
+            auto scalePair = PrepareConcatScalesInL1(gmScaleA, curM, curN, kL1Offset, scaleL1BufId);
+
+            if (kL1Offset % scaleKL1_ == 0) {
+                const uint64_t curScaleKL1 = Min(scaleKL1_, k_ - kL1Offset);
+                const uint64_t scaleOffset = GetScaleOffset(kL1Offset);
+                const uint64_t scaleSpan = GetScaleSpan(curScaleKL1);
+                auto copyScaleGM2L1 = asc::te::make_copy(asc::te::copy_gm_to_l1{});
+                auto gmBlockScaleBLeft = gmScaleBLeft.slice(asc::te::make_coord(scaleOffset, 0),
+                                                            asc::te::make_shape(scaleSpan, curN));
+                auto gmBlockScaleBRight = gmScaleBRight.slice(asc::te::make_coord(scaleOffset, 0),
+                                                              asc::te::make_shape(scaleSpan, curN));
+                auto tensorScaleBL1Left = scalePair.scaleB.slice(asc::te::make_coord(0, 0),
+                                                                 asc::te::make_shape(scaleSpan, curN));
+                auto tensorScaleBL1Right = scalePair.scaleB.slice(asc::te::make_coord(0, curN),
+                                                                  asc::te::make_shape(scaleSpan, curN));
+                // Fallback for a scale window outside the multi-copy
+                // stride limits. Preserve the parent NN L1 layout.
+                asc::te::copy(copyScaleGM2L1, tensorScaleBL1Left, gmBlockScaleBLeft);
+                asc::te::copy(copyScaleGM2L1, tensorScaleBL1Right, gmBlockScaleBRight);
+            }
+            return scalePair;
+        }
     }
 
     template <typename TensorA>
@@ -483,9 +550,49 @@ private:
         if constexpr (NEED_B_SET_L1_K_ZERO) {
             Blaze::Gemm::Tile::PadMxKBL1::PadZero(tensorBL1, gmBlockBLeft);
         }
+        // Preserve custom CopyConcatGM2L1 overloads for single-source views,
+        // including callers that wrap an NZ/ZN tensor.
         auto copyConcatGM2L1 = asc::te::make_copy(Blaze::Gemm::Tile::CopyConcatGM2L1{});
         asc::te::copy(copyConcatGM2L1.with(Blaze::Gemm::Tile::CopyConcatGM2L1Params{n_, k_}), tensorBL1, gmBlockBLeft);
         return tensorBL1;
+    }
+
+    template <bool HasDualSource, typename TensorB>
+    __aicore__ inline auto CopyConcatBInL1(TensorB gmBLeft, TensorB gmBRight, uint64_t curN, uint64_t curGmBKL1,
+                                           uint64_t bL1BufId, uint64_t kL1Offset)
+    {
+        if constexpr (!HasDualSource || !IsWeightNz<LayoutB>::value) {
+            return CopyConcatBInL1(gmBLeft, curN, curGmBKL1, bL1BufId, kL1Offset);
+        } else {
+            uint64_t l1K = curGmBKL1;
+            if constexpr (NEED_B_SET_L1_K_ZERO) {
+                l1K = CeilAlign(curGmBKL1, MXFP_DIVISOR_SIZE);
+            }
+            const uint64_t concatN = curN * CONCAT_N_FACTOR;
+            auto layoutBL1 = MakeLayoutBL1{}(l1K, concatN);
+            auto tensorBL1 = asc::te::make_tensor(
+                asc::te::make_mem_ptr<asc::te::location::l1, BType>(l1BufferBOffset_[bL1BufId]), layoutBL1);
+            auto gmBlockBLeft = gmBLeft.slice(asc::te::make_coord(kL1Offset, 0), asc::te::make_shape(curGmBKL1, curN));
+            if (kL1Offset % WEIGHT_NZ_K_COPY_ALIGN == 0 &&
+                Blaze::Gemm::Tile::CopyConcatGM2L1::CopyWeightNzIfSupported(
+                    tensorBL1, gmBlockBLeft, Blaze::Gemm::Tile::CopyConcatGM2L1Params{n_, k_})) {
+                return tensorBL1;
+            }
+            auto copyGM2L1 = asc::te::make_copy(asc::te::copy_gm_to_l1{});
+            auto tensorBL1Left = tensorBL1.slice(asc::te::make_coord(0, 0), asc::te::make_shape(l1K, curN));
+            auto tensorBL1Right = tensorBL1.slice(asc::te::make_coord(0, curN), asc::te::make_shape(l1K, curN));
+            auto gmBlockBRight = gmBRight.slice(asc::te::make_coord(kL1Offset, 0),
+                                                asc::te::make_shape(curGmBKL1, curN));
+            if constexpr (NEED_B_SET_L1_K_ZERO) {
+                Blaze::Gemm::Tile::PadMxKBL1::PadZero(tensorBL1Left, gmBlockBLeft);
+                Blaze::Gemm::Tile::PadMxKBL1::PadZero(tensorBL1Right, gmBlockBRight);
+            }
+            // The GM tensors already use the NZ/ZN physical layout. Copy the two halves independently into two
+            // slices of the concatenated L1 tensor, preserving the source layout.
+            asc::te::copy(copyGM2L1, tensorBL1Left, gmBlockBLeft);
+            asc::te::copy(copyGM2L1, tensorBL1Right, gmBlockBRight);
+            return tensorBL1;
+        }
     }
 
     template <typename TensorBias>
@@ -735,17 +842,20 @@ private:
                       tensorL0C);
     }
 
-    template <typename TensorL0C, typename TensorA, typename TensorB, typename TensorScaleA, typename TensorScaleB>
-    __aicore__ inline void RunConcatNWithAOuter(TensorL0C tensorL0C, TensorA gmA, TensorB gmBLeft,
-                                                TensorScaleA gmScaleA, TensorScaleB gmScaleBLeft, uint64_t curM,
-                                                uint64_t curN, uint64_t concatN)
+    template <bool HasDualSource, typename TensorL0C, typename TensorA, typename TensorB, typename TensorScaleA,
+              typename TensorScaleB>
+    __aicore__ inline void RunConcatNWithAOuter(TensorL0C tensorL0C, TensorA gmA, TensorB gmBLeft, TensorB gmBRight,
+                                                TensorScaleA gmScaleA, TensorScaleB gmScaleBLeft,
+                                                TensorScaleB gmScaleBRight, uint64_t curM, uint64_t curN,
+                                                uint64_t concatN)
     {
         for (uint64_t kOuter = 0; kOuter < k_; kOuter += kAL1_) {
             uint64_t scaleL1BufId = scaleLoopCnt_ & 1UL;
             uint64_t aL1BufId = GetL1BufId(aL1LoopCnt_);
             uint64_t nextKOuter = kOuter + kAL1_;
             uint64_t curGmAKL1 = (nextKOuter > k_) ? (k_ - kOuter) : kAL1_;
-            auto scalePair = CopyConcatScalesInL1(gmScaleA, gmScaleBLeft, curM, curN, kOuter, scaleL1BufId);
+            auto scalePair = CopyConcatScalesInL1<HasDualSource>(gmScaleA, gmScaleBLeft, gmScaleBRight, curM, curN,
+                                                                 kOuter, scaleL1BufId);
             auto& tensorScaleAL1 = scalePair.scaleA;
             auto& tensorScaleBL1 = scalePair.scaleB;
             AscendC::WaitFlag<AscendC::HardEvent::MTE1_MTE2>(aL1BufId);
@@ -755,7 +865,7 @@ private:
                 uint64_t bL1BufId = GetL1BufId(bL1LoopCnt_);
                 uint64_t curGmBKL1 = (kInner + kBL1_ > k_) ? (k_ - kInner) : kBL1_;
                 AscendC::WaitFlag<AscendC::HardEvent::MTE1_MTE2>(static_cast<uint16_t>(l1BufferStage_) + bL1BufId);
-                auto tensorBL1 = CopyConcatBInL1(gmBLeft, curN, curGmBKL1, bL1BufId, kInner);
+                auto tensorBL1 = CopyConcatBInL1<HasDualSource>(gmBLeft, gmBRight, curN, curGmBKL1, bL1BufId, kInner);
                 AscendC::SetFlag<AscendC::HardEvent::MTE2_MTE1>(bL1BufId);
                 AscendC::WaitFlag<AscendC::HardEvent::MTE2_MTE1>(bL1BufId);
                 IterateNoBias(tensorL0C, tensorAL1, tensorBL1, tensorScaleAL1, tensorScaleBL1, curM, concatN, curGmAKL1,
@@ -773,21 +883,24 @@ private:
         }
     }
 
-    template <typename TensorL0C, typename TensorA, typename TensorB, typename TensorScaleA, typename TensorScaleB>
-    __aicore__ inline void RunConcatNWithBOuter(TensorL0C tensorL0C, TensorA gmA, TensorB gmBLeft,
-                                                TensorScaleA gmScaleA, TensorScaleB gmScaleBLeft, uint64_t curM,
-                                                uint64_t curN, uint64_t concatN)
+    template <bool HasDualSource, typename TensorL0C, typename TensorA, typename TensorB, typename TensorScaleA,
+              typename TensorScaleB>
+    __aicore__ inline void RunConcatNWithBOuter(TensorL0C tensorL0C, TensorA gmA, TensorB gmBLeft, TensorB gmBRight,
+                                                TensorScaleA gmScaleA, TensorScaleB gmScaleBLeft,
+                                                TensorScaleB gmScaleBRight, uint64_t curM, uint64_t curN,
+                                                uint64_t concatN)
     {
         for (uint64_t kOuter = 0; kOuter < k_; kOuter += kBL1_) {
             uint64_t scaleL1BufId = scaleLoopCnt_ & 1UL;
             uint64_t bL1BufId = GetL1BufId(bL1LoopCnt_);
             uint64_t nextKOuter = kOuter + kBL1_;
             uint64_t curGmBKL1 = (nextKOuter > k_) ? (k_ - kOuter) : kBL1_;
-            auto scalePair = CopyConcatScalesInL1(gmScaleA, gmScaleBLeft, curM, curN, kOuter, scaleL1BufId);
+            auto scalePair = CopyConcatScalesInL1<HasDualSource>(gmScaleA, gmScaleBLeft, gmScaleBRight, curM, curN,
+                                                                 kOuter, scaleL1BufId);
             auto& tensorScaleAL1 = scalePair.scaleA;
             auto& tensorScaleBL1 = scalePair.scaleB;
             AscendC::WaitFlag<AscendC::HardEvent::MTE1_MTE2>(static_cast<uint16_t>(l1BufferStage_) + bL1BufId);
-            auto tensorBL1 = CopyConcatBInL1(gmBLeft, curN, curGmBKL1, bL1BufId, kOuter);
+            auto tensorBL1 = CopyConcatBInL1<HasDualSource>(gmBLeft, gmBRight, curN, curGmBKL1, bL1BufId, kOuter);
 
             for (uint64_t kInner = kOuter; kInner < Min(kOuter + kBL1_, k_); kInner += kAL1_) {
                 uint64_t aL1BufId = GetL1BufId(aL1LoopCnt_);
@@ -811,9 +924,11 @@ private:
         }
     }
 
-    template <typename TensorA, typename TensorB, typename TensorScaleA, typename TensorScaleB, typename TensorUbC>
-    __aicore__ inline void RunConcatN(TensorA gmA, TensorB gmBLeft, TensorScaleA gmScaleA, TensorScaleB gmScaleBLeft,
-                                      TensorUbC& ubC, const BlockShape& singleShape)
+    template <bool HasDualSource, typename TensorA, typename TensorB, typename TensorScaleA, typename TensorScaleB,
+              typename TensorUbC>
+    __aicore__ inline void RunConcatN(TensorA gmA, TensorB gmBLeft, TensorB gmBRight, TensorScaleA gmScaleA,
+                                      TensorScaleB gmScaleBLeft, TensorScaleB gmScaleBRight, TensorUbC& ubC,
+                                      const BlockShape& singleShape)
     {
         uint64_t curM = asc::te::get<MNK_M>(singleShape);
         uint64_t curN = asc::te::get<MNK_N>(singleShape);
@@ -828,9 +943,11 @@ private:
                                               layoutL0C);
 
         if (orderAL1BL1_) {
-            RunConcatNWithAOuter(tensorL0C, gmA, gmBLeft, gmScaleA, gmScaleBLeft, curM, curN, concatN);
+            RunConcatNWithAOuter<HasDualSource>(tensorL0C, gmA, gmBLeft, gmBRight, gmScaleA, gmScaleBLeft,
+                                                gmScaleBRight, curM, curN, concatN);
         } else {
-            RunConcatNWithBOuter(tensorL0C, gmA, gmBLeft, gmScaleA, gmScaleBLeft, curM, curN, concatN);
+            RunConcatNWithBOuter<HasDualSource>(tensorL0C, gmA, gmBLeft, gmBRight, gmScaleA, gmScaleBLeft,
+                                                gmScaleBRight, curM, curN, concatN);
         }
 
         CopyConcatL0C2SingleUb(ubC, tensorL0C, curM, curN);

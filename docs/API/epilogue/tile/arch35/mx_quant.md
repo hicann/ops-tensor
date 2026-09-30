@@ -207,17 +207,22 @@ y（FP8/FP4, DIST_PACK4_B32 打包）        ↓ TransScaleLayout（ceil(N/32) �
 
 ## 与 Block 层的关系
 
-`MxQuant` 是首个多阶段计算链 Tile（运行时算法分派 + FP4 舍入运行时分派 +
-loop 计数内部推导），当前被四个 Block 复用：
+`MxQuant` 是多阶段计算链 Tile（运行时算法分派 + FP4 舍入运行时分派 +
+loop 计数内部推导），当前被四个 Block 直接复用：
+
 - [BlockEpilogueGeluTanhMxQuant](../../block/block_epilogue_gelu_tanh_mx_quant.md)：
   三算法全支持，`zeroScaleOnZeroExp = false`
 - [BlockEpilogueGeluMxQuant](../../block/block_epilogue_gelu_mx_quant.md)：
   三算法 + FP4 输出转置（`TransFp4OutLayout`），`zeroScaleOnZeroExp = true`
-- [BlockEpilogueSwigluMxQuant](../../block/block_epilogue_swiglu_mx_quant.md)：
-  OCP/cuBLAS + FP8，`zeroScaleOnZeroExp = true`
 - [BlockEpilogueFlatQuant](../../block/block_epilogue_flat_quant.md)：
   三算法全支持（dstTypeMax 0/6,7/其他 分派），`zeroScaleOnZeroExp = true`，
   eMax 的 abs/exp 路径由 dstTypeMax ∈ [6,12] 区间判定（保留 flat 原始行为）
+
+- [BlockEpilogueSwigluMxQuant](../../block/block_epilogue_swiglu_mx_quant.md)：
+  复用 `GroupMaxExp`、`GenScale`、`Quantize` 和 `TransScaleLayout`，
+  `zeroScaleOnZeroExp = true`。该共享 Epilogue 兼容 V2 mode 0 与 V3 mode 2，
+  只选择 OCP/cuBLAS，没有动态 dtype range 分支；V3 只公开 `scaleAlg=0/1`，
+  `dstTypeMax` 固定为 0。
 
 Block 层保留：fpEmax / invDstTypeMax / addValueBits 的 Init 推导（依赖 host
 参数）、UB 布局与偏移、slot/ping-pong 与跨核同步、GM copy、FP4 脏数据清零。

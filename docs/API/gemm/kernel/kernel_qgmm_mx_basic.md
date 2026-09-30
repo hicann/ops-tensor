@@ -44,8 +44,11 @@ Kernel 编译期通过 `static_assert` 校验模板组合：
 - `AType` / `BType` 仅支持 MXFP8（`fp8_e4m3fn_t`、`fp8_e5m2_t`）。
 - `CType` / `BiasType` 仅支持 `float`。
 - `LayoutA` 仅支持 `nd_ext_layout_ptn`。
-- `LayoutB` 仅支持 `nd_ext_layout_ptn`、`dn_ext_layout_ptn`。
+- `LayoutB` 支持 `nd_ext_layout_ptn`、`dn_ext_layout_ptn`、`nz_layout_ptn`、`zn_layout_ptn`。
 - `LayoutC` / `LayoutBias` 支持 ND 类布局，不支持 `nz_layout_ptn`、`zn_layout_ptn`。
+
+完整的双 N 半区、NZ/ZN 双源搬运、shape、mode 和空指针契约见
+[Kernel QGMM SwiGLU MX](./kernel_qgmm_swiglu_mx.md)。
 
 ## 特殊类型别名
 

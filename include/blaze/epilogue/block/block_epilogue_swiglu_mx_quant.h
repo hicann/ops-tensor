@@ -10,7 +10,7 @@
 
 /*!
  * \file block_epilogue_swiglu_mx_quant.h
- * \brief
+ * \brief AIV epilogue for SwiGLU activation and MXFP8 output quantization.
  */
 
 #pragma once
@@ -31,7 +31,17 @@ namespace Epilogue {
 namespace Block {
 
 namespace Constant {
-constexpr uint32_t NUM_TWO = 2;
+constexpr float DEFAULT_CLAMP_LIMIT = 7.0F;
+constexpr float DEFAULT_GLU_ALPHA = 1.702F;
+constexpr float DEFAULT_GLU_BIAS = 1.0F;
+constexpr float RECIPROCAL_NUMERATOR = 1.0F;
+constexpr uint32_t SCALE_ALG_CUBLAS = 1;
+constexpr uint16_t MX_SCALE_REDUCTION_MASK = 0x003f;
+constexpr uint32_t SECOND_VECTOR_SUBBLOCK = 1;
+constexpr int64_t FLAT_VECTOR_ROW_COUNT = 1;
+constexpr float SIGMOID_DENOMINATOR_OFFSET = 1.0F;
+constexpr uint32_t SWIGLU_HALF_COUNT = 2;
+constexpr uint32_t VECTOR_SUBBLOCK_COUNT = 2;
 constexpr uint64_t MX_QUANT_COMPUTE_ALIGN = 64UL;
 constexpr uint32_t MAX_SINGLE_MN = 64 * 256;
 constexpr uint16_t FP8_E4M3_MAX_EXP = 0x0400;
@@ -52,6 +62,17 @@ constexpr AscendC::Reg::DivSpecificMode DIV_MODE = {
 };
 #endif // __CCE_AICORE__
 
+/*!
+ * \brief Consumes concatenated left/right MMAD results, applies SwiGLU, and writes quantized Y/YScale.
+ *
+ * This shared component retains mode 0 for the legacy V2 path. The V3 integration uses mode 2 only and validates
+ * scaleAlg (0/1) plus dstTypeMax (0) in the upper layer. Required output pointers must be checked before launch;
+ * this low-level device component has no ACLNN error return.
+ *
+ * \tparam DataTypeOut_ Quantized output type.
+ * \tparam DataTypeIn_ MMAD result type, currently float for the fused QGMM kernel.
+ * \tparam DataTypeScale_ Output scale type, normally fp8_e8m0_t.
+ */
 template <typename DataTypeOut_, typename DataTypeIn_ = float, typename DataTypeScale_ = fp8_e8m0_t>
 class BlockEpilogueSwigluMxQuant {
 public:
@@ -61,7 +82,7 @@ public:
     static constexpr uint64_t INPUT_UB_TILE_ELEMENTS = Constant::MAX_SINGLE_MN;
     static constexpr uint64_t INPUT_UB_BUFFER_BYTES = INPUT_UB_TILE_ELEMENTS * sizeof(DataTypeIn);
     static constexpr uint64_t OUTPUT_C0_SIZE = asc::te::c0_element<DataTypeIn>;
-    static constexpr uint64_t SPLIT_M_ALIGN = Constant::NUM_TWO;
+    static constexpr uint64_t SPLIT_M_ALIGN = Constant::VECTOR_SUBBLOCK_COUNT;
 
     enum class L0c2UbTensorType : uint8_t {
         SWISH_INPUT = 0,
@@ -71,17 +92,25 @@ public:
     using BlockShape = asc::te::shape<int64_t, int64_t, int64_t, int64_t>;
     using ProblemShape = asc::te::shape<int64_t, int64_t, int64_t>;
 
+    /*! \brief Element offsets of the current block in Y and YScale. */
     struct OutputOffsets {
         int64_t yOffset{0};
         int64_t yScaleOffset{0};
     };
 
+    /*! \brief Runtime output addresses, tile sizes, and fused-operation attributes. */
     struct Params {
-        GM_ADDR yGmAddr{nullptr};
-        GM_ADDR yScaleGmAddr{nullptr};
-        uint32_t baseM{0};
-        uint32_t baseN{0};
-        uint8_t scaleAlg{0};
+        GM_ADDR yGmAddr{nullptr};      //!< Required Y address; validated by the upper layer.
+        GM_ADDR yScaleGmAddr{nullptr}; //!< Required YScale address; validated by the upper layer.
+        uint32_t baseM{0};             //!< Reserved compatibility field; not read by the current implementation.
+        uint32_t baseN{0};             //!< Reserved compatibility field; not read by the current implementation.
+        // The shared epilogue serves legacy V2 mode 0 and V3 mode 2.
+        int64_t swigluMode{0};
+        float clampLimit{Constant::DEFAULT_CLAMP_LIMIT};
+        float gluAlpha{Constant::DEFAULT_GLU_ALPHA};
+        float gluBias{Constant::DEFAULT_GLU_BIAS};
+        uint32_t scaleAlg{0};   //!< V3 public contract: 0 (OCP) or 1 (cuBLAS).
+        float dstTypeMax{0.0F}; //!< Reserved in this component; V3 requires 0.
         Params() = default;
     };
 
@@ -118,13 +147,17 @@ public:
         const uint64_t copyRows = Blaze::Gemm::CeilAlign(static_cast<uint64_t>(rows), SPLIT_M_ALIGN);
         const auto
             layoutOutUb = asc::te::make_frame_layout<asc::te::nd_ext_layout_ptn, AscendC::Std::Int<OUTPUT_C0_SIZE>>(
-                copyRows, static_cast<uint64_t>(cols) * Constant::NUM_TWO);
+                copyRows, static_cast<uint64_t>(cols) * Constant::SWIGLU_HALF_COUNT);
         return asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::ub, DataTypeIn>(0), layoutOutUb);
     }
 
+    /*! \brief Binds output addresses, attributes, and UB layout. */
     __aicore__ inline void Init(Params const& params);
+    /*! \brief Processes one logical half-width block and writes its Y/YScale results. */
     __aicore__ inline void operator()(const BlockShape& blockShape, const OutputOffsets& outputOffsets);
+    /*! \brief Updates the current post-SwiGLU problem shape. */
     __aicore__ inline void UpdateNextProblem(const ProblemShape& problemShape);
+    /*! \brief Applies group-level output base offsets. */
     __aicore__ inline void UpdateGlobalAddr(const OutputOffsets& baseOffsets);
 
 private:
@@ -167,7 +200,7 @@ private:
     uint32_t singleN_{0};
 
     uint16_t fpEmax_{0};
-    float invDstTypeMax_{1.0f};
+    float invDstTypeMax_{Constant::RECIPROCAL_NUMERATOR / Constant::FP8_E4M3_MAX_VALUE};
 };
 
 template <typename DataTypeOut_, typename DataTypeIn_, typename DataTypeScale_>
@@ -186,7 +219,9 @@ __aicore__ inline void BlockEpilogueSwigluMxQuant<DataTypeOut_, DataTypeIn_, Dat
     }
     if constexpr (AscendC::IsSameType<DataTypeOut, fp8_e5m2_t>::value) {
         fpEmax_ = Constant::FP8_E5M2_MAX_EXP;
-        invDstTypeMax_ = 1.0f / Constant::FP8_E5M2_MAX_VALUE;
+        invDstTypeMax_ = Constant::RECIPROCAL_NUMERATOR / Constant::FP8_E5M2_MAX_VALUE;
+    } else {
+        invDstTypeMax_ = Constant::RECIPROCAL_NUMERATOR / Constant::FP8_E4M3_MAX_VALUE;
     }
     SetupUbLayout();
 }
@@ -194,7 +229,7 @@ __aicore__ inline void BlockEpilogueSwigluMxQuant<DataTypeOut_, DataTypeIn_, Dat
 template <typename DataTypeOut_, typename DataTypeIn_, typename DataTypeScale_>
 __aicore__ inline void BlockEpilogueSwigluMxQuant<DataTypeOut_, DataTypeIn_, DataTypeScale_>::SetupUbLayout()
 {
-    constexpr uint32_t afterIn = Constant::NUM_TWO * Constant::MAX_SINGLE_MN * sizeof(DataTypeIn);
+    constexpr uint32_t afterIn = Constant::SWIGLU_HALF_COUNT * Constant::MAX_SINGLE_MN * sizeof(DataTypeIn);
     quantOutputUbOffset_ = afterIn;
     quantScaleOutputUbOffset_ = afterIn + Constant::MAX_SINGLE_MN * sizeof(int8_t);
     constexpr uint32_t afterIO = afterIn + Constant::MAX_SINGLE_MN * sizeof(int8_t) +
@@ -242,7 +277,7 @@ __aicore__ inline void BlockEpilogueSwigluMxQuant<DataTypeOut_, DataTypeIn_, Dat
 
     auto halfSingleM = Blaze::Gemm::CeilDiv(static_cast<uint64_t>(singleM_),
                                             static_cast<uint64_t>(AscendC::GetTaskRation()));
-    uint64_t singleMInVec = (subBlockIdx_ == 1) ? singleM_ - halfSingleM : halfSingleM;
+    uint64_t singleMInVec = (subBlockIdx_ == Constant::SECOND_VECTOR_SUBBLOCK) ? singleM_ - halfSingleM : halfSingleM;
     if (singleMInVec == 0) {
         return;
     }
@@ -337,10 +372,10 @@ __aicore__ inline void BlockEpilogueSwigluMxQuant<DataTypeOut_, DataTypeIn_, Dat
                                                             static_cast<uint64_t>(sizePerRepeat));
     const uint32_t nSrcUbAligned = Blaze::Gemm::CeilAlign(static_cast<uint64_t>(singleN_),
                                                           AscendC::ONE_BLK_SIZE / sizeof(DataTypeIn));
-    const uint32_t concatNSrcUbAligned = nSrcUbAligned * Constant::NUM_TWO;
+    const uint32_t concatNSrcUbAligned = nSrcUbAligned * Constant::SWIGLU_HALF_COUNT;
     const uint32_t nDstUbAligned64 = Blaze::Gemm::Align64(static_cast<uint64_t>(singleN_));
 
-    const float scalarOne = 1.0f;
+    const float scalarOne = Constant::SIGMOID_DENOMINATOR_OFFSET;
 
     // Zero-initialize gluRes when N tail (non-64-aligned)
     if (__builtin_expect((singleN_ % Constant::MX_QUANT_COMPUTE_ALIGN) != 0, 0)) {
@@ -370,21 +405,35 @@ __aicore__ inline void BlockEpilogueSwigluMxQuant<DataTypeOut_, DataTypeIn_, Dat
 
                 AscendC::Reg::RegTensor<bfloat16_t> verg7;
                 AscendC::Reg::RegTensor<float> swishInput, gateInput;
-                AscendC::Reg::RegTensor<float> verg1, verg2, verg3, verg4, verg5, verg6, swishOutput;
+                AscendC::Reg::RegTensor<float> verg1, verg2, verg3, verg4, verg6, swishOutput;
 
-                uint32_t l0cOutOffset = mIdx * concatNSrcUbAligned + vfBlockIdx * sizePerRepeat;
-                AscendC::Reg::DataCopy(swishInput, swishInputUbAddr + l0cOutOffset);
+                const uint32_t l0cOutOffset = mIdx * concatNSrcUbAligned + vfBlockIdx * sizePerRepeat;
+                const uint32_t firstOffset = l0cOutOffset;
+                const uint32_t secondOffset = l0cOutOffset + nSrcUbAligned;
+                // Mode 2 fixes the first N half as activation and the second N half as gate.
+                AscendC::Reg::DataCopy(swishInput, swishInputUbAddr + firstOffset);
+                AscendC::Reg::DataCopy(gateInput, swishInputUbAddr + secondOffset);
 
-                // Swish: x / (1 + exp(-x))
-                AscendC::Reg::Muls(verg2, swishInput, -(scalarOne), mask);
-                AscendC::Reg::Exp(verg3, verg2, mask);
-                AscendC::Reg::Adds(verg4, verg3, scalarOne, mask);
-                AscendC::Reg::Div<float, &DIV_MODE>(swishOutput, swishInput, verg4, mask);
+                if (params_->swigluMode == 0) {
+                    // Legacy V2: act / (1 + exp(-act)) * gate.
+                    AscendC::Reg::Muls(verg2, swishInput, -scalarOne, mask);
+                    AscendC::Reg::Exp(verg3, verg2, mask);
+                    AscendC::Reg::Adds(verg4, verg3, scalarOne, mask);
+                    AscendC::Reg::Div<float, &DIV_MODE>(swishOutput, swishInput, verg4, mask);
+                } else {
+                    // V3 mode 2: min(act, clamp) / (1 + exp(-alpha * min(act, clamp)))
+                    //              * (clamp(gate, -clamp, clamp) + bias).
+                    AscendC::Reg::Mins(verg1, swishInput, params_->clampLimit, mask);
+                    AscendC::Reg::Muls(verg2, verg1, -params_->gluAlpha, mask);
+                    AscendC::Reg::Exp(verg3, verg2, mask);
+                    AscendC::Reg::Adds(verg4, verg3, scalarOne, mask);
+                    AscendC::Reg::Div<float, &DIV_MODE>(swishOutput, verg1, verg4, mask);
+                    AscendC::Reg::Mins(gateInput, gateInput, params_->clampLimit, mask);
+                    AscendC::Reg::Maxs(gateInput, gateInput, -params_->clampLimit, mask);
+                    AscendC::Reg::Adds(gateInput, gateInput, params_->gluBias, mask);
+                }
 
-                // Load gate data
-                AscendC::Reg::DataCopy(gateInput, swishInputUbAddr + l0cOutOffset + nSrcUbAligned);
-
-                // SwiGLU = Swish(act) * gate
+                // SwiGLU = Swish(act) * gate.
                 AscendC::Reg::Mul(verg6, swishOutput, gateInput, mask);
 
                 AscendC::Reg::Cast<bfloat16_t, float, CT_FP32_TO_BF16>(verg7, verg6, mask);
@@ -405,10 +454,10 @@ __aicore__ inline void BlockEpilogueSwigluMxQuant<DataTypeOut_, DataTypeIn_, Dat
     const uint32_t totalDataInUb = mSize * nDstUbAligned64;
     const uint32_t totalScaleInUb = totalDataInUb / AscendC::ONE_BLK_SIZE;
 
-    auto dataLayout = Gemm::MakeNDExtLayout<int8_t>(1, static_cast<int64_t>(totalDataInUb),
-                                                    static_cast<int64_t>(totalDataInUb));
-    auto scaleLayout = Gemm::MakeNDExtLayout<int8_t>(1, static_cast<int64_t>(totalScaleInUb),
-                                                     static_cast<int64_t>(totalScaleInUb));
+    auto dataLayout = Gemm::MakeNDExtLayout<int8_t>(
+        Constant::FLAT_VECTOR_ROW_COUNT, static_cast<int64_t>(totalDataInUb), static_cast<int64_t>(totalDataInUb));
+    auto scaleLayout = Gemm::MakeNDExtLayout<int8_t>(
+        Constant::FLAT_VECTOR_ROW_COUNT, static_cast<int64_t>(totalScaleInUb), static_cast<int64_t>(totalScaleInUb));
     auto gluResTensor = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::ub, bfloat16_t>(gluResUbOffset_),
                                              dataLayout);
     auto maxExpTensor = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::ub, uint16_t>(maxExpUbOffset_),
@@ -420,19 +469,11 @@ __aicore__ inline void BlockEpilogueSwigluMxQuant<DataTypeOut_, DataTypeIn_, Dat
     auto yTensor = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::ub, int8_t>(quantOutputUbOffset_),
                                         dataLayout);
 
-    // MxQuantConfig 由 Init 阶段解析的普通成员在调用点组装。
-    // zeroScaleOnZeroExp=true: swiglu 阵营; CUBLAS 链路消费 invDstTypeMax（BLAS scaleAlg）
-    Tile::MxQuantConfig cfg{Tile::MxScaleAlg::OCP, fpEmax_, invDstTypeMax_, 0x003f, true};
-
+    const bool useCublas = params_->scaleAlg == Constant::SCALE_ALG_CUBLAS;
+    Tile::MxQuantConfig cfg{useCublas ? Tile::MxScaleAlg::CUBLAS : Tile::MxScaleAlg::OCP, fpEmax_, invDstTypeMax_,
+                            Constant::MX_SCALE_REDUCTION_MASK, true};
     Tile::MxQuant<DataTypeOut> mx;
-    // scaleAlg 合同：0 表示 OCP，1 表示 CUBLAS；调用侧只应传入这两个值。
-    if (params_->scaleAlg == 0U) {
-        cfg.alg = Tile::MxScaleAlg::OCP;
-        mx.GroupMaxExp(gluResTensor, maxExpTensor, totalDataInUb, false);
-    } else {
-        cfg.alg = Tile::MxScaleAlg::CUBLAS;
-        mx.GroupMaxExp(gluResTensor, maxExpTensor, totalDataInUb, true);
-    }
+    mx.GroupMaxExp(gluResTensor, maxExpTensor, totalDataInUb, useCublas);
     mx.GenScale(maxExpTensor, yScaleTensor, reciprocalTensor, cfg, totalScaleInUb);
     mx.Quantize(gluResTensor, reciprocalTensor, yTensor, totalDataInUb);
 }

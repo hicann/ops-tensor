@@ -114,7 +114,7 @@ examples/
 | `block_attn_res_prepare/`        | block_attn_res_prepare                                                                        | Attention residual prepare 样例           |
 | `weight_quant_batch_matmul_mx/`  | weight_quant_batch_matmul_mx_swat                                                            | 权重量化批量矩阵乘法样例                 |
 | `weight_quant_batch_matmul/` | [weight_quant_batch_matmul_antiquant](weight_quant_batch_matmul/weight_quant_batch_matmul_antiquant/README.md) | INT8 权重反量化矩阵乘，FP16/BF16 输入、两种权重存储方向及尾块 |
-| `grouped_matmul/`               | quant_grouped_matmul_mx, [quant_grouped_matmul_cubeonly](grouped_matmul/quant_grouped_matmul_cubeonly/README.md), [grouped_matmul_mx_a8w4](grouped_matmul/grouped_matmul_mx_a8w4/README.md) | Grouped MatMul 与量化 Cube/MX A8W4 样例 |
+| `grouped_matmul/`               | quant_grouped_matmul_mx, quant_grouped_matmul_activation_quant_mx, [quant_grouped_matmul_swiglu_quant_mx](grouped_matmul/quant_grouped_matmul_swiglu_quant_mx/README.md), [quant_grouped_matmul_cubeonly](grouped_matmul/quant_grouped_matmul_cubeonly/README.md), [grouped_matmul_mx_a8w4](grouped_matmul/grouped_matmul_mx_a8w4/README.md) | Grouped MatMul 与量化、激活量化、SwiGLU MX 样例 |
 | `quant_matmul_activation_quant/` | quant_matmul_activation_quant                                                                | 量化矩阵乘激活融合样例                   |
 | `transpose_quant_batch_matmul/`  | tqbmm_mx                                                                                     | 转置量化批量矩阵乘法样例                 |
 

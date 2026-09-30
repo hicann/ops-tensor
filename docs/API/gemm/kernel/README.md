@@ -21,6 +21,7 @@
 | [kernel_qbmm_mix_without_batch](./kernel_qbmm_mix_without_batch.md) | Batch 固定为 1 的 A8W8 MIX Matmul，不处理多 Batch 广播 |
 | [kernel_qgmm_mx_basic](./kernel_qgmm_mx_basic.md) | MX 量化 Grouped Matmul，支持 group list 与 tail split |
 | [kernel_qgmm_mx_mix_finalize_routing](./kernel_qgmm_mx_mix_finalize_routing.md) | GroupedMatmulFinalizeRouting MX TensorAPI Kernel，支持 shared input、logit 融合和 rowIndex 原子写回 |
+| [kernel_qgmm_swiglu_mx](./kernel_qgmm_swiglu_mx.md) | MXFP8 Grouped Matmul + SwiGLU mode 2 + MX 输出量化，支持 ND/DN/NZ/ZN weight |
 | [kernel_qgmm_mix_fixpipe_quant](./kernel_qgmm_mix_fixpipe_quant.md) | 量化 Grouped Matmul，通过 Fixpipe 输出，支持 per-channel/per-group 和可选 offset 后处理 |
 | [kernel_matmul_streamk](./kernel_matmul_streamk.md) | StreamK 矩阵乘 Kernel，AIC+AIV 双核计算，支持 workspace |
 | [kernel_qbmm_streamk](./kernel_qbmm_streamk.md) | MX 量化 StreamK Kernel，支持单 Batch MxFP4/MxFP8 workspace 归约 |
@@ -66,6 +67,7 @@ KernelMatmul
 | KernelQbmmMix | AIC + AIV 双核 | int8 (A8W8) | x2Scale + x1Scale(可选) | BlockEpilogueDequant | 不需要 | 多 batch | BlockSchedulerQbmm | 有 | int8 量化 Matmul（支持多 Batch，ND/WeightNz） |
 | KernelQbmmMixWithoutBatch | AIC + AIV 双核 | int8 (A8W8) | x2Scale + x1Scale(可选) | BlockEpilogueDequant | 不需要 | 单 batch | BlockSchedulerQbmm | 有 | int8 量化 Matmul（Batch = 1，ND/WeightNz） |
 | KernelQgmmMx | 仅 AIC | MX FP4/MX FP8 | ScaleA + ScaleB | 无 | 不需要 | group list | BlockSchedulerGmmSwatWithTailSplit | 无 | 量化 Grouped Matmul |
+| KernelQgmmSwiGluMx | AIC + AIV 双核 | MXFP8 | ScaleA + ScaleB + 输出 E8M0 scale | BlockEpilogueSwigluMxQuant | 不需要 | group list | BlockSchedulerGmmSwatWithTailSplit | 有 | Grouped Matmul + SwiGLU mode 2 + MX 量化 |
 | KernelQgmmCube | 仅 AIC | int8/HiFloat8/FP8 | ScaleA + ScaleB | 无 | 不需要 | group list | BlockSchedulerGmmSwatWithTailSplit | 无 | 量化 Grouped Matmul |
 | KernelMatmulStreamK | AIC + AIV 双核 | 不支持 | 不支持 | BlockEpilogueStreamK | 需要 | 单 batch | StreamK Scheduler | 有 | 切 K 场景 Matmul |
 | KernelQbmmStreamK | AIC + AIV 双核 | MX FP4/MX FP8 | ScaleA + ScaleB | BlockEpilogueStreamK（复用） | 需要 | 单 batch | StreamK Scheduler（复用） | 有 | 量化切 K 场景 Matmul |

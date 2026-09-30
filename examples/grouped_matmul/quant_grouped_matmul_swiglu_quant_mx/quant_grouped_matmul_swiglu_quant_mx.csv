@@ -1,0 +1,3 @@
+caseName,groupNum,m,n,k,baseM,baseN,baseK,kAL1,kBL1,scaleKAL1,scaleKBL1,dbL0C,layoutB,scaleAlg,clampLimit,gluAlpha,gluBias,dstTypeMax,groupList
+gmmsq_e4m3_nz_scale_alg_0_k_mn_tail,2,35,192,68,16,64,64,64,64,64,64,2,nz,0,7.0,1.0,1.0,0.0,1;35
+gmmsq_e4m3_zn_scale_alg_1_k_m_tail,2,19,256,68,16,64,64,64,64,64,64,2,zn,1,7.0,1.0,1.0,0.0,3;19

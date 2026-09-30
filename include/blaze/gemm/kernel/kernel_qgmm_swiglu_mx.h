@@ -10,7 +10,7 @@
 
 /*!
  * \file kernel_qgmm_swiglu_mx.h
- * \brief
+ * \brief QGMM MX kernel specialization that fuses mode-2 SwiGLU and MXFP8 output quantization.
  */
 
 #pragma once
@@ -34,12 +34,25 @@ namespace Kernel {
 
 namespace {
 constexpr int64_t SCALE_CACHE_MASK = 0xff;
+constexpr uint32_t DEFAULT_TAIL_ALIGNMENT = 1;
+constexpr int64_t GROUP_LIST_ELEMENT_STRIDE = 1;
+constexpr uint32_t SWIGLU_N_SPLIT_SHIFT = 1;
+constexpr uint8_t SINGLE_WEIGHT_TENSOR = 1;
+constexpr int64_t BIAS_ROW_COUNT = 1;
+constexpr uint32_t UINT64_ADDRESS_SHIFT = 3;
 constexpr uint16_t FLAG_ID_MAX = 16;
 constexpr uint8_t SYNC_AIC_AIV_MODE = 4;
 constexpr uint16_t AIC_SYNC_AIV_FLAG = 4;
 constexpr uint16_t AIV_SYNC_AIC_FLAG = 6;
 } // namespace
 
+/*!
+ * \brief AIC/AIV fused QGMM MX kernel for paired left/right N halves.
+ *
+ * AIC computes both halves into UB and AIV applies SwiGLU followed by MX quantization. The caller must validate
+ * all required GM addresses and attributes before entering this low-level component; it does not return ACLNN
+ * status codes. The current V3 integration accepts mode 2, scale algorithms 0/1 and dstTypeMax 0 only.
+ */
 template <class ProblemShape_, class BlockMmad_, class BlockEpilogue_, class BlockScheduler_>
 class GemmUniversal<ProblemShape_, BlockMmad_, BlockEpilogue_, BlockScheduler_,
                     AscendC::Std::enable_if_t<AscendC::Std::is_same_v<
@@ -62,8 +75,9 @@ public:
                   "QGMM SwiGLU MX only supports float CType and BiasType.");
     static_assert(AscendC::Std::is_same_v<LayoutA, asc::te::nd_ext_layout_ptn>,
                   "QGMM SwiGLU MX only supports ND LayoutA.");
-    static_assert(AscendC::Std::is_one_of_v<LayoutB, asc::te::nd_ext_layout_ptn, asc::te::dn_ext_layout_ptn>,
-                  "QGMM SwiGLU MX only supports ND/DN LayoutB.");
+    static_assert(AscendC::Std::is_one_of_v<LayoutB, asc::te::nd_ext_layout_ptn, asc::te::dn_ext_layout_ptn,
+                                            asc::te::nz_layout_ptn, asc::te::zn_layout_ptn>,
+                  "QGMM SwiGLU MX only supports ND/DN/NZ/ZN LayoutB.");
     static_assert(!AscendC::Std::is_one_of_v<LayoutC, asc::te::nz_layout_ptn, asc::te::zn_layout_ptn> &&
                       !AscendC::Std::is_one_of_v<LayoutBias, asc::te::nz_layout_ptn, asc::te::zn_layout_ptn>,
                   "QGMM SwiGLU MX does not support NZ/ZN LayoutC or LayoutBias.");
@@ -83,6 +97,7 @@ public:
     using EpilogueBlockShape = typename BlockEpilogue::BlockShape;
     using EpilogueOutputOffsets = typename BlockEpilogue::OutputOffsets;
 
+    /*! \brief Runtime grouped-matmul tiling consumed by the fused specialization. */
     struct GMMTiling {
         uint32_t groupNum;
         int64_t m;
@@ -101,12 +116,13 @@ public:
         uint8_t singleW;
     };
 
+    /*! \brief Kernel launch parameters. */
     struct Params {
-        ProblemShape problemShape;
-        BlockMmadAddressParams blockMmadAddressParams;
-        BlockEpilogueParams epilogueParams;
-        GM_ADDR groupListGmAddr;
-        GMMTiling gmmParams;
+        ProblemShape problemShape;                     //!< Compatibility field; gmmParams supplies authoritative M/N/K.
+        BlockMmadAddressParams blockMmadAddressParams; //!< A/B/ScaleA/ScaleB addresses; C/Bias are unused here.
+        BlockEpilogueParams epilogueParams;            //!< Required Y/YScale addresses and fused attributes.
+        GM_ADDR groupListGmAddr;                       //!< Required when groupNum is nonzero.
+        GMMTiling gmmParams;                           //!< Authoritative grouped-matmul shape and tiling.
     };
 
     __aicore__ inline GemmUniversal() {}
@@ -166,7 +182,7 @@ private:
 
     __aicore__ inline void SetSchedulerTailAlign(BlockScheduler& bs)
     {
-        uint32_t mTailAlign = 1;
+        uint32_t mTailAlign = DEFAULT_TAIL_ALIGNMENT;
         uint32_t nTailAlign = TRANS_B ? static_cast<uint32_t>(BLOCK_CUBE) : static_cast<uint32_t>(INPUT_C0_SIZE);
         bs.SetTailAlign(mTailAlign, nTailAlign);
     }
@@ -215,7 +231,7 @@ private:
             return;
         }
         const auto groupListLayout = asc::te::make_layout(asc::te::make_shape(static_cast<int64_t>(groupNum_)),
-                                                          asc::te::make_stride(1L));
+                                                          asc::te::make_stride(GROUP_LIST_ELEMENT_STRIDE));
         const auto gmGroupList = asc::te::make_tensor(
             asc::te::make_mem_ptr<asc::te::location::gm>(reinterpret_cast<__gm__ int64_t*>(params.groupListGmAddr)),
             groupListLayout);
@@ -234,7 +250,7 @@ private:
             if ASCEND_IS_AIC {
                 blockMmad.UpdateParamsForNextProblem(problemShape_);
             }
-            bs.UpdateNextProblem(SchedulerShape{problemM, problemN >> 1, problemK, 0});
+            bs.UpdateNextProblem(SchedulerShape{problemM, problemN >> SWIGLU_N_SPLIT_SHIFT, problemK, 0});
             ProcessSingleGroup(bs, groupIdx);
         }
         End();
@@ -247,7 +263,7 @@ private:
         bBasePtr_ = reinterpret_cast<__gm__ BType*>(params.blockMmadAddressParams.bGmAddr);
         scaleABasePtr_ = reinterpret_cast<__gm__ fp8_e8m0_t*>(params.blockMmadAddressParams.scaleAGmAddr);
         scaleBBasePtr_ = reinterpret_cast<__gm__ fp8_e8m0_t*>(params.blockMmadAddressParams.scaleBGmAddr);
-        singleW_ = (gmmParams.singleW == 1);
+        singleW_ = (gmmParams.singleW == SINGLE_WEIGHT_TENSOR);
 
         const ProblemShape initProblemShape{gmmParams.m, gmmParams.n, gmmParams.k, 0};
         problemShape_ = initProblemShape;
@@ -269,7 +285,7 @@ private:
         blockEpilogue.Init(params.epilogueParams);
 
         const EpilogueProblemShape epilogueProblemShape{asc::te::get<MNK_M>(problemShape_),
-                                                        asc::te::get<MNK_N>(problemShape_) >> 1,
+                                                        asc::te::get<MNK_N>(problemShape_) >> SWIGLU_N_SPLIT_SHIFT,
                                                         asc::te::get<MNK_K>(problemShape_)};
         blockEpilogue.UpdateNextProblem(epilogueProblemShape);
     }
@@ -325,15 +341,30 @@ private:
         auto layoutScaleA = MakeLayoutScaleA{}(problemM, groupInfo.inputScaleK);
         auto layoutB = MakeLayoutB{}(problemK, problemN);
         auto layoutScaleB = MakeLayoutScaleB{}(groupInfo.inputScaleK, problemN);
-        auto layoutBias = asc::te::make_frame_layout<asc::te::nd_ext_layout_ptn>(static_cast<int64_t>(1), problemN);
+        auto layoutBias = asc::te::make_frame_layout<asc::te::nd_ext_layout_ptn>(BIAS_ROW_COUNT, problemN);
 
         auto gmA = asc::te::make_tensor(asc::te::make_mem_ptr<asc::te::location::gm>(aBasePtr_ + groupInfo.aOffset),
                                         layoutA);
         auto gmScaleA = asc::te::make_tensor(
             asc::te::make_mem_ptr<asc::te::location::gm>(scaleABasePtr_ + groupInfo.scaleAOffset), layoutScaleA);
+        int64_t weightOffset = groupInfo.bOffset;
+        if constexpr (IsWeightNz<LayoutB>::value) {
+            if (singleW_) {
+                // Only a single batched FRACTAL_NZ tensor needs a physical per-group stride.
+                // TensorList entries already point to each group and retain the scheduler's zero offset.
+                const uint64_t weightGroupElements = TRANS_B ?
+                                                         CeilDiv(static_cast<uint64_t>(problemK), C0_SIZE_B8) *
+                                                             CeilDiv(static_cast<uint64_t>(problemN), C0_SIZE_fp16) *
+                                                             C0_SIZE_fp16 * C0_SIZE_B8 :
+                                                         CeilDiv(static_cast<uint64_t>(problemK), C0_SIZE_fp16) *
+                                                             CeilDiv(static_cast<uint64_t>(problemN), C0_SIZE_B8) *
+                                                             C0_SIZE_fp16 * C0_SIZE_B8;
+                weightOffset = static_cast<int64_t>(groupIdx * weightGroupElements);
+            }
+        }
         auto gmB = asc::te::make_tensor(
             asc::te::make_mem_ptr<asc::te::location::gm>(
-                (singleW_ ? bBasePtr_ : GetTensorAddrFromList(groupIdx, bBasePtr_)) + groupInfo.bOffset),
+                (singleW_ ? bBasePtr_ : GetTensorAddrFromList(groupIdx, bBasePtr_)) + weightOffset),
             layoutB);
         auto gmScaleB = asc::te::make_tensor(
             asc::te::make_mem_ptr<asc::te::location::gm>(
@@ -371,7 +402,13 @@ private:
                     WaitForAiv();
                 }
                 auto ubOut = blockEpilogue.GetConcatL0c2UbTensor(blockM, blockN);
-                blockMmad(gmBlockA, gmBlockBLeft, gmBlockScaleA, gmBlockScaleBLeft, ubOut, singleShape);
+                if constexpr (IsWeightNz<LayoutB>::value) {
+                    // Mode 2 stores activation and gate in separate N halves.
+                    blockMmad(gmBlockA, gmBlockBLeft, gmBlockBRight, gmBlockScaleA, gmBlockScaleBLeft,
+                              gmBlockScaleBRight, ubOut, singleShape);
+                } else {
+                    blockMmad(gmBlockA, gmBlockBLeft, gmBlockScaleA, gmBlockScaleBLeft, ubOut, singleShape);
+                }
                 SyncAicToAiv();
             }
             isVecSetSyncCom_ = true;
@@ -392,7 +429,7 @@ private:
     {
         __gm__ uint64_t* dataAddr = reinterpret_cast<__gm__ uint64_t*>(tensorPtr);
         uint64_t tensorPtrOffset = *dataAddr;
-        __gm__ uint64_t* retPtr = dataAddr + (tensorPtrOffset >> 3);
+        __gm__ uint64_t* retPtr = dataAddr + (tensorPtrOffset >> UINT64_ADDRESS_SHIFT);
         return reinterpret_cast<__gm__ T*>(*(retPtr + index));
     }
 
