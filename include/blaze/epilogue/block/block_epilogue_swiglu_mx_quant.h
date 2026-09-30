@@ -51,7 +51,7 @@ constexpr float FP8_E5M2_MAX_VALUE = 57344.0f;
 constexpr int8_t FLOAT_OVERFLOW_MODE_CTRL = 60;
 } // namespace Constant
 
-#ifdef __CCE_AICORE__
+#ifdef __NPU_ARCH__
 constexpr AscendC::Reg::CastTrait CT_FP32_TO_BF16 = {AscendC::Reg::RegLayout::ZERO, AscendC::Reg::SatMode::NO_SAT,
                                                      AscendC::Reg::MaskMergeMode::ZEROING,
                                                      AscendC::RoundMode::CAST_RINT};
@@ -60,7 +60,7 @@ constexpr AscendC::Reg::DivSpecificMode DIV_MODE = {
     AscendC::Reg::MaskMergeMode::ZEROING,
     true,
 };
-#endif // __CCE_AICORE__
+#endif // __NPU_ARCH__
 
 /*!
  * \brief Consumes concatenated left/right MMAD results, applies SwiGLU, and writes quantized Y/YScale.

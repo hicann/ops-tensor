@@ -24,6 +24,10 @@
 blaze/
 ├──epilogue/   # Epilogue 层：后处理策略
 |   └── block/
+├──attention/  # Attention 层：FA 类混合 AIC/AIV 公共模板，与 GEMM 体系隔离
+|   ├── kernel/    # Kernel 层：完整注意力内核入口
+|   ├── block/     # Block 层：注意力 Block 抽象与调度
+|   └── policy/    # Dispatch Policy：派发策略定义
 └── gemm/      # 工具库
     ├── kernel/      # Kernel 层：完整算子内核入口
     ├── block/      # Block 层：Block 级矩阵乘抽象与调度
@@ -38,7 +42,10 @@ blaze/
 | :--- | :--- | :--- |
 | `gemm/kernel/` | `Blaze::Gemm::Kernel` | 完整算子内核入口，组合 Block + Epilogue + Scheduler 形成可启动的 Kernel |
 | `gemm/block/` | `Blaze::Gemm::Block` | Block 级 Mmad 抽象及其针对不同 Policy 的实现, 以及 Block 调度器 |
-| `epilogue/` | `Blaze::Gemm::Block` | 后处理策略，可按需扩展 Bias / 激活 / 反量化等 |
+| `epilogue/` | `Blaze::Epilogue::Block`（历史兼容别名 `Blaze::Gemm::Block`） | 后处理策略，可按需扩展 Bias / 激活 / 反量化等 |
+| `attention/kernel/` | `Blaze::Attention::Kernel` | 完整注意力内核入口，与 GEMM 的 `Kernel` 体系隔离 |
+| `attention/block/` | `Blaze::Attention::Block` | 注意力 Block 抽象及其调度器 |
+| `attention/policy/` | `Blaze::Attention` | 注意力派发策略定义 |
 | `gemm/tile/` | `Blaze::Gemm::Tile` | Tile 级原语：定制化 MMAD Trait、定制化 GM->L1/ L1->L0搬运, 如 K 方向补零等 |
 | `gemm/policy/`| `Blaze::Gemm` | 派发策略定义，控制全载模式、量化模式等行为 |
 | `gemm/utils/` | `Blaze::Gemm` | 通用工具与常量：CeilDiv、Layout 推导、量化模式常量等 |

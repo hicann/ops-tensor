@@ -32,7 +32,7 @@ using AscendC::IsSameType;
 using Blaze::Gemm::CeilAlign;
 using Blaze::Gemm::CeilDiv;
 
-#ifdef __CCE_AICORE__
+#ifdef __NPU_ARCH__
 constexpr AscendC::Reg::CastTrait STREAMK_DQ_CT_INT32_2_FP32 = {
     AscendC::Reg::RegLayout::UNKNOWN, AscendC::Reg::SatMode::UNKNOWN, AscendC::Reg::MaskMergeMode::ZEROING,
     AscendC::RoundMode::CAST_RINT};
@@ -45,7 +45,7 @@ constexpr AscendC::Reg::CastTrait STREAMK_DQ_CT_HALF_2_FP32_ZERO = {
 constexpr AscendC::Reg::CastTrait STREAMK_DQ_CT_HALF_2_FP32_ONE = {
     AscendC::Reg::RegLayout::ONE, AscendC::Reg::SatMode::UNKNOWN, AscendC::Reg::MaskMergeMode::ZEROING,
     AscendC::RoundMode::UNKNOWN};
-#endif // __CCE_AICORE__
+#endif // __NPU_ARCH__
 
 // The dedicated epilogue owns the complete AIV path: reduce split-K workspace partials,
 // apply per-tensor x2 scale and optional x1 scale/bias, cast, and write the final output.

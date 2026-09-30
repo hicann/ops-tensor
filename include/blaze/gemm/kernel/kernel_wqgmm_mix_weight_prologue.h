@@ -316,19 +316,6 @@ private:
                                                         WEIGHT_4BIT_INIT_OFFSET + 2 * WEIGHT_4BIT_SINGLE_BUFFER_SIZE,
                                                         WEIGHT_4BIT_INIT_OFFSET + 3 * WEIGHT_4BIT_SINGLE_BUFFER_SIZE};
 
-    // === Hardware/Architecture Parameters ===
-#if __CCE_AICORE__ == 310
-    constexpr static uint64_t VEC_REG_ELEM = AscendC::VECTOR_REG_WIDTH;
-#else
-    constexpr static uint64_t VEC_REG_ELEM = 256;
-#endif
-
-    static constexpr uint64_t WEIGHT_8BIT_OFFSETS[4] = {WEIGHT_8BIT_INIT_OFFSET + 0 * VEC_REG_ELEM * sizeof(OutType),
-                                                        WEIGHT_8BIT_INIT_OFFSET + 1 * VEC_REG_ELEM * sizeof(OutType),
-                                                        WEIGHT_8BIT_INIT_OFFSET + 2 * VEC_REG_ELEM * sizeof(OutType),
-                                                        WEIGHT_8BIT_INIT_OFFSET + 3 * VEC_REG_ELEM * sizeof(OutType)};
-    static constexpr uint64_t WEIGHT_8BIT_LAYOUT_INNER_SIZE = VEC_REG_ELEM * WEIGHT_8BIT_BUFFER_NUM;
-
     // === Event IDs for Pipeline Synchronization ===
     constexpr static TEventID VEC_EVENT_ID_V_TO_MTE2 = 0;
     constexpr static TEventID VEC_EVENT_ID_MTE3_TO_V = 0;
@@ -692,6 +679,15 @@ __aicore__ inline auto WQGMM_MX_PROLOGUE_CLASS::MakeWeight4BitTensor(uint64_t mt
 WQGMM_MX_PROLOGUE_TEMPLATE_PARAM
 __aicore__ inline auto WQGMM_MX_PROLOGUE_CLASS::MakeWeight8BitTensor(uint64_t mte2RealK, uint64_t nL1Size)
 {
+    // === Hardware/Architecture Parameters ===
+    constexpr uint64_t VEC_REG_ELEM = AscendC::VECTOR_REG_WIDTH;
+
+    constexpr uint64_t WEIGHT_8BIT_OFFSETS[4] = {WEIGHT_8BIT_INIT_OFFSET + 0 * VEC_REG_ELEM * sizeof(OutType),
+                                                 WEIGHT_8BIT_INIT_OFFSET + 1 * VEC_REG_ELEM * sizeof(OutType),
+                                                 WEIGHT_8BIT_INIT_OFFSET + 2 * VEC_REG_ELEM * sizeof(OutType),
+                                                 WEIGHT_8BIT_INIT_OFFSET + 3 * VEC_REG_ELEM * sizeof(OutType)};
+    constexpr uint64_t WEIGHT_8BIT_LAYOUT_INNER_SIZE = VEC_REG_ELEM * WEIGHT_8BIT_BUFFER_NUM;
+
     return asc::te::make_tensor(
         asc::te::make_mem_ptr<asc::te::location::ub, OutType>(
             WEIGHT_8BIT_OFFSETS[ubComputeLoopIdx_ & (WEIGHT_8BIT_BUFFER_NUM - 1)]),

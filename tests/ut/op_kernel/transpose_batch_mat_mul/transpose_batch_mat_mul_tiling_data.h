@@ -17,12 +17,9 @@
 
 #include "blaze_kernel_stub.h"
 
-#ifndef __CCE_AICORE__
 #include <cstdint>
-#endif
 
-enum class TbmmL2CacheMode : std::uint32_t
-{
+enum class TbmmL2CacheMode : std::uint32_t {
     L2_CACHE_DEFAULT = 0x00,
     A_L2_CACHE_DISABLE = 0x01,
     B_L2_CACHE_DISABLE = 0x02,

@@ -17,9 +17,7 @@
 
 #include "blaze_kernel_stub.h"
 
-#ifndef __CCE_AICORE__
 #include <cstdint>
-#endif
 
 namespace GemmSyrkUT {
 

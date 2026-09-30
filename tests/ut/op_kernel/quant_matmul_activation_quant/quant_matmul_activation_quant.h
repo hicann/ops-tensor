@@ -15,9 +15,7 @@
 
 #pragma once
 
-#ifndef __CCE_AICORE__
 #include <cstdint>
-#endif
 
 #include "blaze_kernel_stub.h"
 #include "kernel_operator.h"

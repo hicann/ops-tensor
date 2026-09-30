@@ -75,7 +75,7 @@ private:
     static constexpr float GELU_HALF = 0.5f;
     static constexpr float GELU_ONE = 1.0f;
 
-#ifdef __CCE_AICORE__
+#ifdef __NPU_ARCH__
     // Erf subsection polynomial approximation coefficients (fp32 bit patterns),
     // ported from impl/adv_api/detail/math/erf/erf_3510_impl.h (ErfAPI).
     // P1: |x| >= ERF_C0 branch, P2: |x| < ERF_C0 branch.
@@ -117,7 +117,7 @@ private:
         AscendC::Reg::MaskMergeMode::ZEROING,
         kPreciseDiv_,
     };
-#endif // __CCE_AICORE__
+#endif // __NPU_ARCH__
 
     // Vf parameter structs: raw __ubuf__ pointers + shape info for Reg API.
     // Shared by the tanh and erf Vf entries (identical tile shape contract).
